@@ -141,8 +141,11 @@ SetEntry = { id, type:'warmup'|'effective'|'failure'|'drop', weight|null, reps|n
   rir: 0..5 | 'F' | null, timeSec|null, distanceM|null, heightCm|null, note:'', done:bool, doneAt|null }
 ```
 - Actividades: `durationMin = movingSec / 60` (se guarda también `durationMin`). `status:'done'` siempre.
-- Una actividad registrada desde un ítem de cardio de una plantilla lleva `parentId` (sesión de fuerza) y
-  `templateItemId`. Cuenta para km, ritmos y récords de resistencia y para la carga de su tipo. Al terminar la sesión
+- Una actividad registrada desde un ítem de cardio de una sesión de fuerza lleva `parentId` (id de la sesión de
+  fuerza), `parentItemId` (id del SessionExercise de cardio) y `templateItemId` (el de ese SessionExercise, si
+  tiene). La sesión de fuerza muestra en ese ítem las actividades con `parentId === session.id && parentItemId === se.id`.
+  Se abre con `#/activity/new?kind=<sport>&date=<fecha sesión>&parent=<session.id>&item=<se.id>`; al guardar, la
+  actividad hereda `date` y `planDate` de la sesión padre y vuelve atrás (a la sesión). Cuenta para km, ritmos y récords de resistencia y para la carga de su tipo. Al terminar la sesión
   padre, la duración propuesta de la fuerza = tiempo transcurrido − duración de las actividades enlazadas (editable),
   para no contar dos veces la carga.
 - Series **pendientes** (`done:false`) son las prellenadas aún no confirmadas; no cuentan para nada. Al terminar la
@@ -212,6 +215,14 @@ Iconos disponibles: ver `ICON_NAMES` en ui.js. Para deportes usa emojis (`ACTIVI
 `lastPerformance(sessions, exerciseId, {excludeSessionId})`, `bestsForExercise`, `addToBests`, `detectPRs`,
 `sessionPRs(session, sessions, exMap, bwFn)` → Map(setId → récords), `bestSet`, `weeksBetween`, `orderKeyOf`.
 `exMap` puede ser un `Map` o un objeto; construye uno con `new Map(store.all('exercises').map(e => [e.id, e]))`.
+
+### plan.js (contrato mínimo, lo usa Ajustes)
+`patternFor(settings, date)` → days[7], `setWeekPattern(days)` (nueva vigencia desde el lunes de esta semana),
+`currentPattern()`. El módulo de calendario añade el resto (effectiveDay, dayStatus, weekPlan, adherence, overrideDay,
+swapDays, setManualStatus, resetDay…).
+
+### views/bodyweight.js (contrato, lo usa Hoy)
+`bodyweightQuickEntry({onSaved})` → HTMLElement (tarjeta de registro rápido de peso).
 
 ### pickers.js
 `pickExercise({title, excludeIds, filter, allowCreate, preferIds})` → Promise<id|null>,
