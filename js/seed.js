@@ -169,12 +169,594 @@ export function defaultSettings() {
 //          category:'compound'|'isolation', region:'upper'|'lower'|'core'|'full', sport? }
 // ---------------------------------------------------------------------------
 export const SEED_EXERCISES = [
-  // (se completa en seed de biblioteca)
+  {"id": "press_banca", "name": "Press banca", "aliases": ["press de banca", "press plano", "bench press"], "primary": ["chest"], "secondary": ["triceps", "frontdelt"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_banca_mancuerna", "name": "Press banca con mancuernas", "aliases": ["press plano mancuernas"], "primary": ["chest"], "secondary": ["triceps", "frontdelt"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_inclinado_mancuerna", "name": "Press inclinado con mancuernas", "aliases": ["press inclinado mancuerna", "incline dumbbell press"], "primary": ["chest"], "secondary": ["frontdelt", "triceps"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_inclinado_barra", "name": "Press inclinado con barra", "aliases": ["incline bench"], "primary": ["chest"], "secondary": ["frontdelt", "triceps"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_inclinado_smith", "name": "Press inclinado en Smith", "aliases": ["press inclinado multipower", "smith inclinado"], "primary": ["chest"], "secondary": ["frontdelt", "triceps"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_declinado", "name": "Press declinado", "aliases": ["decline press"], "primary": ["chest"], "secondary": ["triceps"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_pecho_maquina", "name": "Press de pecho en máquina", "aliases": ["chest press"], "primary": ["chest"], "secondary": ["triceps", "frontdelt"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_cerrado", "name": "Press banca agarre cerrado", "aliases": ["close grip bench"], "primary": ["triceps", "chest"], "secondary": ["frontdelt"], "pattern": "push_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "aperturas_mancuerna", "name": "Aperturas con mancuernas", "aliases": ["aperturas", "flyes", "aperturas planas"], "primary": ["chest"], "secondary": ["frontdelt"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "aperturas_maquina", "name": "Aperturas en máquina (pec deck)", "aliases": ["pec deck", "contractor"], "primary": ["chest"], "secondary": ["frontdelt"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "cruce_poleas", "name": "Cruce de poleas", "aliases": ["cruce", "crossover", "aperturas en polea"], "primary": ["chest"], "secondary": ["frontdelt"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "flexiones", "name": "Flexiones", "aliases": ["push-ups", "lagartijas"], "primary": ["chest"], "secondary": ["triceps", "frontdelt", "core"], "pattern": "push_h", "logType": "bodyweight", "category": "compound", "region": "upper"},
+  {"id": "fondos", "name": "Fondos en paralelas", "aliases": ["dips", "fondos"], "primary": ["chest", "triceps"], "secondary": ["frontdelt"], "pattern": "push_v", "logType": "bodyweight", "category": "compound", "region": "upper"},
+  {"id": "press_militar", "name": "Press militar con barra", "aliases": ["overhead press", "press de hombro barra"], "primary": ["frontdelt"], "secondary": ["sidedelt", "triceps"], "pattern": "push_v", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_hombro_mancuerna", "name": "Press de hombro con mancuernas", "aliases": ["press militar mancuernas"], "primary": ["frontdelt"], "secondary": ["sidedelt", "triceps"], "pattern": "push_v", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "press_hombro_maquina", "name": "Press de hombro en máquina", "aliases": ["shoulder press"], "primary": ["frontdelt"], "secondary": ["sidedelt", "triceps"], "pattern": "push_v", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "elevaciones_laterales", "name": "Elevaciones laterales", "aliases": ["laterales", "lateral raise", "elevaciones laterales mancuerna"], "primary": ["sidedelt"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "elevaciones_laterales_polea", "name": "Elevaciones laterales en polea", "aliases": ["laterales polea"], "primary": ["sidedelt"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "elevaciones_frontales", "name": "Elevaciones frontales", "aliases": ["front raise"], "primary": ["frontdelt"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "face_pull", "name": "Face pull", "aliases": ["facepull", "jalón a la cara"], "primary": ["reardelt"], "secondary": ["back"], "pattern": "pull_h", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "pajaros", "name": "Pájaros (vuelos posteriores)", "aliases": ["reverse fly", "deltoides posterior", "pájaro"], "primary": ["reardelt"], "secondary": ["back"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "contractor_inverso", "name": "Contractor inverso", "aliases": ["pec deck inverso", "reverse pec deck"], "primary": ["reardelt"], "secondary": ["back"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "encogimientos", "name": "Encogimientos", "aliases": ["shrugs", "trapecio"], "primary": ["back"], "secondary": ["forearms"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "dominadas", "name": "Dominadas", "aliases": ["pull-up", "dominada prona", "dominadas pronas"], "primary": ["back"], "secondary": ["biceps", "reardelt", "forearms"], "pattern": "pull_v", "logType": "bodyweight", "category": "compound", "region": "upper"},
+  {"id": "dominadas_supinas", "name": "Dominadas supinas", "aliases": ["chin-up", "dominada supina"], "primary": ["back", "biceps"], "secondary": ["forearms"], "pattern": "pull_v", "logType": "bodyweight", "category": "compound", "region": "upper"},
+  {"id": "jalon_pecho", "name": "Jalón al pecho", "aliases": ["jalón", "lat pulldown", "polea al pecho", "jalon"], "primary": ["back"], "secondary": ["biceps", "reardelt"], "pattern": "pull_v", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "jalon_estrecho", "name": "Jalón agarre estrecho", "aliases": ["jalón neutro", "jalón agarre neutro"], "primary": ["back"], "secondary": ["biceps"], "pattern": "pull_v", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "remo_pecho_apoyado", "name": "Remo con pecho apoyado", "aliases": ["remo en banco inclinado", "chest supported row", "remo seal", "remo apoyado"], "primary": ["back"], "secondary": ["reardelt", "biceps"], "pattern": "pull_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "remo_barra", "name": "Remo con barra", "aliases": ["barbell row", "remo pendlay"], "primary": ["back"], "secondary": ["reardelt", "biceps", "lowerback"], "pattern": "pull_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "remo_unilateral", "name": "Remo unilateral con mancuerna", "aliases": ["remo mancuerna", "one arm row", "remo a una mano"], "primary": ["back"], "secondary": ["reardelt", "biceps"], "pattern": "pull_h", "logType": "unilateral", "category": "compound", "region": "upper"},
+  {"id": "remo_polea_baja", "name": "Remo en polea baja", "aliases": ["remo sentado", "seated row", "gironda"], "primary": ["back"], "secondary": ["biceps", "reardelt"], "pattern": "pull_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "remo_maquina", "name": "Remo en máquina", "aliases": ["remo hammer"], "primary": ["back"], "secondary": ["biceps", "reardelt"], "pattern": "pull_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "remo_t", "name": "Remo en T", "aliases": ["t-bar row"], "primary": ["back"], "secondary": ["biceps", "reardelt", "lowerback"], "pattern": "pull_h", "logType": "weight_reps", "category": "compound", "region": "upper"},
+  {"id": "remo_invertido", "name": "Remo invertido", "aliases": ["inverted row", "remo australiano"], "primary": ["back"], "secondary": ["biceps", "reardelt"], "pattern": "pull_h", "logType": "bodyweight", "category": "compound", "region": "upper"},
+  {"id": "pullover_polea", "name": "Pullover en polea", "aliases": ["pullover", "straight arm pulldown"], "primary": ["back"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "curl_barra", "name": "Curl con barra", "aliases": ["curl bíceps barra"], "primary": ["biceps"], "secondary": ["forearms"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "curl_mancuerna", "name": "Curl con mancuernas", "aliases": ["curl bíceps"], "primary": ["biceps"], "secondary": ["forearms"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "curl_supinador", "name": "Curl supinador", "aliases": ["curl con supinación", "curl supinado"], "primary": ["biceps"], "secondary": ["forearms"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "curl_martillo", "name": "Curl martillo", "aliases": ["hammer curl"], "primary": ["biceps"], "secondary": ["forearms"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "curl_polea", "name": "Curl en polea", "aliases": ["cable curl"], "primary": ["biceps"], "secondary": ["forearms"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "curl_predicador", "name": "Curl predicador", "aliases": ["banco scott", "preacher curl"], "primary": ["biceps"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "triceps_sobre_cabeza", "name": "Tríceps sobre la cabeza", "aliases": ["extensión sobre la cabeza", "overhead extension", "francés sobre cabeza", "tríceps sobre cabeza"], "primary": ["triceps"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "triceps_polea", "name": "Extensión de tríceps en polea", "aliases": ["pushdown", "tríceps polea", "jalón de tríceps"], "primary": ["triceps"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "press_frances", "name": "Press francés", "aliases": ["skull crusher"], "primary": ["triceps"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "upper"},
+  {"id": "sentadilla", "name": "Sentadilla", "aliases": ["sentadilla trasera", "back squat", "squat"], "primary": ["quads", "glutes"], "secondary": ["adductors", "lowerback"], "pattern": "squat", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "sentadilla_frontal", "name": "Sentadilla frontal", "aliases": ["front squat"], "primary": ["quads"], "secondary": ["glutes", "core"], "pattern": "squat", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "sentadilla_goblet", "name": "Sentadilla goblet", "aliases": ["goblet squat"], "primary": ["quads", "glutes"], "secondary": ["core"], "pattern": "squat", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "prensa", "name": "Prensa", "aliases": ["prensa de piernas", "leg press", "prensa inclinada"], "primary": ["quads", "glutes"], "secondary": ["adductors"], "pattern": "squat", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "hack_squat", "name": "Sentadilla hack", "aliases": ["hack", "hack squat", "jaca"], "primary": ["quads"], "secondary": ["glutes"], "pattern": "squat", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "extension_cuadriceps", "name": "Extensión de cuádriceps", "aliases": ["leg extension", "extensiones"], "primary": ["quads"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "bulgara", "name": "Sentadilla búlgara", "aliases": ["búlgara", "bulgarian split squat", "split squat búlgaro"], "primary": ["quads", "glutes"], "secondary": ["adductors", "hamstrings"], "pattern": "lunge", "logType": "unilateral", "category": "compound", "region": "lower"},
+  {"id": "zancadas", "name": "Zancadas", "aliases": ["lunges", "estocadas"], "primary": ["quads", "glutes"], "secondary": ["adductors", "hamstrings"], "pattern": "lunge", "logType": "unilateral", "category": "compound", "region": "lower"},
+  {"id": "step_up", "name": "Subida al banco", "aliases": ["step-up", "step up"], "primary": ["quads", "glutes"], "secondary": ["hamstrings"], "pattern": "lunge", "logType": "unilateral", "category": "compound", "region": "lower"},
+  {"id": "peso_muerto", "name": "Peso muerto", "aliases": ["deadlift", "peso muerto convencional"], "primary": ["glutes", "hamstrings", "lowerback"], "secondary": ["back", "quads", "forearms"], "pattern": "hinge", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "peso_muerto_rumano", "name": "Peso muerto rumano", "aliases": ["rumano", "pmr", "rdl", "romanian deadlift"], "primary": ["hamstrings", "glutes"], "secondary": ["lowerback", "forearms"], "pattern": "hinge", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "hip_thrust", "name": "Hip thrust", "aliases": ["empuje de cadera", "puente de glúteo con barra"], "primary": ["glutes"], "secondary": ["hamstrings"], "pattern": "hinge", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "hiperextensiones", "name": "Hiperextensiones", "aliases": ["extensiones lumbares", "back extension"], "primary": ["lowerback", "glutes"], "secondary": ["hamstrings"], "pattern": "hinge", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "swing_kettlebell", "name": "Swing con kettlebell", "aliases": ["kb swing", "swing"], "primary": ["glutes", "hamstrings"], "secondary": ["lowerback", "core"], "pattern": "hinge", "logType": "weight_reps", "category": "compound", "region": "lower"},
+  {"id": "curl_femoral", "name": "Curl femoral", "aliases": ["femoral", "leg curl", "curl femoral tumbado", "curl femoral sentado"], "primary": ["hamstrings"], "secondary": ["calves"], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "nordic", "name": "Nordic curl", "aliases": ["nordic", "nórdico", "curl nórdico"], "primary": ["hamstrings"], "secondary": [], "pattern": "isolation", "logType": "bodyweight", "category": "isolation", "region": "lower"},
+  {"id": "gemelos_pie", "name": "Gemelos de pie", "aliases": ["gemelos", "calf raise", "elevación de talones"], "primary": ["calves"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "gemelos_sentado", "name": "Gemelos sentado", "aliases": ["sóleo", "seated calf raise"], "primary": ["calves"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "tibialis_raises", "name": "Tibialis raises", "aliases": ["elevaciones de tibial", "tibial anterior", "tib raises"], "primary": ["tibialis"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "aductores_maquina", "name": "Aductores en máquina", "aliases": ["aductor"], "primary": ["adductors"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "abductores_maquina", "name": "Abductores en máquina", "aliases": ["abductor"], "primary": ["glutes"], "secondary": [], "pattern": "isolation", "logType": "weight_reps", "category": "isolation", "region": "lower"},
+  {"id": "crunch_polea", "name": "Crunch en polea", "aliases": ["crunch polea", "cable crunch", "crunch con cuerda"], "primary": ["core"], "secondary": [], "pattern": "core", "logType": "weight_reps", "category": "isolation", "region": "core"},
+  {"id": "elevaciones_piernas", "name": "Elevaciones de piernas", "aliases": ["elevación de piernas", "leg raises", "hanging leg raise", "elevaciones de piernas colgado"], "primary": ["core"], "secondary": ["forearms"], "pattern": "core", "logType": "bodyweight", "category": "isolation", "region": "core"},
+  {"id": "rueda_abdominal", "name": "Rueda abdominal", "aliases": ["ab wheel", "rodillo abdominal"], "primary": ["core"], "secondary": ["back"], "pattern": "core", "logType": "bodyweight", "category": "isolation", "region": "core"},
+  {"id": "plancha", "name": "Plancha", "aliases": ["plank", "plancha frontal"], "primary": ["core"], "secondary": [], "pattern": "core", "logType": "time", "category": "isolation", "region": "core"},
+  {"id": "plancha_lateral", "name": "Plancha lateral", "aliases": ["side plank"], "primary": ["core"], "secondary": [], "pattern": "core", "logType": "time", "category": "isolation", "region": "core"},
+  {"id": "pallof", "name": "Press Pallof", "aliases": ["pallof press", "antirrotación"], "primary": ["core"], "secondary": [], "pattern": "core", "logType": "weight_reps", "category": "isolation", "region": "core"},
+  {"id": "crunch", "name": "Crunch abdominal", "aliases": ["abdominales", "encogimiento abdominal"], "primary": ["core"], "secondary": [], "pattern": "core", "logType": "bodyweight", "category": "isolation", "region": "core"},
+  {"id": "paseo_granjero", "name": "Paseo del granjero", "aliases": ["farmer walk", "farmer carry"], "primary": ["forearms", "core"], "secondary": ["back"], "pattern": "carry", "logType": "distance_time", "category": "compound", "region": "full"},
+  {"id": "saltos_verticales", "name": "Saltos verticales", "aliases": ["saltos", "salto vertical", "cmj", "countermovement jump"], "primary": ["quads", "glutes"], "secondary": ["calves"], "pattern": "power", "logType": "jumps", "category": "compound", "region": "lower"},
+  {"id": "pogo_jumps", "name": "Pogo jumps", "aliases": ["pogos", "pogo"], "primary": ["calves"], "secondary": ["tibialis"], "pattern": "power", "logType": "jumps", "category": "compound", "region": "lower"},
+  {"id": "saltos_cajon", "name": "Saltos al cajón", "aliases": ["box jump", "saltos a cajón"], "primary": ["quads", "glutes"], "secondary": ["calves"], "pattern": "power", "logType": "jumps", "category": "compound", "region": "lower"},
+  {"id": "sprint", "name": "Sprint", "aliases": ["sprints", "carrera corta", "aceleraciones"], "primary": ["hamstrings", "glutes"], "secondary": ["quads", "calves"], "pattern": "sprint", "logType": "distance_time", "category": "compound", "region": "lower"},
+  {"id": "cambios_direccion", "name": "Cambios de dirección", "aliases": ["agilidad", "cod", "change of direction", "5-10-5"], "primary": ["quads", "glutes"], "secondary": ["adductors", "calves"], "pattern": "sprint", "logType": "distance_time", "category": "compound", "region": "lower"},
+  {"id": "correr", "name": "Correr", "aliases": ["carrera", "running", "rodaje"], "primary": [], "secondary": [], "pattern": "cardio", "logType": "cardio", "category": "compound", "region": "full", "sport": "run"},
+  {"id": "bici", "name": "Bici", "aliases": ["bicicleta", "ciclismo", "cycling"], "primary": [], "secondary": [], "pattern": "cardio", "logType": "cardio", "category": "compound", "region": "full", "sport": "bike"},
+  {"id": "nadar", "name": "Natación", "aliases": ["nadar", "swim", "piscina"], "primary": [], "secondary": [], "pattern": "cardio", "logType": "cardio", "category": "compound", "region": "full", "sport": "swim"},
 ];
 
 // ---------------------------------------------------------------------------
 // Plantillas precargadas (rutina actual del usuario).
 // ---------------------------------------------------------------------------
 export const SEED_TEMPLATES = [
-  // (se completa en seed de plantillas)
+  {
+    "id": "tpl_d1",
+    "name": "Día 1 — Upper pesado",
+    "order": 0,
+    "items": [
+      {
+        "id": "ti_d1_1",
+        "exerciseId": "press_banca",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 4,
+        "repMax": 6,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d1_2",
+        "exerciseId": "dominadas",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 5,
+        "repMax": 8,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d1_3",
+        "exerciseId": "press_inclinado_mancuerna",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 8,
+        "repMax": 10,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d1_4",
+        "exerciseId": "remo_pecho_apoyado",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 8,
+        "repMax": 10,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d1_5",
+        "exerciseId": "elevaciones_laterales",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 12,
+        "repMax": 20,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d1_6",
+        "exerciseId": "face_pull",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 15,
+        "repMax": 20,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d1_7",
+        "exerciseId": "crunch_polea",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 10,
+        "repMax": 15,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      }
+    ],
+    "notes": ""
+  },
+  {
+    "id": "tpl_d2",
+    "name": "Día 2 — Pierna fuerza + potencia",
+    "order": 1,
+    "items": [
+      {
+        "id": "ti_d2_1",
+        "exerciseId": "saltos_verticales",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 3,
+        "repMax": 3,
+        "notes": "",
+        "section": "Bloque potencia",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_2",
+        "exerciseId": "pogo_jumps",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 15,
+        "repMax": 20,
+        "notes": "",
+        "section": "Bloque potencia",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_3",
+        "exerciseId": "sentadilla",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 4,
+        "repMax": 6,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_4",
+        "exerciseId": "peso_muerto_rumano",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 6,
+        "repMax": 8,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_5",
+        "exerciseId": "prensa",
+        "alternatives": [
+          "hack_squat"
+        ],
+        "sets": 2,
+        "repMin": 8,
+        "repMax": 12,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_6",
+        "exerciseId": "curl_femoral",
+        "alternatives": [
+          "nordic"
+        ],
+        "sets": 2,
+        "repMin": 8,
+        "repMax": 12,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_7",
+        "exerciseId": "gemelos_pie",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 10,
+        "repMax": 15,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_8",
+        "exerciseId": "tibialis_raises",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 15,
+        "repMax": 20,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d2_9",
+        "exerciseId": "elevaciones_piernas",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 8,
+        "repMax": 12,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      }
+    ],
+    "notes": ""
+  },
+  {
+    "id": "tpl_d3",
+    "name": "Día 3 — Cardio",
+    "order": 2,
+    "items": [
+      {
+        "id": "ti_d3_1",
+        "exerciseId": "correr",
+        "alternatives": [],
+        "sets": 1,
+        "timeMin": 1800,
+        "timeMax": 2700,
+        "notes": "Zona 2",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d3_2",
+        "exerciseId": "bici",
+        "alternatives": [],
+        "sets": 1,
+        "timeMin": 2700,
+        "timeMax": 4500,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d3_3",
+        "exerciseId": "plancha",
+        "alternatives": [],
+        "sets": 3,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      }
+    ],
+    "notes": ""
+  },
+  {
+    "id": "tpl_d4",
+    "name": "Día 4 — Upper hipertrofia",
+    "order": 3,
+    "items": [
+      {
+        "id": "ti_d4_1",
+        "exerciseId": "press_inclinado_smith",
+        "alternatives": [],
+        "sets": 4,
+        "repMin": 6,
+        "repMax": 8,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_2",
+        "exerciseId": "aperturas_mancuerna",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 10,
+        "repMax": 15,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_3",
+        "exerciseId": "jalon_pecho",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 8,
+        "repMax": 12,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_4",
+        "exerciseId": "remo_unilateral",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 8,
+        "repMax": 12,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_5",
+        "exerciseId": "curl_supinador",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 10,
+        "repMax": 15,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_6",
+        "exerciseId": "elevaciones_laterales",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 15,
+        "repMax": 25,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_7",
+        "exerciseId": "face_pull",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 15,
+        "repMax": 20,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_8",
+        "exerciseId": "triceps_sobre_cabeza",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 10,
+        "repMax": 15,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d4_9",
+        "exerciseId": "rueda_abdominal",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 10,
+        "repMax": 12,
+        "notes": "",
+        "section": "",
+        "groupId": null,
+        "groupType": null
+      }
+    ],
+    "notes": ""
+  },
+  {
+    "id": "tpl_d6",
+    "name": "Día 6 — Atlético + pierna ligera",
+    "order": 4,
+    "items": [
+      {
+        "id": "ti_d6_1",
+        "exerciseId": "pogo_jumps",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 20,
+        "repMax": 20,
+        "notes": "",
+        "section": "Bloque atlético",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_2",
+        "exerciseId": "saltos_verticales",
+        "alternatives": [],
+        "sets": 3,
+        "repMin": 3,
+        "repMax": 3,
+        "notes": "",
+        "section": "Bloque atlético",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_3",
+        "exerciseId": "sprint",
+        "alternatives": [],
+        "sets": 4,
+        "distance": 20,
+        "notes": "",
+        "section": "Bloque atlético",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_4",
+        "exerciseId": "sprint",
+        "alternatives": [],
+        "sets": 2,
+        "setsMax": 3,
+        "distance": 30,
+        "notes": "",
+        "section": "Bloque atlético",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_5",
+        "exerciseId": "cambios_direccion",
+        "alternatives": [],
+        "sets": 3,
+        "setsMax": 4,
+        "notes": "",
+        "section": "Bloque atlético",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_6",
+        "exerciseId": "bulgara",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 8,
+        "repMax": 8,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_7",
+        "exerciseId": "nordic",
+        "alternatives": [
+          "curl_femoral"
+        ],
+        "sets": 2,
+        "repMin": 8,
+        "repMax": 10,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_8",
+        "exerciseId": "gemelos_pie",
+        "alternatives": [],
+        "sets": 2,
+        "repMin": 12,
+        "repMax": 15,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_9",
+        "exerciseId": "dominadas",
+        "alternatives": [
+          "jalon_pecho"
+        ],
+        "sets": 2,
+        "repMin": 8,
+        "repMax": 12,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      },
+      {
+        "id": "ti_d6_10",
+        "exerciseId": "flexiones",
+        "alternatives": [
+          "fondos",
+          "cruce_poleas"
+        ],
+        "sets": 2,
+        "repMin": 10,
+        "repMax": 15,
+        "notes": "",
+        "section": "Bloque fuerza",
+        "groupId": null,
+        "groupType": null
+      }
+    ],
+    "notes": ""
+  }
 ];
