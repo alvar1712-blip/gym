@@ -1,12 +1,582 @@
-// session — vista provisional (se implementa en su fase).
-import { screen, emptyState } from '../ui.js';
+// session — registro de sesiones de fuerza (activa o edición de una pasada) y resumen al terminar.
+// PROPIETARIO: módulo de sesión. Tarjetas y editor de series en ../session-view-card.js;
+// resumen en ../session-view-summary.js; lógica pura en ../session-logic.js.
+import * as store from '../store.js';
+import {
+  h, icon, header, sheet, confirmDialog, promptDialog, actionSheet, toast, undoToast,
+  rpePicker, field, textInput, numInput, emptyState,
+} from '../ui.js';
+import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural } from '../util.js';
+import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn } from '../calc.js';
+import { navigate, back, refresh, parseHash } from '../router.js';
+import { pickExercise } from '../pickers.js';
+import {
+  lastFor, newSessionExercise, switchExercise, linkedActivities, proposedDuration, finishSession,
+  pendingCount, doneCount, templateDiff, applyTemplateDiff,
+} from '../session-logic.js';
+import { renderCard } from '../session-view-card.js';
+import { renderSummary } from '../session-view-summary.js';
 
-export function mountSession(root) {
-  const c = screen(root, { title: 'En construcción', back: '#/today' });
-  c.appendChild(emptyState({ emoji: '🚧', title: 'Pantalla en construcción', text: 'mountSession' }));
+/**
+ * Id de la sesión de la ruta. Solución local: el router del núcleo no rellena los parámetros `:id`
+ * (defineRoutes guarda `keys` en el objeto original y no en la copia), así que se lee del hash.
+ */
+function routeId(params) {
+  if (params && params.id) return params.id;
+  const m = /^\/session\/([^/]+)/.exec(parseHash().path);
+  return m ? decodeURIComponent(m[1]) : null;
 }
 
-export function mountSessionSummary(root) {
-  const c = screen(root, { title: 'En construcción', back: '#/today' });
-  c.appendChild(emptyState({ emoji: '🚧', title: 'Pantalla en construcción', text: 'mountSessionSummary' }));
+// ===========================================================================
+// Registro de la sesión
+// ===========================================================================
+export function mountSession(root, params = {}) {
+  const id = routeId(params);
+  root.classList.add('ses-view');
+  const session = store.get('sessions', id);
+  if (!session) {
+    const hd = header({ title: 'Sesión', back: '#/today' });
+    root.replaceChildren(hd, h('div.content', emptyState({
+      emoji: '🤷', title: 'Esta sesión no existe', text: 'Puede que se haya borrado.',
+      action: { label: 'Volver', onClick: () => back('#/today') },
+    })));
+    return undefined;
+  }
+  if (session.kind !== 'strength') {
+    navigate(`#/activity/${id}`, { replace: true });
+    return undefined;
+  }
+
+  let unmounted = false;
+  let timer = null;
+  let headerEl = null;
+  const clockEl = h('span.ses-clock.tnum');
+  const listEl = h('div.ses-list');
+  const content = h('div.content.ses-content');
+
+  // --- datos de historial (instantánea al montar; esta sesión se lee siempre en vivo) ---
+  let snap;
+  function buildSnapshot() {
+    const key = orderKeyOf(session);
+    const sessions = store.all('sessions');
+    const earlier = sessions.filter((s) => s.kind === 'strength' && s.id !== session.id && orderKeyOf(s) < key);
+    snap = {
+      sessions,
+      earlier,
+      bwFn: makeBodyweightFn(store.bodyweightList(), store.settings()?.bodyweightDefault ?? 75),
+      last: new Map(),
+      bests: new Map(),
+    };
+  }
+  buildSnapshot();
+
+  const ctx = {
+    session,
+    labels: new Map(), // seId → 'A1'…
+    editing: new Map(), // seId → setId abierto en el editor (si no, la primera pendiente)
+    origWeights: new Map(), // setId → peso prellenado (herencia de peso)
+    guardUntil: new Map(), // seId → instante hasta el que se ignora «Registrar» (doble toque)
+    exercise: (eid) => store.exercise(eid),
+    lastFor(eid) {
+      if (!snap.last.has(eid)) snap.last.set(eid, lastFor(eid, session, snap.sessions));
+      return snap.last.get(eid);
+    },
+    /** Récords de las series hechas de ese ejercicio en esta sesión: Map(setId → récords). */
+    prsFor(eid) {
+      const ex = store.exercise(eid);
+      const out = new Map();
+      if (!ex) return out;
+      if (!snap.bests.has(eid)) snap.bests.set(eid, bestsForExercise(snap.earlier, eid, ex, { bwFn: snap.bwFn }));
+      const bests = deepClone(snap.bests.get(eid));
+      const bw = snap.bwFn(session.date);
+      for (const se of session.exercises) {
+        if (se.exerciseId !== eid) continue;
+        for (const set of se.sets) {
+          if (!isWorkSet(set)) continue;
+          const prs = detectPRs(set, ex, bests, bw);
+          if (prs.length) out.set(set.id, prs);
+          addToBests(bests, set, ex, bw);
+        }
+      }
+      return out;
+    },
+    linked: (seId) => linkedActivities(session, store.all('sessions'), seId),
+    touch(se) {
+      const i = session.exercises.indexOf(se);
+      if (i >= 0) session.cursor = i;
+    },
+    save: () => store.save('sessions', session).catch(() => {}), // el error ya lo avisa app.js
+    saveSoon: () => store.saveSoon('sessions', session),
+    rerenderCard(se) {
+      const old = listEl.querySelector(`[data-se="${CSS.escape(se.id)}"]`);
+      if (old) old.replaceWith(renderCard(ctx, se));
+      else renderList();
+      updateFinishHint();
+    },
+    rerenderList: () => renderList(),
+    exerciseMenu: (se) => exerciseMenu(se),
+    scrollToNext(se) {
+      if (session.status !== 'active') return;
+      const next = session.exercises[session.exercises.indexOf(se) + 1];
+      const el = next && cardEl(next);
+      if (el) setTimeout(() => { if (!unmounted) scrollToEl(el, true); }, 350);
+    },
+  };
+
+  // --- cabecera con cronómetro ---
+  function renderHeader() {
+    const active = session.status === 'active';
+    const sub = h('span.ses-subtitle', fmtDate(session.date, 'short'));
+    if (active && session.startedAt) sub.append(' · ', clockEl);
+    else if (active) sub.append(' · a posteriori');
+    else sub.append(` · ${session.durationMin != null ? fmtMinutes(session.durationMin) : 'terminada'}`);
+    const actions = [];
+    if (active) actions.push({ text: 'Terminar', label: 'Terminar sesión', onClick: openFinish, className: 'ses-finish-top' });
+    actions.push({ icon: 'more', label: 'Opciones de la sesión', onClick: sessionMenu, className: 'ses-menu-btn' });
+    const hd = header({ title: session.templateName || 'Sesión de fuerza', subtitle: sub, back: '#/today', actions });
+    if (headerEl) headerEl.replaceWith(hd);
+    else root.prepend(hd);
+    headerEl = hd;
+    tick();
+  }
+  function tick() {
+    if (session.status === 'active' && session.startedAt) {
+      clockEl.textContent = fmtDuration(Math.max(0, (Date.now() - session.startedAt) / 1000));
+    }
+  }
+  function startTimer() {
+    clearInterval(timer);
+    if (session.status === 'active' && session.startedAt) timer = setInterval(tick, 1000);
+  }
+  const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+  document.addEventListener('visibilitychange', onVisible);
+
+  // --- lista de ejercicios (secciones y superseries/circuitos) ---
+  function renderList() {
+    const exs = session.exercises;
+    const out = [];
+    ctx.labels.clear();
+    let letter = 0;
+    let i = 0;
+    while (i < exs.length) {
+      const se = exs[i];
+      if (se.section && se.section !== exs[i - 1]?.section) out.push(h('h2.section-title.ses-section', se.section));
+      let j = i + 1;
+      if (se.groupId) while (j < exs.length && exs[j].groupId === se.groupId) j++;
+      if (se.groupId && j - i >= 2) {
+        const L = String.fromCharCode(65 + (letter++ % 26));
+        const kind = se.groupType === 'circuit' ? 'Circuito' : 'Superserie';
+        for (let k = i; k < j; k++) ctx.labels.set(exs[k].id, `${L}${k - i + 1}`);
+        out.push(h('div.ses-group', { dataset: { group: se.groupId } },
+          h('div.ses-group-head', h('span.ses-group-kind', kind), ` ${L} · ${j - i} ejercicios seguidos`),
+          exs.slice(i, j).map((x) => renderCard(ctx, x))));
+        i = j;
+      } else {
+        out.push(renderCard(ctx, se));
+        i++;
+      }
+    }
+    if (!exs.length) {
+      out.push(emptyState({ emoji: '🏋️', title: 'Sin ejercicios', text: 'Añade el primero con «Añadir ejercicio».' }));
+    }
+    listEl.replaceChildren(...out);
+    updateFinishHint();
+  }
+
+  const cardEl = (se) => listEl.querySelector(`[data-se="${CSS.escape(se.id)}"]`);
+  function scrollToEl(el, smooth) {
+    const top = el.getBoundingClientRect().top + window.scrollY - (headerEl?.offsetHeight || 0) - 8;
+    window.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  // --- pie: añadir ejercicio, nota general, terminar ---
+  const notesEl = textInput({
+    value: session.notes, multiline: true, rows: 3, maxlength: 2000,
+    placeholder: 'Sensaciones, molestias, contexto…', ariaLabel: 'Nota de la sesión',
+    onInput: (v) => { session.notes = v; store.saveSoon('sessions', session); },
+  });
+  notesEl.classList.add('ses-notes');
+  const finishHint = h('p.field-hint.ses-finish-hint');
+  function updateFinishHint() {
+    const n = pendingCount(session);
+    finishHint.textContent = n ? `${plural(n, 'serie pendiente', 'series pendientes')} sin confirmar.` : '';
+    finishHint.hidden = !n || session.status !== 'active';
+  }
+
+  function renderFooter() {
+    const active = session.status === 'active';
+    return h('div.ses-footer',
+      h('button.btn.btn-secondary.btn-lg.btn-block.ses-add-ex', { type: 'button', onClick: addExercise }, icon('plus', 22), 'Añadir ejercicio'),
+      field('Nota de la sesión', notesEl),
+      active
+        ? h('div.stack-sm',
+          h('button.btn.btn-primary.btn-lg.btn-block.ses-finish', { type: 'button', onClick: openFinish }, icon('flag', 22), 'Terminar sesión'),
+          finishHint)
+        : h('button.btn.btn-secondary.btn-lg.btn-block.ses-to-summary', { type: 'button', onClick: () => navigate(`#/session/${session.id}/summary`) }, icon('chart', 22), 'Ver resumen'));
+  }
+
+  function renderAll() {
+    renderHeader();
+    const intro = session.status === 'active' && !session.startedAt
+      ? h('div.banner.banner-info.ses-past-banner', h('div.banner-main',
+        h('div.banner-text', `Sesión del ${fmtDate(session.date, 'long')} registrada a posteriori: sin cronómetro; la duración se indica al terminar.`)))
+      : null;
+    content.replaceChildren(...[intro, listEl, renderFooter()].filter(Boolean));
+    renderList();
+    startTimer();
+  }
+
+  /** Cambios que afectan al historial (fecha): se recalcula todo conservando el scroll. */
+  function rebuild() {
+    const y = window.scrollY;
+    buildSnapshot();
+    renderAll();
+    window.scrollTo(0, y);
+  }
+
+  // =========================================================================
+  // Ejercicios: añadir, cambiar, nota, mover, quitar
+  // =========================================================================
+  async function addExercise() {
+    const eid = await pickExercise({ title: 'Añadir ejercicio' });
+    if (!eid || unmounted) return;
+    const prev = session.exercises[session.exercises.length - 1];
+    const se = newSessionExercise(eid, session, { section: prev?.section || '' });
+    session.exercises.push(se);
+    session.cursor = session.exercises.length - 1;
+    ctx.save();
+    renderList();
+    const el = cardEl(se);
+    if (el) requestAnimationFrame(() => scrollToEl(el, true));
+  }
+
+  function exerciseMenu(se) {
+    const idx = session.exercises.indexOf(se);
+    const ex = store.exercise(se.exerciseId);
+    const name = ex?.name || se.exName;
+    actionSheet({
+      title: name,
+      actions: [
+        { label: 'Cambiar por otro ejercicio', icon: 'swap', onClick: () => replaceExercise(se) },
+        ex ? { label: 'Ver ficha del ejercicio', icon: 'info', onClick: () => navigate(`#/exercise/${ex.id}`) } : null,
+        { label: se.note ? 'Editar nota del ejercicio' : 'Nota del ejercicio', icon: 'note', onClick: () => editExerciseNote(se) },
+        { label: 'Mover arriba', icon: 'arrow-up', disabled: idx <= 0, onClick: () => moveExercise(se, -1) },
+        { label: 'Mover abajo', icon: 'arrow-down', disabled: idx >= session.exercises.length - 1, onClick: () => moveExercise(se, 1) },
+        { label: 'Quitar de esta sesión', icon: 'trash', danger: true, onClick: () => removeExercise(se) },
+      ],
+    });
+  }
+
+  async function replaceExercise(se) {
+    const eid = await pickExercise({ title: 'Cambiar por…', excludeIds: [se.exerciseId], preferIds: se.alternatives || [] });
+    if (!eid || unmounted) return;
+    const done = se.sets.filter((s) => s.done).length;
+    if (done) {
+      const from = store.exercise(se.exerciseId)?.name || se.exName;
+      const to = store.exercise(eid)?.name || eid;
+      const ok = await confirmDialog({
+        title: `¿Cambiar a «${to}»?`,
+        message: `Ya has registrado ${plural(done, 'serie', 'series')} de «${from}». Si cambias, pasarán a contar como «${to}».\n\nSi has hecho los dos ejercicios, deja este y añade «${to}» con «Añadir ejercicio».`,
+        confirmText: `Cambiar a ${to}`,
+      });
+      if (!ok) return;
+    }
+    switchExercise(se, eid, session);
+    ctx.editing.delete(se.id);
+    ctx.touch(se);
+    ctx.save();
+    ctx.rerenderCard(se);
+  }
+
+  async function editExerciseNote(se) {
+    const v = await promptDialog({ title: 'Nota del ejercicio', label: 'Solo para esta sesión', value: se.note || '', multiline: true, confirmText: 'Guardar nota' });
+    if (v == null) return;
+    se.note = v.trim();
+    ctx.touch(se);
+    ctx.save();
+    ctx.rerenderCard(se);
+  }
+
+  function moveExercise(se, dir) {
+    const i = session.exercises.indexOf(se);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= session.exercises.length) return;
+    [session.exercises[i], session.exercises[j]] = [session.exercises[j], session.exercises[i]];
+    session.cursor = j;
+    ctx.save();
+    renderList();
+    const el = cardEl(se);
+    if (el) requestAnimationFrame(() => scrollToEl(el, true));
+  }
+
+  function removeExercise(se) {
+    const i = session.exercises.indexOf(se);
+    if (i < 0) return;
+    const name = store.exercise(se.exerciseId)?.name || se.exName;
+    session.exercises.splice(i, 1);
+    session.cursor = Math.max(0, Math.min(session.cursor || 0, session.exercises.length - 1));
+    ctx.save();
+    renderList();
+    undoToast(`«${name}» quitado de la sesión`, () => {
+      session.exercises.splice(Math.min(i, session.exercises.length), 0, se);
+      session.cursor = i;
+      ctx.save();
+      renderList();
+    });
+  }
+
+  // =========================================================================
+  // Menú de la sesión: fecha, duración/RPE/notas, descartar, borrar
+  // =========================================================================
+  function sessionMenu() {
+    const active = session.status === 'active';
+    const acts = linkedActivities(session, store.all('sessions'));
+    const empty = doneCount(session) === 0 && acts.length === 0;
+    actionSheet({
+      title: session.templateName || 'Sesión',
+      actions: [
+        { label: 'Cambiar fecha', icon: 'calendar', hint: fmtDate(session.date, 'day'), onClick: changeDate },
+        { label: 'Duración, esfuerzo y notas', icon: 'clock', onClick: editMeta },
+        active ? null : { label: 'Ver resumen', icon: 'chart', onClick: () => navigate(`#/session/${session.id}/summary`) },
+        active && empty
+          ? { label: 'Descartar sesión', icon: 'x', danger: true, onClick: discardSession }
+          : { label: 'Borrar sesión', icon: 'trash', danger: true, onClick: deleteSession },
+      ],
+    });
+  }
+
+  function changeDate() {
+    const inp = h('input.input.ses-date-input', { type: 'date', value: session.date, 'aria-label': 'Fecha de la sesión' });
+    inp.addEventListener('change', () => {
+      const v = inp.value;
+      if (!isDateStr(v) || v === session.date) return;
+      const old = session.date;
+      session.date = v;
+      if (session.planDate === old) session.planDate = v;
+      for (const a of linkedActivities(session, store.all('sessions'))) {
+        a.date = v;
+        if (a.planDate === old) a.planDate = v;
+        store.save('sessions', a).catch(() => {});
+      }
+      ctx.save();
+      rebuild();
+      toast(`Fecha cambiada a ${fmtDate(v, 'long')}`, { kind: 'success' });
+    });
+    sheet({
+      title: 'Cambiar fecha',
+      body: h('div.stack',
+        field('Fecha de la sesión', inp, 'Las actividades enlazadas (carrera, bici…) se mueven con ella.')),
+      actions: [{ label: 'Listo', kind: 'primary' }],
+    });
+  }
+
+  function editMeta() {
+    const active = session.status === 'active';
+    const rows = [];
+    if (active && session.startedAt) {
+      const err = h('p.form-error', { hidden: true });
+      const t = h('input.input.ses-time-input', { type: 'time', value: hhmm(session.startedAt), 'aria-label': 'Hora de inicio' });
+      t.addEventListener('change', () => {
+        const [hh, mm] = String(t.value).split(':').map(Number);
+        if (!Number.isFinite(hh) || !Number.isFinite(mm)) return;
+        const ts = tsFromDate(session.date, hh, mm);
+        if (ts > Date.now()) { err.textContent = 'La hora de inicio no puede ser futura.'; err.hidden = false; return; }
+        err.hidden = true;
+        session.startedAt = ts;
+        ctx.save();
+        tick();
+      });
+      rows.push(field('Hora de inicio', t, 'La duración se calcula desde esta hora; al terminar podrás ajustarla.'), err);
+    } else {
+      const d = numInput({
+        value: session.durationMin, decimals: 0, inputmode: 'numeric', suffix: 'min', placeholder: 'Minutos', ariaLabel: 'Duración en minutos',
+        onInput: (v) => { session.durationMin = v != null && v >= 0 ? Math.round(v) : null; store.saveSoon('sessions', session); },
+      });
+      rows.push(field('Duración de la fuerza', d, active ? 'Sesión registrada a posteriori: indícala a mano.' : null));
+    }
+    rows.push(h('div.field', h('span.field-label', 'Esfuerzo percibido de la sesión (1–10)'),
+      rpePicker({ value: session.rpe, onChange: (v) => { session.rpe = v; store.saveSoon('sessions', session); } })));
+    rows.push(field('Nota de la sesión', textInput({
+      value: session.notes, multiline: true, rows: 3, maxlength: 2000, ariaLabel: 'Nota de la sesión',
+      onInput: (v) => { session.notes = v; notesEl.value = v; store.saveSoon('sessions', session); },
+    })));
+    sheet({
+      title: 'Duración, esfuerzo y notas',
+      body: h('div.stack', rows),
+      actions: [{ label: 'Listo', kind: 'primary' }],
+      onClose: () => { if (!unmounted) renderHeader(); },
+    });
+  }
+
+  /** Sesión activa sin nada registrado: se descarta (con deshacer). */
+  async function discardSession() {
+    const obj = await store.remove('sessions', session.id).catch(() => null);
+    if (!obj) return;
+    navigate('#/today', { replace: true });
+    undoToast('Sesión descartada', async () => {
+      await store.restore('sessions', obj);
+      navigate(`#/session/${obj.id}`);
+    });
+  }
+
+  /** Borrar: confirmación y luego deshacer desde el toast en la pantalla a la que se vuelve. */
+  async function deleteSession() {
+    const acts = linkedActivities(session, store.all('sessions'));
+    const n = doneCount(session);
+    const extra = acts.length ? ` y ${plural(acts.length, 'actividad enlazada', 'actividades enlazadas')}` : '';
+    const ok = await confirmDialog({
+      title: '¿Borrar esta sesión?',
+      message: `Se borrará la sesión del ${fmtDate(session.date, 'long')} con ${plural(n, 'serie', 'series')}${extra}.\n\nPodrás deshacerlo justo después.`,
+      confirmText: 'Borrar sesión',
+      danger: true,
+    });
+    if (!ok) return;
+    const removed = [];
+    try {
+      for (const a of acts) removed.push(await store.remove('sessions', a.id));
+      removed.unshift(await store.remove('sessions', session.id));
+    } catch {
+      return; // app.js ya avisa del error de guardado
+    }
+    const wasActive = session.status === 'active';
+    if (wasActive) navigate('#/today', { replace: true });
+    else back('#/today');
+    undoToast('Sesión borrada', async () => {
+      for (const o of removed) if (o) await store.restore('sessions', o);
+      refresh();
+    });
+  }
+
+  // =========================================================================
+  // Terminar
+  // =========================================================================
+  function openFinish() {
+    const acts = linkedActivities(session, store.all('sessions'));
+    const pd = proposedDuration(session, acts);
+    let dur = pd.proposed ?? session.durationMin ?? null;
+    let rpe = session.rpe ?? null;
+    const pending = pendingCount(session);
+    const nothing = doneCount(session) === 0 && acts.length === 0;
+
+    let explain;
+    if (pd.elapsedMin == null) {
+      explain = 'Sesión registrada a posteriori: indica la duración a mano.';
+    } else if (acts.length && pd.activitiesMin > 0) {
+      explain = `${pd.elapsedMin} min desde el inicio − ${pd.activitiesMin} min de ${acts.length === 1 ? 'la actividad enlazada' : 'las actividades enlazadas'} (se cuentan aparte) = ${pd.proposed} min.`;
+    } else {
+      explain = `${pd.elapsedMin} min desde que empezaste (${hhmm(session.startedAt)}). Puedes ajustarlo.`;
+    }
+    const durInp = numInput({
+      value: dur, decimals: 0, inputmode: 'numeric', suffix: 'min', placeholder: 'Minutos', ariaLabel: 'Duración en minutos',
+      onInput: (v) => { dur = v; },
+    });
+    durInp.classList.add('ses-dur');
+    const notesInp = textInput({
+      value: session.notes, multiline: true, rows: 3, maxlength: 2000, ariaLabel: 'Nota de la sesión', placeholder: 'Opcional',
+      onInput: (v) => { session.notes = v; notesEl.value = v; store.saveSoon('sessions', session); },
+    });
+
+    sheet({
+      title: 'Terminar sesión',
+      tall: false,
+      className: 'ses-finish-sheet',
+      body: h('div.stack',
+        nothing ? h('div.banner.banner-warn', h('div.banner-main', h('div.banner-title', 'No has registrado ninguna serie'),
+          h('div.banner-text', 'Si no llegaste a entrenar, puedes descartar la sesión desde el menú ⋯.'))) : null,
+        field('Duración de la fuerza (min)', durInp, explain),
+        h('div.field', h('span.field-label', 'Esfuerzo percibido de la sesión (1–10)'), rpePicker({ value: rpe, onChange: (v) => { rpe = v; } })),
+        field('Nota de la sesión', notesInp),
+        pending ? h('div.banner.banner-warn.ses-pending-warn', h('div.banner-main',
+          h('div.banner-text', `${plural(pending, 'serie pendiente', 'series pendientes')} sin confirmar: se descartarán al terminar.`))) : null),
+      actions: [{
+        label: 'Terminar sesión',
+        kind: 'primary',
+        onClick: async (close) => {
+          if (session.status !== 'active') return; // doble toque
+          const minutes = typeof dur === 'number' ? dur : parseNum(dur);
+          finishSession(session, { durationMin: minutes, rpe, notes: session.notes, now: Date.now() });
+          clearInterval(timer);
+          await store.save('sessions', session).catch(() => {});
+          close();
+          await askTemplateChanges();
+          navigate(`#/session/${session.id}/summary`, { replace: true });
+        },
+      }],
+    });
+  }
+
+  /** Si la sesión difiere de su plantilla, pregunta qué cambios aplicar. */
+  function askTemplateChanges() {
+    const tpl = session.templateId ? store.get('templates', session.templateId) : null;
+    if (!tpl) return Promise.resolve(false);
+    const changes = templateDiff(tpl, session, { nameOf: (eid) => store.exercise(eid)?.name });
+    if (!changes.length) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const checks = changes.map((c) => {
+        const box = h('input.ses-check-input', { type: 'checkbox', checked: true, dataset: { change: c.id } });
+        return { c, box, row: h('label.ses-check', box, h('span', c.label)) };
+      });
+      let applied = false;
+      sheet({
+        title: '¿Aplicar estos cambios a la plantilla?',
+        className: 'ses-diff-sheet',
+        onClose: () => resolve(applied),
+        body: h('div.stack',
+          h('p.sheet-msg', `Esta sesión es distinta de «${tpl.name}». Marca lo que quieras guardar en la plantilla para las próximas veces:`),
+          h('div.ses-checks', checks.map((x) => x.row))),
+        actions: [
+          {
+            label: 'Aplicar a la plantilla',
+            kind: 'primary',
+            onClick: async (close) => {
+              const sel = checks.filter((x) => x.box.checked).map((x) => x.c.id);
+              if (sel.length) {
+                const next = applyTemplateDiff(tpl, session, sel);
+                tpl.items = next.items;
+                await store.save('templates', tpl).catch(() => {});
+                applied = true;
+                toast(`Plantilla «${tpl.name}» actualizada`, { kind: 'success' });
+              }
+              close();
+            },
+          },
+          { label: 'Solo esta vez', kind: 'secondary' },
+        ],
+      });
+    });
+  }
+
+  // --- montaje ---
+  root.replaceChildren(content);
+  renderAll();
+
+  // Volver a donde se dejó: tras el scroll a 0 que hace el router, ir a la tarjeta del cursor.
+  const cur = Math.min(session.cursor || 0, session.exercises.length - 1);
+  if (cur > 0) {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (unmounted || window.scrollY > 0) return;
+      const el = cardEl(session.exercises[cur]);
+      if (el) scrollToEl(el, false);
+    }));
+  }
+
+  return () => {
+    unmounted = true;
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', onVisible);
+    // Sesión ya terminada: las series añadidas y no confirmadas no se quedan como pendientes.
+    if (session.status === 'done' && pendingCount(session) && store.get('sessions', session.id) === session) {
+      for (const se of session.exercises) se.sets = se.sets.filter((x) => x.done);
+      ctx.save();
+    }
+    store.flush();
+  };
+}
+
+// ===========================================================================
+// Resumen
+// ===========================================================================
+export function mountSessionSummary(root, params = {}) {
+  root.classList.add('ses-view');
+  return renderSummary(root, routeId(params));
 }

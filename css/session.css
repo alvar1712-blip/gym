@@ -1,1 +1,227 @@
-/* session.css — estilos del módulo (propiedad del módulo correspondiente). */
+/* session.css — registro de sesiones de fuerza (módulo de sesión). Prefijo de clases: .ses- */
+
+/* ---------- Cabecera ---------- */
+.ses-view .topbar h1 {
+  font-size: 18px;
+  line-height: 1.2;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ses-view .topbar-sub { font-size: 14px; color: var(--text-2); }
+.ses-clock { color: var(--accent); font-weight: 750; }
+.ses-finish-top { padding: 0 4px; }
+.ses-finish-top .icon-btn-text { font-size: 16px; }
+
+.ses-content { gap: 12px; }
+.ses-list { display: flex; flex-direction: column; gap: 12px; }
+.ses-section { margin-top: 8px; margin-bottom: -4px; color: var(--accent); }
+.ses-past-banner .banner-text { font-size: 14px; }
+
+/* ---------- Superseries / circuitos ---------- */
+.ses-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--info);
+  border-radius: 2px;
+}
+.ses-group-head { font-size: 13px; font-weight: 650; color: var(--muted); padding: 0 2px; }
+.ses-group-kind { color: var(--info); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ---------- Tarjeta de ejercicio ---------- */
+.ses-card { gap: 10px; padding: 12px 12px 12px 14px; scroll-margin-top: 80px; }
+.ses-card-done { border-color: rgba(74, 222, 128, 0.35); }
+.ses-card-head { display: flex; align-items: center; gap: 8px; margin-right: -6px; }
+.ses-name { flex: 1; min-width: 0; font-size: 18px; font-weight: 780; line-height: 1.25; overflow-wrap: anywhere; }
+.ses-label {
+  flex: none;
+  min-width: 34px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: var(--info-soft);
+  color: var(--info);
+  font-weight: 800;
+  font-size: 14px;
+  text-align: center;
+}
+.ses-done-mark { flex: none; color: var(--ok); display: inline-flex; }
+.ses-more { flex: none; color: var(--text-2); }
+
+.ses-alts { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ses-alts-icon { flex: none; font-size: 18px; color: var(--muted); }
+.ses-alt-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; min-width: 0; padding: 2px 0; }
+.ses-alt-chips::-webkit-scrollbar { display: none; }
+.ses-alt-chips .chip { min-height: 44px; font-size: 15px; }
+
+.ses-target { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 15px; color: var(--text-2); }
+.ses-target-txt { font-weight: 700; color: var(--text); }
+.ses-tnote { color: var(--muted); }
+.ses-enote { font-size: 15px; color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 6px 10px; overflow-wrap: anywhere; }
+
+.ses-last { font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.ses-last-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.ses-last-sets { color: var(--text); font-weight: 600; }
+.ses-last-none { color: var(--muted); font-style: italic; }
+.ses-warm { color: var(--muted); font-weight: 500; }
+
+/* ---------- Filas de series ---------- */
+.ses-sets { display: flex; flex-direction: column; gap: 6px; }
+.ses-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+}
+.ses-row:active { background: var(--surface-3); }
+.ses-row-num {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-3);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--text-2);
+}
+.ses-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ses-row-val { font-size: 18px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ses-row-note { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ses-row-rir { flex: none; font-size: 15px; font-weight: 700; color: var(--text-2); }
+.ses-row-type { flex: none; }
+.ses-row-pr { flex: none; font-size: 14px; }
+.ses-row-check { flex: none; color: var(--ok); display: inline-flex; }
+.ses-row-warm .ses-row-num { background: transparent; border: 1px solid var(--border-strong); color: var(--muted); }
+.ses-row-warm .ses-row-val { color: var(--text-2); font-weight: 650; }
+.ses-row-pending {
+  background: transparent;
+  border-style: dashed;
+  opacity: 0.6;
+}
+.ses-row-pending .ses-row-val { font-weight: 600; color: var(--text-2); }
+
+/* ---------- Editor grande ---------- */
+.ses-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 10px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(184, 243, 74, 0.45);
+  background: var(--bg);
+}
+.ses-editor-edit { border-color: rgba(96, 165, 250, 0.55); }
+.ses-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
+.ses-editor-num { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.ses-editor-edit .ses-editor-num { color: var(--info); }
+
+.ses-field { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: start; gap: 8px; }
+.ses-field-label {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  line-height: 1.15;
+}
+.ses-field:has(.stepper-md) .ses-field-label { min-height: 46px; }
+.ses-field-ctl { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ses-editor .stepper-btn { width: 56px; }
+.ses-editor .stepper-md .stepper-btn { width: 52px; min-height: 46px; }
+.ses-editor .stepper-step { font-size: 15px; }
+.ses-editor .stepper-input { font-size: 26px; }
+.ses-editor .stepper-md .stepper-input { font-size: 20px; }
+.ses-editor .stepper-input::placeholder { color: var(--muted); font-size: 15px; font-weight: 600; }
+.ses-editor .stepper-suffix { font-size: 12px; }
+.ses-hint { font-size: 13px; color: var(--muted); padding-left: 2px; }
+
+.ses-sub { display: flex; flex-direction: column; gap: 5px; }
+.ses-sub-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.ses-rir { flex-wrap: nowrap; gap: 5px; }
+.ses-rir .chip { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0; font-size: 16px; }
+.ses-rir .chip:first-child { flex-grow: 1.6; }
+
+.ses-type .seg-btn { min-height: 44px; font-size: 15px; padding: 0 2px; }
+
+.ses-note-input { min-height: 44px; }
+.ses-register { min-height: 56px; font-size: 19px; border-radius: 14px; }
+.ses-editor-links { display: flex; align-items: center; gap: 8px; margin: -2px -2px 0; }
+.ses-editor-links .btn { min-height: 44px; border-color: transparent; }
+
+.ses-card-actions { gap: 8px; }
+.ses-card-actions .btn-sm { min-height: 44px; }
+.ses-card-actions .btn { flex: 1; }
+
+/* ---------- Cardio dentro de la sesión ---------- */
+.ses-acts { display: flex; flex-direction: column; gap: 6px; }
+.ses-act {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+}
+.ses-act-emoji { font-size: 22px; flex: none; }
+.ses-act-main { flex: 1; min-width: 0; font-weight: 700; font-size: 16px; }
+.ses-act-edit { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--accent); font-weight: 700; font-size: 15px; }
+.ses-cardio-btn { min-height: 56px; }
+
+/* ---------- Pie ---------- */
+.ses-footer { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+.ses-add-ex { border-style: dashed; }
+.ses-notes { min-height: 88px; }
+.ses-finish { min-height: 56px; }
+.ses-finish-hint { text-align: center; }
+
+/* ---------- Hojas ---------- */
+.ses-checks { display: flex; flex-direction: column; gap: 6px; }
+.ses-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ses-check-input { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--accent); }
+.ses-dur .input { font-size: 20px; font-weight: 750; }
+
+/* ---------- Resumen ---------- */
+.ses-sum-hero h2 { font-size: 21px; }
+.ses-sum-hero .kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ses-kpi-pr { border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); }
+.ses-kpi-pr .kpi-value { color: var(--pr); }
+.ses-sum-emoji { font-size: 22px; flex: none; }
+.ses-sum-muscles { gap: 8px; }
+.ses-bar-row { display: grid; grid-template-columns: minmax(0, 8.5em) 1fr 2.6em; align-items: center; gap: 8px; min-height: 28px; }
+.ses-bar-label { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ses-bar { height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
+.ses-bar-fill { display: block; height: 100%; border-radius: 5px; background: var(--accent); }
+.ses-bar-val { text-align: right; font-weight: 750; }
+.ses-sum-notes p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.ses-sum-actions { margin-top: 8px; }

@@ -13,7 +13,11 @@ let pendingScroll = null;
  * @param {Array<{pattern:string, tab:string, load:()=>Promise<object>, fn:string}>} list
  */
 export function defineRoutes(list) {
-  routes = list.map((r) => ({ ...r, keys: [], re: compile(r.pattern, r) }));
+  routes = list.map((r) => {
+    const o = { ...r, keys: [] };
+    o.re = compile(o.pattern, o);
+    return o;
+  });
 }
 
 function compile(pattern, r) {
@@ -62,6 +66,20 @@ export function navigate(hash, { replace = false } = {}) {
     depth++;
     location.hash = hash;
   }
+}
+
+/**
+ * Cambia la URL actual SIN volver a montar la vista (p. ej. de #/activity/new a #/activity/:id
+ * tras crear el registro). Actualiza currentRoute() y la pestaña activa.
+ */
+export function replaceUrl(hash) {
+  if (!hash.startsWith('#')) hash = '#' + hash;
+  history.replaceState(history.state, '', hash);
+  const { path, query, raw } = parseHash(hash);
+  const found = match(path);
+  if (!found) return;
+  current = { path, raw, params: { ...query, ...found.params }, route: found.route };
+  onRouteChange(current);
 }
 
 /** Vuelve atrás dentro de la app; si no hay historial interno, va a `fallback`. */

@@ -71,7 +71,8 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/weekly?week=` | weekly · `mountWeekly` | Fase 3 |
 | `#/goals`, `#/goal/new`, `#/goal/:id` | goals · `mountGoals` / `mountGoalEdit` | Fase 3 |
 
-Navegación: `import { navigate, back, refresh } from '../router.js'`. `navigate('#/x')` apila; `back(fallback)`
+Navegación: `import { navigate, back, refresh, replaceUrl } from '../router.js'` (`replaceUrl(hash)` cambia la URL sin
+volver a montar la vista). `navigate('#/x')` apila; `back(fallback)`
 vuelve dentro de la app (en modo standalone de iOS no hay botón atrás del navegador: **toda pantalla que no sea
 raíz de pestaña debe llevar botón atrás** vía `header({back:'#/fallback'})`). `refresh()` vuelve a montar la vista
 actual conservando el scroll (úsalo tras cambios estructurales; para cambios pequeños actualiza el DOM a mano).
@@ -177,7 +178,12 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
    enlazada), si no `partial`. Sesión de otra plantilla / actividad libre sin excepción → `substituted`.
 6. Sin sesiones: fecha < hoy → `skipped`; hoy o futuro → `pending`.
 
-Etiquetas: hecho · hecho parcialmente · sustituido · saltado · descanso · pendiente. Clases CSS `status status-<estado>`.
+Firma real: `dayStatus(date, ctx)` con `ctx = ctxFromStore()` (construye el ctx UNA vez por render y reutilízalo).
+Estado adicional `none` («sin registro»): días anteriores al primer uso de la app (`ctx.since`), que no cuentan en la
+adherencia. `weekPlan(ws, ctx)` devuelve por día `{date, plan, status, manual, reason, extra, sessions}`.
+`adherence(ws, ctx)` → `{planned, done, partial, substituted, skipped, pending, completed, extra, pct}`;
+`adherenceText(a)` → «3 de 5 hechas · 1 parcial».
+Etiquetas: hecho · hecho parcialmente · sustituido · saltado · descanso · pendiente · sin registro. Clases CSS `status status-<estado>`.
 Adherencia semanal = días planificados (no descanso) frente a días con `done`/`partial`/`substituted`.
 
 ---

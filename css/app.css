@@ -596,6 +596,9 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   color: var(--accent);
   font-weight: 800;
 }
+/* Con una hoja abierta, el toast sube arriba para no tapar sus botones. */
+body:has(.sheet-overlay.open) .toast { top: calc(var(--sat) + 10px); bottom: auto; transform: translateY(-20px); }
+body:has(.sheet-overlay.open) .toast.show { transform: translateY(0); }
 .toast-error { background: #fecaca; }
 .toast-pr { background: #fde68a; }
 .toast-success { background: #d9f99d; }

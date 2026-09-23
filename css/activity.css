@@ -1,1 +1,139 @@
-/* activity.css — estilos del módulo (propiedad del módulo correspondiente). */
+/* activity.css — cardio, natación, otras actividades (.act-…) y peso corporal (.bw-…, .bwq-…). */
+
+/* ---------- Formulario de actividad ---------- */
+.act-screen { padding-bottom: 0; }
+.act-body { display: flex; flex-direction: column; gap: 12px; }
+.act-card { gap: 14px; }
+.act-card-title { font-size: 15px; font-weight: 750; color: var(--text-2); }
+.act-kinds .seg-btn { min-height: 44px; font-size: 16px; }
+.act-link .icon { color: var(--info); flex: none; }
+.act-req { font-weight: 500; color: var(--muted); font-size: 13px; }
+.act-dur-hint { color: var(--info); }
+.act-date { font-size: 17px; }
+.act-grid { gap: 12px 10px; }
+.act-grid .input-suffix-wrap .input { padding-right: 46px; }
+.act-grid .input-suffix { font-size: 14px; }
+.act-custom { margin-top: -4px; }
+
+/* Métricas calculadas en vivo */
+.act-live {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.act-live-single { grid-template-columns: 1fr; }
+.act-live-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.act-live-label { font-size: 13px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act-live-value {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.act-load { color: var(--accent); }
+.act-muted-val { color: var(--muted); }
+.act-live-sub { font-size: 13px; color: var(--text-2); line-height: 1.3; min-height: 17px; }
+
+/* Barra inferior fija con estado + «Listo» (a mano del pulgar) */
+.act-footer {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) + var(--sab));
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px -16px 0;
+  padding: 10px 16px;
+  background: rgba(11, 13, 16, 0.94);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  backdrop-filter: saturate(160%) blur(14px);
+  border-top: 1px solid var(--border);
+}
+.act-done { flex: none; min-width: 132px; }
+.act-status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--muted);
+}
+.act-status-ok { color: var(--ok); }
+.act-status-draft { color: var(--text-2); }
+.act-status-error { color: var(--danger); }
+.act-delete { margin-top: 8px; }
+
+/* ---------- Peso corporal ---------- */
+.bw-entry { gap: 12px; }
+.bw-date { width: auto; min-width: 150px; max-width: 58%; min-height: 44px; padding: 6px 10px; font-size: 16px; }
+.bw-stepper .stepper-btn { width: 72px; min-height: 64px; border-radius: 14px; }
+.bw-stepper .stepper-step { font-size: 17px; }
+.bw-stepper .stepper-input { min-height: 64px; font-size: 34px; border-radius: 14px; }
+.bw-stepper .stepper-suffix { font-size: 13px; right: 10px; bottom: 8px; }
+.bw-hint { text-align: center; }
+
+.bw-summary { gap: 12px; }
+.bw-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bw-kpi {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bw-kpi-main { border-color: rgba(184, 243, 74, 0.45); background: var(--accent-soft); }
+.bw-kpi-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+.bw-kpi-main .bw-kpi-label { color: var(--accent); }
+.bw-kpi-value { font-size: 24px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.bw-kpi-na { font-size: 17px; font-weight: 750; color: var(--text-2); white-space: normal; line-height: 1.25; padding: 4px 0 2px; }
+.bw-unit { font-size: 13px; font-weight: 650; color: var(--text-2); white-space: nowrap; }
+.bw-kpi-sub { font-size: 12px; color: var(--muted); line-height: 1.3; }
+.bw-why-na { margin-top: 8px; color: var(--text-2); }
+.bw-note { font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.bw-chart-slot:empty { display: none; }
+
+.bw-row { gap: 10px; }
+.bw-row-kg { font-weight: 750; font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bw-row-delta { min-width: 52px; text-align: right; font-size: 14px; font-weight: 650; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bw-row-delta-none { color: var(--muted); }
+
+/* Tarjeta compacta para Hoy */
+.bwq { gap: 8px; }
+.bwq-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  margin: -10px -6px -10px 0;
+  padding: 0 4px 0 10px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 15px;
+}
+.bwq-info { font-size: 14px; color: var(--text-2); }
+.bwq-info b { color: var(--text); font-variant-numeric: tabular-nums; }
+.bwq-sep { color: var(--muted); }
+.bwq-row { display: flex; align-items: stretch; gap: 8px; }
+.bwq-stepper { flex: 1; min-width: 0; }
+.bwq-save { flex: none; min-height: 46px; padding: 0 16px; }

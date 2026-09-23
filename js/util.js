@@ -20,7 +20,7 @@ export function parseDate(str) {
   return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
 export function isDateStr(str) {
-  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str) && !Number.isNaN(parseDate(str).getTime());
+  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str) && toDateStr(parseDate(str)) === str;
 }
 export function addDays(str, n) {
   const d = parseDate(str);
