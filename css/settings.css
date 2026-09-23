@@ -1,1 +1,178 @@
-/* settings.css — estilos del módulo (propiedad del módulo correspondiente). */
+/* settings.css — Ajustes, semana tipo, umbrales y copias. Prefijo de clases: .cfg- */
+
+/* ---------- Índice ---------- */
+.cfg-item { gap: 14px; }
+.cfg-ico {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.cfg-ico-warn { background: var(--warn-soft); color: var(--warn); }
+.cfg-item-warn .list-item-sub { color: var(--warn); }
+.cfg-badge { flex: none; }
+
+.cfg-banner { width: 100%; text-align: left; color: var(--text); }
+.cfg-banner .banner-title,
+.cfg-banner .banner-text { display: block; }
+.cfg-banner > .icon:first-child { color: var(--warn); flex: none; }
+
+/* Mini semana L–D dentro de la fila «Semana tipo» */
+.cfg-week-row { align-items: center; padding-top: 12px; padding-bottom: 12px; }
+.cfg-week-mini {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+.cfg-wm-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 4px 0 5px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+}
+.cfg-wm-letter { font-size: 11px; font-weight: 750; color: var(--muted); }
+.cfg-wm-label {
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.cfg-wm-rest .cfg-wm-label { color: var(--muted); font-weight: 600; }
+.cfg-wm-template .cfg-wm-label { color: var(--accent); }
+.cfg-wm-missing .cfg-wm-label { color: var(--warn); }
+.cfg-wm-today { border-color: rgba(184, 243, 74, 0.55); }
+.cfg-wm-today .cfg-wm-letter { color: var(--accent); }
+
+.cfg-install, .cfg-about { gap: 8px; }
+.cfg-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.cfg-steps { margin: 2px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; color: var(--text-2); line-height: 1.4; }
+.cfg-steps li::marker { color: var(--accent); font-weight: 800; }
+.cfg-steps b { color: var(--text); }
+.cfg-inline-ico { display: inline-flex; vertical-align: -3px; margin: 0 3px 0 5px; color: var(--info); }
+.cfg-note {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.cfg-version { font-variant-numeric: tabular-nums; }
+
+/* ---------- Textos comunes ---------- */
+.cfg-why { font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.cfg-hint { font-size: 14px; line-height: 1.4; color: var(--muted); }
+.cfg-top-hint { margin: 0 2px; }
+
+/* ---------- Semana tipo ---------- */
+.cfg-intro { gap: 10px; }
+.cfg-intro p { color: var(--text); line-height: 1.45; }
+.cfg-intro-btn { align-self: flex-start; min-height: 44px; }
+.cfg-day { min-height: 64px; }
+/* El nombre de la rutina se lee entero (hasta dos líneas) en lugar de cortarse. */
+.cfg-day .list-item-title,
+.cfg-day .list-item-sub {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.3;
+}
+.cfg-day-name {
+  flex: none;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  font-weight: 750;
+}
+.cfg-week-info { margin: 0 2px; }
+.cfg-restore { margin-top: 8px; }
+
+/* ---------- Umbrales ---------- */
+.cfg-block { gap: 10px; }
+.cfg-block > .card-title { font-size: 18px; }
+.cfg-num {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.cfg-num-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cfg-num-label { font-weight: 650; line-height: 1.25; }
+.cfg-num-hint { font-size: 13px; color: var(--muted); }
+.cfg-num .cfg-stepper { flex: none; width: 176px; }
+
+/* Botones del stepper a 44 px como mínimo (el tamaño «sm» del núcleo es algo menor). */
+.cfg-stepper .stepper-btn { width: 44px; min-height: 44px; }
+.cfg-stepper .stepper-input { min-height: 44px; font-size: 19px; }
+.cfg-stepper .stepper-suffix { bottom: 3px; right: 6px; }
+
+.cfg-ranges { display: flex; flex-direction: column; }
+.cfg-range { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--border); }
+.cfg-range:last-child { padding-bottom: 2px; }
+.cfg-range-label { font-weight: 650; }
+.cfg-range-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.cfg-range-sep { color: var(--muted); font-size: 14px; }
+
+/* ---------- Copias y datos ---------- */
+.cfg-last { display: flex; flex-direction: column; gap: 1px; }
+.cfg-last-label { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.cfg-last-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cfg-last-ago { font-size: 14px; color: var(--text-2); }
+.cfg-overdue .icon { color: var(--warn); flex: none; }
+.cfg-export { margin-top: 4px; }
+.cfg-csv-btn { justify-content: flex-start; gap: 10px; }
+.cfg-csv-label { flex: 1; text-align: left; }
+.cfg-csv-count { font-weight: 600; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cfg-csv-hint { margin-top: 2px; }
+
+.cfg-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+}
+.cfg-kv-label { color: var(--text-2); min-width: 0; }
+.cfg-kv-value { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.cfg-persist-btn { align-self: flex-start; min-height: 44px; }
+.cfg-counts {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.cfg-counts .cfg-kv { border-bottom: 1px solid var(--border); font-size: 15px; }
+.cfg-counts .cfg-kv:last-child { border-bottom: 0; }
+
+.cfg-danger { gap: 10px; }
+.cfg-danger .card-title { color: var(--danger); }
+.cfg-wipe { min-height: var(--tap); }
+.cfg-usage { white-space: nowrap; }
