@@ -1,0 +1,12 @@
+// session — vista provisional (se implementa en su fase).
+import { screen, emptyState } from '../ui.js';
+
+export function mountSession(root) {
+  const c = screen(root, { title: 'En construcción', back: '#/today' });
+  c.appendChild(emptyState({ emoji: '🚧', title: 'Pantalla en construcción', text: 'mountSession' }));
+}
+
+export function mountSessionSummary(root) {
+  const c = screen(root, { title: 'En construcción', back: '#/today' });
+  c.appendChild(emptyState({ emoji: '🚧', title: 'Pantalla en construcción', text: 'mountSessionSummary' }));
+}

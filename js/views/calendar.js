@@ -1,0 +1,12 @@
+// calendar — vista provisional (se implementa en su fase).
+import { screen, emptyState } from '../ui.js';
+
+export function mountCalendar(root) {
+  const c = screen(root, { title: 'En construcción', back: '#/today' });
+  c.appendChild(emptyState({ emoji: '🚧', title: 'Pantalla en construcción', text: 'mountCalendar' }));
+}
+
+export function mountDay(root) {
+  const c = screen(root, { title: 'En construcción', back: '#/today' });
+  c.appendChild(emptyState({ emoji: '🚧', title: 'Pantalla en construcción', text: 'mountDay' }));
+}

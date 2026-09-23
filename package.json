@@ -1,0 +1,13 @@
+{
+  "name": "entreno",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA de entrenamiento (fuerza + resistencia). Sin compilación: se sirve tal cual.",
+  "type": "module",
+  "scripts": {
+    "serve": "node tests/serve.mjs 8080",
+    "test": "node --test 'tests/unit/*.test.mjs'",
+    "e2e": "NODE_PATH=$(npm root -g) node --test --test-concurrency=4 'tests/e2e/*.test.cjs'",
+    "check": "node scripts/check-assets.mjs && node --test 'tests/unit/*.test.mjs'"
+  }
+}
