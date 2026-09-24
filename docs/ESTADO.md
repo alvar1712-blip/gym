@@ -12,6 +12,9 @@
 - [x] **Fase 2** completa: revisión (29 hallazgos corregidos), 180 pruebas unitarias y 80 E2E en verde
 
 ## En curso
+- [ ] Fase 3 · construcción + integración + revisión + verificación en un único workflow `fase3`
+      (script `…/workflows/scripts/fase3-wf_bf989875-8b9.js`, run `wf_bf989875-8b9`: si se corta, reanudarlo con
+      resumeFromRunId; los agentes terminados se reutilizan de caché)
 - [ ] Fase 3 · panel semanal con «¿Por qué?» (`js/insights.js`, `js/views/weekly.js`), check-in (`js/checkin.js`),
       objetivos (`js/goals-logic.js`, `js/views/goals.js`) según `docs/FASE3.md`; integración en Hoy y Progreso
 - [ ] Fase 3 · revisión y correcciones; criterio de aceptación del «¿Por qué?»; commit «Fase 3 completa»
