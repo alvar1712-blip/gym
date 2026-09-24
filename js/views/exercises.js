@@ -202,6 +202,10 @@ export function mountExerciseDetail(root, params = {}) {
   content.appendChild(h('section.card.lib-data',
     kv('Patrón', PATTERN_LABEL[ex.pattern] || '—'),
     kv('Tipo de registro', LOG_TYPE_LABEL[ex.logType] || ex.logType),
+    // Peso corporal: qué cuenta como carga (calc.setMetrics). En core, el peso corporal no es la carga que se mueve.
+    ex.logType === 'bodyweight' ? kvBlock('Carga', ex.pattern === 'core'
+      ? 'Solo el lastre: el peso corporal no cuenta. Sin 1RM estimado; sin lastre, se sigue por repeticiones.'
+      : 'Tu peso corporal del día + el lastre (la asistencia resta). Cuenta para el 1RM estimado y el volumen.') : null,
     kv('Categoría', L.CATEGORY_LABEL[ex.category] || '—'),
     kv('Región', L.REGION_LABEL[ex.region] || '—'),
     ex.logType === 'cardio' ? kv('Deporte', L.SPORT_LABEL[ex.sport] || '—') : null,

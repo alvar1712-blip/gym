@@ -178,7 +178,7 @@ export function mountBodyweight(root) {
     }
     const t = s.trend;
     const trendVal = t.ok
-      ? h('div.bw-kpi-value', fmtSigned(t.kgPerWeek, 2), h('span.bw-unit', ' kg/sem'))
+      ? h('div.bw-kpi-value', fmtSigned(t.kgPerWeek, 2), ' ', h('span.bw-unit', 'kg/sem')) // el espacio fuera: la unidad puede bajar de línea
       : h('div.bw-kpi-value.bw-kpi-na', 'Datos insuficientes');
     const trendSub = t.ok
       ? `${trendWord(t.kgPerWeek)} · ${t.n} pesajes en ${t.span} días`

@@ -15,7 +15,8 @@
 //
 // REGLAS: solo sesiones `status:'done'`; series de trabajo (calc.isWorkSet): nunca calentamientos ni pendientes;
 // 1RM = calc.e1rm (Epley con reps + RIR, solo 1–12 reps); peso corporal: carga = peso corporal del día
-// (calc.makeBodyweightFn con settings.bodyweightDefault) + lastre; carga = calc.sessionLoad (min × RPE) para
+// (calc.makeBodyweightFn con settings.bodyweightDefault) + lastre, salvo en core (pattern 'core': solo el lastre y
+// sin 1RM, ver calc.setMetrics); carga de sesión = calc.sessionLoad (min × RPE) para
 // todas las actividades; semanas de lunes; ritmos semanales ponderados por distancia (Σ tiempo / Σ km).
 //
 // RENDIMIENTO: todo se apoya en un índice (sesiones terminadas ordenadas, series de trabajo por ejercicio,
@@ -428,8 +429,9 @@ export function exerciseHistory(data, exerciseId, { labels = true } = {}) {
  * @returns {{logType, maxWeight, e1rm, bestSet, volume, maxReps, maxTime, maxHeight,
  *            sprint:{distanceM, label, points}[]}}
  *  maxWeight: y = kg (peso corporal: lastre); label = la serie más pesada «80 kg × 6 @2».
- *  e1rm:      y = 1RM estimado; label «96,5 kg · 80 kg × 6 @2» (estimación; en peso corporal, que incluye el
- *             peso corporal del día: «100,8 kg · +10 kg × 5 @1 · peso corporal 74 kg»).
+ *  e1rm:      y = 1RM estimado; label «96,5 kg · 80 kg × 6 @2» (estimación). En peso corporal incluye el peso
+ *             corporal del día, que va aparte como nota del globo: label «100,8 kg · +10 kg × 5 @1»,
+ *             note «Peso corporal del día: 74 kg». (Core de peso corporal: sin 1RM, ver calc.setMetrics.)
  *  bestSet:   carga × reps → la mejor serie del día: la de mayor 1RM estimado o, si ninguna serie tiene 1RM
  *             (todas de más de 12 reps), la de más peso × reps (a igualdad, más peso y luego más reps).
  *             y = peso levantado de esa serie (kg; peso corporal: lastre, 0 = sin lastre, negativo = asistencia),
@@ -471,8 +473,10 @@ export function exerciseSeries(data, exerciseId, from = null, to = null) {
       const e1 = pick(items, 'e1rm');
       if (e1) {
         const txt = setLabel(idx, e1.e1rmSet, lt);
-        const bwTxt = lt === 'bodyweight' ? ` · peso corporal ${num(e1.bw, 1)} kg` : '';
-        out.e1rm.push({ x, y: e1.e1rm, label: `${num(e1.e1rm, 1)} kg · ${txt}${bwTxt}`, sessionId: e1.sessionId });
+        const pt = { x, y: e1.e1rm, label: `${num(e1.e1rm, 1)} kg · ${txt}`, sessionId: e1.sessionId };
+        // Peso corporal: el 1RM incluye el peso del día; va como nota del globo (charts: point.note).
+        if (lt === 'bodyweight') pt.note = `Peso corporal del día: ${num(e1.bw, 1)} kg`;
+        out.e1rm.push(pt);
       }
       // Mejor serie del día: la de la sesión con mayor 1RM; si ninguna tiene 1RM, la de más peso × reps.
       let bs = e1;

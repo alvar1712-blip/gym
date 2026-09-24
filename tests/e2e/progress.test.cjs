@@ -287,7 +287,7 @@ test('#/progress con datos: se pinta cada gráfica, periodo global, globo con el
       assert.ok(st.svg && !st.empty, `${id}: la gráfica debe tener datos (${st.emptyText})`);
     }
     assert.strictEqual(await page.locator('[data-chart="load"] .chart-legend-item').count(), 6, 'leyenda de la carga: 5 tipos + media de las semanas previas');
-    assert.deepStrictEqual(await page.locator('[data-chart="load"] .chart-legend-label').allTextContents(), ['Fuerza', 'Otras', 'Carrera', 'Bici', 'Natación', 'Media sem. previas']);
+    assert.deepStrictEqual(await page.locator('[data-chart="load"] .chart-legend-label').allTextContents(), ['Fuerza', 'Otras', 'Carrera', 'Bici', 'Natación', 'Media 4 sem. previas']);
     // Periodo por defecto: 3 meses → 14 semanas (22 jun – 21 sep); las líneas empiezan el mismo lunes 22 jun
     assert.strictEqual((await chartState(page, '[data-chart="load"]')).n, '14');
     assert.strictEqual((await chartState(page, '[data-chart="run-pace"]')).from, '2026-06-22');
@@ -447,6 +447,10 @@ test('#/progress/exercise/:id: KPIs, gráficas con periodo, globo «80 kg × 6 @
     await open(page, '#/progress/exercise/dominadas');
     for (const id of ['maxWeight', 'e1rm', 'bestSet', 'maxReps', 'volume']) assert.ok((await chartState(page, `[data-chart="${id}"]`)).svg, `dominadas ${id}`);
     assert.match(await page.locator('[data-chart="e1rm"] .prg-note').innerText(), /peso corporal/);
+    // Core con peso corporal y sin lastre (elevaciones de piernas): sin 1RM ni volumen ficticio; se sigue por reps
+    await open(page, '#/progress/exercise/elevaciones_piernas');
+    assert.deepStrictEqual(await page.locator('.prg-kpis .kpi').evaluateAll((els) => els.map((e) => e.dataset.kpi)), ['reps', 'sets', 'sessions', 'last']);
+    assert.deepStrictEqual(await page.locator('[data-chart]').evaluateAll((els) => els.map((e) => e.dataset.chart)), ['maxReps']);
     // Ejercicio sin historial y que no existe
     await open(page, '#/progress/exercise/hack_squat');
     assert.match(await page.locator('#view').innerText(), /Sin historial todavía/);
@@ -677,17 +681,18 @@ test('carga: «Media N sem.» es la media de las semanas completas ANTERIORES (s
     assert.strictEqual(await stats.nth(2).locator('.prg-stat-value').innerText(), await fmt0(page, avg4));
     assert.strictEqual(await stats.nth(2).locator('.prg-stat-sub').innerText(), 'anteriores');
     assert.strictEqual(await stats.nth(0).locator('.prg-stat-value').innerText(), await fmt0(page, exp.loadOfWeek('2026-09-21')));
-    // La línea de la semana en curso vale lo mismo y el globo dice cuántas semanas promedia
+    // La línea de la semana en curso vale lo mismo; su nombre dice cuántas semanas promedia y el valor va solo
     await page.locator('.prg-period-bar .seg-btn', { hasText: '4 sem' }).click();
     await page.waitForTimeout(120);
     const b = await svgBox(page, '[data-chart="load"]');
     await page.touchscreen.tap(xOfBar(b, 4), b.y + b.height * 0.6);
-    const tip = await page.locator('[data-chart="load"] .chart-tip').innerText();
-    assert.ok(tip.includes(`${await fmt0(page, avg4)} · 4 sem.`) && tip.includes('Media sem. previas'), tip);
+    const tipRow = (name) => page.locator('[data-chart="load"] .chart-tip .chart-tip-row', { hasText: name }).locator('.chart-tip-val').innerText();
+    assert.strictEqual(await tipRow('Media 4 sem. previas'), await fmt0(page, avg4));
+    assert.doesNotMatch(await page.locator('[data-chart="load"] .chart-tip').innerText(), /aún no hay 4/, 'con 4 semanas no hay aclaración');
     // Semana del 14 sep: su referencia son las 4 anteriores (17 ago – 13 sep), no ella misma
     await page.touchscreen.tap(xOfBar(b, 3), b.y + b.height * 0.6);
     const ref14 = ['2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07'].map(exp.loadOfWeek).reduce((a, x) => a + x, 0) / 4;
-    assert.match(await page.locator('[data-chart="load"] .chart-tip').innerText(), new RegExp(`${(await fmt0(page, ref14)).replace('.', '\\.')} · 4 sem\\.`));
+    assert.strictEqual(await tipRow('Media 4 sem. previas'), await fmt0(page, ref14));
 
     // Kilómetros con un solo deporte: el globo dice «Carrera» (no la clave interna «run»)
     await page.locator('[data-chart="km"] .seg-btn', { hasText: 'Carrera' }).click();
@@ -730,6 +735,15 @@ test('carga con pocas semanas: «Media N sem.» con las que hay; recién empezad
     assert.strictEqual(await stats.nth(2).locator('.prg-stat-label').innerText(), 'Media 3 sem.');
     assert.strictEqual(await stats.nth(2).locator('.prg-stat-value').innerText(), '400'); // (480 + 400 + 320) / 3
     assert.strictEqual(await stats.nth(0).locator('.prg-stat-value').innerText(), '0');
+    // En el globo de la semana en curso, la media es solo el valor y la aclaración va como nota
+    await page.evaluate(() => localStorage.setItem('entreno.period.global', 'all'));
+    await open(page, '#/progress');
+    const b = await svgBox(page, '[data-chart="load"]');
+    assert.strictEqual(b.ds.n, '4', '31 ago – 21 sep');
+    await page.touchscreen.tap(xOfBar(b, 3), b.y + b.height * 0.6);
+    const tip = page.locator('[data-chart="load"] .chart-tip');
+    assert.strictEqual(await tip.locator('.chart-tip-row', { hasText: 'Media 4 sem. previas' }).locator('.chart-tip-val').innerText(), '400');
+    assert.match(await tip.locator('.chart-tip-note').allInnerTexts().then((x) => x.join(' | ')), /Media de solo 3 semanas anteriores \(aún no hay 4\)/);
   } finally {
     await app.close();
   }
@@ -779,6 +793,50 @@ test('#/records: con un solo peso (doble progresión) salen las mejores reps a e
     const bs = await svgBox(page, '[data-chart="bestSet"]');
     await page.touchscreen.tap(xOfDate(bs, '2026-09-14'), bs.y + bs.height / 2);
     assert.match(await page.locator('[data-chart="bestSet"] .chart-tip').innerText(), /10 kg × 18 @2/);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('ficha: «Mejor serie» con doble progresión dibuja las reps (según el periodo); core sin 1RM estimado', async () => {
+  const app = await launch();
+  const { page } = app;
+  try {
+    await put(page, [
+      // 4 may: la serie más pesada (85 × 1) no es la mejor (80 × 6 @2 tiene más 1RM estimado)
+      manualStrength('2026-05-04', [['press_banca', [{ weight: 80, reps: 6, rir: 2 }, { weight: 85, reps: 1, rir: 0 }]], ['rueda_abdominal', [{ reps: 10, rir: 2 }, { reps: 8, rir: 1 }]]]),
+      manualStrength('2026-09-07', [['press_banca', [{ weight: 80, reps: 5, rir: 2 }]], ['rueda_abdominal', [{ reps: 12, rir: 1 }]]]),
+      manualStrength('2026-09-14', [['press_banca', [{ weight: 80, reps: 6, rir: 2 }]], ['rueda_abdominal', [{ reps: 12, rir: 2 }, { weight: 5, reps: 8, rir: 1 }]]]),
+    ]);
+    await page.evaluate(() => localStorage.setItem('entreno.period.exercise', 'all'));
+    await open(page, '#/progress/exercise/press_banca');
+    const card = page.locator('[data-chart="bestSet"]');
+    assert.strictEqual(await card.getAttribute('data-mode'), 'weight', 'con el 4 may, la mejor serie no siempre es la más pesada');
+    assert.strictEqual(await card.locator('.prg-card-sub').innerText(), 'kg · la serie con mayor 1RM estimado de cada sesión (sin series de 1–12 reps, la de más peso × reps)');
+    let bs = await svgBox(page, '[data-chart="bestSet"]');
+    await page.touchscreen.tap(xOfDate(bs, '2026-05-04'), bs.y + bs.height / 2);
+    assert.match(await card.locator('.chart-tip').innerText(), /80 kg × 6 @2/);
+    // 4 semanas: siempre 80 kg, igual que el peso máximo → la gráfica pasa a las reps de esa serie
+    await page.locator('.prg-period-bar .seg-btn', { hasText: '4 sem' }).click();
+    await page.waitForTimeout(150);
+    assert.strictEqual(await card.getAttribute('data-mode'), 'reps');
+    assert.match(await card.locator('.prg-card-sub').innerText(), /^reps · la mejor serie de cada sesión \(en este periodo, su peso es siempre el peso máximo\)$/);
+    bs = await svgBox(page, '[data-chart="bestSet"]');
+    await page.touchscreen.tap(xOfDate(bs, '2026-09-14'), bs.y + bs.height / 2);
+    assert.match(await card.locator('.chart-tip').innerText(), /80 kg × 6 @2/, 'el globo sigue dando la serie entera');
+    const ticks = await card.locator('.chart-svg text').allTextContents();
+    assert.ok(ticks.includes('6') && !ticks.some((x) => /^8\d$/.test(x)), `eje en reps: ${ticks.join(' | ')}`);
+
+    // Core de peso corporal (rueda abdominal): sin KPI ni gráfica de 1RM; volumen = solo el lastre
+    await open(page, '#/progress/exercise/rueda_abdominal');
+    assert.deepStrictEqual(await page.locator('.prg-kpis .kpi').evaluateAll((els) => els.map((e) => e.dataset.kpi)), ['weight', 'reps', 'sessions', 'last']);
+    assert.deepStrictEqual(await page.locator('[data-chart]').evaluateAll((els) => els.map((e) => e.dataset.chart)), ['maxWeight', 'bestSet', 'maxReps', 'volume']);
+    assert.strictEqual(await page.locator('[data-chart="volume"] .prg-card-sub').innerText(), 'kg por sesión · lastre × reps (en core el peso corporal no cuenta)');
+    await open(page, '#/records');
+    const wheel = page.locator('.prg-rec[data-ex="rueda_abdominal"]');
+    assert.strictEqual(await wheel.locator('[data-rec="e1rm"]').count(), 0, 'sin «Mejor 1RM estimado» de 111 kg');
+    assert.strictEqual(await page.locator('.prg-rec[data-ex="press_banca"] [data-rec="e1rm"]').count(), 1);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

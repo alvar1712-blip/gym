@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { e1rm, setMetrics, muscleContrib, movingAverage, linearRegression, riegel, detectPRs, bestsForExercise, sessionLoad, lastPerformance, sessionPRs, addToBests, makeBodyweightFn, bestSet } from '../../js/calc.js';
+import { e1rm, setMetrics, muscleContrib, movingAverage, linearRegression, riegel, detectPRs, bestsForExercise, sessionLoad, lastPerformance, sessionPRs, addToBests, makeBodyweightFn, bestSet, sessionVolume } from '../../js/calc.js';
 
 test('e1rm: Epley con reps + RIR, solo 1–12 reps', () => {
   assert.equal(e1rm(100, 5, 0), 100 * (1 + 5 / 30));
@@ -24,6 +24,37 @@ test('setMetrics por tipo de registro', () => {
   assert.equal(b.load, 85);
   assert.equal(b.volume, 680);
   assert.equal(setMetrics({ timeSec: 60 }, { logType: 'time' }).e1rm, null);
+});
+
+test('setMetrics: peso corporal de core (rueda, elevaciones de piernas, crunch) no cuenta el peso corporal', () => {
+  const core = { logType: 'bodyweight', pattern: 'core' };
+  // Sin lastre: sin carga, sin 1RM y sin volumen (antes: 75 kg × 10 = 750 kg y un «1RM» de 111 kg)
+  assert.deepEqual(setMetrics({ weight: null, reps: 10, rir: 2 }, core, 75), { load: null, reps: 10, e1rm: null, volume: null });
+  assert.deepEqual(setMetrics({ weight: 0, reps: 12, rir: 1 }, core, 75), { load: null, reps: 12, e1rm: null, volume: null });
+  // Con lastre: carga y volumen = lastre (× reps); el 1RM sigue sin aplicar
+  assert.deepEqual(setMetrics({ weight: 5, reps: 10, rir: 1 }, core, 75), { load: 5, reps: 10, e1rm: null, volume: 50 });
+  // Asistencia (negativa) en core: no es carga
+  assert.deepEqual(setMetrics({ weight: -10, reps: 8 }, core, 75), { load: null, reps: 8, e1rm: null, volume: null });
+  // Los demás ejercicios de peso corporal (dominadas, fondos…) siguen sumando el peso corporal
+  const pull = { logType: 'bodyweight', pattern: 'pull_v' };
+  assert.equal(setMetrics({ weight: null, reps: 8, rir: 1 }, pull, 75).load, 75);
+  assert.equal(setMetrics({ weight: null, reps: 8, rir: 1 }, pull, 75).volume, 600);
+  assert.ok(setMetrics({ weight: null, reps: 8, rir: 1 }, pull, 75).e1rm > 75);
+});
+
+test('core con peso corporal: sin volumen ficticio ni récords de 1RM; sí récords de reps y de lastre', () => {
+  const ex = { id: 'rueda_abdominal', logType: 'bodyweight', pattern: 'core' };
+  const exMap = new Map([[ex.id, ex]]);
+  const bwFn = () => 75;
+  const mk = (id, date, sets) => ({ id, kind: 'strength', date, startedAt: Date.parse(date), exercises: [{ exerciseId: ex.id, sets }] });
+  const set = (id, o) => ({ id, type: 'effective', done: true, weight: null, rir: 1, ...o });
+  const s1 = mk('s1', '2026-09-01', [set('a', { reps: 10 })]);
+  const s2 = mk('s2', '2026-09-08', [set('b', { reps: 12 }), set('c', { reps: 8, weight: 5 })]);
+  assert.equal(sessionVolume(s1, exMap, bwFn), 0, 'sin lastre no hay volumen');
+  assert.equal(sessionVolume(s2, exMap, bwFn), 40, 'solo el lastre: 5 kg × 8');
+  const prs = sessionPRs(s2, [s1, s2], exMap, bwFn);
+  assert.deepEqual(prs.get('b').map((p) => p.kind), ['reps'], 'más reps sin lastre: récord de reps, no de 1RM');
+  assert.deepEqual(prs.get('c').map((p) => p.kind), ['weight'], 'primer lastre: récord de peso, no de 1RM');
 });
 
 test('muscleContrib: 1 principal, 0,5 secundario (editable)', () => {
@@ -158,4 +189,27 @@ test('bestSet no mezcla 1RM con repeticiones de series sin 1RM', async () => {
   const b = { id: 'b', type: 'effective', weight: 8, reps: 20, done: true };
   assert.equal(bestSet([a, b], ex).id, 'a');
   assert.equal(bestSet([b], ex).id, 'b');
+});
+
+test('bestSet sin ninguna serie con 1RM: más peso × reps, luego más peso y luego más reps (regla de stats.js)', () => {
+  const s = (id, o) => ({ id, type: 'effective', done: true, rir: 1, ...o });
+  const lat = { logType: 'weight_reps' };
+  // 12 kg × 15 (180) gana a 5 kg × 25 (125): antes ganaba la de más reps
+  assert.equal(bestSet([s('a', { weight: 5, reps: 25 }), s('b', { weight: 12, reps: 15 })], lat).id, 'b');
+  // Mismo peso × reps (10 × 18 = 180 = 12 × 15): gana el más pesado
+  assert.equal(bestSet([s('a', { weight: 10, reps: 18 }), s('b', { weight: 12, reps: 15 })], lat).id, 'b');
+  // Todo igual: la primera
+  assert.equal(bestSet([s('a', { weight: 10, reps: 15 }), s('b', { weight: 10, reps: 15 })], lat).id, 'a');
+  // Unilateral: volumen de los dos lados
+  const uni = { logType: 'unilateral' };
+  assert.equal(bestSet([s('a', { weight: 10, reps: 20, repsR: 14 }), s('b', { weight: 10, reps: 16, repsR: 16 })], uni).id, 'a');
+  // Peso corporal (no core): volumen con el peso del día; a igualdad de volumen, más lastre
+  const dips = { logType: 'bodyweight', pattern: 'push_v' };
+  assert.equal(bestSet([s('a', { weight: null, reps: 20 }), s('b', { weight: 5, reps: 15 })], dips, 75).id, 'a'); // 1500 > 1200
+  // Core sin lastre: sin volumen, cuenta el lastre (0) y luego las reps
+  const core = { logType: 'bodyweight', pattern: 'core' };
+  assert.equal(bestSet([s('a', { weight: null, reps: 10 }), s('b', { weight: null, reps: 12 })], core, 75).id, 'b');
+  assert.equal(bestSet([s('a', { weight: null, reps: 15 }), s('b', { weight: 5, reps: 8 })], core, 75).id, 'b'); // 40 kg de volumen
+  // Sin reps no es comparable
+  assert.equal(bestSet([s('a', { weight: 20, reps: null })], lat), null);
 });

@@ -148,8 +148,8 @@ export function estimateText(text, size = 12) {
 
 function decimalsOf(step) {
   for (let d = 0; d < 10; d++) {
-    const s = step * 10 ** d;
-    if (Math.abs(Math.round(s) - s) < 1e-6) return d;
+    const s = Math.abs(step) * 10 ** d;
+    if (s >= 0.5 && Math.abs(Math.round(s) - s) < 1e-6) return d; // s ≥ 0,5: un paso de 1e-7 no es «entero»
   }
   return 10;
 }

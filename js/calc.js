@@ -63,6 +63,9 @@ export function makeBodyweightFn(bodyweightList, fallback = 75) {
  *  load   = kg «efectivos» (peso corporal: peso corporal + lastre, asistencia negativa)
  *  reps   = reps usadas para 1RM (unilateral: el lado con menos reps)
  *  volume = kg × reps (unilateral: suma de ambos lados; peso corporal: (pc + lastre) × reps)
+ *  Peso corporal de core (exercise.pattern === 'core': rueda abdominal, elevaciones de piernas, crunch): el peso
+ *  corporal no es la carga que se mueve, así que no cuenta: load = lastre (> 0; si no, null), volume = lastre × reps
+ *  (null sin lastre) y e1rm = null siempre.
  */
 export function setMetrics(set, exercise, bwKg = null) {
   const out = { load: null, reps: null, e1rm: null, volume: null };
@@ -79,6 +82,11 @@ export function setMetrics(set, exercise, bwKg = null) {
     out.load = w;
     out.reps = reps != null && r2 != null ? Math.min(reps, r2) : reps ?? r2;
     if (w != null) out.volume = w * ((reps || 0) + (r2 || 0));
+  } else if (type === 'bodyweight' && exercise.pattern === 'core') {
+    out.load = w != null && w > 0 ? w : null;
+    out.reps = reps;
+    if (out.load != null && reps != null) out.volume = out.load * reps;
+    return out; // sin 1RM estimado
   } else if (type === 'bodyweight') {
     const bw = bwKg || null;
     out.load = bw != null ? bw + (w || 0) : null;
@@ -420,18 +428,30 @@ export function sessionPRs(session, sessions, exMap, bwFn = () => null) {
 }
 
 /**
- * Mejor serie de una lista de series: por 1RM estimado; si no aplica, por reps. Tiempo: la más larga;
- * saltos: la más alta (o más reps); distancia+tiempo: la más rápida (m/s; sin tiempo, la más larga).
+ * Mejor serie de una lista de series: por 1RM estimado. Si ninguna lo tiene, en los tipos con carga
+ * (peso × reps, unilateral, peso corporal) la de más peso × reps (setMetrics.volume: unilateral, los dos lados;
+ * peso corporal, con el peso del día) y, a igualdad, la de más peso levantado (peso corporal: el lastre) y luego
+ * más reps: la misma regla que stats.js (fallbackRank). Tiempo: la más larga; saltos: la más alta (o más reps);
+ * distancia+tiempo: la más rápida (m/s; sin tiempo, la más larga).
  */
 export function bestSet(sets, exercise, bwKg = null) {
   let best = null;
   let bestVal = -Infinity;
+  let bestRank = null;
   const t = exercise?.logType;
+  const withLoad = t === 'weight_reps' || t === 'unilateral' || t === 'bodyweight';
   // Si alguna serie tiene 1RM estimado, se compara SOLO por 1RM (no se mezcla con reps de otras series).
   const anyE1rm = (sets || []).some((s) => isWorkSet(s) && setMetrics(s, exercise, bwKg).e1rm != null);
   for (const s of sets || []) {
     if (!isWorkSet(s)) continue;
     const m = setMetrics(s, exercise, bwKg);
+    if (!anyE1rm && withLoad) {
+      if (!(m.reps >= 1)) continue;
+      const lifted = typeof s.weight === 'number' ? s.weight : t === 'bodyweight' ? 0 : null;
+      const rank = [m.volume ?? -Infinity, lifted ?? -Infinity, m.reps];
+      if (!bestRank || rankGreater(rank, bestRank)) { bestRank = rank; best = s; }
+      continue;
+    }
     let val;
     if (anyE1rm) val = m.e1rm;
     else if (t === 'time') val = s.timeSec;
@@ -442,6 +462,15 @@ export function bestSet(sets, exercise, bwKg = null) {
     if (val > bestVal) { bestVal = val; best = s; }
   }
   return best;
+}
+
+/** a > b en orden lexicográfico, con tolerancia (a igualdad, la primera serie gana). */
+function rankGreater(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] > b[i] + 1e-9) return true;
+    if (a[i] < b[i] - 1e-9) return false;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

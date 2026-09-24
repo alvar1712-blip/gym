@@ -93,7 +93,7 @@ test('pinta todas las gráficas: ancho del contenedor, 3–5 marcas Y, ≤ 6 eti
         touch: getComputedStyle(plot).touchAction,
       };
     }));
-    assert.strictEqual(info.length, 15, 'número de gráficas del banco');
+    assert.strictEqual(info.length, 20, 'número de gráficas del banco');
     for (const c of info) {
       assert.strictEqual(c.touch, 'pan-y', `${c.id}: touch-action`);
       assert.strictEqual(c.role, 'img');
@@ -256,6 +256,183 @@ test('point.label: la mejor serie muestra «kg × reps @RIR»; series de distint
       const t2 = await tipText(page, 'bench');
       assert.ok(t2.includes(early.label) && !t2.includes('Mejor serie'), t2);
     }
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+/** Valor numérico de un rótulo del eje Y: «1.250», «75,4», «80 kg», «-30», «5:15» (s). null si no es un número. */
+function labelValue(t) {
+  const txt = String(t).trim();
+  let m = txt.match(/^(\d+):(\d\d)$/);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  m = txt.match(/^(-?[\d.]+(?:,\d+)?)(?:\s*\S+)?$/);
+  return m ? Number(m[1].replace(/\./g, '').replace(',', '.')) : null;
+}
+
+test('eje Y: cada rótulo es el valor de su raya (sin repetidos ni saltos desiguales), en todos los periodos', async () => {
+  const app = await openBench();
+  const { page } = app;
+  try {
+    const check = async (when) => {
+      const axes = await page.evaluate(() => [...document.querySelectorAll('.chart:not(.chart-is-empty)')].map((c) => ({
+        id: c.closest('section')?.id,
+        ticks: [...c.querySelectorAll('.chart-ylabel')].map((t) => ({ t: t.textContent, y: Number(t.getAttribute('y')) })),
+      })));
+      for (const a of axes) {
+        const vals = a.ticks.map((k) => labelValue(k.t));
+        assert.ok(vals.every((v) => v != null), `${when} ${a.id}: rótulos ${a.ticks.map((k) => k.t).join(' | ')}`);
+        assert.strictEqual(new Set(vals).size, vals.length, `${when} ${a.id}: repetidos ${a.ticks.map((k) => k.t).join(' | ')}`);
+        const dv = vals[1] - vals[0];
+        const dy = a.ticks[1].y - a.ticks[0].y;
+        for (let i = 1; i < vals.length; i++) {
+          assert.ok(Math.abs(vals[i] - vals[i - 1] - dv) < 1e-9, `${when} ${a.id}: saltos desiguales ${a.ticks.map((k) => k.t).join(' | ')}`);
+          assert.ok(Math.abs(a.ticks[i].y - a.ticks[i - 1].y - dy) < 1.01, `${when} ${a.id}: rayas desiguales`);
+        }
+      }
+      return axes;
+    };
+    const axes = await check('3 meses');
+    const by = Object.fromEntries(axes.map((a) => [a.id, a.ticks.map((k) => k.t)]));
+    assert.deepStrictEqual(by['card-ticks0'], ['26', '27', '28'], 'bici 26,9–27,1 con eje sin decimales');
+    assert.deepStrictEqual(by['card-ticks1'], ['75', '75,2', '75,4', '75,6', '75,8'], 'peso 75,0–75,8 con eje de 1 decimal');
+    for (const id of ['4 sem', '6 meses', '1 año', 'Todo']) {
+      await page.locator('#global-period .seg-btn', { hasText: id }).click();
+      await page.locator('#card-bw .chart-period .seg-btn', { hasText: id }).click();
+      await check(id);
+    }
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('varios puntos el mismo día: el globo da una fila por punto (y la media, la del final del día)', async () => {
+  const app = await openBench();
+  const { page } = app;
+  try {
+    const b = await svgBox(page, 'sameday');
+    await page.touchscreen.tap(xOfDate(b, '2026-09-10'), b.y + b.height / 2);
+    const rows = await tipRows(page, 'sameday');
+    assert.deepStrictEqual(rows, [
+      { val: '24 km/h · 12 km', name: 'Cada salida' },
+      { val: '30 km/h · 60 km', name: 'Cada salida' },
+      { val: '28,4 km/h', name: 'Media 5 últimas' },
+    ]);
+    assert.strictEqual(await page.locator('#card-sameday .chart-mark').count(), 3, 'una marca por fila');
+    // los días con una sola salida siguen igual
+    await page.touchscreen.tap(xOfDate(b, '2026-09-17'), b.y + b.height / 2);
+    assert.deepStrictEqual((await tipRows(page, 'sameday')).map((r) => r.val), ['26,4 km/h · 22 km', '27,9 km/h']);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('globo con un valor largo: parte línea dentro de la gráfica, sin ensanchar la página (390, 375 y 320 px)', async () => {
+  for (const width of [390, 375, 320]) {
+    const app = await openBench({ width, height: 700 });
+    const { page } = app;
+    try {
+      const pts = await page.evaluate(() => window.__bench.data.longtip);
+      const b = await svgBox(page, 'longtip');
+      for (const p of [pts[0], pts.at(-1)]) {
+        await page.touchscreen.tap(xOfDate(b, p.x), b.y + b.height / 2);
+        const r = await page.evaluate(() => {
+          const tip = document.querySelector('#card-longtip .chart-tip');
+          const plot = document.querySelector('#card-longtip .chart-plot').getBoundingClientRect();
+          const t = tip.getBoundingClientRect();
+          const cut = [...tip.querySelectorAll('.chart-tip-val, .chart-tip-name, .chart-tip-title, .chart-tip-note')]
+            .filter((e) => e.scrollWidth > e.clientWidth + 1 || e.getBoundingClientRect().right > t.right + 0.5).map((e) => e.textContent);
+          return { left: t.left, right: t.right, pl: plot.left, pr: plot.right, cut, sw: document.documentElement.scrollWidth, iw: innerWidth };
+        });
+        assert.ok(r.left >= r.pl - 0.5 && r.right <= r.pr + 0.5, `${width}px: globo ${r.left}–${r.right} fuera de ${r.pl}–${r.pr}`);
+        assert.deepStrictEqual(r.cut, [], `${width}px: texto cortado`);
+        assert.ok(r.sw <= r.iw, `${width}px: scrollWidth ${r.sw} > ${r.iw}`);
+        const txt = await tipText(page, 'longtip');
+        assert.ok(txt.replace(/\s+/g, ' ').includes(p.label), `${width}px: ${txt}`);
+        if (p.note) assert.ok(txt.replace(/\s+/g, ' ').includes(p.note), `point.note en el globo: ${txt}`);
+      }
+      if (width === 320) await page.screenshot({ path: path.join(RESULTS, 'charts-tip-long-320.png'), clip: await page.locator('#card-longtip').boundingBox() });
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+test('la línea que viene de un punto fuera del periodo se corta en el borde y no cruza el eje X', async () => {
+  const app = await openBench();
+  const { page } = app;
+  try {
+    const r = await page.locator('#card-edge .chart-svg').evaluate((svg) => {
+      const nums = (svg.querySelector('.chart-line').getAttribute('d').match(/-?[\d.]+/g) || []).map(Number);
+      const xs = nums.filter((_, i) => i % 2 === 0);
+      const ys = nums.filter((_, i) => i % 2 === 1);
+      return { xs, ys, ds: { ...svg.dataset } };
+    });
+    const { ds } = r;
+    assert.ok(Math.min(...r.xs) >= Number(ds.x0) - 0.1, `x ${Math.min(...r.xs)} < ${ds.x0}`);
+    assert.ok(Math.max(...r.ys) <= Number(ds.b) + 0.1 && Math.min(...r.ys) >= Number(ds.t) - 0.1, `y ${r.ys} fuera de ${ds.t}–${ds.b}`);
+    // el eje incluye el valor con el que la línea entra en el periodo (21 km/h el 27 ago)
+    const yl = (await page.locator('#card-edge .chart-ylabel').allTextContents()).map(Number);
+    assert.ok(yl[0] <= 21 && yl.at(-1) >= 27.2, yl.join(' '));
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('el globo no queda debajo de una barra pegajosa (cabecera o selector de periodo)', async () => {
+  const app = await openBench({ width: 375, height: 667 });
+  const { page } = app;
+  try {
+    for (const card of ['load', 'pace', 'back']) {
+      // La parte alta de la gráfica queda 60 px bajo el selector pegajoso.
+      await page.evaluate((c) => {
+        const svg = document.querySelector(`#card-${c} .chart-svg`);
+        const bar = document.getElementById('global-period');
+        window.scrollBy(0, svg.getBoundingClientRect().top - bar.offsetHeight + 60);
+      }, card);
+      await page.waitForTimeout(50);
+      const g = await page.evaluate((c) => {
+        const svg = document.querySelector(`#card-${c} .chart-svg`).getBoundingClientRect();
+        const bar = document.getElementById('global-period').getBoundingClientRect();
+        return { bar: bar.bottom, top: svg.top, bottom: svg.bottom, left: svg.left, width: svg.width };
+      }, card);
+      assert.ok(g.top < g.bar, `${card}: la gráfica empieza bajo el selector (${g.top} < ${g.bar})`);
+      for (const fx of [0.5, 0.15, 0.9]) {
+        await page.touchscreen.tap(g.left + g.width * fx, Math.min(g.bottom - 30, g.bar + 90));
+        assert.ok(await tipVisible(page, card), `${card} ${fx}: globo visible`);
+        const t = await page.locator(`#card-${card} .chart-tip`).boundingBox();
+        assert.ok(t.y >= g.bar - 0.5, `${card} ${fx}: el globo empieza en ${t.y}, bajo el selector (${g.bar})`);
+      }
+    }
+    await page.screenshot({ path: path.join(RESULTS, 'charts-tip-sticky.png') });
+    // Sin nada encima, el globo sigue arriba del todo (4 px bajo el borde del área)
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const b = await svgBox(page, 'bw');
+    await page.evaluate(() => window.scrollBy(0, -10000));
+    const b2 = await page.locator('#card-bw .chart-svg').boundingBox();
+    await page.touchscreen.tap(b2.x + b2.width / 2, b2.y + b2.height / 2);
+    const t = await page.locator('#card-bw .chart-tip').boundingBox();
+    assert.ok(Math.abs(t.y - (b2.y + 4)) < 1.5 || t.y > b2.y + 4, `arriba: ${t.y} vs ${b2.y}`);
+    assert.ok(b.width > 0);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('selector de periodo a 320 px: ningún rótulo se sale de su botón', async () => {
+  const app = await openBench({ width: 320, height: 640 });
+  const { page } = app;
+  try {
+    const bad = await page.evaluate(() => [...document.querySelectorAll('.chart-period .seg-btn')]
+      .filter((b) => b.scrollWidth > b.clientWidth + 0.5).map((b) => `${b.textContent}: ${b.clientWidth}/${b.scrollWidth}`));
+    assert.deepStrictEqual(bad, []);
+    assert.ok(await noHScroll(page));
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

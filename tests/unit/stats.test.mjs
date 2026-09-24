@@ -209,7 +209,9 @@ test('peso corporal: carga = peso corporal del día + lastre (asistencia negativ
   assert.deepEqual(ser.maxReps.map((p) => p.y), [10, 9]);
   // Mejor serie en peso corporal: y = lastre de la serie de mayor 1RM (0 = sin lastre).
   assert.deepEqual(ser.bestSet.map((p) => [p.y, p.label]), [[10, '+10 kg × 5 @1'], [0, 'Sin lastre · 9 reps']]);
-  assert.equal(ser.e1rm[0].label, `${fmtNum(e1rm(84, 5, 1), 1)} kg · +10 kg × 5 @1 · peso corporal 74 kg`);
+  assert.equal(ser.e1rm[0].label, `${fmtNum(e1rm(84, 5, 1), 1)} kg · +10 kg × 5 @1`);
+  assert.equal(ser.e1rm[0].note, 'Peso corporal del día: 74 kg', 'el peso del día va como nota del globo');
+  assert.equal(exerciseSeries(mk({ sessions: [ses('s1', '2026-09-01', [['bench', [set(80, 5)]]])] }), 'bench').e1rm[0].note, undefined);
 
   const r = exerciseRecord(data, 'pullup');
   assert.equal(r.bestWeight.value, 10);
@@ -220,6 +222,39 @@ test('peso corporal: carga = peso corporal del día + lastre (asistencia negativ
   assert.deepEqual(r.repsAtWeight.map((x) => [x.weight, x.reps, x.label]), [[10, 5, '+10 kg × 5'], [0, 9, 'Sin lastre × 9'], [-10, 10, '−10 kg asist. × 10']]);
   // 0 kg: 8 reps el 1 sep y 9 el 9 sep → cuenta el 9 sep (más reps)
   assert.equal(r.repsAtWeight[1].date, '2026-09-09');
+});
+
+test('core con peso corporal (rueda abdominal): sin 1RM ni volumen ficticio; mejor serie y récords por reps', () => {
+  const wheel = { id: 'wheel', name: 'Rueda abdominal', aliases: [], logType: 'bodyweight', pattern: 'core', primary: ['core'], secondary: ['back'] };
+  const exercises = exMap();
+  exercises.set(wheel.id, wheel);
+  const data = mk({
+    exercises,
+    bodyweight: [{ id: '2026-09-01', kg: 75 }],
+    sessions: [
+      ses('s1', '2026-09-01', [['wheel', [set(null, 10, { rir: 2 }), set(null, 12, { rir: 1 })]]]),
+      ses('s2', '2026-09-08', [['wheel', [set(null, 12, { rir: 2 }), set(5, 8, { rir: 1 })]]]),
+    ],
+  });
+  const [a, b] = exerciseHistory(data, 'wheel');
+  assert.equal(a.e1rm, null);
+  assert.equal(a.volume, null, 'sin lastre no hay volumen');
+  assert.equal(a.bestSetLabel, 'Sin lastre · 12 reps @1', 'sin 1RM: la de más reps');
+  assert.equal(b.volume, 40, 'solo el lastre: 5 kg × 8');
+  assert.equal(b.bestSetLabel, '+5 kg × 8 @1', 'con lastre gana por peso × reps');
+  const ser = exerciseSeries(data, 'wheel');
+  assert.deepEqual(ser.e1rm, []);
+  assert.deepEqual(ser.volume.map((p) => p.y), [40]);
+  assert.deepEqual(ser.bestSet.map((p) => [p.y, p.reps, p.e1rm]), [[0, 12, null], [5, 8, null]]);
+  const r = exerciseRecord(data, 'wheel');
+  assert.equal(r.bestE1rm, null);
+  assert.equal(r.bwLabel, null);
+  assert.equal(r.maxReps.value, 12);
+  assert.equal(r.bestWeight.label, '+5 kg');
+  const [w1, w2] = weeklySeries(data, '2026-08-31', '2026-09-07');
+  assert.equal(w1.strengthVolume, 0, 'sin los 75 kg × 22 reps de peso corporal');
+  assert.equal(w2.strengthVolume, 40);
+  assert.deepEqual(b.prs, ['weight'], 'primer lastre: récord de peso; nunca de 1RM');
 });
 
 test('peso corporal: sin pesajes se usa settings.bodyweightDefault; solo asistencia → récord negativo', () => {

@@ -78,8 +78,7 @@ export function bodyweightChartOpts(data, periodId, { height = 220, series = nul
   return {
     series: [
       { id: 'daily', label: 'Pesaje', color: COLORS.text2, points: s.daily, line: false, dots: true },
-      // Sin etiqueta propia: el globo ya dice «Media 7 días» junto al valor.
-      { id: 'ma', label: 'Media 7 días', color: COLORS.accent, points: s.ma.map((p) => ({ x: p.x, y: p.y })), emphasis: true, dots: false },
+      { id: 'ma', label: 'Media 7 días', color: COLORS.accent, points: s.ma, emphasis: true, dots: false },
     ],
     height,
     yFormat: kgTxt,

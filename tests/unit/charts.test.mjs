@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   PERIODS, DEFAULT_PERIOD, periodStart, getPeriod, setPeriod, COLORS,
-  niceTicks, timeTicks, barAxisLabels, nearestIndex, dayNum, dayStr, dateTitle, isWeekly, monthLabel, estimateText,
+  niceTicks, tickDecimals, timeTicks, barAxisLabels, nearestIndex, dayNum, dayStr, dateTitle, isWeekly, monthLabel, estimateText,
 } from '../../js/charts.js';
-import { addDays, weekStart, MONTH_SHORT } from '../../js/util.js';
+import { addDays, weekStart, MONTH_SHORT, fmtNum, fmtDuration } from '../../js/util.js';
 
 const TODAY = '2026-09-24'; // jueves
 
@@ -100,6 +100,61 @@ test('niceTicks: casos concretos (peso, ceros, iguales, negativos, enteros, fijo
   const f = niceTicks(60, 82, { fixedMin: true });
   assert.equal(f.min, 60);
   assert.ok(f.max >= 82);
+});
+
+test('tickDecimals: decimales que escribe el formateador del eje', () => {
+  assert.equal(tickDecimals((v) => fmtNum(v, 0)), 0);
+  assert.equal(tickDecimals((v) => fmtNum(v, 1), 70, 71), 1);
+  assert.equal(tickDecimals((v) => `${fmtNum(v, 2)} s`, 3, 4), 2);
+  assert.equal(tickDecimals((v) => fmtNum(v, 2, 2)), 2, 'con ceros fijos («3,00»)');
+  assert.equal(tickDecimals((v) => fmtNum(v * 1000, 0)), 3, 'km → metros');
+  assert.equal(tickDecimals(fmtDuration, 280, 340), 0, 'min:s');
+  assert.equal(tickDecimals((v) => fmtNum(v, 1), 999, 1001), 1, 'con separador de miles');
+  assert.equal(tickDecimals(() => ''), null, 'texto fijo: sin límite');
+  assert.equal(tickDecimals(null), null);
+  assert.equal(tickDecimals(() => { throw new Error('x'); }), null);
+});
+
+/** Rótulos tal y como los escribe fmtNum(v, dec): únicos, equiespaciados y iguales a su valor. */
+function assertExactLabels(t, dec, ctx) {
+  const labels = t.ticks.map((v) => fmtNum(v, dec));
+  assert.equal(new Set(labels).size, labels.length, `${ctx}: rótulos repetidos ${labels.join(' | ')}`);
+  const back = labels.map((l) => Number(l.replace(/\./g, '').replace(',', '.')));
+  back.forEach((v, i) => assert.ok(Math.abs(v - t.ticks[i]) < 1e-9, `${ctx}: «${labels[i]}» ≠ ${t.ticks[i]}`));
+}
+
+test('niceTicks maxDecimals: el paso se escribe con los decimales del eje (sin «28» para 27,5)', () => {
+  // Casos de la revisión: bici (0 decimales), 1RM y peso (1 decimal), sprint (2) y altura (1)
+  const cases = [
+    [27.9, 31.2, 0], [26.9, 27.1, 0], [101.1, 102.2, 1], [100, 101, 1], [70.0, 70.7, 1], [75.0, 75.8, 1],
+    [3.25, 3.27, 2], [47.5, 47.7, 1],
+  ];
+  for (const [a, b, dec] of cases) {
+    const t = niceTicks(a, b, { maxDecimals: dec });
+    assertExactLabels(t, dec, `${a}..${b} (${dec})`);
+    assert.ok(t.ticks.length >= 3 && t.ticks.length <= 5, `${a}..${b}: ${t.ticks}`);
+    assert.ok(t.min <= a && t.max >= b, `${a}..${b} cubierto por ${t.min}..${t.max}`);
+  }
+  assert.deepEqual(niceTicks(26.9, 27.1, { maxDecimals: 0 }).ticks, [26, 27, 28]);
+  assert.ok(!niceTicks(27.9, 31.2, { maxDecimals: 0 }).ticks.includes(27.5));
+  // Sin límite, el paso 2,5 sigue permitido (el eje con 1 decimal lo escribe bien)
+  assert.deepEqual(niceTicks(27.9, 31.2, { maxDecimals: 1 }).ticks, [27.5, 30, 32.5]);
+  // Aleatorio: 3–5 marcas exactas que cubren los datos, con 0, 1 y 2 decimales
+  const r = rng(1234);
+  for (let i = 0; i < 3000; i++) {
+    const dec = i % 3;
+    const mag = 10 ** Math.floor(r() * 4 - 1);
+    const a = 40 + r() * 80 * mag;
+    const b = a + r() * 5 * mag + 1e-6;
+    const t = niceTicks(a, b, { maxDecimals: dec });
+    assertExactLabels(t, dec, `${a}..${b} (${dec})`);
+    assert.ok(t.ticks.length >= 3 && t.ticks.length <= 5, `${a}..${b}: ${t.ticks}`);
+    assert.ok(t.min <= a + 1e-9 && t.max >= b - 1e-9, `${a}..${b} cubierto por ${t.min}..${t.max}`);
+    assert.ok(mantissaOk(t.step), `paso ${t.step}`);
+  }
+  // Base cero fija (barras) y enteros
+  assert.deepEqual(niceTicks(0, 0.3, { fixedMin: true, maxDecimals: 0 }).ticks, [0, 1, 2]);
+  assert.ok(niceTicks(0, 12.4, { fixedMin: true, maxDecimals: 0 }).ticks.every(Number.isInteger));
 });
 
 test('niceTicks modo tiempo: segundos redondos para ritmos (5:00, 5:15…)', () => {

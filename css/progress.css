@@ -387,11 +387,12 @@ button.prg-rec-row:active { background: var(--surface-2); }
 /* Pantallas muy estrechas (320 px): nada cortado con «…» */
 @media (max-width: 359px) {
   .prg-stats { column-gap: 8px; }
-  .prg-stat-value { font-size: 15px; }
+  .prg-stat-value { font-size: 15px; white-space: normal; overflow-wrap: anywhere; }
   .prg-kpis .kpi-label { white-space: normal; }
   .prg-seg .seg-btn { padding: 0; font-size: 12.5px; }
   /* Tabla por músculo: el nombre en su línea; debajo, las series y el estado */
   .prg-mrow-top { flex-wrap: wrap; row-gap: 2px; }
   .prg-mrow-name { flex: 1 0 100%; }
   .prg-mrow-val { margin-right: auto; }
+  .prg-status { width: auto; min-width: 76px; }
 }
