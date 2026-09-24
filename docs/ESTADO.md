@@ -13,6 +13,7 @@
 
 ## En curso
 - [ ] Fase 2 · revisión (requisitos §8–§9, datos, visual) y correcciones; commit «Fase 2 completa»
+      (workflow `fase2-revision`, run `wf_face727f-2b6`: si se corta, reanudarlo con resumeFromRunId)
 
 ## Pendiente
 - [ ] Fase 3 · panel semanal con «¿Por qué?» (`js/insights.js`, `js/views/weekly.js`), check-in (`js/checkin.js`),
