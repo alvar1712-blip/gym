@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Banco de gráficas</title>
+  <link rel="stylesheet" href="../../css/app.css">
+  <link rel="stylesheet" href="../../css/progress.css">
+  <style>
+    /* Solo para el banco de pruebas */
+    .bench-head { padding: 18px 16px 0; }
+    .bench-head h1 { font-size: 22px; font-weight: 800; }
+    .bench-head p { color: var(--muted); font-size: 14px; margin-top: 2px; }
+    .bench-sticky { position: sticky; top: 0; z-index: 5; padding: 10px 16px; background: rgba(11, 13, 16, 0.94); border-bottom: 1px solid var(--border); }
+    .bench-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .bench-grid .card { padding: 12px 10px; }
+  </style>
+</head>
+<body>
+  <header class="bench-head">
+    <h1>Banco de gráficas</h1>
+    <p>js/charts.js · datos de ejemplo deterministas (hoy = 24 sep 2026)</p>
+  </header>
+  <div class="bench-sticky" id="global-period"></div>
+  <main class="content" id="bench"></main>
+
+  <script type="module">
+    import {
+      lineChart, barChart, legend, periodSelector, periodStart, getPeriod, setPeriod, COLORS, PERIODS,
+    } from '../../js/charts.js';
+    import { h } from '../../js/ui.js';
+    import { addDays, weekStart, fmtNum, fmtDate, fmtWeekRange, fmtPace, fmtDuration, fmtKm, round } from '../../js/util.js';
+    import { movingAverage } from '../../js/calc.js';
+
+    const TODAY = '2026-09-24';
+    const bench = document.getElementById('bench');
+    const charts = {};
+    const data = {};
+
+    // PRNG determinista (mulberry32)
+    function rng(seed) {
+      return () => {
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    const kg = (v) => `${fmtNum(v, 1)} kg`;
+
+    function card(id, title, sub, { extra = null, parent = bench } = {}) {
+      const slot = h('div.bench-slot', { id: `slot-${id}` });
+      const el = h('section.card', { id: `card-${id}` },
+        h('div', h('div.card-title', title), sub ? h('div.card-sub', sub) : null),
+        extra, slot);
+      parent.appendChild(el);
+      return slot;
+    }
+
+    // ---------- Datos ----------
+    // Peso corporal: 521 días, ~82 % con pesaje (huecos reales, 400+ puntos), tendencia suave al alza.
+    {
+      const r = rng(7);
+      const daily = [];
+      for (let i = 520; i >= 0; i--) {
+        const d = addDays(TODAY, -i);
+        if (i !== 0 && r() > 0.82) continue;
+        const v = 74.85 - i * 0.0042 + 0.35 * Math.sin((440 - i) / 9) + (r() - 0.5) * 1.1;
+        daily.push({ x: d, y: round(v, 0.1) });
+      }
+      const ma = movingAverage(daily.map((p) => ({ date: p.x, value: p.y })), 7)
+        .map((p) => ({ x: p.date, y: round(p.ma, 0.01), label: `${fmtNum(p.ma, 2)} kg` }));
+      data.bw = { daily, ma, first: daily[0].x };
+    }
+    // Carreras: cada 2–5 días durante un año; ritmo en s/km (menos es mejor).
+    {
+      const r = rng(11);
+      const runs = [];
+      for (let i = 365; i >= 0; i -= 2 + Math.floor(r() * 4)) {
+        const d = addDays(TODAY, -i);
+        const pace = Math.round(338 - (365 - i) / 365 * 26 + (r() - 0.5) * 24);
+        const km = round(5 + r() * 9, 0.1);
+        runs.push({ x: d, y: pace, label: `${fmtPace(pace)} · ${fmtKm(km, 1)}` });
+      }
+      const avg = runs.map((p, i) => {
+        const w = runs.slice(Math.max(0, i - 4), i + 1);
+        const v = w.reduce((t, q) => t + q.y, 0) / w.length;
+        return { x: p.x, y: v, label: fmtPace(v) };
+      });
+      data.runs = { runs, avg, first: runs[0].x };
+    }
+    // Semanas (lunes) del último año + la actual (parcial).
+    const weeks = [];
+    for (let w = weekStart(addDays(TODAY, -364)); w <= TODAY; w = addDays(w, 7)) weeks.push(w);
+    const curWeek = weekStart(TODAY);
+    {
+      const r = rng(23);
+      data.load = weeks.map((w) => {
+        const part = w === curWeek ? 0.55 : 1;
+        const v = {
+          strength: Math.round((1200 + r() * 600) * part),
+          run: Math.round((380 + r() * 520) * part),
+          bike: r() < 0.55 ? Math.round((250 + r() * 550) * part) : 0,
+          swim: r() < 0.25 ? Math.round((120 + r() * 200) * part) : 0,
+          other: r() < 0.3 ? Math.round((90 + r() * 300) * part) : 0,
+        };
+        return { week: w, load: v, total: Object.values(v).reduce((a, b) => a + b, 0) };
+      });
+      data.load.forEach((wk, i) => {
+        const win = data.load.slice(Math.max(0, i - 3), i + 1);
+        wk.avg4 = win.reduce((t, q) => t + q.total, 0) / win.length;
+      });
+      data.km = weeks.map((w) => ({
+        week: w,
+        run: round((w === curWeek ? 12 : 18) + r() * 16, 0.1),
+        bike: r() < 0.6 ? round(25 + r() * 60, 0.1) : 0,
+        swim: r() < 0.3 ? round(1 + r() * 2.5, 0.1) : 0,
+      }));
+      data.back = weeks.map((w) => ({ week: w, sets: w === curWeek ? 8 : 12 + Math.floor(r() * 11) }));
+      data.chest = weeks.map((w) => ({ week: w, sets: w === curWeek ? 5 : 6 + Math.floor(r() * 10) }));
+      data.adh = weeks.map((w) => {
+        const planned = r() < 0.15 ? 4 : 5;
+        const done = w === curWeek ? 3 : Math.max(1, planned - Math.floor(r() * 3));
+        return { week: w, planned, done };
+      });
+    }
+    // Press banca: 1RM estimado (toda la serie) y mejor serie (solo 120 días: series de distinta longitud).
+    {
+      const r = rng(5);
+      const e1rm = [];
+      const best = [];
+      for (let i = 210; i >= 0; i -= 3 + Math.floor(r() * 3)) {
+        const d = addDays(TODAY, -i);
+        const t = 210 - i;
+        const w = round(75 + t * 0.05 + (r() - 0.4) * 3, 2.5);
+        const reps = 4 + Math.floor(r() * 5);
+        const rir = Math.floor(r() * 3);
+        const est = w * (1 + (reps + rir) / 30);
+        e1rm.push({ x: d, y: round(est, 0.1), label: `${fmtNum(est, 1)} kg (estimado)` });
+        if (i <= 120) best.push({ x: d, y: w, label: `${fmtNum(w, 1)} kg × ${reps} @${rir}` });
+      }
+      data.bench = { e1rm, best, first: e1rm[0].x };
+    }
+    // Dominadas asistidas (peso negativo = asistencia).
+    data.neg = [];
+    for (let i = 0; i < 14; i++) {
+      const w = -30 + i * 1.5;
+      data.neg.push({ x: addDays(TODAY, -91 + i * 7), y: w, label: `${fmtNum(w, 1)} kg × 8 (asistida)` });
+    }
+    // 400+ puntos
+    {
+      const r = rng(99);
+      data.dense = [];
+      let v = 52;
+      for (let i = 479; i >= 0; i--) {
+        v = Math.min(66, Math.max(44, v + (r() - 0.5) * 2.4));
+        data.dense.push({ x: addDays(TODAY, -i), y: Math.round(v) });
+      }
+    }
+
+    // ---------- Selector global ----------
+    const firstAll = [data.runs.first, data.bench.first, weeks[0]].sort()[0];
+    let period = getPeriod('bench');
+    const globalSel = periodSelector({ key: 'bench', value: period, onChange: (id) => { period = id; applyPeriod(); } });
+    document.getElementById('global-period').appendChild(globalSel);
+    const fromOf = (id, first = firstAll) => periodStart(id, TODAY, first);
+    const weeksFrom = (id) => { const f = fromOf(id); return f ? weekStart(f) : weeks[0]; };
+
+    // ---------- Gráficas ----------
+    // 1) Peso corporal, con su propio selector (como en #/bodyweight)
+    let bwPeriod = getPeriod('bench-bw');
+    const bwSel = periodSelector({ key: 'bench-bw', value: bwPeriod, onChange: (id) => { bwPeriod = id; charts.bw.update({ xDomain: [periodStart(id, TODAY, data.bw.first), TODAY] }); } });
+    charts.bw = lineChart(card('bw', 'Peso corporal', 'Pesajes diarios y media de 7 días (kg)', { extra: bwSel }), {
+      series: [
+        { id: 'daily', label: 'Pesaje', color: COLORS.text2, points: data.bw.daily, line: false, dots: true },
+        { id: 'ma', label: 'Media 7 días', color: COLORS.accent, points: data.bw.ma, emphasis: true, dots: false },
+      ],
+      height: 220, yFormat: kg, yTickFormat: (v) => fmtNum(v, 1),
+      band: { min: 74, max: 76, label: 'Objetivo 74–76 kg' },
+      xDomain: [periodStart(bwPeriod, TODAY, data.bw.first), TODAY],
+      ariaLabel: 'Peso corporal: pesajes diarios y media de 7 días',
+    });
+
+    const lineSpecs = {};
+    // 2) Ritmo de carrera (invertY: menos es mejor; marcas de tiempo redondas)
+    lineSpecs.pace = () => ({ xDomain: [fromOf(period, data.runs.first), TODAY] });
+    charts.pace = lineChart(card('pace', 'Ritmo medio de carrera', 'min/km · más arriba = más rápido'), {
+      series: [
+        { id: 'run', label: 'Carrera', color: COLORS.run, points: data.runs.runs, line: false, dots: true },
+        { id: 'avg', label: 'Media 5 carreras', color: COLORS.run, points: data.runs.avg, emphasis: true, dots: false },
+      ],
+      invertY: true, yTicks: 'time', yFormat: (v) => fmtPace(v), yTickFormat: (v) => fmtDuration(v),
+      ...lineSpecs.pace(), ariaLabel: 'Ritmo medio de carrera',
+    });
+
+    // 3) Carga semanal por tipo (apiladas + media 4 semanas + leyenda)
+    const LOAD_KEYS = [
+      { key: 'strength', label: 'Fuerza', color: COLORS.strength }, { key: 'run', label: 'Carrera', color: COLORS.run },
+      { key: 'bike', label: 'Bici', color: COLORS.bike }, { key: 'swim', label: 'Natación', color: COLORS.swim },
+      { key: 'other', label: 'Otras', color: COLORS.other },
+    ];
+    const loadOpts = () => {
+      const from = weeksFrom(period);
+      const rows = data.load.filter((w) => w.week >= from);
+      return {
+        bars: rows.map((w) => ({ x: w.week, segments: LOAD_KEYS.map((k) => ({ key: k.key, value: w.load[k.key], color: k.color })),
+          tooltip: w.week === curWeek ? ['Semana en curso'] : undefined })),
+        overlay: { points: rows.map((w) => ({ x: w.week, y: w.avg4 })), color: COLORS.text, label: 'Media 4 sem' },
+      };
+    };
+    charts.load = barChart(card('load', 'Carga semanal por tipo', 'Minutos × esfuerzo (RPE)'), {
+      stacked: true, yFormat: (v) => fmtNum(v, 0), legend: LOAD_KEYS, ...loadOpts(), ariaLabel: 'Carga semanal por tipo de actividad',
+    });
+
+    // 4) Series por músculo con franja constante
+    const setsOpts = (arr) => () => { const from = weeksFrom(period); return { bars: arr.filter((w) => w.week >= from).map((w) => ({ x: w.week, segments: [{ key: 'sets', value: w.sets }] })) }; };
+    const backOpts = setsOpts(data.back);
+    charts.back = barChart(card('back', 'Series por semana · Espalda', 'Series efectivas frente al rango objetivo'), {
+      yFormat: (v) => fmtNum(v, 0), band: { min: 12, max: 20, label: 'Objetivo 12–20' },
+      legend: [{ key: 'sets', label: 'Series efectivas', color: COLORS.info }], ...backOpts(),
+    });
+    // 5) Franja por barra (el objetivo cambió en agosto)
+    const chestOpts = setsOpts(data.chest);
+    charts.chest = barChart(card('chest', 'Series por semana · Pecho', 'Rango objetivo por semana (cambió el 3 ago)'), {
+      yFormat: (v) => fmtNum(v, 0), band: (bar) => (bar.x < '2026-08-03' ? { min: 8, max: 12 } : { min: 10, max: 16 }),
+      bandLabel: 'Rango objetivo', legend: [{ key: 'sets', label: 'Series efectivas', color: COLORS.info }], ...chestOpts(),
+    });
+
+    // 6) Km semanales por deporte (apiladas)
+    const KM_KEYS = [{ key: 'run', label: 'Carrera', color: COLORS.run }, { key: 'bike', label: 'Bici', color: COLORS.bike }, { key: 'swim', label: 'Natación', color: COLORS.swim }];
+    const kmOpts = () => { const from = weeksFrom(period); return { bars: data.km.filter((w) => w.week >= from).map((w) => ({ x: w.week, segments: KM_KEYS.map((k) => ({ key: k.key, value: w[k.key], label: fmtKm(w[k.key], 1) })) })) }; };
+    charts.km = barChart(card('km', 'Km semanales por deporte', 'km'), { yFormat: (v) => fmtKm(v, 1), yTickFormat: (v) => fmtNum(v, 0), legend: KM_KEYS, ...kmOpts() });
+
+    // 7) Adherencia (agrupadas)
+    const adhOpts = () => { const from = weeksFrom(period); return { bars: data.adh.filter((w) => w.week >= from).map((w) => ({ x: w.week, segments: [{ key: 'planned', value: w.planned }, { key: 'done', value: w.done }], tooltip: [`${w.done} de ${w.planned} hechas`] })) }; };
+    charts.adh = barChart(card('adh', 'Adherencia', 'Sesiones planificadas frente a hechas'), {
+      stacked: false, height: 180, yFormat: (v) => fmtNum(v, 0),
+      legend: [{ key: 'planned', label: 'Planificadas', color: COLORS.muted }, { key: 'done', label: 'Hechas', color: COLORS.accent }], ...adhOpts(),
+    });
+
+    // 8) Press banca: dos series de distinta longitud con etiquetas exactas
+    lineSpecs.bench = () => ({ xDomain: [fromOf(period, data.bench.first), TODAY] });
+    charts.bench = lineChart(card('bench', 'Press banca', '1RM estimado (Epley, es una estimación) y mejor serie'), {
+      series: [
+        { id: 'e1rm', label: '1RM estimado', color: COLORS.accent, points: data.bench.e1rm, dots: true },
+        { id: 'best', label: 'Mejor serie', color: COLORS.info, points: data.bench.best, dots: true },
+      ],
+      yFormat: kg, yTickFormat: (v) => fmtNum(v, 1), ...lineSpecs.bench(),
+    });
+
+    // 9) Casos límite
+    const grid = h('div.bench-grid');
+    bench.appendChild(h('div.section-title', 'Casos límite'));
+    bench.appendChild(grid);
+    charts.one = lineChart(card('one', '1 punto', null, { parent: grid }), {
+      series: [{ id: 'one', label: 'Peso', color: COLORS.accent, points: [{ x: '2026-09-20', y: 82.5, label: '82,5 kg × 5 @1' }] }], height: 150, yFormat: kg,
+    });
+    charts.flat = lineChart(card('flat', 'Valores iguales', null, { parent: grid }), {
+      series: [{ id: 'flat', label: 'Peso', color: COLORS.info, points: [0, 4, 9, 13, 18].map((n) => ({ x: addDays('2026-09-01', n), y: 80 })) }], height: 150, yFormat: kg,
+    });
+    charts.neg = lineChart(card('neg', 'Negativos (asistida)', null, { parent: grid }), {
+      series: [{ id: 'neg', label: 'Lastre', color: COLORS.swim, points: data.neg }], height: 150, yFormat: kg, yTickFormat: (v) => fmtNum(v, 0),
+    });
+    charts.emptyLine = lineChart(card('empty-line', 'Vacío (líneas)', null, { parent: grid }), {
+      series: [{ id: 'x', label: 'Nada', points: [] }], height: 150, xDomain: [addDays(TODAY, -28), TODAY],
+    });
+    charts.emptyBar = barChart(card('empty-bar', 'Vacío (barras)', null, { parent: grid }), {
+      bars: [], height: 150, empty: 'Sin sesiones en este periodo',
+    });
+    charts.zeroBar = barChart(card('zero-bar', 'Barras a cero', null, { parent: grid }), {
+      bars: weeks.slice(-4).map((w) => ({ x: w, segments: [{ key: 's', value: 0 }] })), height: 150, emptyWhenZero: false, yFormat: (v) => fmtNum(v, 0),
+    });
+
+    // 10) 480 puntos (rendimiento)
+    charts.dense = lineChart(card('dense', '480 puntos', 'Una sola ruta SVG por serie; toque con búsqueda binaria'), {
+      series: [{ id: 'dense', label: 'FC reposo', color: COLORS.danger, points: data.dense, dots: false }], height: 180,
+      yFormat: (v) => `${fmtNum(v, 0)} ppm`, yTickFormat: (v) => fmtNum(v, 0),
+    });
+
+    function applyPeriod() {
+      charts.pace.update(lineSpecs.pace());
+      charts.bench.update(lineSpecs.bench());
+      charts.load.update(loadOpts());
+      charts.back.update(backOpts());
+      charts.chest.update(chestOpts());
+      charts.km.update(kmOpts());
+      charts.adh.update(adhOpts());
+    }
+
+    window.__charts = charts;
+    window.__bench = { TODAY, data, weeks, curWeek, lib: { lineChart, barChart, legend, periodSelector, periodStart, getPeriod, setPeriod, COLORS, PERIODS }, util: { fmtNum, fmtDate, fmtWeekRange, fmtPace, fmtKm } };
+    requestAnimationFrame(() => document.documentElement.classList.add('ready'));
+  </script>
+</body>
+</html>

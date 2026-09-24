@@ -1,1 +1,97 @@
 /* progress.css — estilos del módulo (propiedad del módulo correspondiente). */
+
+/* ---------- charts ---------- */
+/* Propiedad: gráficas (js/charts.js). Clases .chart-*. El resto del archivo (vistas de Progreso) va DESPUÉS
+   del marcador «fin charts». */
+.chart { position: relative; width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.chart-plot {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  touch-action: pan-y; /* el arrastre horizontal es de la gráfica; el vertical sigue desplazando la página */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.chart-svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.chart-svg text { font-size: 12px; fill: var(--muted); }
+.chart-grid { stroke: #252a32; stroke-width: 1; shape-rendering: crispEdges; }
+.chart-zero { stroke: var(--border-strong); }
+.chart-tick { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
+.chart-base { stroke: var(--border); }
+.chart-line { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dots { fill: none; stroke-linecap: round; }
+.chart-dot-ring { fill: none; stroke: var(--surface); stroke-linecap: round; }
+.chart-band-fill { fill-opacity: 0.1; stroke: none; }
+.chart-band-edge { fill: none; stroke-opacity: 0.4; stroke-width: 1; shape-rendering: crispEdges; }
+.chart-svg .chart-band-label {
+  font-size: 11px;
+  font-weight: 650;
+  fill: var(--text-2);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.chart-guide { stroke: rgba(243, 245, 247, 0.55); stroke-width: 1; shape-rendering: crispEdges; }
+.chart-guide-col { fill: rgba(243, 245, 247, 0.08); stroke: none; }
+.chart-mark { stroke: var(--surface); stroke-width: 2.5; }
+
+/* Globo (valor exacto al tocar) */
+.chart-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  pointer-events: none;
+  min-width: 118px;
+  max-width: calc(100% - 4px);
+  padding: 7px 10px 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+}
+.chart-tip-title { font-size: 12px; font-weight: 650; color: var(--text-2); margin-bottom: 3px; white-space: nowrap; }
+.chart-tip-row { display: flex; align-items: center; gap: 7px; min-height: 21px; white-space: nowrap; }
+.chart-tip-val { font-size: 15px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.chart-tip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--muted); }
+.chart-tip-total .chart-tip-val { font-size: 16px; }
+.chart-tip-note { margin-top: 3px; font-size: 12px; color: var(--muted); white-space: normal; }
+
+/* Marcas de color de leyenda y globo (el texto nunca va en el color de la serie) */
+.chart-key { flex: none; display: inline-block; width: 14px; height: 3px; border-radius: 2px; background: currentColor; }
+.chart-key-rect { width: 10px; height: 10px; border-radius: 3px; }
+.chart-key-dot { width: 8px; height: 8px; border-radius: 50%; margin: 0 3px; }
+.chart-key-dashed { height: 0; background: none; border-top: 2px dashed currentColor; }
+.chart-key-band { position: relative; width: 12px; height: 10px; border-radius: 1px; background: none; border-top: 1px solid; border-bottom: 1px solid; }
+.chart-key-band::before { content: ''; position: absolute; inset: 0; background: currentColor; opacity: 0.3; }
+
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; line-height: 1.2; color: var(--text-2); }
+.chart-legend-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+
+.chart-empty {
+  display: grid;
+  place-items: center;
+  padding: 0 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* Selector de periodo: 5 opciones en una fila también a 320–375 px */
+.chart-period { min-width: 0; }
+.chart-period .seg-btn { flex: 1 1 auto; min-width: 0; padding: 0 5px; font-size: 13.5px; letter-spacing: -0.01em; }
+/* ---------- fin charts ---------- */
