@@ -249,6 +249,35 @@
       yFormat: kg, yTickFormat: (v) => fmtNum(v, 1), ...lineSpecs.bench(),
     });
 
+    // 8b) Dos salidas el mismo día (ida y vuelta): cada una en el globo; la media (línea sin puntos) da una fila.
+    data.rides = [
+      { x: '2026-09-03', y: 25.1, label: '25,1 km/h · 18 km' },
+      { x: '2026-09-10', y: 24, label: '24 km/h · 12 km' },
+      { x: '2026-09-10', y: 30, label: '30 km/h · 60 km' },
+      { x: '2026-09-17', y: 26.4, label: '26,4 km/h · 22 km' },
+    ];
+    data.ridesAvg = [
+      { x: '2026-09-03', y: 25.1 }, { x: '2026-09-10', y: 24.6 }, { x: '2026-09-10', y: 28.4 }, { x: '2026-09-17', y: 27.9 },
+    ];
+    charts.sameday = lineChart(card('sameday', 'Velocidad en bici', 'Dos salidas el 10 sep (ida y vuelta)'), {
+      series: [
+        { id: 'each', label: 'Cada salida', color: COLORS.bike, points: data.rides, line: false, dots: true },
+        { id: 'avg', label: 'Media 5 últimas', color: COLORS.bike, points: data.ridesAvg, emphasis: true, dots: false },
+      ],
+      height: 180, yFormat: (v) => `${fmtNum(v, 1)} km/h`, yTickFormat: (v) => fmtNum(v, 0), xDomain: [addDays(TODAY, -28), TODAY],
+    });
+
+    // 8c) Globo con un valor muy largo (1RM en ejercicios de peso corporal)
+    data.longtip = [0, 7, 14, 21].map((n, i) => ({
+      x: addDays('2026-09-01', n), y: 100 + i * 1.2,
+      label: `${fmtNum(100 + i * 1.2, 1)} kg · +7,5 kg × 6 @2 · peso corporal 73,9 kg`,
+      note: i === 3 ? 'Incluye el peso corporal del día (73,9 kg)' : undefined,
+    }));
+    charts.longtip = lineChart(card('longtip', 'Dominadas · 1RM estimado', 'Etiquetas largas en el globo'), {
+      series: [{ id: 'e1rm', label: '1RM estimado', color: COLORS.info, points: data.longtip, dots: true }],
+      height: 170, yFormat: kg, yTickFormat: (v) => fmtNum(v, 1),
+    });
+
     // 9) Casos límite
     const grid = h('div.bench-grid');
     bench.appendChild(h('div.section-title', 'Casos límite'));
@@ -270,6 +299,22 @@
     });
     charts.zeroBar = barChart(card('zero-bar', 'Barras a cero', null, { parent: grid }), {
       bars: weeks.slice(-4).map((w) => ({ x: w, segments: [{ key: 's', value: 0 }] })), height: 150, emptyWhenZero: false, yFormat: (v) => fmtNum(v, 0),
+    });
+    // Rangos estrechos con un eje de 0 o 1 decimal: rótulos exactos y sin repetir (nunca «27 | 27 | 27»).
+    charts.ticks0 = lineChart(card('ticks0', 'Eje sin decimales', null, { parent: grid }), {
+      series: [{ id: 't0', label: 'Bici', color: COLORS.bike, points: [26.9, 27.05, 27.1, 26.95].map((y, i) => ({ x: addDays('2026-09-01', i * 7), y })) }],
+      height: 150, yFormat: (v) => `${fmtNum(v, 1)} km/h`, yTickFormat: (v) => fmtNum(v, 0),
+    });
+    charts.ticks1 = lineChart(card('ticks1', 'Eje con 1 decimal', null, { parent: grid }), {
+      series: [{ id: 't1', label: 'Peso', color: COLORS.accent, points: [75.02, 75.4, 75.78, 75.3].map((y, i) => ({ x: addDays('2026-09-01', i * 7), y })) }],
+      height: 150, yFormat: kg, yTickFormat: (v) => fmtNum(v, 1),
+    });
+    // La línea viene de un punto muy bajo fuera del periodo: no cruza el eje X.
+    charts.edge = lineChart(card('edge', 'Vecino fuera', null, { parent: grid }), {
+      series: [{ id: 'e', label: 'Media', color: COLORS.bike, points: [
+        { x: addDays(TODAY, -40), y: 12 }, { x: addDays(TODAY, -20), y: 27 }, { x: addDays(TODAY, -10), y: 27.2 }, { x: TODAY, y: 27.1 },
+      ], dots: false }],
+      height: 150, yFormat: (v) => `${fmtNum(v, 1)} km/h`, yTickFormat: (v) => fmtNum(v, 0), xDomain: [addDays(TODAY, -28), TODAY],
     });
 
     // 10) 480 puntos (rendimiento)
