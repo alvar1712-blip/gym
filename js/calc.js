@@ -427,11 +427,13 @@ export function bestSet(sets, exercise, bwKg = null) {
   let best = null;
   let bestVal = -Infinity;
   const t = exercise?.logType;
+  // Si alguna serie tiene 1RM estimado, se compara SOLO por 1RM (no se mezcla con reps de otras series).
+  const anyE1rm = (sets || []).some((s) => isWorkSet(s) && setMetrics(s, exercise, bwKg).e1rm != null);
   for (const s of sets || []) {
     if (!isWorkSet(s)) continue;
     const m = setMetrics(s, exercise, bwKg);
     let val;
-    if (m.e1rm != null) val = m.e1rm;
+    if (anyE1rm) val = m.e1rm;
     else if (t === 'time') val = s.timeSec;
     else if (t === 'jumps') val = s.heightCm || s.reps;
     else if (t === 'distance_time') val = s.distanceM > 0 && s.timeSec > 0 ? s.distanceM / s.timeSec : s.distanceM;

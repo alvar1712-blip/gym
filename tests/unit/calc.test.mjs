@@ -150,3 +150,12 @@ test('bestSet: distancia+tiempo elige la más rápida; tiempo la más larga', ()
   const bench = { id: 'bench', logType: 'weight_reps' };
   assert.equal(bestSet([{ id: 'w1', type: 'effective', weight: 80, reps: 6, done: true }, { id: 'w2', type: 'effective', weight: 85, reps: 3, done: true }], bench).id, 'w1');
 });
+
+test('bestSet no mezcla 1RM con repeticiones de series sin 1RM', async () => {
+  const { bestSet } = await import('../../js/calc.js');
+  const ex = { logType: 'weight_reps' };
+  const a = { id: 'a', type: 'effective', weight: 10, reps: 3, done: true };
+  const b = { id: 'b', type: 'effective', weight: 8, reps: 20, done: true };
+  assert.equal(bestSet([a, b], ex).id, 'a');
+  assert.equal(bestSet([b], ex).id, 'b');
+});
