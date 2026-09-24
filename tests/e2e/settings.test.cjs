@@ -143,6 +143,26 @@ test('índice de Ajustes: secciones, semana tipo resumida, aviso de copia, insta
     assert.strictEqual(await page.locator('.cfg-banner').count(), 1);
     assert.match(await page.locator('.cfg-banner').innerText(), /Aún no has hecho ninguna copia/);
     assert.match(await page.locator('.cfg-data-row').innerText(), /Copia pendiente/);
+    // La insignia va junto al título, dentro del texto: en 375 y 390 px el título se lee entero y el
+    // subtítulo no se queda en una columna estrecha (antes: «Copias y…» y 6–7 líneas).
+    const vp = page.viewportSize();
+    for (const width of [375, 390]) {
+      await page.setViewportSize({ width, height: vp.height });
+      const fit = await page.evaluate(() => {
+        const row = document.querySelector('.cfg-data-row');
+        const title = row.querySelector('.list-item-title');
+        return {
+          inMain: !!row.querySelector('.list-item-main .cfg-badge'),
+          clipped: title.scrollWidth > title.clientWidth,
+          mainW: row.querySelector('.list-item-main').offsetWidth,
+        };
+      });
+      assert.ok(fit.inMain, 'insignia dentro del bloque de texto');
+      assert.ok(!fit.clipped, `${width} px: título «Copias y datos» sin cortar`);
+      assert.ok(fit.mainW > 200, `${width} px: el texto tiene ancho (${fit.mainW} px)`);
+      assert.ok(await noHScroll(page));
+    }
+    await page.setViewportSize(vp);
     // La semana tipo nueva (domingo = carrera) se refleja.
     assert.strictEqual((await page.locator('.cfg-week-mini .cfg-wm-label').allTextContents())[6], '🏃');
     await shot(page, 'settings-index');
@@ -401,6 +421,11 @@ test('CRITERIO: exportar copia → borrar todo (doble confirmación) → importa
   const { page } = app;
   try {
     await seedData(page);
+    // Ajustes guardados hace un rato (el reloj está fijo): anotar la copia no debe dejarles un sello distinto del archivo.
+    await page.evaluate(() => {
+      const st = window.__app.store;
+      return st.restore('meta', { ...st.settings(), updatedAt: Date.now() - 60000 });
+    });
     await go(page, '#/settings/data');
     assert.match(await page.locator('.cfg-last-value').innerText(), /Nunca/);
     assert.strictEqual(await page.locator('.cfg-overdue').count(), 1, 'aviso de copia pendiente');
@@ -430,12 +455,15 @@ test('CRITERIO: exportar copia → borrar todo (doble confirmación) → importa
     assert.match(await page.locator('.cfg-last-value').innerText(), /23 sep 2026, 12:00/);
     assert.match(await page.locator('.cfg-last-ago').innerText(), /Hoy/);
     assert.strictEqual(await page.locator('.cfg-overdue').count(), 0);
-    // El archivo coincide con lo que hay ahora en la app (salvo updatedAt de los ajustes, que cambia al anotar la copia).
+    // El archivo coincide con lo que hay ahora en la app y en disco, ajustes incluidos (también su updatedAt:
+    // anotar la copia no le pone un sello posterior al del archivo).
     const live = await page.evaluate(() => window.__app.store.exportData().data);
     for (const st of STORES) {
-      if (st === 'meta') continue;
       assert.deepStrictEqual(byId(live[st]), byId(backup.data[st]), `store ${st}`);
+      assert.deepStrictEqual(byId(await idbAll(page, st)), byId(backup.data[st]), `IndexedDB «${st}» = archivo`);
     }
+    const diskAtExport = {};
+    for (const st of STORES) diskAtExport[st] = byId(await idbAll(page, st));
 
     // 2) Borrar todo: cancelar en la 1ª y en la 2ª confirmación no borra nada.
     await page.locator('.cfg-wipe').click();
@@ -497,6 +525,7 @@ test('CRITERIO: exportar copia → borrar todo (doble confirmación) → importa
     assert.deepStrictEqual(after, backup.data, 'store.exportData().data idéntico al exportado');
     for (const st of STORES) {
       assert.deepStrictEqual(byId(await idbAll(page, st)), byId(backup.data[st]), `IndexedDB «${st}» idéntico`);
+      assert.deepStrictEqual(byId(await idbAll(page, st)), diskAtExport[st], `IndexedDB «${st}» igual que al exportar`);
     }
     // Tras recargar (cerrar y abrir la app) sigue idéntico y coherente: última copia = la importada.
     await reload(page);
@@ -580,6 +609,65 @@ test('exportar con la hoja de compartir: compartido anota la copia; cancelado no
     assert.strictEqual(JSON.parse(f.text).data.meta.find((m) => m.id === 'settings').lastBackupAt, NOW.getTime());
     assert.strictEqual((await settingsOf(page)).lastBackupAt, NOW.getTime());
     assert.match(await page.locator('.toast').innerText(), /Copia exportada/);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('borrar todo e importar eliminan los borradores de localStorage (sin «Borrador recuperado» de los datos anteriores)', async () => {
+  const app = await setup();
+  const { page } = app;
+  const appKeys = () => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('draft:') || k.startsWith('entreno.')).sort());
+  /** Carrera a medias (sin duración) y ejercicio nuevo a medias. */
+  async function makeDrafts(km, name) {
+    await go(page, '#/activity/new?kind=run');
+    await page.fill('[aria-label="Distancia (km)"]', km);
+    await page.fill('[aria-label="Notas"]', 'nota a medias');
+    await settle(page);
+    await go(page, '#/exercise/new');
+    await page.locator('input[aria-label="Nombre del ejercicio"]').fill(name);
+    await settle(page);
+    const keys = await appKeys();
+    assert.ok(keys.includes('draft:activity:run') && keys.includes('entreno.exercise.draft'), keys.join(', '));
+  }
+  async function expectNoDrafts() {
+    await go(page, '#/activity/new?kind=run');
+    assert.strictEqual(await page.locator('.act-restored').count(), 0, 'sin «Borrador recuperado» en la carrera');
+    assert.strictEqual(await page.locator('[aria-label="Distancia (km)"]').inputValue(), '');
+    await go(page, '#/exercise/new');
+    assert.strictEqual(await page.locator('.lib-draft').count(), 0, 'sin «Borrador recuperado» en el ejercicio');
+    assert.strictEqual(await page.locator('input[aria-label="Nombre del ejercicio"]').inputValue(), '');
+  }
+  try {
+    await seedData(page);
+    const backupText = await page.evaluate(() => JSON.stringify(window.__app.store.exportData()));
+    await page.evaluate(() => localStorage.setItem('otra-app', 'conservar'));
+
+    // 1) Borrar todo.
+    await makeDrafts('12', 'Borrador secreto');
+    await go(page, '#/settings/data');
+    await page.locator('.cfg-wipe').click();
+    await sheetBtn(page, 'Continuar').click();
+    await page.waitForFunction(() => document.querySelector('.sheet-overlay input'));
+    await sheetPanel(page).locator('input').fill('BORRAR');
+    await sheetBtn(page, 'Borrar todo').click();
+    await page.waitForFunction(() => location.hash === '#/today' && window.__app.store.count('sessions') === 0, null, { timeout: 5000 });
+    await settle(page, 300);
+    assert.deepStrictEqual(await appKeys(), [], 'borrado: ni borradores ni estado de pantallas');
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('otra-app')), 'conservar', 'claves ajenas intactas');
+    await expectNoDrafts();
+
+    // 2) Importar una copia.
+    await makeDrafts('7', 'Otro borrador');
+    await go(page, '#/settings/data');
+    const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.cfg-import').click()]);
+    await fc.setFiles({ name: 'copia.json', mimeType: 'application/json', buffer: Buffer.from(backupText, 'utf8') });
+    await sheetBtn(page, 'Sustituir todo').click();
+    await page.waitForFunction(() => location.hash === '#/today' && window.__app.store.count('sessions') === 7, null, { timeout: 5000 });
+    await settle(page, 300);
+    assert.deepStrictEqual(await appKeys(), [], 'importado: sin borradores de antes');
+    await expectNoDrafts();
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

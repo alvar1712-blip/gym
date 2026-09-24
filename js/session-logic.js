@@ -44,6 +44,8 @@ export async function createStrengthSession({ templateId = null, date = todayStr
   };
   if (past) session.createdAt = tsFromDate(date, 12);
   if (tpl) {
+    // Ítems de la rutina al crear la sesión: el estado del día (plan.completeness) no depende de cambios posteriores.
+    session.templateItemIds = (tpl.items || []).map((i) => i.id);
     for (const item of tpl.items || []) session.exercises.push(sessionExerciseFromItem(item, session));
   }
   await store.save('sessions', session);

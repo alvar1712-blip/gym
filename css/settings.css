@@ -14,7 +14,10 @@
 }
 .cfg-ico-warn { background: var(--warn-soft); color: var(--warn); }
 .cfg-item-warn .list-item-sub { color: var(--warn); }
-.cfg-badge { flex: none; }
+/* Título + insignia («Copia pendiente»): en la misma línea si caben; si no, la insignia pasa debajo. */
+.cfg-title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.cfg-title-line .list-item-title { min-width: 0; max-width: 100%; }
+.cfg-badge { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
 .cfg-banner { width: 100%; text-align: left; color: var(--text); }
 .cfg-banner .banner-title,

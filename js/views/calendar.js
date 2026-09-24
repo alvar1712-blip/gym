@@ -15,7 +15,7 @@ import {
 } from '../plan.js';
 import { sessionSummary } from '../history-logic.js';
 import {
-  cap, routeParam, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart,
+  cap, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart,
   otherSessionMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 
@@ -200,7 +200,7 @@ function legend() {
 // Día: #/day/:date
 // ===========================================================================
 export function mountDay(root, params = {}) {
-  const date = routeParam(params, 'date', /^\/day\/([^/]+)/);
+  const date = params.date;
   if (!isDateStr(date)) {
     const c = screen(root, { title: 'Día', back: '#/calendar' });
     c.appendChild(emptyState({ emoji: '📅', title: 'Fecha no válida', text: 'Vuelve al calendario y elige un día.', action: { label: 'Ir al calendario', onClick: () => navigate('#/calendar', { replace: true }) } }));

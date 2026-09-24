@@ -5,11 +5,12 @@ import * as store from '../store.js';
 import { back, navigate, refresh, replaceUrl } from '../router.js';
 import {
   h, icon, header, segmented, chips, rpePicker, durationInput, field, textInput, numInput,
-  confirmDialog, undoToast, emptyState,
+  confirmDialog, undoToast, emptyState, toast,
 } from '../ui.js';
-import { todayStr, fmtDate, uid, fmtDuration, debounce, isDateStr, hhmm, relDay, deepClone, dateFromTs } from '../util.js';
+import { todayStr, fmtDate, uid, fmtDuration, fmtMinutes, debounce, isDateStr, hhmm, relDay, deepClone, dateFromTs } from '../util.js';
 import { SWIM_STROKES } from '../seed.js';
 import * as L from '../activity-logic.js';
+import { syncLinkedDuration } from '../session-logic.js';
 
 const DRAFT_PREFIX = 'draft:activity:';
 const DRAFT_TTL = 48 * 3600 * 1000; // un borrador de hace más de 2 días ya no se ofrece
@@ -100,6 +101,9 @@ function newContext(params) {
     form.parentItemId = se ? se.id : params.item || null;
     form.templateItemId = se?.templateItemId ?? null;
     if (se) form.subtype = L.subtypeFromNotes(form.kind, se.notes);
+  } else if (kind && params.subtype && (L.SUBTYPE_OPTIONS[kind] || []).some((o) => o.id === params.subtype)) {
+    // Es parte de lo prellenado (base): no cuenta como algo escrito para el borrador.
+    form.subtype = params.subtype;
   }
   const base = { ...form };
 
@@ -131,6 +135,10 @@ function mountForm(root, ctx) {
   const backFallback = form.parentId ? `#/session/${form.parentId}` : '#/today';
   const refs = {};
   let alive = true;
+  // Duración de la fuerza de la sesión padre al abrir (para avisar si se recalcula al guardar esta actividad).
+  const parentMinAtOpen = parent ? parent.durationMin ?? null : null;
+  /** Recalcula la duración automática de la fuerza de la sesión padre ya terminada (no cuenta dos veces). */
+  const syncParent = () => { if (form.parentId) syncLinkedDuration(form.parentId); };
   // Tipo de sesión elegido en cada deporte, para no perderlo al cambiar de tipo e ir y volver.
   const subtypeMemo = {};
   const resetMemo = () => { Object.keys(subtypeMemo).forEach((key) => delete subtypeMemo[key]); subtypeMemo[form.kind] = form.subtype; };
@@ -226,11 +234,16 @@ function mountForm(root, ctx) {
     // En una actividad enlazada la fecha es la de la sesión (se ve en la cabecera y el aviso).
     if (!form.parentId) {
       const dateInp = h('input.input.act-date', {
-        type: 'date', value: form.date || '', 'aria-label': 'Fecha', required: true,
+        type: 'date', value: form.date || '', max: todayStr(), 'aria-label': 'Fecha', required: true,
       });
       const onDate = () => {
         const v = dateInp.value;
         if (v === form.date) return; // 'input' y 'change' llegan juntos en algunos navegadores
+        if (isDateStr(v) && v > todayStr()) {
+          dateInp.value = form.date || '';
+          toast('La fecha no puede ser futura.', { kind: 'error' });
+          return;
+        }
         if (isDateStr(v)) { form.date = v; change({}, true); paintTitle(); } else { updateStatus(); }
       };
       dateInp.addEventListener('change', onDate);
@@ -371,6 +384,7 @@ function mountForm(root, ctx) {
       pendingSoon = !immediate;
       if (immediate) store.save('sessions', record);
       else store.saveSoon('sessions', record);
+      syncParent();
     }
     updateStatus();
   }
@@ -379,6 +393,7 @@ function mountForm(root, ctx) {
     saveDraftSoon.cancel();
     record = L.buildRecord(form, null, { id: uid('a_') });
     store.save('sessions', record);
+    syncParent();
     clearOwnDraft(form.kind, ctx.draftCtx);
     // Cambia la URL sin volver a montar la vista (se conserva el foco y el scroll).
     replaceUrl(`#/activity/${record.id}`);
@@ -525,6 +540,10 @@ function mountForm(root, ctx) {
     }
     flushRecord();
     back(backFallback);
+    const p = form.parentId ? store.get('sessions', form.parentId) : null;
+    if (p && p.status === 'done' && p.durationMin != null && parentMinAtOpen != null && p.durationMin !== parentMinAtOpen) {
+      toast(`Duración de la fuerza recalculada: ${fmtMinutes(parentMinAtOpen)} → ${fmtMinutes(p.durationMin)} (sin el cardio enlazado).`);
+    }
   }
 
   function flushRecord() {
@@ -543,10 +562,12 @@ function mountForm(root, ctx) {
     if (!ok) return;
     removed = true;
     const obj = await store.remove('sessions', record.id);
+    if (obj?.parentId) syncLinkedDuration(obj.parentId);
     back(backFallback);
     undoToast('Actividad borrada', async () => {
       if (!obj) return;
       await store.restore('sessions', obj);
+      if (obj.parentId) syncLinkedDuration(obj.parentId);
       refresh();
     });
   }

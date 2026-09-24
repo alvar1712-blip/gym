@@ -71,7 +71,9 @@ El formato «Excel en español» abre directamente en Excel con comas decimales;
 ## 4. Actualizaciones
 
 Cuando se publique una versión nueva en GitHub, abre la app **con conexión**: aparecerá el aviso
-**«Hay una versión nueva de la app» → Actualizar**. Tus datos no se tocan al actualizar.
+**«Hay una versión nueva de la app» → Actualizar**, fijo encima de la barra de pestañas en las pantallas principales
+(no interrumpe una sesión ni un formulario). Tus datos no se tocan al actualizar. Si pulsas **×**, el aviso se oculta
+y vuelve a salir la próxima vez que vuelvas a la app.
 Si no aparece, cierra la app desde el selector de apps y vuelve a abrirla.
 
 ---

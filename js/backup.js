@@ -151,7 +151,7 @@ export const STRENGTH_COLUMNS = [
   { h: 'Reps', dec: 0 },
   { h: 'Reps derecha', dec: 0 },
   { h: 'RIR (F = fallo)', dec: 0 },
-  { h: 'Tiempo (s)', dec: 0 },
+  { h: 'Tiempo (s)', dec: 2 }, // sprints con centésimas (3,45 s); los enteros salen sin decimales
   { h: 'Distancia (m)', dec: 1 },
   { h: 'Altura (cm)', dec: 1 },
   { h: 'Nota serie' },
@@ -212,7 +212,7 @@ export const CARDIO_COLUMNS = [
   { h: 'Duración (min)', dec: 1 },
   { h: 'Duración (h:mm:ss)' },
   { h: 'Tiempo total (h:mm:ss)' },
-  { h: 'Ritmo (min/km)' },
+  { h: 'Ritmo (min/km)' }, // h:mm:ss (0:05:00): ver hms()
   { h: 'Velocidad (km/h)', dec: 1 },
   { h: 'Ritmo (min/100 m)' },
   { h: 'Desnivel (m)', dec: 0 },
@@ -239,17 +239,14 @@ const SUBTYPE_LABELS = {
 const STROKE_LABEL = Object.fromEntries(SWIM_STROKES.map((t) => [t.id, t.label]));
 const POOL_LABEL = { pool: 'Piscina', open: 'Aguas abiertas' };
 
-/** Segundos → 'h:mm:ss' (siempre con horas, para que Excel lo lea como duración). */
+/**
+ * Segundos → 'h:mm:ss', siempre con horas. Se usa para duraciones Y ritmos: Excel, Numbers y Google Sheets
+ * leen «5:00» como 5 horas (h:mm), pero «0:05:00» como 5 minutos, así que un ritmo de 5:00 /km sale «0:05:00».
+ */
 export function hms(sec) {
   if (typeof sec !== 'number' || !Number.isFinite(sec) || sec < 0) return null;
   const t = Math.round(sec);
   return `${Math.floor(t / 3600)}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`;
-}
-/** Segundos → 'm:ss' (ritmos). */
-export function mss(sec) {
-  if (typeof sec !== 'number' || !Number.isFinite(sec) || sec <= 0) return null;
-  const t = Math.round(sec);
-  return `${Math.floor(t / 60)}:${pad(t % 60)}`;
 }
 
 /** Filas del CSV de cardio: una por actividad (carrera, bici, natación, otras), en orden cronológico. */
@@ -265,7 +262,7 @@ export function cardioRows(sessions) {
     rows.push([
       s.date, ACTIVITY_LABEL[s.kind] || s.kind, s.subtype ? SUBTYPE_LABELS[s.kind]?.[s.subtype] || s.subtype : null,
       km, dur, hms(sec), hms(s.elapsedSec),
-      mss(pace(sec, km)), speed(sec, km), s.kind === 'swim' ? mss(pace100(sec, km)) : null,
+      hms(pace(sec, km)), speed(sec, km), s.kind === 'swim' ? hms(pace100(sec, km)) : null,
       s.elevationM ?? null, s.hrAvg ?? null, s.hrMax ?? null, s.cadence ?? null, s.powerAvg ?? null, s.powerNp ?? null,
       POOL_LABEL[s.poolType] || s.poolType || null, s.poolType === 'pool' ? s.poolLengthM ?? null : null,
       s.stroke ? STROKE_LABEL[s.stroke] || s.stroke : null,
@@ -296,6 +293,20 @@ export function csvCounts(sessions) {
 // ---------------------------------------------------------------------------
 // Varios
 // ---------------------------------------------------------------------------
+
+/** Prefijos de las claves de localStorage de la app: borradores ('draft:activity:<tipo>') y 'entreno.…'. */
+export const LOCAL_KEY_PREFIXES = ['draft:', 'entreno.'];
+
+/**
+ * Claves de localStorage que se eliminan al borrar todo o al importar una copia: los borradores
+ * ('draft:activity:<tipo>', 'entreno.exercise.draft') y el estado de pantallas ('entreno.…'). Viven fuera de
+ * IndexedDB, así que store.wipeAll/importData no los tocan. No se usa localStorage.clear(): el origen puede
+ * ser compartido.
+ * @param {string[]} keys  todas las claves (localStorage.key(i))
+ */
+export function localKeysToClear(keys) {
+  return (keys || []).filter((k) => typeof k === 'string' && LOCAL_KEY_PREFIXES.some((p) => k.startsWith(p)));
+}
 
 /** 1536 → '1,5 KB' */
 export function formatBytes(n) {

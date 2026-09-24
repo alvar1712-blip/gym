@@ -112,17 +112,33 @@ export function keyStat(s, { exMap = null, bwFn = () => null } = {}) {
 }
 
 /**
- * Resumen para una fila de lista.
+ * Minutos de las actividades enlazadas a una sesión de fuerza (carrera, bici… registradas desde un ítem).
+ * Ya están descontados de la duración de la fuerza (no se cuentan dos veces).
+ */
+export function linkedMinutes(s, sessions) {
+  if (!s || s.kind !== 'strength' || !sessions) return 0;
+  let m = 0;
+  for (const a of sessions) {
+    if (a && a.kind !== 'strength' && a.parentId === s.id && a.status !== 'active') m += sessionDurationMin(a) || 0;
+  }
+  return m;
+}
+
+/**
+ * Resumen para una fila de lista. Con `opts.sessions`, una sesión de fuerza con actividades enlazadas
+ * muestra también la duración total: «25 min fuerza · 1 h 40 min total» (la carga no cambia).
  * @returns {{emoji, title, duration, load, key, active:boolean, href}}
  */
 export function sessionSummary(s, opts = {}) {
   const active = s.status === 'active';
   const min = active ? null : sessionDurationMin(s);
   const load = active ? null : sessionLoad(s);
+  const linked = min != null ? linkedMinutes(s, opts.sessions) : 0;
   return {
     emoji: ACTIVITY_EMOJI[s.kind] || '⚡',
     title: sessionTitle(s),
-    duration: active ? 'en curso' : min != null ? fmtMinutes(min) : '',
+    duration: active ? 'en curso' : min != null
+      ? (linked > 0 ? `${fmtMinutes(min)} fuerza · ${fmtMinutes(Math.round(min + linked))} total` : fmtMinutes(min)) : '',
     load: load != null ? `carga ${fmtNum(load, 0)}` : '',
     key: keyStat(s, opts),
     active,

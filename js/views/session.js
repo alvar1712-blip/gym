@@ -8,7 +8,7 @@ import {
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn } from '../calc.js';
-import { navigate, back, refresh, parseHash } from '../router.js';
+import { navigate, back, refresh } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import {
   lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, finishSession,
@@ -17,21 +17,11 @@ import {
 import { renderCard, activityRow, activitySummaryText } from '../session-view-card.js';
 import { renderSummary } from '../session-view-summary.js';
 
-/**
- * Id de la sesión de la ruta. Solución local: el router del núcleo no rellena los parámetros `:id`
- * (defineRoutes guarda `keys` en el objeto original y no en la copia), así que se lee del hash.
- */
-function routeId(params) {
-  if (params && params.id) return params.id;
-  const m = /^\/session\/([^/]+)/.exec(parseHash().path);
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
 // ===========================================================================
 // Registro de la sesión
 // ===========================================================================
 export function mountSession(root, params = {}) {
-  const id = routeId(params);
+  const id = params.id;
   root.classList.add('ses-view');
   const session = store.get('sessions', id);
   if (!session) {
@@ -770,5 +760,5 @@ export function mountSession(root, params = {}) {
 // ===========================================================================
 export function mountSessionSummary(root, params = {}) {
   root.classList.add('ses-view');
-  return renderSummary(root, routeId(params));
+  return renderSummary(root, params.id);
 }

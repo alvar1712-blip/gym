@@ -144,7 +144,8 @@
 .today-quick-emoji { font-size: 26px; line-height: 1; }
 .today-quick-label { font-size: 13px; font-weight: 700; line-height: 1.15; text-align: center; color: var(--text-2); }
 
-.today-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+/* Aprovecha el margen lateral de la tarjeta: cada día mide ≥ 44 px de ancho en un iPhone SE (375 px). */
+.today-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-inline: -8px; }
 .today-week-day {
   display: flex;
   flex-direction: column;
@@ -232,7 +233,8 @@
 .cal-changed-badge { flex: none; margin-top: 2px; }
 .cal-row-state { display: flex; align-items: center; gap: 4px; }
 .cal-extra { font-size: 13px; color: var(--muted); }
-.cal-row-ses { font-size: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Puede ocupar dos líneas («18 min fuerza · 1 h 00 min total»): mejor que cortar la duración. */
+.cal-row-ses { font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
 .cal-hint { margin: -2px 2px 0; }
 .cal-links { margin-top: 6px; }
 .cal-links .icon.muted { color: var(--muted); flex: none; }

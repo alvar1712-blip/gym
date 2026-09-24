@@ -11,6 +11,7 @@ import { currentPattern, setWeekPattern } from '../plan.js';
 import { pickTemplate } from '../pickers.js';
 import {
   buildBackupObject, backupFileName, csvFileName, parseBackupText, strengthCsv, cardioCsv, csvCounts, dataCounts, formatBytes,
+  localKeysToClear,
 } from '../backup.js';
 import {
   thresholdDefaults, getPath, setPath, fixPair, planLabel, shortPlanLabel, weekSummaryText, patternFromDate,
@@ -38,8 +39,12 @@ function countsText(c, { all = false, sep = ', ' } = {}) {
   return parts.filter(([n, , , main]) => n > 0 || (all && main)).map(([n, one, many]) => plural(n, one, many)).join(sep);
 }
 
-/** Fila de lista que navega. */
+/**
+ * Fila de lista que navega. La insignia va junto al título, dentro del bloque de texto (pasa debajo
+ * si no cabe): al lado de la fila le quitaría el ancho al título y al subtítulo en pantallas de 375 px.
+ */
 function navRow({ ico, title, sub = null, href, warn = false, extra = null, badge = null, aria = null, className = '' }) {
+  const titleEl = h('span.list-item-title', title);
   return h(`button.list-item.cfg-item${warn ? '.cfg-item-warn' : ''}`, {
     type: 'button',
     class: className || null,
@@ -48,10 +53,9 @@ function navRow({ ico, title, sub = null, href, warn = false, extra = null, badg
   },
   h(`span.cfg-ico${warn ? '.cfg-ico-warn' : ''}`, icon(ico, 20)),
   h('span.list-item-main',
-    h('span.list-item-title', title),
+    badge ? h('span.cfg-title-line', titleEl, badge) : titleEl,
     sub ? h('span.list-item-sub.wrap', sub) : null,
     extra),
-  badge,
   icon('chevron-right', 20, 'chev'));
 }
 
@@ -62,6 +66,34 @@ function lastBackupShort(s = store.settings()) {
   const rel = relDay(d, todayStr());
   if (rel === 'hoy' || rel === 'ayer') return `Última copia: ${rel}, ${hhmm(s.lastBackupAt)}`;
   return `Última copia: ${fmtDate(d, 'full')} (${rel})`;
+}
+
+/**
+ * Tras borrar todo o importar: quita de localStorage los borradores y el estado de pantallas de la app
+ * (una actividad o un ejercicio a medias de los datos anteriores no debe reaparecer como «Borrador recuperado»).
+ */
+function clearLocalDrafts() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    for (const k of localKeysToClear(keys)) localStorage.removeItem(k);
+  } catch { /* sin almacenamiento */ }
+}
+
+/**
+ * Anota la copia recién guardada. Si los ajustes no han cambiado desde que se generó el archivo, se guardan
+ * tal cual van en él (mismo updatedAt): así exportar → borrar → importar deja los ajustes idénticos a los del
+ * disco. Se anota DESPUÉS de compartir, nunca antes: si la app se cierra con la hoja abierta, la copia no consta.
+ */
+function markBackup(fileSettings, now) {
+  const cur = store.settings();
+  const same = !!fileSettings
+    && JSON.stringify({ ...cur, lastBackupAt: now, updatedAt: null }) === JSON.stringify({ ...fileSettings, updatedAt: null });
+  if (!same) return store.saveSettings({ lastBackupAt: now });
+  // Mismo objeto (no un clon): un saveSoon pendiente de los ajustes escribiría este mismo contenido.
+  cur.lastBackupAt = now;
+  cur.updatedAt = fileSettings.updatedAt;
+  return store.restore('meta', cur);
 }
 
 function overdueTitle(s = store.settings()) {
@@ -134,9 +166,19 @@ function weekMini(days, tpls) {
 
 function installCard() {
   if (isStandalone()) {
+    // Sin conexión solo funciona cuando el service worker ya controla la app (unos segundos tras la primera apertura).
+    const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null;
+    const why = h('p.cfg-why');
+    const paint = () => {
+      why.textContent = sw && sw.controller
+        ? 'Se abre a pantalla completa desde tu pantalla de inicio y funciona sin conexión.'
+        : 'Se abre a pantalla completa desde tu pantalla de inicio. Aún no está lista sin conexión: mantén la app abierta con internet unos segundos.';
+    };
+    paint();
+    if (sw && !sw.controller) sw.addEventListener('controllerchange', paint, { once: true });
     return h('div.card.cfg-install', { dataset: { installed: 'yes' } },
       h('div.row', h('span.cfg-check', icon('check', 18)), h('div.card-title', 'Instalada ✓')),
-      h('p.cfg-why', 'Se abre a pantalla completa desde tu pantalla de inicio y funciona sin conexión.'));
+      why);
   }
   return h('div.card.cfg-install', { dataset: { installed: 'no' } },
     h('div.card-title', 'Añadir a la pantalla de inicio'),
@@ -449,10 +491,11 @@ export function mountData(root) {
     // Sin await antes de compartir: iOS exige que la hoja de compartir salga del propio toque.
     const now = Date.now();
     const obj = buildBackupObject(store.exportData(), now);
+    const fileSettings = obj.data?.meta?.find((m) => m && m.id === 'settings');
     const file = new File([JSON.stringify(obj)], backupFileName(new Date(now)), { type: 'application/json' });
     const res = await shareFile(file, { title: 'Copia de Entreno' });
     if (res === 'cancelled') return;
-    await store.saveSettings({ lastBackupAt: now });
+    await markBackup(fileSettings, now);
     paintLast();
     toast(res === 'shared' ? 'Copia exportada.' : 'Copia descargada.', { kind: 'success' });
   }
@@ -495,6 +538,7 @@ export function mountData(root) {
       importError(`No se pudo importar: ${err?.message || err}. Tus datos actuales no se han tocado.`);
       return;
     }
+    clearLocalDrafts();
     toast(`Copia importada: ${plural(sum.strength, 'sesión de fuerza', 'sesiones de fuerza')} y ${plural(sum.activities, 'actividad', 'actividades')}.`, { kind: 'success', duration: 5000 });
   }
 
@@ -615,6 +659,7 @@ export function mountData(root) {
       toast(`No se pudo borrar: ${err?.message || err}`, { kind: 'error', duration: 6000 });
       return;
     }
+    clearLocalDrafts();
     toast('Datos borrados. La app vuelve a estar como recién instalada.', { kind: 'success', duration: 5000 });
   }
 

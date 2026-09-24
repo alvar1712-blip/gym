@@ -62,7 +62,7 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/history` | history · `mountHistory` | Lista de todas las sesiones (fuerza + actividades), filtrable |
 | `#/session/:id` | session · `mountSession` | Registro de fuerza (activa o edición de una pasada) |
 | `#/session/:id/summary` | session · `mountSessionSummary` | Resumen al terminar (récords, volumen, series, carga) |
-| `#/activity/new?kind=run\|bike\|swim\|other&date=&parent=&item=&planDate=` | activity · `mountActivity` | Formulario de actividad nueva |
+| `#/activity/new?kind=run\|bike\|swim\|other&date=&parent=&item=&planDate=&subtype=` | activity · `mountActivity` | Formulario de actividad nueva (`subtype` preelige el tipo de sesión, p. ej. «Ruta» al registrar la ruta en bici del plan) |
 | `#/activity/:id` | activity · `mountActivity` | Editar actividad |
 | `#/bodyweight` | bodyweight · `mountBodyweight` | Peso corporal: registro rápido + lista (+ gráfica en fase 2) |
 | `#/exercises?seg=library\|templates` | exercises · `mountExercises` | Pestaña Ejercicios: segmentado **Rutinas / Biblioteca** |
@@ -143,6 +143,9 @@ Superserie/circuito: ítems consecutivos con el mismo `groupId`; se muestran agr
   durationMin|null, rpe:1..10|null, notes:'', parentId|null, templateItemId|null, createdAt, updatedAt,
   // fuerza
   exercises:[SessionExercise], cursor:number,
+  templateItemIds?:[itemId],  // ítems de la plantilla al crear la sesión (estado del día, ver §4)
+  durationAuto?:boolean,      // la duración es la propuesta automática: se recalcula si cambian las actividades enlazadas
+  durationDraft?:number,      // borrador de la hoja «Terminar» mientras está activa (se borra al terminar)
   // actividades (todas opcionales salvo kind, date y duración)
   distanceKm, movingSec, elapsedSec, elevationM, hrAvg, hrMax, cadence, powerAvg, powerNp,
   subtype (run: z2|intervals|tempo|long|race; bike: easy|route|intervals|trainer; other: basketball|agility|mobility|sport|<texto>),
@@ -151,7 +154,8 @@ SessionExercise = { id, exerciseId, exName (copia del nombre), templateItemId|nu
   target:{sets, setsMax, repMin, repMax, timeMin, timeMax, distance}, notes, section, groupId, groupType,
   sets:[SetEntry] }
 SetEntry = { id, type:'warmup'|'effective'|'failure'|'drop', weight|null, reps|null, repsR|null,
-  rir: 0..5 | 'F' | null, timeSec|null, distanceM|null, heightCm|null, note:'', done:bool, doneAt|null }
+  rir: 0..5 | 'F' | null, timeSec|null, distanceM|null, heightCm|null, note:'', done:bool, doneAt|null,
+  origWeight? }  // peso prellenado antes del primer cambio (herencia de peso); se borra al confirmar y al terminar
 ```
 - Actividades: `durationMin = movingSec / 60` (se guarda también `durationMin`). `status:'done'` siempre.
 - Una actividad registrada desde un ítem de cardio de una sesión de fuerza lleva `parentId` (id de la sesión de
@@ -160,7 +164,8 @@ SetEntry = { id, type:'warmup'|'effective'|'failure'|'drop', weight|null, reps|n
   Se abre con `#/activity/new?kind=<sport>&date=<fecha sesión>&parent=<session.id>&item=<se.id>`; al guardar, la
   actividad hereda `date` y `planDate` de la sesión padre y vuelve atrás (a la sesión). Cuenta para km, ritmos y récords de resistencia y para la carga de su tipo. Al terminar la sesión
   padre, la duración propuesta de la fuerza = tiempo transcurrido − duración de las actividades enlazadas (editable),
-  para no contar dos veces la carga.
+  para no contar dos veces la carga. Si se acepta la propuesta (`durationAuto`), registrar, editar o borrar después
+  una actividad enlazada la recalcula (`syncLinkedDuration`).
 - Series **pendientes** (`done:false`) son las prellenadas aún no confirmadas; no cuentan para nada. Al terminar la
   sesión se descartan (avisando).
 - Calentamientos (`type:'warmup'`) no cuentan para volumen, series semanales ni récords (`calc.isWorkSet`).
@@ -185,9 +190,14 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 1. Estado manual (`plan[date].status`) si existe.
 2. Sesiones que cuentan para el día: `status:'done'`, `(planDate ?? date) === date`, sin `parentId`.
 3. Plan `rest`: sin sesiones → `rest`; con sesiones → `done` (entreno extra).
-4. Excepción que cambia el plan de la semana tipo (otra plantilla o sesión libre) y hay sesión → `substituted`.
-5. Plan plantilla y la sesión es de esa plantilla → `done` si todos los ítems tienen ≥1 serie de trabajo (o actividad
-   enlazada), si no `partial`. Sesión de otra plantilla / actividad libre sin excepción → `substituted`.
+4. Plan de plantilla (semana tipo, cambiado o movido) → `done`/`partial` según lo registrado de ESA plantilla: un ítem
+   está cubierto por ≥1 serie de trabajo, una actividad enlazada o, si es de cardio, una actividad suelta del mismo
+   deporte ese día (cada actividad cubre un ítem); si no hay nada de esa plantilla → `substituted`.
+5. Sesión libre: si sustituye una rutina de la semana tipo (p. ej. D6 → ruta en bici) → `substituted`; en la semana
+   tipo o planificada en un día de descanso → `done` si el tipo coincide, si no `substituted`.
+
+Los ítems que cuentan no dependen de `template.updatedAt`: son la instantánea opcional `session.templateItemIds` o,
+sin ella, los que la sesión conoce más los que ya existían al crearla (instante codificado en el id de `uid()`).
 6. Sin sesiones: fecha < hoy → `skipped`; hoy o futuro → `pending`.
 
 Firma real: `dayStatus(date, ctx)` con `ctx = ctxFromStore()` (construye el ctx UNA vez por render y reutilízalo).
@@ -244,8 +254,9 @@ corporal, el récord de 1RM compara con el peso corporal del día (si solo sube 
 
 ### plan.js (contrato mínimo, lo usa Ajustes)
 `patternFor(settings, date)` → days[7], `setWeekPattern(days)` (nueva vigencia desde el lunes de esta semana),
-`currentPattern()`. El módulo de calendario añade el resto (effectiveDay, dayStatus, weekPlan, adherence, overrideDay,
-swapDays, setManualStatus, resetDay…).
+`currentPattern()`. El módulo de calendario añade el resto (effectiveDay —devuelve también `emoji`—, dayStatus, weekPlan,
+adherence, overrideDay, swapDays, setManualStatus, resetDay…) e `idTime(id)` (instante codificado en un id de `uid()`,
+o null).
 
 ### views/bodyweight.js (contrato, lo usa Hoy)
 `bodyweightQuickEntry({onSaved})` → HTMLElement (tarjeta de registro rápido de peso).
@@ -256,7 +267,12 @@ swapDays, setManualStatus, resetDay…).
 
 ### session-logic.js
 `createStrengthSession({templateId, date, planDate, past})` → sesión guardada (activa, con series prellenadas de la
-última vez), `sessionExerciseFromItem(item, session)`, `prefillSets(se, session)`, `newSet(src, se)`.
+última vez), `sessionExerciseFromItem(item, session)`, `prefillSets(se, session)`, `newSet(src, se)`,
+`lastFor(se|exerciseId, session)` y `lastPerformanceFor(sessions, se, session)` (última vez; distinguen ejercicios
+repetidos como Sprint 20 m / 30 m), `syncLinkedDuration(sessionId)` → `{from, to}|null` (recalcula la duración
+automática de la fuerza de una sesión terminada; lo llama el formulario de actividad al guardar o borrar una enlazada),
+`formatSet(set, logType, {kg, rir})` (formato de una serie, también en la ficha del ejercicio) y
+`targetText` = `library-logic.targetText` (mismo texto de objetivo en plantilla, sesión, Hoy y actividad).
 
 ---
 

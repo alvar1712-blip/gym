@@ -221,6 +221,9 @@ export async function remove(store, id) {
 
 /** Vuelve a guardar un objeto eliminado tal cual (deshacer), sin cambiar updatedAt. */
 export function restore(store, obj) {
+  const key = `${store}:${obj.id}`;
+  const pending = pendingTimers.get(key);
+  if (pending) { clearTimeout(pending.timer); pendingTimers.delete(key); }
   maps[store].set(obj.id, obj);
   emit('change', { store, id: obj.id, op: 'put', obj });
   return track(db.put(store, obj), { store, id: obj.id });

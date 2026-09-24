@@ -33,7 +33,7 @@
 .ses-group-kind { color: var(--info); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 
 /* ---------- Tarjeta de ejercicio ---------- */
-.ses-card { gap: 10px; padding: 12px 12px 12px 14px; scroll-margin-top: 80px; }
+.ses-card { gap: 10px; padding: 12px 12px 12px 14px; scroll-margin-top: calc(var(--sat) + 76px); }
 .ses-card-done { border-color: rgba(74, 222, 128, 0.35); }
 .ses-card-head { display: flex; align-items: center; gap: 8px; margin-right: -6px; }
 .ses-name { flex: 1; min-width: 0; font-size: 18px; font-weight: 780; line-height: 1.25; overflow-wrap: anywhere; }

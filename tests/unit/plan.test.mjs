@@ -511,6 +511,11 @@ test('historial: título, dato clave (km/ritmo, volumen/series), duración y car
   assert.equal(ss.title, 'Día 1 — Upper pesado');
   assert.equal(ss.href, '#/session/s');
   assert.equal(ss.load, 'carga 420');
+  // Con actividades enlazadas: duración de la fuerza y total (la carga no cambia).
+  const lk = activity('lk', 'run', MON, { parentId: 's', movingSec: 4500, durationMin: 75 });
+  const tot = sessionSummary({ ...s, durationMin: 25 }, { exMap, sessions: [lk, run] });
+  assert.equal(tot.duration, '25 min fuerza · 1 h 40 min total');
+  assert.equal(sessionSummary({ ...s, durationMin: 25 }, { exMap, sessions: [run] }).duration, '25 min');
   const live = sessionSummary({ ...s, status: 'active' });
   assert.equal(live.duration, 'en curso');
   assert.equal(live.active, true);

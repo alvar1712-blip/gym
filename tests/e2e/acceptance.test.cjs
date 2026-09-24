@@ -109,15 +109,6 @@ const tab = (page, id) => page.locator(`#tabbar .tab[data-tab="${id}"]`);
 const byId = (arr) => [...arr].sort((a, b) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
 
 const settingsOf = (snap) => snap.meta.find((m) => m.id === 'settings');
-/** Copia de una instantánea sin el sello `updatedAt` de los ajustes. */
-const noSettingsStamp = (snap) => ({
-  ...snap,
-  meta: snap.meta.map((m) => {
-    if (m.id !== 'settings') return m;
-    const { updatedAt, ...rest } = m;
-    return rest;
-  }),
-});
 
 /**
  * Ejecuta `action` (navegación) y espera a que se monte la vista NUEVA (con su cabecera) o la pantalla de error
@@ -334,7 +325,9 @@ test('CRITERIO 1: pasar a segundo plano guarda al instante lo pendiente; si iOS 
     const expected = await getSession(page, id);
     assert.deepStrictEqual([expected.exercises[0].sets[1].weight, expected.exercises[0].sets[1].reps], [82.5, 6]);
     let disk = (await idbAll(page, 'sessions')).find((x) => x.id === id);
-    assert.deepStrictEqual([disk.exercises[0].sets[1].weight, disk.notes], [80, ''], 'aún no está en disco (guardado diferido)');
+    // Los toques del stepper se guardan al instante; lo tecleado (la nota) va con guardado diferido.
+    assert.deepStrictEqual([disk.exercises[0].sets[1].weight, disk.exercises[0].sets[1].reps], [82.5, 6], 'los toques del stepper ya están en disco');
+    assert.strictEqual(disk.notes, '', 'la nota aún no está en disco (guardado diferido)');
 
     // Pasar a segundo plano (cambiar de app / bloquear el iPhone).
     await page.evaluate(() => {
@@ -491,9 +484,8 @@ test('CRITERIO 2: exporto una copia, borro los datos, importo la copia y todo qu
     }
     assert.deepStrictEqual(fileData.meta.find((m) => m.id === 'app'), pre.meta.find((m) => m.id === 'app'));
     assert.deepStrictEqual(settingsOf(fileData), { ...settingsOf(pre), lastBackupAt }, 'ajustes del archivo = los del disco + lastBackupAt');
-    // Nota: al anotar la copia, los ajustes en disco reciben un updatedAt nuevo (posterior al archivo);
-    // es el único campo que no puede coincidir con el archivo (ver informe). El resto de «before» = archivo.
-    assert.deepStrictEqual(noSettingsStamp(before), noSettingsStamp(fileData));
+    // Al anotar la copia, los ajustes se guardan tal cual van en el archivo (mismo updatedAt): disco = archivo.
+    assert.deepStrictEqual(before, fileData);
 
     // Borrar todos los datos: doble confirmación (Continuar → escribir BORRAR → Borrar todo).
     await page.locator('.cfg-wipe').click();
@@ -524,10 +516,8 @@ test('CRITERIO 2: exporto una copia, borro los datos, importo la copia y todo qu
     // IDÉNTICO: todas las stores en disco, registro a registro, iguales al archivo…
     const after = await idbSnapshot(page);
     for (const s of STORES) assert.deepStrictEqual(after[s], fileData[s], `IndexedDB «${s}» idéntica a la copia tras importar`);
-    // …y al estado del disco en el momento de exportar (salvo el sello updatedAt de los ajustes, ver arriba).
-    const b = noSettingsStamp(before);
-    const a = noSettingsStamp(after);
-    for (const s of STORES) assert.deepStrictEqual(a[s], b[s], `IndexedDB «${s}» idéntica a la de antes de borrar`);
+    // …y al estado del disco en el momento de exportar.
+    for (const s of STORES) assert.deepStrictEqual(after[s], before[s], `IndexedDB «${s}» idéntica a la de antes de borrar`);
     // Y al volver a abrir la app: igual, y la sesión en curso se reabre.
     await page.close();
     page = await app.newPage('');
@@ -742,11 +732,16 @@ test('CRITERIO 5: instalada (service worker activo), funciona sin conexión: pes
   });
   let { page } = app;
   try {
-    // La primera visita instala el SW; al tomar el control la app se recarga sola.
-    // Esperar a un documento que ya se cargó controlado por el SW (marcado por un script de inicio) y listo.
+    // La primera visita instala el SW, que toma el control de la página abierta SIN recargarla (no se pierde
+    // lo que se esté tecleando; lo comprueba core.test.cjs). Esperar a que controle la página y esté activado.
     await page.waitForFunction(() => document.documentElement.classList.contains('ready')
-      && !!navigator.serviceWorker.controller && window.__controlledAtLoad === true, null, { timeout: 15000 });
+      && navigator.serviceWorker.controller?.state === 'activated', null, { timeout: 15000 });
+    assert.strictEqual(await page.evaluate(() => window.__controlledAtLoad), false, 'la primera visita no se recarga');
     assert.strictEqual(await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).active.state), 'activated');
+    // Con conexión, volver a abrirla: este documento ya se carga controlado por el SW.
+    await page.reload();
+    await waitReady(page);
+    assert.strictEqual(await page.evaluate(() => window.__controlledAtLoad), true);
     await seedLastD1(page, PREV_MON);
 
     assert.match(app.url, /\/gym\/$/);

@@ -3,6 +3,7 @@
 import { isDateStr, round, fmtPace, fmtSpeed, fmtNum, fmtDuration, addDays, diffDays, sortBy, normalize } from './util.js';
 import { pace, speed, pace100, sessionLoad, movingAverage, linearRegression, dayIndex } from './calc.js';
 import { RUN_TYPES, BIKE_TYPES, SWIM_STROKES, OTHER_TYPES, ACTIVITY_LABEL } from './seed.js';
+import { targetText as itemTargetText } from './library-logic.js';
 
 /** Tipos de actividad que gestiona este módulo (la fuerza va en #/session). */
 export const ACTIVITY_KINDS = ['run', 'bike', 'swim', 'other'];
@@ -307,16 +308,12 @@ export function subtypeFromNotes(kind, notes) {
   return null;
 }
 
-/** Texto del objetivo de un ítem de cardio: «30–45 min», «5 km», «30–45 min · 5 km». */
+/**
+ * Texto del objetivo de un ítem de cardio: «30–45 min», «5 km», «30–45 min · 5 km». Es el mismo texto que en
+ * el editor de plantillas y en la sesión (library-logic.targetText): 10 550 m → «10,6 km».
+ */
 export function targetText(target) {
-  if (!target) return '';
-  const parts = [];
-  const a = target.timeMin > 0 ? Math.round(target.timeMin / 60) : null;
-  const b = target.timeMax > 0 ? Math.round(target.timeMax / 60) : null;
-  if (a && b && a !== b) parts.push(`${a}–${b} min`);
-  else if (a || b) parts.push(`${a || b} min`);
-  if (target.distance > 0) parts.push(target.distance >= 1000 ? `${fmtNum(target.distance / 1000, 2)} km` : `${fmtNum(target.distance, 0)} m`);
-  return parts.join(' · ');
+  return target ? itemTargetText(target, 'cardio') : '';
 }
 
 // ---------------------------------------------------------------------------

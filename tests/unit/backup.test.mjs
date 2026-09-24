@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   backupFileName, csvFileName, fileStamp, buildBackupObject, backupSummary, dataCounts, parseBackupText,
   csvFormat, csvNumber, csvText, buildCsv, strengthCsv, strengthRows, cardioCsv, cardioRows, csvCounts,
-  STRENGTH_COLUMNS, CARDIO_COLUMNS, hms, mss, formatBytes,
+  STRENGTH_COLUMNS, CARDIO_COLUMNS, hms, formatBytes, localKeysToClear,
 } from '../../js/backup.js';
 import {
   THRESHOLD_KEYS, thresholdDefaults, getPath, setPath, fixPair, planLabel, shortPlanLabel, weekSummaryText, patternFromDate,
@@ -60,7 +60,7 @@ function strengthSession(o = {}) {
       se('se2', 'dominadas', [set({ weight: 10, reps: 6, rir: 2 })]),
       se('se3', 'bulgara', [set({ weight: 20, reps: 8, repsR: 7, rir: 2 })]),
       se('se4', 'plancha', [set({ timeSec: 45 })]),
-      se('se5', 'sprint', [set({ distanceM: 20, timeSec: 3.4 })]),
+      se('se5', 'sprint', [set({ distanceM: 20, timeSec: 3.45 })]),
       se('se6', 'saltos_verticales', [set({ reps: 3, heightCm: 55.5 })]),
       se('se7', 'ejercicio_borrado', [set({ weight: 30, reps: 10 })], 'Máquina rara'),
     ],
@@ -308,7 +308,7 @@ test('strengthCsv: columnas pedidas y una fila por serie HECHA', () => {
   assert.equal(plank['Tiempo (s)'], '45');
   assert.equal(plank['1RM estimado (kg)'], '');
   assert.equal(sprint['Distancia (m)'], '20');
-  assert.equal(sprint['Tiempo (s)'], '3', 'tiempo en segundos enteros');
+  assert.equal(sprint['Tiempo (s)'], '3,45', 'sprint con centésimas (no se redondea a segundos)');
   assert.equal(jump['Altura (cm)'], '55,5');
   // Ejercicio que ya no existe: se usa el nombre copiado en la sesión.
   assert.equal(gone.Ejercicio, 'Máquina rara');
@@ -330,6 +330,8 @@ test('strengthCsv: formato estándar, orden cronológico, sesión libre y sin se
   assert.equal(rows[9]['Sesión'], 'Día 1 — Upper pesado');
   assert.equal(rows[18]['Sesión'], 'Sesión libre');
   assert.equal(rows[2]['Peso (kg)'], '72.5');
+  assert.equal(rows[6]['Tiempo (s)'], '3.45', 'sprint con centésimas');
+  assert.equal(rows[5]['Tiempo (s)'], '45', 'tiempo entero sin decimales');
   assert.equal(rows[0]['Carga sesión'], '', 'sin RPE no hay carga');
   assert.equal(rows[0]['RPE sesión'], '');
   // Sin sesiones: solo la cabecera.
@@ -363,7 +365,7 @@ test('cardioCsv: una fila por actividad con ritmos, velocidades y etiquetas', ()
   assert.equal(rn['Duración (min)'], '50');
   assert.equal(rn['Duración (h:mm:ss)'], '0:50:00');
   assert.equal(rn['Tiempo total (h:mm:ss)'], '0:52:05');
-  assert.equal(rn['Ritmo (min/km)'], '5:00');
+  assert.equal(rn['Ritmo (min/km)'], '0:05:00', 'h:mm:ss: Excel leería «5:00» como 5 horas');
   assert.equal(rn['Velocidad (km/h)'], '12');
   assert.equal(rn['Ritmo (min/100 m)'], '', 'ritmo /100 m solo en natación');
   assert.equal(rn['Desnivel (m)'], '85');
@@ -376,7 +378,7 @@ test('cardioCsv: una fila por actividad con ritmos, velocidades y etiquetas', ()
   assert.equal(rn.Notas, 'Línea 1\nLínea 2', 'salto de línea dentro de la celda');
   assert.equal(rn['Dentro de la sesión'], '');
 
-  assert.equal(sw['Ritmo (min/100 m)'], '2:00');
+  assert.equal(sw['Ritmo (min/100 m)'], '0:02:00');
   assert.equal(sw['Piscina / aguas abiertas'], 'Piscina');
   assert.equal(sw['Largo piscina (m)'], '25');
   assert.equal(sw.Estilo, 'Crol');
@@ -410,7 +412,16 @@ test('cardioCsv: una fila por actividad con ritmos, velocidades y etiquetas', ()
   const [open] = csvObjects(cardioCsv([{ id: 'y', kind: 'swim', date: '2026-09-02', poolType: 'open', poolLengthM: 25, movingSec: 600, distanceKm: 0.5 }], { excel: false }), ',');
   assert.equal(open['Piscina / aguas abiertas'], 'Aguas abiertas');
   assert.equal(open['Largo piscina (m)'], '', 'el largo solo tiene sentido en piscina');
-  assert.equal(open['Ritmo (min/100 m)'], '2:00');
+  assert.equal(open['Ritmo (min/100 m)'], '0:02:00', 'también en formato estándar');
+});
+
+test('CSV de fuerza: tiempos de sprint con centésimas en ambos formatos', () => {
+  const s = strengthSession({ exercises: [se('se1', 'sprint', [set({ distanceM: 20, timeSec: 3.45 }), set({ distanceM: 20, timeSec: 3.12 }), set({ distanceM: 30, timeSec: 4.1 })])] });
+  const xl = csvObjects(strengthCsv([s], exMap, defaultSettings(), { excel: true }), ';');
+  assert.deepEqual(xl.map((r) => r['Tiempo (s)']), ['3,45', '3,12', '4,1']);
+  assert.deepEqual(xl.map((r) => r['Distancia (m)']), ['20', '20', '30']);
+  const std = csvObjects(strengthCsv([s], exMap, defaultSettings(), { excel: false }), ',');
+  assert.deepEqual(std.map((r) => r['Tiempo (s)']), ['3.45', '3.12', '4.1']);
 });
 
 test('csvCounts: series hechas y actividades', () => {
@@ -418,21 +429,27 @@ test('csvCounts: series hechas y actividades', () => {
   assert.deepEqual(csvCounts([]), { sets: 0, activities: 0 });
 });
 
-test('hms, mss y formatBytes', () => {
+test('hms y formatBytes', () => {
   assert.equal(hms(0), '0:00:00');
   assert.equal(hms(3725), '1:02:05');
   assert.equal(hms(59.6), '0:01:00');
   assert.equal(hms(null), null);
   assert.equal(hms(-1), null);
-  assert.equal(mss(300), '5:00');
-  assert.equal(mss(125.4), '2:05');
-  assert.equal(mss(0), null);
-  assert.equal(mss(null), null);
+  // Ritmos: siempre con horas para que la hoja de cálculo los lea como minutos y no como horas.
+  assert.equal(hms(300), '0:05:00');
+  assert.equal(hms(125.4), '0:02:05');
   assert.equal(formatBytes(512), '512 B');
   assert.equal(formatBytes(1536), '1,5 KB');
   assert.equal(formatBytes(5 * 1024 * 1024), '5 MB');
   assert.equal(formatBytes(250 * 1024 * 1024), '250 MB');
   assert.equal(formatBytes(null), '—');
+});
+
+test('localKeysToClear: borradores y estado de la app, nada ajeno', () => {
+  const keys = ['draft:activity:run', 'draft:activity:swim', 'entreno.exercise.draft', 'entreno.exercises.seg', 'lastRoute', 'otra-app', 'Draft:x', null];
+  assert.deepEqual(localKeysToClear(keys), ['draft:activity:run', 'draft:activity:swim', 'entreno.exercise.draft', 'entreno.exercises.seg']);
+  assert.deepEqual(localKeysToClear([]), []);
+  assert.deepEqual(localKeysToClear(undefined), []);
 });
 
 // ---------------------------------------------------------------------------

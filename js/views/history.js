@@ -4,7 +4,7 @@
 import * as store from '../store.js';
 import { h, screen, chips, emptyState } from '../ui.js';
 import { fmtMinutes, todayStr } from '../util.js';
-import { navigate } from '../router.js';
+import { navigate, replaceUrl } from '../router.js';
 import { HISTORY_FILTERS, isHistoryFilter, filterSessions, groupByMonth } from '../history-logic.js';
 import { sessionRow, summaryOpts, activityHref } from '../plan-ui.js';
 
@@ -28,7 +28,7 @@ export function mountHistory(root, params = {}) {
         filter = v || 'all';
         shown = PAGE;
         // El filtro queda en la URL para volver a él al regresar de una sesión.
-        history.replaceState(history.state, '', filter === 'all' ? '#/history' : `#/history?f=${filter}`);
+        replaceUrl(filter === 'all' ? '#/history' : `#/history?f=${filter}`);
         paint();
       },
     }),

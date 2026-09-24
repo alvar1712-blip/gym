@@ -1,7 +1,7 @@
 // plan-ui.js — piezas de interfaz compartidas por Hoy, Calendario, Día e Historial.
 // PROPIETARIO: módulo de calendario.
 import * as store from './store.js';
-import { navigate, parseHash } from './router.js';
+import { navigate } from './router.js';
 import { h, icon, confirmDialog, actionSheet, toast } from './ui.js';
 import { todayStr, fmtDate } from './util.js';
 import { makeBodyweightFn } from './calc.js';
@@ -13,16 +13,6 @@ import { subtypeFromNotes } from './activity-logic.js';
 
 export const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-/**
- * Parámetro de ruta leído del hash. Solución local: el router del núcleo no rellena los
- * parámetros `:x` (defineRoutes guarda `keys` en el objeto original y no en la copia).
- */
-export function routeParam(params, name, re) {
-  if (params && params[name]) return params[name];
-  const m = re.exec(parseHash().path);
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
 /** Píldora de estado («● Hecho parcialmente · a mano»). */
 export function statusPill(status, { manual = false } = {}) {
   return h(`span.status.status-${status}.cal-status`, { dataset: { status } },
@@ -33,6 +23,7 @@ export function statusPill(status, { manual = false } = {}) {
 /** Datos para calcular volúmenes en los resúmenes (constrúyelo una vez por render). */
 export function summaryOpts() {
   return {
+    sessions: store.all('sessions'), // actividades enlazadas (duración total de una sesión de fuerza)
     exMap: new Map(store.all('exercises').map((e) => [e.id, e])),
     bwFn: makeBodyweightFn(store.bodyweightList(), store.settings()?.bodyweightDefault ?? 75),
   };

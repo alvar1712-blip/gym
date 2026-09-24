@@ -67,6 +67,12 @@ function runTx(db, storeNames, mode, body) {
     } catch (err) {
       try { t.abort(); } catch { /* ya abortada */ }
       reject(err);
+      return;
+    }
+    // Las escrituras piden ya la confirmación (sin esperar al auto-commit tras la respuesta de cada
+    // petición): lo que se guarda al cerrar la app (pagehide) llega a disco aunque la página muera enseguida.
+    if (mode === 'readwrite' && typeof t.commit === 'function') {
+      try { t.commit(); } catch { /* ya terminada */ }
     }
   });
 }

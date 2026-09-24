@@ -236,6 +236,7 @@ test('subtypeFromNotes y targetText (ítems de cardio de la plantilla)', () => {
   assert.equal(targetText({ timeMin: 2700 }), '45 min');
   assert.equal(targetText({ timeMin: 1800, timeMax: 1800, distance: 5000 }), '30 min · 5 km');
   assert.equal(targetText({ distance: 400 }), '400 m');
+  assert.equal(targetText({ distance: 10550 }), '10,6 km', 'mismo texto que en la plantilla y la sesión');
   assert.equal(targetText(null), '');
 });
 

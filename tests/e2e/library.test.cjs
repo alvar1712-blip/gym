@@ -313,7 +313,7 @@ test('biblioteca: buscar sin tildes, crear ejercicio propio, editar músculos, f
     assert.strictEqual(await currentHash(page), '#/exercises?seg=templates');
     assert.strictEqual(await page.evaluate(() => localStorage.getItem('entreno.exercises.seg')), 'templates');
     // replaceUrl: la ruta actual del router también cambia (sin volver a montar la vista)
-    assert.strictEqual(await page.evaluate(() => localStorage.getItem('lastRoute')), '/exercises?seg=templates');
+    assert.strictEqual(await page.evaluate(async () => (await import('./js/router.js')).currentRoute().raw), '/exercises?seg=templates');
     assert.strictEqual(await page.locator('.lib-seg').count(), 1);
     await page.locator('.lib-seg .seg-btn', { hasText: 'Biblioteca' }).click();
 

@@ -85,7 +85,6 @@ function onRouteChange(route) {
   document.body.dataset.route = route.route.pattern;
   closeStaleToasts();
   paintUpdateBar();
-  try { localStorage.setItem('lastRoute', route.raw); } catch { /* sin almacenamiento */ }
 }
 
 function updateBadges() {
