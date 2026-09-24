@@ -9,11 +9,12 @@
 - [x] Fase 2 · librería de gráficas SVG (`js/charts.js`)
 - [x] Fase 2 · estadísticas y récords (`js/stats.js`)
 
+- [x] Fase 2 · pantallas de Progreso, ficha de progreso por ejercicio, Récords y gráfica de peso (`js/views/progress.js`)
+
 ## En curso
-- [ ] Fase 2 · pantallas de Progreso, ficha de progreso por ejercicio, Récords y gráfica de peso (`js/views/progress.js`)
+- [ ] Fase 2 · revisión (requisitos §8–§9, datos, visual) y correcciones; commit «Fase 2 completa»
 
 ## Pendiente
-- [ ] Fase 2 · revisión (requisitos §8–§9, datos, visual) y correcciones; commit «Fase 2 completa»
 - [ ] Fase 3 · panel semanal con «¿Por qué?» (`js/insights.js`, `js/views/weekly.js`), check-in (`js/checkin.js`),
       objetivos (`js/goals-logic.js`, `js/views/goals.js`) según `docs/FASE3.md`; integración en Hoy y Progreso
 - [ ] Fase 3 · revisión y correcciones; criterio de aceptación del «¿Por qué?»; commit «Fase 3 completa»

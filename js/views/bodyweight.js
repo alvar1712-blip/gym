@@ -5,6 +5,7 @@ import { navigate } from '../router.js';
 import { h, icon, screen, stepper, toast, undoToast, sheet, confirmDialog, whyBox, field } from '../ui.js';
 import { todayStr, fmtDate, fmtNum, fmtKg, fmtSigned, relDay, parseDate, isDateStr } from '../util.js';
 import { bwStats, bwWithDeltas, roundKg, trendWord, BW_TREND } from '../activity-logic.js';
+import { bodyweightChartCard } from '../progress-ui.js';
 
 const KG_MIN = 20;
 const KG_MAX = 300;
@@ -162,6 +163,8 @@ export function mountBodyweight(root) {
   // ---------- resumen, hueco de gráfica y lista ----------
   const statsBox = h('div.bw-stats');
   const chartSlot = h('div.bw-chart-slot'); // la Fase 2 dibuja aquí la gráfica
+  const bwChart = bodyweightChartCard({ key: 'bodyweight' }); // se redibuja sola al cambiar un pesaje
+  chartSlot.appendChild(bwChart.el);
   const listTitle = h('div.section-title', 'Pesajes');
   const listBox = h('div.bw-list-box');
 
@@ -301,5 +304,5 @@ export function mountBodyweight(root) {
   paintStats();
   paintList();
 
-  return () => { off(); if (raf) cancelAnimationFrame(raf); };
+  return () => { off(); if (raf) cancelAnimationFrame(raf); bwChart.destroy(); };
 }

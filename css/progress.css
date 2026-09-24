@@ -95,3 +95,259 @@
 .chart-period { min-width: 0; }
 .chart-period .seg-btn { flex: 1 1 auto; min-width: 0; padding: 0 5px; font-size: 13.5px; letter-spacing: -0.01em; }
 /* ---------- fin charts ---------- */
+
+/* ---------- progreso (vistas: js/views/progress.js, js/progress-ui.js) ---------- */
+.progress-extra:empty { display: none; } /* hueco de la Fase 3 (panel semanal y objetivos) */
+
+/* Accesos: Récords · Peso · Ejercicios */
+.prg-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.prg-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 62px;
+  padding: 6px 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.prg-link:active { background: var(--surface-2); transform: scale(0.98); }
+.prg-link-emoji { flex: none; font-size: 20px; line-height: 1; }
+.prg-link-label { max-width: 100%; font-size: 14px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Selector de periodo: pegado bajo la cabecera (el «top» exacto lo pone la vista con la altura real). */
+.prg-period-bar {
+  position: sticky;
+  top: calc(52px + var(--sat));
+  z-index: 15;
+  margin: -4px -16px 0;
+  padding: 8px 16px;
+  background: rgba(11, 13, 16, 0.94);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Tarjetas con gráfica */
+.prg-card { gap: 12px; min-width: 0; scroll-margin-top: calc(52px + var(--sat) + 76px); }
+.prg-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.prg-card-titles { min-width: 0; }
+.prg-card-title { font-size: 18px; font-weight: 750; line-height: 1.2; }
+.prg-card-sub { margin-top: 3px; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.prg-head-link {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  margin: -10px -8px -10px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.prg-head-link:active { background: var(--surface-2); }
+.prg-chart { min-width: 0; }
+.prg-howto { font-size: 13px; line-height: 1.45; color: var(--muted); }
+.prg-caption { font-size: 14px; line-height: 1.35; color: var(--text-2); }
+.prg-caption b { color: var(--text); font-weight: 750; }
+.prg-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: var(--info-soft);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+.prg-note .icon { flex: none; margin-top: 2px; color: var(--info); }
+.prg-card .chips-scroll { margin: 0 -14px; padding: 0 14px 2px; }
+.prg-seg .seg-btn { min-width: 0; padding: 0 4px; font-size: 14.5px; }
+
+/* Datos breves sobre la gráfica (columnas iguales, sin saltar de línea) */
+.prg-stats-box:empty { display: none; }
+.prg-stats { display: flex; gap: 12px; }
+.prg-stat { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0; }
+.prg-stat-label { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-stat-value { font-size: 19px; font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-stat-sub { font-size: 12px; line-height: 1.3; color: var(--muted); }
+/* Sin datos en la gráfica, la explicación de cómo leerla sobra */
+.prg-card:has(.chart-is-empty) .prg-howto { display: none; }
+.prg-stat-na .prg-stat-value { padding-top: 3px; font-size: 16px; font-weight: 750; color: var(--text-2); }
+
+/* Tabla «esta semana» por músculo */
+.prg-mlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--text-2); }
+.prg-mlegend-item { display: inline-flex; align-items: center; gap: 6px; }
+.prg-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.prg-dot-below { background: var(--warn); }
+.prg-dot-in { background: var(--ok); }
+.prg-dot-above { background: var(--info); }
+.prg-mtable { display: flex; flex-direction: column; margin: 0 -14px -4px; }
+.prg-mrow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.prg-mrow:active { background: var(--surface-2); }
+.prg-mrow-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.prg-mrow-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-mrow-val { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prg-mrow-val b { font-size: 16px; font-weight: 800; color: var(--text); }
+.prg-status {
+  flex: none;
+  width: 90px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: center;
+  white-space: nowrap;
+}
+.prg-status-below { background: var(--warn-soft); color: var(--warn); }
+.prg-status-in { background: var(--ok-soft); color: var(--ok); }
+.prg-status-above { background: var(--info-soft); color: var(--info); }
+.prg-status-none { background: var(--surface-3); color: var(--muted); }
+.prg-mbar { position: relative; display: block; height: 11px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.prg-mbar-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(74, 222, 128, 0.2);
+  box-shadow: inset 2px 0 0 rgba(74, 222, 128, 0.85), inset -2px 0 0 rgba(74, 222, 128, 0.85);
+}
+.prg-mbar-fill { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 3px; background: var(--muted); }
+.prg-mrow[data-status="below"] .prg-mbar-fill { background: var(--warn); }
+.prg-mrow[data-status="in"] .prg-mbar-fill { background: var(--ok); }
+.prg-mrow[data-status="above"] .prg-mbar-fill { background: var(--info); }
+
+/* Lista de ejercicios con historial */
+.prg-ex { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: calc(52px + var(--sat) + 72px); }
+.prg-ex-head { align-items: baseline; margin-top: 10px; }
+.prg-ex-head .section-title { margin: 0 2px; }
+.prg-search::-webkit-search-decoration { -webkit-appearance: none; }
+.prg-ex-row { min-height: 62px; }
+.prg-ex-none { padding: 6px 2px; }
+.prg-badge-inline { margin-left: 8px; vertical-align: 2px; }
+.prg-best { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.prg-best-v { font-size: 16px; font-weight: 800; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prg-best-l { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+
+/* Progreso de un ejercicio */
+.prg-kpis .kpi { display: flex; flex-direction: column; gap: 1px; }
+.prg-kpis .kpi-value { font-size: 20px; }
+.prg-kpis .kpi-sub { line-height: 1.3; overflow-wrap: anywhere; }
+.prg-hist-head { align-items: baseline; margin-top: 10px; }
+.prg-hist-head .section-title { margin: 0 2px; }
+.prg-hist-note { padding: 0 2px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.prg-hrow { align-items: center; }
+.prg-hrow-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-weight: 700; }
+.prg-hrow-sets { font-size: 14px; font-weight: 600; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.prg-set { display: inline-block; font-variant-numeric: tabular-nums; }
+.prg-set-pr { color: var(--pr); }
+.prg-sep { color: var(--muted); }
+.prg-link-row { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.prg-link-row > .icon:first-child { flex: none; color: var(--accent); }
+
+/* Récords */
+.prg-rec-body,
+.prg-rec-strength,
+.prg-rec-endurance,
+.prg-rec-list { display: flex; flex-direction: column; gap: 12px; }
+.prg-rec { padding: 0; gap: 0; overflow: hidden; }
+.prg-rec-head,
+.prg-rec-khead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+}
+.prg-rec-head:active { background: var(--surface-3); }
+.prg-rec-khead { justify-content: space-between; padding-right: 14px; }
+.prg-rec-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.prg-rec-name { font-size: 17px; font-weight: 750; line-height: 1.25; }
+.prg-rec-meta { font-size: 13px; color: var(--muted); }
+.prg-rec-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.prg-rec-rows { display: flex; flex-direction: column; }
+.prg-rec-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 10px 9px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.prg-rec-row:last-child { border-bottom: 0; }
+button.prg-rec-row:active { background: var(--surface-2); }
+.prg-rec-row .chev { flex: none; color: var(--muted); }
+.prg-rec-static { padding-right: 14px; }
+.prg-rec-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.prg-rec-label { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 15px; font-weight: 700; line-height: 1.3; }
+.prg-rec-label .prg-badge-inline { margin-left: 0; vertical-align: 0; }
+.prg-rec-sub { font-size: 13px; line-height: 1.35; color: var(--muted); }
+.prg-rec-value { flex: none; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prg-rec-na { font-size: 14px; font-weight: 650; color: var(--muted); }
+.prg-rec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+}
+.prg-rec-toggle > span:first-child { flex: 1; min-width: 0; }
+.prg-rec-toggle:active { background: var(--surface-2); }
+.prg-rec-toggle .icon { flex: none; transition: transform 0.15s ease; }
+.prg-rec-toggle.open .icon { transform: rotate(180deg); }
+.prg-rec-count {
+  flex: none;
+  min-width: 26px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.prg-rec-reps { border-top: 1px solid var(--border); background: rgba(0, 0, 0, 0.14); }
+.prg-rec-reps .prg-rec-row { min-height: 52px; }
+.prg-rec-reps .prg-rec-value { font-size: 16px; }
+.prg-rec-reps .prg-rec-value.prg-rec-na { font-weight: 700; }
+.prg-rec > .prg-hist-note { padding: 10px 14px 12px; border-top: 1px solid var(--border); }
