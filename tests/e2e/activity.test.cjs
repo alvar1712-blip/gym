@@ -71,6 +71,14 @@ test('carrera: 10 km en 50:00 → ritmo 5:00 /km, carga con esfuerzo; borrador y
     assert.match(await page.locator('.act-live').innerText(), /Sin esfuerzo percibido no hay carga/);
     await page.locator('.rpe-chips .chip').nth(6).click();
     assert.strictEqual(await page.locator('.act-load').innerText(), '350');
+    assert.match(await page.locator('.act-live').innerText(), /50 min × esfuerzo 7/);
+    // Con segundos, la explicación no redondea los minutos: 50:20 × 7 = 352,3 → 352 (no «50 min × 7»).
+    const secInput = page.locator('[aria-label="Tiempo en movimiento: s"]');
+    await secInput.fill('20');
+    assert.strictEqual(await page.locator('.act-load').innerText(), '352');
+    assert.match(await page.locator('.act-live').innerText(), /50 min 20 s × esfuerzo 7/);
+    await secInput.fill('');
+    assert.strictEqual(await page.locator('.act-load').innerText(), '350');
 
     // Opcionales
     await page.getByRole('button', { name: 'Tempo', exact: true }).click();

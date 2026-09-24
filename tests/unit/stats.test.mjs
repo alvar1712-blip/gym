@@ -143,13 +143,46 @@ test('exerciseHistory: la mejor serie es la de mayor 1RM estimado (aunque otra t
   const data = mk({ sessions: [ses('s1', '2026-09-01', [['bench', [set(10, 3), set(8, 20)]]])] });
   const [e] = exerciseHistory(data, 'bench');
   assert.equal(e.bestSet.weight, 10);
-  // Si ninguna serie tiene 1RM (todas > 12 reps), la mejor la decide calc.bestSet (más reps).
-  const d2 = mk({ sessions: [ses('s1', '2026-09-01', [['bench', [set(10, 15), set(8, 20)]]])] });
+  // Si ninguna serie tiene 1RM (todas > 12 reps), la mejor es la de más peso × reps (no solo más reps).
+  const d2 = mk({ sessions: [ses('s1', '2026-09-01', [['bench', [set(10, 15), set(8, 20), set(5, 25)]]])] });
   const [e2] = exerciseHistory(d2, 'bench');
   assert.equal(e2.e1rm, null);
-  assert.equal(e2.bestSet.reps, 20);
-  assert.equal(exerciseSeries(d2, 'bench').bestSet.length, 0); // sin 1RM no hay punto de mejor serie
+  assert.equal(e2.bestSetLabel, '8 kg × 20'); // 160 kg > 150 > 125 (calc.bestSet daría 5 × 25)
   assert.equal(exerciseSeries(d2, 'bench').maxWeight.length, 1);
+});
+
+test('exerciseSeries: «mejor serie» también en ejercicios de más de 12 reps; y = peso de la serie, no el 1RM', () => {
+  // Elevaciones laterales 3×12–20: ninguna serie tiene 1RM, pero cada sesión tiene su mejor serie.
+  const data = mk({
+    sessions: [
+      ses('s1', '2026-09-14', [['bench', [set(10, 16, { rir: 2 })]]]),
+      ses('s2', '2026-09-21', [['bench', [set(10, 20, { rir: 1 }), set(10, 18, { rir: 1 }), set(12, 15, { rir: 0 })]]]),
+      // Empate de peso × reps (180): gana la de más peso; dos sesiones sin 1RM el mismo día → la mejor de las dos.
+      ses('s3', '2026-09-22', [['bench', [set(10, 18)]]], { hour: 9 }),
+      ses('s4', '2026-09-22', [['bench', [set(12, 15), set(9, 20)]]], { hour: 19 }),
+    ],
+  });
+  const ser = exerciseSeries(data, 'bench');
+  assert.deepEqual(ser.e1rm, []);
+  assert.deepEqual(ser.bestSet.map((p) => [p.x, p.y, p.label, p.sessionId, p.reps, p.e1rm]), [
+    ['2026-09-14', 10, '10 kg × 16 @2', 's1', 16, null],
+    ['2026-09-21', 10, '10 kg × 20 @1', 's2', 20, null], // 200 kg > 180
+    ['2026-09-22', 12, '12 kg × 15', 's4', 15, null],
+  ]);
+  // La lista del historial dice la misma mejor serie que la gráfica.
+  assert.deepEqual(exerciseHistory(data, 'bench').map((e) => e.bestSetLabel), ['10 kg × 16 @2', '10 kg × 20 @1', '10 kg × 18', '12 kg × 15']);
+  // Con 1RM, la mejor serie es la de mayor 1RM, pero su altura es su PESO (el globo «80 kg × 6 @2» cae en 80).
+  const d2 = mk({ sessions: [ses('s1', '2026-09-07', [['bench', [set(80, 6, { rir: 2 }), set(85, 4, { rir: 1 }), set(60, 15)]]])] });
+  const s2 = exerciseSeries(d2, 'bench');
+  assert.deepEqual(s2.bestSet.map((p) => [p.y, p.label, p.reps, p.e1rm]), [[80, '80 kg × 6 @2', 6, e1rm(80, 6, 2)]]);
+  assert.equal(s2.e1rm[0].y, e1rm(80, 6, 2));
+  assert.notEqual(s2.bestSet[0].y, s2.e1rm[0].y);
+  // Un día con una sesión con 1RM y otra sin 1RM: manda el 1RM (no se mezcla con peso × reps).
+  const d3 = mk({ sessions: [
+    ses('a', '2026-09-07', [['bench', [set(20, 30)]]], { hour: 9 }),
+    ses('b', '2026-09-07', [['bench', [set(15, 10)]]], { hour: 19 }),
+  ] });
+  assert.deepEqual(exerciseSeries(d3, 'bench').bestSet.map((p) => [p.y, p.sessionId]), [[15, 'b']]);
 });
 
 test('peso corporal: carga = peso corporal del día + lastre (asistencia negativa); «peso máximo» = lastre', () => {
@@ -174,6 +207,8 @@ test('peso corporal: carga = peso corporal del día + lastre (asistencia negativ
   const ser = exerciseSeries(data, 'pullup');
   assert.deepEqual(ser.maxWeight.map((p) => [p.x, p.y, p.label]), [['2026-09-01', 10, '+10 kg × 5 @1'], ['2026-09-09', 0, 'Sin lastre · 9 reps']]);
   assert.deepEqual(ser.maxReps.map((p) => p.y), [10, 9]);
+  // Mejor serie en peso corporal: y = lastre de la serie de mayor 1RM (0 = sin lastre).
+  assert.deepEqual(ser.bestSet.map((p) => [p.y, p.label]), [[10, '+10 kg × 5 @1'], [0, 'Sin lastre · 9 reps']]);
   assert.equal(ser.e1rm[0].label, `${fmtNum(e1rm(84, 5, 1), 1)} kg · +10 kg × 5 @1 · peso corporal 74 kg`);
 
   const r = exerciseRecord(data, 'pullup');
@@ -227,7 +262,9 @@ test('exerciseSeries: puntos {x, y, label} desde una fecha; dos sesiones el mism
   assert.equal(all.e1rm[1].y, best8);
   assert.equal(all.e1rm[1].label, `${fmtNum(best8, 1)} kg · 80 kg × 8`);
   assert.equal(all.bestSet[1].label, '80 kg × 8');
-  assert.equal(all.bestSet[1].y, best8);
+  assert.equal(all.bestSet[1].y, 80); // peso de la serie de mayor 1RM (no el 1RM)
+  assert.equal(all.bestSet[1].e1rm, best8);
+  assert.equal(all.bestSet[1].sessionId, 's2');
   assert.deepEqual(all.volume.map((p) => p.y), [480, 82.5 * 5 + 640 + 255]); // volumen del día sumado
   assert.equal(all.volume[1].label, `${fmtNum(82.5 * 5 + 640 + 255, 0)} kg`);
   const from = exerciseSeries(data, 'bench', '2026-09-02');
@@ -252,7 +289,7 @@ test('exerciseSeries: tiempo, saltos y sprints por distancia', () => {
   assert.deepEqual(j.maxReps.map((x) => x.y), [3, 5]);
   const s = exerciseSeries(data, 'sprint');
   assert.deepEqual(s.sprint.map((x) => [x.distanceM, x.label, x.points.map((q) => q.y)]), [[20, '20 m', [3.4, 3.3]], [30, '30 m', [4.5]]]);
-  assert.equal(s.sprint[0].points[1].label, '20 m en 3,3 s');
+  assert.equal(s.sprint[0].points[1].label, '3,3 s'); // la distancia ya es el nombre de la serie («20 m»)
 });
 
 test('exerciseHistory.prs coincide con los récords del resumen de sesión (calc.sessionPRs)', () => {
@@ -306,6 +343,21 @@ test('strengthRecords: mejor peso, mejor 1RM y reps a cada peso con la PRIMERA f
   ]);
   assert.equal(r.maxTime, undefined);
   assert.equal(r.bestSprint, undefined);
+});
+
+test('strengthRecords: a igual peso en la misma sesión, «mejor peso» es la serie con más reps (primera sesión)', () => {
+  const data = mk({
+    sessions: [
+      ses('s1', '2026-09-07', [['bench', [set(40, 12, { rir: 2 }), set(40, 15, { rir: 1 }), set(40, 14)]]]),
+      ses('s2', '2026-09-14', [['bench', [set(40, 20)]]]), // mismo peso otro día: sigue contando la primera vez
+    ],
+  });
+  const r = exerciseRecord(data, 'bench');
+  assert.deepEqual([r.bestWeight.value, r.bestWeight.reps, r.bestWeight.date, r.bestWeight.setLabel], [40, 15, '2026-09-07', '40 kg × 15 @1']);
+  // Coincide con el «peso máximo» del historial y de la gráfica de ese día.
+  assert.equal(exerciseSeries(data, 'bench').maxWeight[0].label, r.bestWeight.setLabel);
+  assert.equal(r.bestWeight.setId, data.sessions[0].exercises[0].sets[1].id);
+  assert.equal(exerciseHistory(data, 'bench')[0].maxWeightSet.id, r.bestWeight.setId);
 });
 
 test('strengthRecords: reps a cada peso ordenadas por peso desc, con las dominadas marcadas; empate de 1RM → primera vez', () => {
@@ -554,6 +606,8 @@ test('weeklyPoints y weeklyAverage: etiquetas, ritmos sin semanas vacías y medi
   assert.deepEqual(avg.map((p) => [p.x, p.weeks]), [['2026-08-31', 1], ['2026-09-07', 2], ['2026-09-14', 3], ['2026-09-21', 4]]);
   close(avg[3].y, (tot[0] + tot[1] + tot[2] + tot[3]) / 4);
   close(avg[1].y, (tot[0] + tot[1]) / 2);
+  // Etiqueta = solo el valor (sin « · media N sem.»); las semanas promediadas van aparte en `weeks`.
+  assert.deepEqual(avg.map((p) => p.label), avg.map((p) => fmtNum(p.y, 0)));
   // Ritmo medio de 4 semanas ponderado por distancia en toda la ventana.
   const pAvg = weeklyAverage(data, '2026-08-31', TODAY, 'runPace', 4);
   close(pAvg[3].y, (3000 + 1800 + 2400) / (15 + 8));
@@ -630,7 +684,8 @@ test('bodyweightSeries: los mismos números que la vista de peso (activity-logic
   assert.deepEqual(r.ma.map((p) => p.y), ma.map((p) => p.ma));
   assert.deepEqual(r.daily.map((p) => p.y), ma.map((p) => p.value));
   assert.equal(r.daily[0].label, `${fmtNum(list[0].kg, 1)} kg`);
-  assert.match(r.ma[0].label, /kg · media 7 días$/);
+  // Solo el valor: el nombre de la serie («Media 7 días») lo pone la gráfica.
+  assert.deepEqual(r.ma.map((p) => p.label), ma.map((p) => `${fmtNum(p.ma, 1)} kg`));
 });
 
 test('bodyweightSeries = bwStats también con pocos pesajes, uno solo o ninguno', () => {

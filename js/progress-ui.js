@@ -5,7 +5,7 @@ import * as store from './store.js';
 import { h } from './ui.js';
 import { lineChart, periodSelector, periodStart, getPeriod, COLORS } from './charts.js';
 import { bodyweightSeries, dataRange } from './stats.js';
-import { todayStr, fmtNum } from './util.js';
+import { todayStr, fmtNum, weekStart } from './util.js';
 
 /**
  * Entrada común de stats.js con los datos actuales del store. Constrúyela UNA vez por render: stats.js
@@ -34,6 +34,25 @@ export function periodFrom(periodId, today, first) {
   return from || today;
 }
 
+/**
+ * Inicio común del periodo para TODAS las gráficas de progreso: el lunes de la semana en la que cae
+ * periodFrom(...). Las barras semanales cuentan semanas enteras (`week`, su filtro) y las líneas empiezan el
+ * mismo lunes (`from`), para que con el mismo selector sumen los mismos días. `from` no baja del primer dato
+ * (`first`): una línea no empieza con días vacíos antes de él.
+ * @returns {{ week: string, from: string }}
+ */
+export function periodRange(periodId, today, first) {
+  const week = weekStart(periodFrom(periodId, today, first));
+  return { week, from: first && week < first ? first : week };
+}
+
+/** Altura de una gráfica: algo más baja en pantallas bajas (iPhone SE, apaisado) para que quepa la tarjeta entera. */
+export function chartHeight(px) {
+  let vh = 0;
+  try { vh = window.innerHeight || 0; } catch { vh = 0; }
+  return vh && vh < 700 ? Math.round(px * 0.82) : px;
+}
+
 /** Cabecera de tarjeta: título, subtítulo (unidad) y, opcionalmente, un control a la derecha. */
 export function cardHead(title, sub = null, right = null) {
   return h('div.prg-card-head',
@@ -54,7 +73,7 @@ const kgTxt = (v) => `${fmtNum(v, 1)} kg`;
 export function bodyweightChartOpts(data, periodId, { height = 220, series = null } = {}) {
   const today = data.today || todayStr();
   const first = dataRange(data).firstBodyweight;
-  const from = periodFrom(periodId, today, first);
+  const { from } = periodRange(periodId, today, first);
   const s = series || bodyweightSeries(data); // `series`: el de bodyweightSeries(data), si ya lo tienes
   return {
     series: [

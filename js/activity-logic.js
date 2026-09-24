@@ -272,7 +272,19 @@ export function loadInfo(form) {
   if (!(form.movingSec > 0)) return { value: null, text: '—', sub: 'Falta la duración' };
   const load = activityLoad(form.movingSec, form.rpe);
   if (load == null) return { value: null, text: '—', sub: 'Sin esfuerzo percibido no hay carga' };
-  return { value: load, text: fmtNum(load, 0), sub: `${fmtNum(form.movingSec / 60, 0)} min × esfuerzo ${form.rpe}` };
+  return { value: load, text: fmtNum(load, 0), sub: `${loadMinutesText(form.movingSec)} × esfuerzo ${form.rpe}` };
+}
+
+/**
+ * Duración exacta en minutos para explicar la carga: 3000 → «50 min», 7040 → «117 min 20 s», 45 → «45 s».
+ * No se redondea a minutos: la carga usa los minutos exactos y la multiplicación mostrada debe cuadrar.
+ */
+function loadMinutesText(sec) {
+  const total = Math.round(sec);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (!s) return `${m} min`;
+  return m ? `${m} min ${s} s` : `${s} s`;
 }
 
 // ---------------------------------------------------------------------------

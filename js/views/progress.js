@@ -11,7 +11,7 @@ import * as S from '../stats.js';
 import { MUSCLES, MUSCLE_LABEL } from '../seed.js';
 import { emptyBests, addToBests, detectPRs } from '../calc.js';
 import { formatSet, fmtSec } from '../session-logic.js';
-import { dataFromStore, periodFrom, cardHead, bodyweightChartOpts } from '../progress-ui.js';
+import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts } from '../progress-ui.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
 const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null };
@@ -30,8 +30,10 @@ const KM_KINDS = [
   { key: 'bike', label: 'Bici', color: COLORS.bike, emoji: '🚴' },
   { key: 'swim', label: 'Natación', color: COLORS.swim, emoji: '🏊' },
 ];
-const STATUS_TXT = { below: 'Por debajo', in: 'Dentro', above: 'Por encima', none: 'Sin rango' };
+const STATUS_TXT = { below: 'Por debajo', in: 'Dentro', above: 'Por encima', none: 'Sin rango', short: 'Faltan series' };
 const STATUS_LONG = { below: 'Por debajo del rango', in: 'Dentro del rango', above: 'Por encima del rango', none: 'Sin rango objetivo' };
+/** Series que faltan para el mínimo del rango: «faltan 7 series para el mínimo». */
+const shortTxt = (sets, min) => `faltan ${fmtNum(Math.max(0, min - sets), 1)} ${min - sets === 1 ? 'serie' : 'series'} para el mínimo`;
 const SPRINT_COLORS = [COLORS.accent, COLORS.info, COLORS.run, COLORS.swim, COLORS.other];
 
 const nf0 = (v) => S.fmtNumFast(v, 0);
@@ -54,6 +56,9 @@ function restoreScroll() {
   // Después del scrollTo(0) del router (que va en el frame siguiente al montaje).
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, s.y)));
 }
+
+/** Lunes desde el que se cuentan las barras semanales del periodo (el mismo día en que empiezan las líneas). */
+const weekFrom = (ctx, pid) => periodRange(pid, ctx.today, ctx.range.firstSession).week;
 
 /** Fila de datos breve: «Esta semana 1230 · Semana pasada 1480». */
 function statLine(items) {
@@ -143,8 +148,8 @@ export function mountProgress(root) {
     settings: data.settings || {},
     hasSessions: !!range.firstSession,
     weeks: S.weeklySeries(data), // todas las semanas desde la primera sesión (se filtran por periodo)
-    // Sin ningún dato, las gráficas vacías ocupan menos.
-    h: (px) => (range.first ? px : 112),
+    // Sin ningún dato, las gráficas vacías ocupan menos; en pantallas bajas (SE, apaisado), algo menos altas.
+    h: (px) => (range.first ? chartHeight(px) : 112),
   };
 
   c.appendChild(h('div.progress-extra')); // Fase 3: panel semanal y objetivos
@@ -161,16 +166,22 @@ export function mountProgress(root) {
 
   const cards = [];
   let period = getPeriod('global');
-  c.appendChild(periodBar(root, 'global', (id) => { period = id; for (const k of cards) k.update(period); }));
+  // El selector solo se pega mientras se ven las gráficas que dependen de él: sticky dentro de .prg-charts.
+  const chartsBox = h('div.prg-charts');
+  chartsBox.appendChild(periodBar(root, 'global', (id) => { period = id; for (const k of cards) k.update(period); }));
+  c.appendChild(chartsBox);
 
   const muscle = muscleCard(ctx);
-  const makers = [loadCard, volumeCard, () => muscle, () => muscleTableCard(ctx, muscle), kmCard, runCard, bikeCard, swimCard, bodyweightCard, adherenceCard];
+  const makers = [loadCard, volumeCard, () => muscle, kmCard, runCard, bikeCard, swimCard, bodyweightCard, adherenceCard];
   for (const make of makers) {
     const card = make(ctx);
     if (!card) continue;
-    c.appendChild(card.el);
+    chartsBox.appendChild(card.el);
     if (card.update) { card.update(period); cards.push(card); }
   }
+  // Sin periodo: la semana en curso por músculo y la lista de ejercicios.
+  const table = muscleTableCard(ctx, muscle);
+  if (table) c.appendChild(table.el);
   c.appendChild(exSection.el);
   exSection.paint();
   restoreScroll();
@@ -188,22 +199,37 @@ function linksRow(ctx, exSection) {
     tile('🏋️', 'Ejercicios', 'Ir a la lista de ejercicios', () => exSection.el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 'exercises'));
 }
 
+/**
+ * Media de las `n` semanas ANTERIORES a cada semana (nunca la propia: la semana en curso está a medias), solo
+ * con semanas desde la primera sesión (`weeks` empieza ahí). Es la referencia de la Fase 3 («frente a la media
+ * de las 4 semanas previas»). Puntos {x, y, weeks, label: «2.829 · 4 sem.»}; la primera semana no tiene.
+ */
+function previousAverage(weeks, get, n = 4) {
+  const out = [];
+  for (let i = 1; i < weeks.length; i++) {
+    const win = weeks.slice(Math.max(0, i - n), i);
+    const y = sumBy(win, get) / win.length;
+    out.push({ x: weeks[i].week, y, weeks: win.length, label: `${nf0(y)} · ${win.length} sem.` });
+  }
+  return out;
+}
+
 // ---------- a) Carga semanal ----------
 function loadCard(ctx) {
   const { weeks } = ctx;
-  const avg = S.weeklyAverage(ctx.data, null, null, 'loadTotal', 4)
-    .map((p) => ({ x: p.x, y: p.y, label: p.weeks < 4 ? `${nf0(p.y)} (media de ${p.weeks} sem.)` : undefined }));
+  const avg = previousAverage(weeks, (r) => r.loadTotal, 4);
   const cur = weeks[weeks.length - 1];
   const prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+  const ref = avg.length && avg[avg.length - 1].x === cur.week ? avg[avg.length - 1] : null; // la de esta semana
   const { el, slot } = chartSection('load', {
     title: 'Carga semanal',
-    sub: 'Minutos × esfuerzo percibido (1–10), total y por tipo',
+    sub: 'Minutos × esfuerzo percibido (1–10)',
     before: [ctx.hasSessions ? statLine([
       { label: 'Esta semana', value: nf0(cur.loadTotal), sub: 'en curso' },
       prev ? { label: 'Sem. pasada', value: nf0(prev.loadTotal) } : null,
-      avg.length ? { label: 'Media 4 sem.', value: nf0(avg[avg.length - 1].y) } : null,
+      ref ? { label: `Media ${ref.weeks} sem.`, value: nf0(ref.y), sub: 'anteriores' } : null,
     ]) : null],
-    howto: 'Cada barra es una semana (lunes a domingo), apilada por tipo de actividad; la línea blanca es la media de las últimas 4 semanas. La fuerza también suma: duración × esfuerzo.',
+    howto: 'Cada barra es una semana (lunes a domingo), apilada por tipo. La línea blanca es la media de las 4 semanas anteriores a cada una: si la barra la supera, cargaste más de lo habitual. La fuerza también suma: duración × esfuerzo.',
   });
   const draw = chartHolder(ctx.charts, slot, 'bar', {
     stacked: true, height: ctx.h(220), yFormat: nf0, totalLabel: 'Total', ariaLabel: 'Carga semanal total y por tipo de actividad',
@@ -211,7 +237,7 @@ function loadCard(ctx) {
   return {
     el,
     update(pid) {
-      const wk = weekStart(periodFrom(pid, ctx.today, ctx.range.firstSession));
+      const wk = weekFrom(ctx, pid);
       const rows = weeks.filter((r) => r.week >= wk);
       const used = LOAD_KINDS.filter((k) => rows.some((r) => r.load[k.key] > 0));
       const kinds = used.length ? used : LOAD_KINDS;
@@ -222,7 +248,7 @@ function loadCard(ctx) {
           tooltip: weekNotes(r),
         })),
         legend: kinds.map(({ key, label, color }) => ({ key, label, color })),
-        overlay: { points: avg.filter((p) => p.x >= wk), color: COLORS.text, label: 'Media 4 sem.' },
+        overlay: { points: avg.filter((p) => p.x >= wk), color: COLORS.text, label: 'Media sem. previas' },
         empty: ctx.hasSessions ? 'Sin sesiones en este periodo' : 'Registra tu primera sesión para ver tu carga semanal.',
       });
     },
@@ -250,7 +276,7 @@ function volumeCard(ctx) {
   return {
     el,
     update(pid) {
-      const wk = weekStart(periodFrom(pid, ctx.today, ctx.range.firstSession));
+      const wk = weekFrom(ctx, pid);
       draw({
         bars: weeks.filter((r) => r.week >= wk).map((r) => ({
           x: r.week,
@@ -297,12 +323,15 @@ function muscleCard(ctx) {
     const name = MUSCLE_LABEL[m] || m;
     const t = S.muscleTarget(settings, m);
     caption.replaceChildren(h('b', name), t ? ` · objetivo ${fmtNum(t[0], 1)}–${fmtNum(t[1], 1)} series por semana` : ' · sin rango objetivo');
-    const wk = weekStart(periodFrom(pid, ctx.today, ctx.range.firstSession));
+    const wk = weekFrom(ctx, pid);
     draw({
       bars: rowsOf(m).filter((r) => r.week >= wk).map((r) => ({
         x: r.week,
         segments: [{ key: 'sets', value: r.sets, color: COLORS.info, label: r.label, name: 'Series efectivas' }],
-        tooltip: [t ? STATUS_LONG[r.status] : null, r.current ? 'Semana en curso' : null].filter(Boolean),
+        tooltip: [
+          !t ? null : r.current && r.status === 'below' ? `Semana en curso: ${shortTxt(r.sets, t[0])}` : STATUS_LONG[r.status],
+          r.current && !(t && r.status === 'below') ? 'Semana en curso' : null,
+        ].filter(Boolean),
       })),
       band: t ? { min: t[0], max: t[1], label: 'Rango objetivo' } : null,
       legend: [{ key: 'sets', label: 'Series efectivas', color: COLORS.info }],
@@ -325,25 +354,33 @@ function muscleCard(ctx) {
   };
 }
 
-/** Tabla «esta semana»: todos los músculos frente a su rango, con una barrita y el estado. */
+/**
+ * Tabla «esta semana»: todos los músculos frente a su rango, con una barrita y el estado. La semana está en
+ * curso: lo que aún no llega al mínimo sale en gris («Faltan 7»), no como aviso; «Dentro» y «Por encima» ya no
+ * cambian a peor. Sin ninguna serie de fuerza en el historial no se muestra.
+ */
 function muscleTableCard(ctx, muscle) {
+  if (!ctx.weeks.some((r) => r.workSets > 0)) return null;
   const rows = S.muscleTable(ctx.data);
   const ws = weekStart(ctx.today);
   const scale = Math.max(1, ...rows.map((r) => Math.max(r.sets, r.max ?? 0))) * 1.08;
   const pct = (v) => `${Math.max(0, Math.min(100, (v / scale) * 100)).toFixed(2)}%`;
   const list = h('div.prg-mtable', { role: 'list' }, rows.map((r) => {
     const range = r.target ? `${fmtNum(r.min, 1)}–${fmtNum(r.max, 1)}` : '—';
+    const st = r.status === 'below' ? 'short' : r.status;
+    const chip = st === 'short' ? `Faltan ${fmtNum(r.min - r.sets, 1)}` : STATUS_TXT[st];
+    const long = st === 'short' ? shortTxt(r.sets, r.min) : STATUS_LONG[st].toLowerCase();
     return h('button.prg-mrow', {
       type: 'button',
       role: 'listitem',
-      dataset: { muscle: r.muscleId, status: r.status },
-      'aria-label': `${r.name}: ${r.setsLabel}${r.target ? `, rango ${range}` : ''}, ${STATUS_LONG[r.status].toLowerCase()}`,
+      dataset: { muscle: r.muscleId, status: st },
+      'aria-label': `${r.name}: ${r.setsLabel}${r.target ? `, rango ${range}` : ''}, ${long}`,
       onClick: () => muscle.select(r.muscleId),
     },
     h('span.prg-mrow-top',
       h('span.prg-mrow-name', r.name),
       h('span.prg-mrow-val', h('b', fmtNum(r.sets, 1)), h('span.prg-mrow-range', ` / ${range}`)),
-      h(`span.prg-status.prg-status-${r.status}`, STATUS_TXT[r.status])),
+      h(`span.prg-status.prg-status-${st}`, chip)),
     h('span.prg-mbar', { 'aria-hidden': 'true' },
       r.target ? h('span.prg-mbar-band', { style: { left: pct(r.min), width: `calc(${pct(r.max)} - ${pct(r.min)})` } }) : null,
       h('span.prg-mbar-fill', { style: { width: r.sets > 0 ? pct(r.sets) : '0' } })));
@@ -352,9 +389,9 @@ function muscleTableCard(ctx, muscle) {
     cardHead('Esta semana por músculo', `${fmtWeekRange(ws)} (en curso) · series efectivas frente a tu rango`,
       h('button.prg-head-link', { type: 'button', onClick: () => goChild('#/settings/thresholds') }, 'Rangos', icon('chevron-right', 16))),
     h('div.prg-mlegend', { 'aria-hidden': 'true' },
-      ...['below', 'in', 'above'].map((s) => h('span.prg-mlegend-item', h(`span.prg-dot.prg-dot-${s}`), STATUS_TXT[s]))),
+      ...['short', 'in', 'above'].map((s) => h('span.prg-mlegend-item', h(`span.prg-dot.prg-dot-${s}`), STATUS_TXT[s]))),
     list,
-    h('p.prg-howto', 'La zona clara de cada barra es tu rango objetivo y la barra de color, las series hechas esta semana. Toca un músculo para ver su evolución arriba.'));
+    h('p.prg-howto', 'La zona clara de cada barra es tu rango objetivo y la barra, las series hechas esta semana (en gris mientras aún no llegan al mínimo: la semana no ha terminado). Toca un músculo para ver su evolución arriba.'));
   return { el };
 }
 
@@ -383,7 +420,7 @@ function kmCard(ctx) {
   });
   const draw = chartHolder(ctx.charts, slot, 'bar', { height: ctx.h(200), totalLabel: 'Total', ariaLabel: 'Kilómetros semanales por deporte' });
   function paint() {
-    const wk = weekStart(periodFrom(pid, ctx.today, ctx.range.firstSession));
+    const wk = weekFrom(ctx, pid);
     const rows = weeks.filter((r) => r.week >= wk);
     const one = KM_KINDS.find((k) => k.key === ui.km) || null;
     const used = KM_KINDS.filter((k) => rows.some((r) => r.km[k.key] > 0));
@@ -392,7 +429,7 @@ function kmCard(ctx) {
     draw({
       bars: rows.map((r) => ({
         x: r.week,
-        segments: kinds.map((k) => ({ key: k.key, value: r.km[k.key], color: k.color, label: r.labels.km[k.key] })),
+        segments: kinds.map((k) => ({ key: k.key, value: r.km[k.key], color: k.color, label: r.labels.km[k.key], name: k.label })),
         tooltip: r.current ? ['Semana en curso'] : [],
       })),
       legend: one ? [] : kinds.map(({ key, label, color }) => ({ key, label, color })),
@@ -428,7 +465,7 @@ function activityLineCard(ctx, spec) {
   return {
     el,
     update(pid) {
-      const from = periodFrom(pid, ctx.today, ctx.range.firstSession);
+      const { from } = periodRange(pid, ctx.today, ctx.range.firstSession);
       const inP = pts.filter((p) => p.x >= from && p.x <= ctx.today);
       const km = sumBy(inP, (p) => p.km);
       const sec = sumBy(inP, (p) => p.sec);
@@ -508,7 +545,9 @@ function adherenceCard(ctx) {
     howto: 'Planificadas = días de tu semana tipo (o del calendario) que no son descanso. Hechas = hechas, parciales o sustituidas. La semana en curso incluye los días que aún quedan.',
   });
   const draw = chartHolder(ctx.charts, slot, 'bar', {
-    stacked: false, height: ctx.h(190), yFormat: nf0, overlap: false,
+    // Agrupadas; con muchas semanas (1 año, Todo) charts.js las superpone solo: las hechas delante de las
+    // planificadas, y lo gris que asoma encima son las no hechas.
+    stacked: false, height: ctx.h(190), yFormat: nf0,
     legend: [{ key: 'planned', label: 'Planificadas', color: COLORS.muted }, { key: 'completed', label: 'Hechas', color: COLORS.accent }],
     ariaLabel: 'Adherencia: sesiones planificadas frente a hechas por semana',
   });
@@ -516,12 +555,12 @@ function adherenceCard(ctx) {
     el,
     update(pid) {
       const first = all.length ? all[0].week : null;
-      const wk = weekStart(periodFrom(pid, ctx.today, first));
+      const wk = periodRange(pid, ctx.today, first).week;
       const rows = all.filter((r) => r.week >= wk);
       const t = S.adherenceTotals(rows);
       const past = t.planned - t.pending;
       statsBox.replaceChildren(statLine([
-        { label: 'En este periodo', value: t.pctPast != null ? `${t.pctPast} %` : '—', sub: past > 0 ? `${t.completed} de ${past} hechas` : 'sin días planificados todavía' },
+        { label: 'Hechas', value: t.pctPast != null ? `${t.pctPast} %` : '—', sub: past > 0 ? `${t.completed} de ${past} en el periodo` : 'sin días planificados todavía' },
         t.pending ? { label: 'Pendientes', value: nf0(t.pending), sub: 'esta semana' } : null,
         t.extra ? { label: 'Extra', value: nf0(t.extra), sub: 'en días de descanso' } : null,
       ]) || '');
@@ -695,7 +734,6 @@ export function mountExerciseProgress(root, params = {}) {
 
   // Gráficas (todas con el mismo selector de periodo)
   const ser = S.exerciseSeries(data, ex.id);
-  const byId = new Map(hist.map((e) => [e.sessionId, e]));
   const defs = [];
   if (load) {
     if (!bw || anyLastre) {
@@ -710,17 +748,13 @@ export function mountExerciseProgress(root, params = {}) {
       note: `Estimación con la fórmula de Epley usando reps + RIR; solo series de 1–12 reps.${bw ? ' Incluye tu peso corporal del día.' : ''} No es un peso levantado.`,
       empty: 'Sin series de 1–12 repeticiones en este periodo',
     });
-    // Mejor serie = la de mayor 1RM estimado de cada sesión; el eje es el peso de esa serie y el globo, la serie entera.
-    const bestPts = ser.bestSet.map((p) => {
-      const set = byId.get(p.sessionId)?.e1rmSet;
-      const w = set ? (bw ? (set.weight || 0) : set.weight) : null;
-      return w == null ? null : { x: p.x, y: w, label: p.label };
-    }).filter(Boolean);
+    // Mejor serie de cada sesión (stats: la de mayor 1RM estimado o, si ninguna lo tiene, la de más peso × reps):
+    // el eje es el peso de esa serie (y) y el globo, la serie entera.
+    const bestPts = ser.bestSet.map((p) => ({ x: p.x, y: p.y, label: p.label }));
     if (!bw || anyLastre) defs.push({
       id: 'bestSet', title: 'Mejor serie', color: COLORS.swim, points: bestPts, fmt: bw ? (v) => S.weightLabel('bodyweight', v) : kg1, tick: nf1,
       sub: bw ? 'lastre de la serie con mayor 1RM estimado de cada sesión' : 'kg · la serie con mayor 1RM estimado de cada sesión',
-      howto: 'El globo muestra la serie completa (peso × reps @RIR). Si sube el peso sin perder repeticiones, progresas.',
-      empty: 'Sin series de 1–12 repeticiones en este periodo',
+      howto: 'El globo muestra la serie completa (peso × reps @RIR). Si sube el peso sin perder repeticiones, progresas. Si ninguna serie del día tiene 1RM estimado (más de 12 reps), cuenta la de más peso × reps.',
     });
     if (bw) {
       defs.push({ id: 'maxReps', title: 'Repeticiones máximas', color: COLORS.accent, points: ser.maxReps, fmt: (v) => `${nf0(v)} reps`, tick: nf0, sub: 'reps · la serie con más repeticiones de cada sesión' });
@@ -748,16 +782,18 @@ export function mountExerciseProgress(root, params = {}) {
   if (defs.length) {
     let period = getPeriod('exercise');
     const update = (pid) => {
-      const from = periodFrom(pid, today, first);
+      const { from } = periodRange(pid, today, first);
       for (const hd of holders) hd({ xDomain: [from, today] });
     };
-    c.appendChild(periodBar(root, 'exercise', (id) => { period = id; update(period); }));
+    // Selector pegajoso solo sobre las gráficas (no sobre el historial, que no depende del periodo).
+    const chartsBox = h('div.prg-charts', periodBar(root, 'exercise', (id) => { period = id; update(period); }));
+    c.appendChild(chartsBox);
     for (const d of defs) {
       const { el, slot } = chartSection(d.id, { title: d.title, sub: d.sub, note: d.note, howto: d.howto });
-      c.appendChild(el);
+      chartsBox.appendChild(el);
       const draw = chartHolder(charts, slot, 'line', {
         series: d.series || [{ id: d.id, label: d.title, color: d.color, points: d.points, dots: true }],
-        height: 190, yFormat: d.fmt, yTickFormat: d.tick || d.fmt, invertY: !!d.invertY, yTicks: d.yTicks || 'auto',
+        height: chartHeight(190), yFormat: d.fmt, yTickFormat: d.tick || d.fmt, invertY: !!d.invertY, yTicks: d.yTicks || 'auto',
         empty: d.empty || 'Sin datos en este periodo', ariaLabel: `${ex.name}: ${d.title.toLowerCase()}`,
       });
       holders.push(draw);
@@ -871,14 +907,24 @@ function strengthRecordsView(data, today) {
         rows.push(recRow({ key: `sprint-${sp.distanceM}`, label: `Mejor en ${fmtNum(sp.distanceM, 1)} m`, value: `${fmtNum(sp.timeSec, 2)} s`, sub: dateTxt(sp), sessionId: sp.sessionId }));
       }
     }
-    if (r.maxReps && (bw || lt === 'jumps' || (!r.bestWeight && !r.maxTime && !r.bestSprint))) {
+    const showMaxReps = !!r.maxReps && (bw || lt === 'jumps' || (!r.bestWeight && !r.maxTime && !r.bestSprint));
+    if (showMaxReps) {
       rows.push(recRow({ key: 'reps', label: 'Más repeticiones', value: r.maxReps.label, sub: `${r.maxReps.setLabel} · ${dateTxt(r.maxReps)}`, sessionId: r.maxReps.sessionId }));
     }
+    const perSide = lt === 'unilateral' ? '/lado' : '';
     let reps = null;
-    if (r.repsAtWeight.length > 1) { // con un solo peso repetiría la fila de arriba
+    if (r.repsAtWeight.length === 1) {
+      // Un solo peso (doble progresión a peso fijo: 10 kg × 12 → × 15 → × 18): fila directa con las mejores reps
+      // a ese peso y su fecha, salvo que ya lo diga «Más repeticiones» (peso corporal sin lastre).
+      const x = r.repsAtWeight[0];
+      if (!(showMaxReps && r.maxReps.value === x.reps)) {
+        const wTxt = bw && !x.weight ? 'sin lastre' : `con ${S.weightLabel(lt, x.weight)}`;
+        rows.push(recRow({ key: 'reps-at', label: `Mejores reps ${wTxt}`, value: `× ${x.reps}${perSide}`, sub: dateTxt(x), sessionId: x.sessionId }));
+      }
+    } else if (r.repsAtWeight.length > 1) {
       const box = h('div.prg-rec-reps', { hidden: true },
         r.repsAtWeight.map((x) => recRow({
-          key: 'reps-at', label: S.weightLabel(lt, x.weight), value: `× ${x.reps}${lt === 'unilateral' ? '/lado' : ''}`,
+          key: 'reps-at', label: S.weightLabel(lt, x.weight), value: `× ${x.reps}${perSide}`,
           sub: `${dateTxt(x)}${x.dominated ? ' · superado con más peso' : ''}`, sessionId: x.sessionId, muted: x.dominated,
         })));
       const btn = h('button.prg-rec-toggle', { type: 'button', 'aria-expanded': 'false' },

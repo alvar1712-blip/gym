@@ -97,6 +97,13 @@ test('carrera: 10 km en 50:00 → ritmo 5:00 /km, carga = min × esfuerzo', () =
   assert.equal(l.text, '350');
   assert.match(l.sub, /50 min × esfuerzo 7/);
   assert.equal(loadInfo({ ...f, movingSec: null }).sub, 'Falta la duración');
+  // Los minutos no se redondean en la explicación: 7040 s = 117 min 20 s → 117,33 × 8 = 938,7 → 939
+  // (con «117 min × 8» la cuenta daría 936).
+  const r3 = loadInfo({ ...f, movingSec: 7040, rpe: 8 });
+  assert.deepEqual([r3.value, r3.text, r3.sub], [939, '939', '117 min 20 s × esfuerzo 8']);
+  const r2 = loadInfo({ ...f, movingSec: 3255, rpe: 7 });
+  assert.deepEqual([r2.value, r2.sub], [380, '54 min 15 s × esfuerzo 7']);
+  assert.equal(loadInfo({ ...f, movingSec: 45, rpe: 5 }).sub, '45 s × esfuerzo 5');
   assert.equal(activityLoad(3000, 7), 350);
   assert.equal(activityLoad(0, 7), null);
 });

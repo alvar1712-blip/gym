@@ -286,27 +286,28 @@ test('#/progress con datos: se pinta cada gráfica, periodo global, globo con el
       const st = await chartState(page, `[data-chart="${id}"]`);
       assert.ok(st.svg && !st.empty, `${id}: la gráfica debe tener datos (${st.emptyText})`);
     }
-    assert.strictEqual(await page.locator('[data-chart="load"] .chart-legend-item').count(), 6, 'leyenda de la carga: 5 tipos + media 4 sem.');
-    assert.deepStrictEqual(await page.locator('[data-chart="load"] .chart-legend-label').allTextContents(), ['Fuerza', 'Otras', 'Carrera', 'Bici', 'Natación', 'Media 4 sem.']);
-    // Periodo por defecto: 3 meses → 14 semanas (22 jun – 21 sep)
+    assert.strictEqual(await page.locator('[data-chart="load"] .chart-legend-item').count(), 6, 'leyenda de la carga: 5 tipos + media de las semanas previas');
+    assert.deepStrictEqual(await page.locator('[data-chart="load"] .chart-legend-label').allTextContents(), ['Fuerza', 'Otras', 'Carrera', 'Bici', 'Natación', 'Media sem. previas']);
+    // Periodo por defecto: 3 meses → 14 semanas (22 jun – 21 sep); las líneas empiezan el mismo lunes 22 jun
     assert.strictEqual((await chartState(page, '[data-chart="load"]')).n, '14');
-    assert.strictEqual((await chartState(page, '[data-chart="run-pace"]')).from, '2026-06-24');
+    assert.strictEqual((await chartState(page, '[data-chart="run-pace"]')).from, '2026-06-22');
 
     // Tabla «esta semana»: los 16 músculos con su estado
     assert.strictEqual(await page.locator('.prg-mrow').count(), 16);
     const back = await page.locator('.prg-mrow[data-muscle="back"]').innerText();
     assert.match(back, /Espalda/);
     assert.match(back, /14–22/);
-    assert.match(back, /Por debajo|Dentro|Por encima/);
+    assert.match(back, /Faltan \d|Dentro|Por encima/);
 
-    // Cambio de periodo global → 4 semanas: 5 barras semanales y el eje de las líneas empieza el 27 ago
+    // Cambio de periodo global → 4 semanas: 5 barras semanales (desde el lunes 24 ago) y las líneas empiezan
+    // ese mismo lunes: con el mismo selector, todas las tarjetas cuentan los mismos días.
     await page.locator('.prg-period-bar .seg-btn', { hasText: '4 sem' }).click();
     await page.waitForTimeout(150);
     assert.strictEqual((await chartState(page, '[data-chart="load"]')).n, '5');
     assert.strictEqual((await chartState(page, '[data-chart="volume"]')).n, '5');
     assert.strictEqual((await chartState(page, '[data-chart="adherence"]')).n, '5');
-    assert.strictEqual((await chartState(page, '[data-chart="run-pace"]')).from, '2026-08-27');
-    assert.strictEqual((await chartState(page, '[data-chart="bodyweight"]')).from, '2026-08-27');
+    assert.strictEqual((await chartState(page, '[data-chart="run-pace"]')).from, '2026-08-24');
+    assert.strictEqual((await chartState(page, '[data-chart="bodyweight"]')).from, '2026-08-24');
     assert.strictEqual(await page.evaluate(() => localStorage.getItem('entreno.period.global')), '4w');
 
     // Toque en la barra de la semana del 14 sep → globo con el total exacto de carga
@@ -414,7 +415,7 @@ test('#/progress/exercise/:id: KPIs, gráficas con periodo, globo «80 kg × 6 @
     // Periodo del ejercicio (clave propia)
     await page.locator('.prg-period-bar .seg-btn', { hasText: '4 sem' }).click();
     await page.waitForTimeout(100);
-    assert.strictEqual((await chartState(page, '[data-chart="e1rm"]')).from, '2026-08-27');
+    assert.strictEqual((await chartState(page, '[data-chart="e1rm"]')).from, '2026-08-24');
     assert.strictEqual(await page.evaluate(() => localStorage.getItem('entreno.period.exercise')), '4w');
 
     // Historial completo: una fila por sesión, más reciente arriba, sin calentamientos, con récords
@@ -536,7 +537,9 @@ test('base de datos vacía: estados vacíos útiles; #/bodyweight: la gráfica s
     assert.match((await chartState(page, '[data-chart="bike-speed"]')).emptyText, /primera salida en bici/);
     assert.match((await chartState(page, '[data-chart="bodyweight"]')).emptyText, /primer pesaje/);
     assert.strictEqual(await page.locator('[data-chart="swim-pace"]').count(), 0);
-    assert.strictEqual(await page.locator('.prg-mrow').count(), 16);
+    // Sin ninguna serie de fuerza no hay tabla «esta semana» (16 músculos «por debajo» no dicen nada)
+    assert.strictEqual(await page.locator('[data-chart="muscle-table"]').count(), 0);
+    assert.strictEqual(await page.locator('.prg-mrow').count(), 0);
     assert.match(await page.locator('.prg-ex').innerText(), /Sin ejercicios todavía/);
     assert.ok(await noHScroll(page));
     await scrollShots(page, 'progress-empty', 4);
@@ -627,6 +630,264 @@ test('sin desbordamiento horizontal a 375 y 390 px, sin errores de consola; capt
       await page.evaluate(() => window.scrollBy(0, -70));
       await page.waitForTimeout(100);
       await shot(page, `bodyweight-chart-${tag}`);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  }
+});
+
+/** Sesión de fuerza mínima a mano: items = [[exerciseId, [series]]]. */
+let manualSeq = 0;
+function manualStrength(date, items, { dur = 60, rpe = 8 } = {}) {
+  const at = madrid(date, 18);
+  const id = `man${++manualSeq}`;
+  return {
+    id, kind: 'strength', date, planDate: date, templateId: null, templateName: 'Sesión libre', status: 'done', startedAt: at, endedAt: at + dur * 60000,
+    durationMin: dur, rpe, notes: '', parentId: null, templateItemId: null, cursor: 0, templateItemIds: [], createdAt: at, updatedAt: at,
+    exercises: items.map(([exerciseId, sets], i) => ({
+      id: `${id}_se${i}`, exerciseId, exName: exerciseId, templateItemId: null, alternatives: [], target: { sets: sets.length, repMin: null, repMax: null },
+      notes: '', section: '', groupId: null, groupType: null,
+      sets: sets.map((x, j) => ({ id: `${id}_s${i}_${j}`, type: 'effective', weight: null, reps: null, repsR: null, rir: null, timeSec: null, distanceM: null, heightCm: null, note: '', done: true, doneAt: at + j * 60000, ...x })),
+    })),
+  };
+}
+async function put(page, sessions, createdAt = null) {
+  await page.evaluate(async ({ sessions, createdAt }) => {
+    const { store } = window.__app;
+    if (createdAt) { const meta = store.get('meta', 'app'); meta.createdAt = createdAt; await store.save('meta', meta); }
+    await Promise.all(sessions.map((x) => store.save('sessions', x)));
+  }, { sessions, createdAt });
+}
+const fmt0 = (page, v) => page.evaluate((x) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0, useGrouping: true }).format(x), v);
+
+test('carga: «Media N sem.» es la media de las semanas completas ANTERIORES (sin la semana en curso); km con un deporte: globo con su nombre', async () => {
+  const app = await launch();
+  const { page } = app;
+  try {
+    const s = await seed(page);
+    const exp = expected(s);
+    await open(page, '#/progress');
+    // Jueves 24 sep: la referencia son las 4 semanas completas del 24 ago al 20 sep (la del 21 sep está a medias)
+    const prev4 = ['2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14'].map(exp.loadOfWeek);
+    const avg4 = prev4.reduce((a, b) => a + b, 0) / 4;
+    const stats = page.locator('[data-chart="load"] .prg-stat');
+    assert.strictEqual(await stats.count(), 3);
+    assert.strictEqual(await stats.nth(2).locator('.prg-stat-label').innerText(), 'Media 4 sem.');
+    assert.strictEqual(await stats.nth(2).locator('.prg-stat-value').innerText(), await fmt0(page, avg4));
+    assert.strictEqual(await stats.nth(2).locator('.prg-stat-sub').innerText(), 'anteriores');
+    assert.strictEqual(await stats.nth(0).locator('.prg-stat-value').innerText(), await fmt0(page, exp.loadOfWeek('2026-09-21')));
+    // La línea de la semana en curso vale lo mismo y el globo dice cuántas semanas promedia
+    await page.locator('.prg-period-bar .seg-btn', { hasText: '4 sem' }).click();
+    await page.waitForTimeout(120);
+    const b = await svgBox(page, '[data-chart="load"]');
+    await page.touchscreen.tap(xOfBar(b, 4), b.y + b.height * 0.6);
+    const tip = await page.locator('[data-chart="load"] .chart-tip').innerText();
+    assert.ok(tip.includes(`${await fmt0(page, avg4)} · 4 sem.`) && tip.includes('Media sem. previas'), tip);
+    // Semana del 14 sep: su referencia son las 4 anteriores (17 ago – 13 sep), no ella misma
+    await page.touchscreen.tap(xOfBar(b, 3), b.y + b.height * 0.6);
+    const ref14 = ['2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07'].map(exp.loadOfWeek).reduce((a, x) => a + x, 0) / 4;
+    assert.match(await page.locator('[data-chart="load"] .chart-tip').innerText(), new RegExp(`${(await fmt0(page, ref14)).replace('.', '\\.')} · 4 sem\\.`));
+
+    // Kilómetros con un solo deporte: el globo dice «Carrera» (no la clave interna «run»)
+    await page.locator('[data-chart="km"] .seg-btn', { hasText: 'Carrera' }).click();
+    await page.waitForTimeout(80);
+    const kb = await svgBox(page, '[data-chart="km"]');
+    await page.touchscreen.tap(xOfBar(kb, 2), kb.y + kb.height * 0.7); // 7–13 sep: 6 + 15 km
+    const kt = await page.locator('[data-chart="km"] .chart-tip').innerText();
+    assert.match(kt, /7–13 sep 2026/);
+    assert.match(kt, /Carrera/);
+    assert.doesNotMatch(kt, /\brun\b/);
+    await page.locator('[data-chart="km"] .seg-btn', { hasText: 'Bici' }).click();
+    await page.waitForTimeout(80);
+    await page.touchscreen.tap(xOfBar(kb, 2), kb.y + kb.height * 0.7);
+    assert.match(await page.locator('[data-chart="km"] .chart-tip').innerText(), /Bici/);
+    await page.locator('[data-chart="km"] .seg-btn', { hasText: 'Todos' }).click();
+
+    // Mismo periodo, mismos días: con «4 sem» el ritmo cuenta las carreras desde el lunes 24 ago (como las barras)
+    const runs = s.sessions.filter((x) => x.kind === 'run' && x.date >= '2026-08-24');
+    assert.match(await page.locator('[data-chart="run-pace"] .prg-stats').innerText(), new RegExp(`en ${runs.length} carreras`));
+    // «Hechas» de la adherencia: rótulo corto, entero (sin «…»)
+    assert.strictEqual(await page.locator('[data-chart="adherence"] .prg-stat-label').first().innerText(), 'Hechas');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('carga con pocas semanas: «Media N sem.» con las que hay; recién empezado (1.ª semana) no hay media', async () => {
+  const app = await launch();
+  const { page } = app;
+  try {
+    // Tres semanas completas (31 ago, 7 y 14 sep) + la semana en curso vacía
+    await put(page, [
+      manualStrength('2026-08-31', [['press_banca', [{ weight: 80, reps: 5, rir: 2 }]]], { dur: 60, rpe: 8 }),
+      manualStrength('2026-09-07', [['press_banca', [{ weight: 80, reps: 6, rir: 2 }]]], { dur: 50, rpe: 8 }),
+      manualStrength('2026-09-14', [['press_banca', [{ weight: 80, reps: 8, rir: 1 }]]], { dur: 40, rpe: 8 }),
+    ]);
+    await open(page, '#/progress');
+    const stats = page.locator('[data-chart="load"] .prg-stat');
+    assert.strictEqual(await stats.nth(2).locator('.prg-stat-label').innerText(), 'Media 3 sem.');
+    assert.strictEqual(await stats.nth(2).locator('.prg-stat-value').innerText(), '400'); // (480 + 400 + 320) / 3
+    assert.strictEqual(await stats.nth(0).locator('.prg-stat-value').innerText(), '0');
+  } finally {
+    await app.close();
+  }
+  const app2 = await launch();
+  try {
+    await put(app2.page, [manualStrength('2026-09-22', [['press_banca', [{ weight: 80, reps: 5, rir: 2 }]]])]);
+    await open(app2.page, '#/progress');
+    const labels = await app2.page.locator('[data-chart="load"] .prg-stat-label').allInnerTexts();
+    assert.deepStrictEqual(labels, ['Esta semana'], 'primera semana: sin semana pasada ni media');
+    assert.deepStrictEqual(app2.errors, []);
+  } finally {
+    await app2.close();
+  }
+});
+
+test('#/records: con un solo peso (doble progresión) salen las mejores reps a ese peso y su fecha', async () => {
+  const app = await launch();
+  const { page } = app;
+  try {
+    await put(page, [
+      manualStrength('2026-08-31', [['elevaciones_laterales', [{ weight: 10, reps: 12, rir: 2 }, { weight: 10, reps: 11, rir: 1 }]], ['press_banca', [{ weight: 80, reps: 5, rir: 2 }]], ['remo_unilateral', [{ weight: 24, reps: 8, repsR: 8, rir: 2 }]], ['dominadas', [{ weight: null, reps: 8, rir: 2 }]]]),
+      manualStrength('2026-09-07', [['elevaciones_laterales', [{ weight: 10, reps: 15, rir: 2 }, { weight: 10, reps: 14, rir: 1 }]], ['press_banca', [{ weight: 80, reps: 6, rir: 2 }]], ['remo_unilateral', [{ weight: 24, reps: 10, repsR: 10, rir: 2 }]], ['dominadas', [{ weight: null, reps: 10, rir: 2 }]]]),
+      manualStrength('2026-09-14', [['elevaciones_laterales', [{ weight: 10, reps: 18, rir: 2 }, { weight: 10, reps: 16, rir: 1 }]], ['press_banca', [{ weight: 80, reps: 8, rir: 1 }]], ['remo_unilateral', [{ weight: 24, reps: 12, repsR: 12, rir: 1 }]], ['dominadas', [{ weight: null, reps: 12, rir: 1 }]]]),
+    ]);
+    await open(page, '#/records');
+    const card = (id) => page.locator(`.prg-rec[data-ex="${id}"]`);
+    const lat = card('elevaciones_laterales').locator('[data-rec="reps-at"]');
+    assert.strictEqual(await lat.count(), 1);
+    assert.match(await lat.locator('.prg-rec-label').innerText(), /Mejores reps con 10 kg/);
+    assert.strictEqual(await lat.locator('.prg-rec-value').innerText(), '× 18');
+    assert.match(await lat.locator('.prg-rec-sub').innerText(), /14 sep 2026/);
+    // El mejor peso sigue diciendo la primera vez que lo alcanzaste
+    assert.match(await card('elevaciones_laterales').locator('[data-rec="weight"] .prg-rec-sub').innerText(), /31 ago 2026/);
+    assert.strictEqual(await card('press_banca').locator('[data-rec="reps-at"] .prg-rec-value').innerText(), '× 8');
+    assert.strictEqual(await card('remo_unilateral').locator('[data-rec="reps-at"] .prg-rec-value').innerText(), '× 12/lado');
+    // Sin desplegable (un solo peso) y sin fila repetida en peso corporal sin lastre («Más repeticiones» ya lo dice)
+    assert.strictEqual(await card('press_banca').locator('.prg-rec-toggle').count(), 0);
+    assert.strictEqual(await card('dominadas').locator('[data-rec="reps-at"]').count(), 0);
+    assert.match(await card('dominadas').locator('[data-rec="reps"]').innerText(), /12 reps/);
+    const sid = await lat.getAttribute('data-session');
+    await lat.click();
+    await page.waitForFunction((id) => location.hash === `#/session/${id}`, sid);
+    // Ficha: la «mejor serie» también sale los días sin 1RM estimado (todas las series de más de 12 reps)
+    await page.evaluate(() => localStorage.setItem('entreno.period.exercise', 'all'));
+    await open(page, '#/progress/exercise/elevaciones_laterales');
+    assert.strictEqual(await dotCount(page, '[data-chart="bestSet"] [data-id="bestSet"]'), 3);
+    const bs = await svgBox(page, '[data-chart="bestSet"]');
+    await page.touchscreen.tap(xOfDate(bs, '2026-09-14'), bs.y + bs.height / 2);
+    assert.match(await page.locator('[data-chart="bestSet"] .chart-tip').innerText(), /10 kg × 18 @2/);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('«Esta semana por músculo» sin alarmas a mitad de semana; adherencia de 1 año legible (hechas delante de planificadas)', async () => {
+  const app = await launch();
+  const { page } = app;
+  try {
+    await seed(page);
+    await open(page, '#/progress');
+    // Jueves con 3 sesiones hechas: lo que aún no llega al mínimo sale en gris («Faltan N»), nunca «Por debajo»
+    assert.strictEqual(await page.locator('.prg-mrow[data-status="below"]').count(), 0);
+    assert.strictEqual(await page.locator('.prg-status-below').count(), 0);
+    const short = page.locator('.prg-mrow[data-status="short"]');
+    assert.ok(await short.count() >= 1);
+    assert.match(await short.first().locator('.prg-status').innerText(), /^Faltan \d+(,\d)?$/);
+    assert.match(await short.first().getAttribute('aria-label'), /faltan [\d,]+ series? para el mínimo/);
+    assert.deepStrictEqual(await page.locator('.prg-mlegend-item').allInnerTexts(), ['Faltan series', 'Dentro', 'Por encima']);
+    // Globo de la semana en curso en la gráfica por músculo
+    const b = await svgBox(page, '[data-chart="muscle"]');
+    const n = Number(b.ds.n);
+    await page.touchscreen.tap(xOfBar(b, n - 1), b.y + b.height * 0.6);
+    const tip = await page.locator('[data-chart="muscle"] .chart-tip').innerText();
+    assert.match(tip, /Semana en curso/);
+    assert.doesNotMatch(tip, /Por debajo/);
+  } finally {
+    await app.close();
+  }
+
+  // 60 semanas de historial (una sesión cada lunes): con «Todo», las barras de adherencia se superponen (la
+  // hecha delante de la planificada) en vez de ser sub-barras de 1 px una al lado de otra.
+  const app2 = await launch();
+  try {
+    const { page: p2 } = app2;
+    const mondays = [];
+    for (let d = weekStart(addDays(TODAY, -7 * 60)); d < TODAY; d = addDays(d, 7)) mondays.push(d);
+    await put(p2, mondays.map((d) => manualStrength(d, [['press_banca', [{ weight: 80, reps: 5, rir: 2 }]]])), madrid(mondays[0], 9));
+    await p2.evaluate(() => localStorage.setItem('entreno.period.global', 'all'));
+    await open(p2, '#/progress');
+    const paths = await p2.locator('[data-chart="adherence"] .chart-bar').evaluateAll((els) => els.map((e) => ({
+      fill: e.style.fill, xs: [...e.getAttribute('d').matchAll(/M([\d.]+) /g)].map((m) => Number(m[1])),
+    })));
+    assert.strictEqual(paths.length, 2, JSON.stringify(paths.map((x) => x.fill)));
+    const [planned, done] = paths; // capa trasera (planificadas) primero
+    assert.ok(planned.xs.length > 50 && done.xs.length > 50, `${planned.xs.length} / ${done.xs.length}`);
+    const same = done.xs.filter((x) => planned.xs.some((y) => Math.abs(x - y) < 0.2)).length;
+    assert.ok(same / done.xs.length > 0.9, `hechas encima de planificadas: ${same} de ${done.xs.length}`);
+    await p2.locator('[data-chart="adherence"]').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await p2.waitForTimeout(100);
+    await shot(p2, 'progress-adherence-all');
+    assert.deepStrictEqual(app2.errors, []);
+  } finally {
+    await app2.close();
+  }
+});
+
+test('selector de periodo: compacto, solo pegado sobre las gráficas (no sobre la tabla semanal, la lista ni el historial); textos sin «…»', async () => {
+  for (const [w, hgt] of [[375, 667], [390, 844]]) {
+    const app = await launch({ width: w, height: hgt });
+    const { page } = app;
+    try {
+      await seed(page);
+      await open(page, '#/progress');
+      const barBox = () => page.evaluate(() => {
+        const bar = document.querySelector('.prg-period-bar').getBoundingClientRect();
+        const top = document.querySelector('.topbar').getBoundingClientRect();
+        return { top: bar.top, bottom: bar.bottom, height: bar.height, topbar: top.bottom };
+      });
+      const bb = await barBox();
+      assert.ok(bb.height <= 60, `alto del selector ${bb.height}`);
+      // En mitad de las gráficas se pega bajo la cabecera
+      await page.locator('[data-chart="km"]').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      await page.waitForTimeout(100);
+      let b = await barBox();
+      assert.ok(Math.abs(b.top - b.topbar) < 2, `pegado bajo la cabecera: ${JSON.stringify(b)}`);
+      // Sobre la tabla «esta semana» y la lista de ejercicios ya no está
+      for (const sel of ['[data-chart="muscle-table"]', '.prg-ex']) {
+        await page.locator(sel).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+        await page.waitForTimeout(100);
+        b = await barBox();
+        assert.ok(b.bottom <= b.topbar + 1, `${sel}: el selector se va con las gráficas (${JSON.stringify(b)})`);
+      }
+      // Etiquetas de datos y nombres de ejercicio enteros (sin cortar con «…»)
+      const cut = await page.evaluate(() => [...document.querySelectorAll('.prg-stat-label, .prg-ex-row .list-item-title')]
+        .filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.textContent));
+      assert.deepStrictEqual(cut, [], `textos cortados a ${w}px`);
+      const incl = page.locator('.prg-ex-row', { hasText: 'Press inclinado con mancuernas' });
+      assert.ok(await incl.count() >= 1);
+      if (w === 375) {
+        await page.locator('[data-chart="adherence"]').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(80);
+        await shot(page, 'progress-375-adherence');
+        await incl.first().evaluate((el) => el.scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(80);
+        await shot(page, 'progress-375-exercises');
+      }
+      // Ficha del ejercicio: el historial no queda bajo el selector
+      await open(page, '#/progress/exercise/press_banca');
+      await page.locator('.prg-hist').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      await page.waitForTimeout(100);
+      b = await barBox();
+      assert.ok(b.bottom <= b.topbar + 1, `historial sin selector encima (${JSON.stringify(b)})`);
+      await page.locator('[data-chart="volume"]').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      await page.waitForTimeout(100);
+      b = await barBox();
+      assert.ok(Math.abs(b.top - b.topbar) < 2, `ficha: pegado sobre las gráficas (${JSON.stringify(b)})`);
+      assert.ok(await noHScroll(page));
       assert.deepStrictEqual(app.errors, []);
     } finally {
       await app.close();

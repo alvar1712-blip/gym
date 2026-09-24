@@ -298,6 +298,24 @@ function liftedWeight(set, logType) {
   return typeof set.weight === 'number' ? set.weight : null;
 }
 
+/**
+ * Orden de la «mejor serie» cuando ninguna serie de la sesión tiene 1RM estimado (todas de más de 12 reps o sin
+ * peso) en los tipos con carga: más peso × reps (calc.setMetrics: unilateral, los dos lados; peso corporal, con
+ * el peso corporal del día); a igualdad, más peso levantado y luego más reps. `m` = calc.setMetrics de la serie,
+ * `w` = liftedWeight. Devuelve null si no es comparable (sin reps).
+ */
+function fallbackRank(m, w) {
+  return m.reps >= 1 ? [m.volume ?? -Infinity, w ?? -Infinity, m.reps] : null;
+}
+/** a > b (lexicográfico, con tolerancia). */
+function rankGt(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] > b[i] + EPS) return true;
+    if (a[i] < b[i] - EPS) return false;
+  }
+  return false;
+}
+
 /** Entradas de historial (asc) de un ejercicio, sin textos por serie. Cacheadas en el índice. */
 function historyOf(idx, exerciseId) {
   const cached = idx.hist.get(exerciseId);
@@ -317,6 +335,7 @@ function historyOf(idx, exerciseId) {
       const prs = [];
       let maxWeight = null; let maxWeightSet = null; let maxWeightReps = 0;
       let e1 = null; let e1Set = null;
+      let fbSet = null; let fbRank = null;
       let vol = 0; let hasVol = false;
       let maxReps = null; let maxTime = null; let maxHeight = null;
       const sprints = {};
@@ -333,6 +352,8 @@ function historyOf(idx, exerciseId) {
           }
           if (m.e1rm != null && (e1 == null || m.e1rm > e1 + EPS)) { e1 = m.e1rm; e1Set = set; }
           if (m.volume != null) { vol += m.volume; hasVol = true; }
+          const rk = fallbackRank(m, w);
+          if (rk && (!fbRank || rankGt(rk, fbRank))) { fbRank = rk; fbSet = set; }
         }
         if (m.reps != null && m.reps >= 1 && (maxReps == null || m.reps > maxReps)) maxReps = m.reps;
         if (lt === 'time' && set.timeSec > 0 && (maxTime == null || set.timeSec > maxTime)) maxTime = set.timeSec;
@@ -342,8 +363,9 @@ function historyOf(idx, exerciseId) {
           if (sprints[k] == null || set.timeSec < sprints[k]) sprints[k] = set.timeSec;
         }
       }
-      // Mejor serie: la de mayor 1RM estimado; si ninguna lo tiene (p. ej. todas de más de 12 reps), calc.bestSet.
-      const best = e1Set || calcBestSet(e.sets, ex, bw);
+      // Mejor serie: la de mayor 1RM estimado; si ninguna lo tiene (p. ej. todas de más de 12 reps), en los tipos
+      // con carga la de más peso × reps (fallbackRank); en los demás, calc.bestSet.
+      const best = e1Set || (load ? fbSet : null) || calcBestSet(e.sets, ex, bw);
       list.push({
         date: s.date,
         sessionId: s.id,
@@ -383,6 +405,8 @@ function historyOf(idx, exerciseId) {
  *   sprints:{[distanceM]:timeSec}, bw, prs:string[]}[]}
  *  maxWeight: peso corporal → lastre (negativo = asistencia); tipos sin carga → null.
  *  e1rm: mayor 1RM estimado de la sesión (null si ninguna serie de 1–12 reps con carga).
+ *  bestSet: la serie de mayor 1RM estimado; si ninguna lo tiene, en los tipos con carga la de más peso × reps
+ *           (a igualdad, más peso y luego más reps) y en los demás calc.bestSet. Es la de exerciseSeries().bestSet.
  *  bw: peso corporal usado ese día (solo en ejercicios de peso corporal; en los demás, null).
  *  prs: récords batidos en esa sesión frente al historial anterior ('weight','e1rm','reps','time','height'),
  *       con la misma regla que el resumen de la sesión (calc.detectPRs; la primera sesión nunca marca).
@@ -406,10 +430,15 @@ export function exerciseHistory(data, exerciseId, { labels = true } = {}) {
  *  maxWeight: y = kg (peso corporal: lastre); label = la serie más pesada «80 kg × 6 @2».
  *  e1rm:      y = 1RM estimado; label «96,5 kg · 80 kg × 6 @2» (estimación; en peso corporal, que incluye el
  *             peso corporal del día: «100,8 kg · +10 kg × 5 @1 · peso corporal 74 kg»).
- *  bestSet:   carga × reps → y = 1RM estimado de la mejor serie (mismo valor que e1rm), label «80 kg × 6 @2»;
- *             tiempo → y = segundos; saltos → y = cm (solo con altura). Sin 1RM aplicable no hay punto.
+ *  bestSet:   carga × reps → la mejor serie del día: la de mayor 1RM estimado o, si ninguna serie tiene 1RM
+ *             (todas de más de 12 reps), la de más peso × reps (a igualdad, más peso y luego más reps).
+ *             y = peso levantado de esa serie (kg; peso corporal: lastre, 0 = sin lastre, negativo = asistencia),
+ *             label = la serie entera «80 kg × 6 @2», reps (unilateral: el lado con menos) y e1rm (null si no
+ *             aplica) de esa serie. Tiempo → y = segundos; saltos → y = cm (solo con altura).
  *  volume:    y = kg × reps de la sesión; maxReps: y = reps (unilateral: el lado con menos);
- *  maxTime:   y = s («1:30 min»); maxHeight: y = cm; sprint: por distancia, y = s (menos es mejor).
+ *  maxTime:   y = s («1:30 min»); maxHeight: y = cm; sprint: por distancia (label de la serie «20 m»),
+ *             y = s (menos es mejor), label del punto solo el tiempo «3,24 s».
+ *  Las etiquetas de punto llevan solo el valor, nunca el nombre de la serie (el globo ya lo muestra).
  */
 export function exerciseSeries(data, exerciseId, from = null, to = null) {
   const idx = getIndex(data);
@@ -444,7 +473,21 @@ export function exerciseSeries(data, exerciseId, from = null, to = null) {
         const txt = setLabel(idx, e1.e1rmSet, lt);
         const bwTxt = lt === 'bodyweight' ? ` · peso corporal ${num(e1.bw, 1)} kg` : '';
         out.e1rm.push({ x, y: e1.e1rm, label: `${num(e1.e1rm, 1)} kg · ${txt}${bwTxt}`, sessionId: e1.sessionId });
-        out.bestSet.push({ x, y: e1.e1rm, label: txt, sessionId: e1.sessionId });
+      }
+      // Mejor serie del día: la de la sesión con mayor 1RM; si ninguna tiene 1RM, la de más peso × reps.
+      let bs = e1;
+      if (!bs) {
+        let bsRank = null;
+        for (const e of items) {
+          if (!e.bestSet) continue;
+          const rk = fallbackRank(setMetrics(e.bestSet, ex, e.bw), liftedWeight(e.bestSet, lt));
+          if (rk && (!bsRank || rankGt(rk, bsRank))) { bsRank = rk; bs = e; }
+        }
+      }
+      const bsW = bs ? liftedWeight(bs.bestSet, lt) : null;
+      if (bsW != null) {
+        const m = setMetrics(bs.bestSet, ex, bs.bw);
+        out.bestSet.push({ x, y: bsW, label: setLabel(idx, bs.bestSet, lt), sessionId: bs.sessionId, reps: m.reps, e1rm: m.e1rm });
       }
       let vol = 0; let sid = null;
       for (const e of items) if (e.volume != null) { vol += e.volume; sid = sid || e.sessionId; }
@@ -477,7 +520,7 @@ export function exerciseSeries(data, exerciseId, from = null, to = null) {
       }
       for (const [k, { t, sessionId }] of day) {
         if (!sprintMap.has(k)) sprintMap.set(k, []);
-        sprintMap.get(k).push({ x, y: t, label: `${num(Number(k), 1)} m en ${num(t, 2)} s`, sessionId });
+        sprintMap.get(k).push({ x, y: t, label: `${num(t, 2)} s`, sessionId }); // la distancia es el nombre de la serie
       }
     }
   }
@@ -512,7 +555,12 @@ function recordOf(idx, exerciseId) {
       if (load) {
         const w = liftedWeight(set, lt);
         if (w != null && m.reps >= 1) {
-          if (!bestWeight || w > bestWeight.value + EPS) bestWeight = { value: w, reps: m.reps, date: s.date, sessionId: s.id, set };
+          // Entre sesiones cuenta la primera vez; dentro de esa sesión, a igual peso, la serie con más reps
+          // (como el «peso máximo» del historial y de la gráfica).
+          const sameW = bestWeight && Math.abs(w - bestWeight.value) <= EPS;
+          if (!bestWeight || w > bestWeight.value + EPS || (sameW && bestWeight.sessionId === s.id && m.reps > bestWeight.reps)) {
+            bestWeight = { value: w, reps: m.reps, date: s.date, sessionId: s.id, set };
+          }
           const k = weightKey(w);
           const cur = atWeight.get(k);
           if (!cur || m.reps > cur.reps) atWeight.set(k, { weight: cur ? cur.weight : w, reps: m.reps, date: s.date, sessionId: s.id, set });
@@ -874,7 +922,8 @@ export function weeklyPoints(rows, metric) {
 /**
  * Media móvil de `n` semanas (la semana y las n−1 anteriores) de una métrica, para la línea sobre las barras.
  * Solo promedia semanas desde la primera sesión (no diluye con semanas previas a empezar a usar la app);
- * los ritmos se ponderan por distancia en toda la ventana. Puntos {x, y, label, weeks}.
+ * los ritmos se ponderan por distancia en toda la ventana. Puntos {x, y, label, weeks}: label = solo el valor
+ * («2.254»); weeks = semanas promediadas (menos de `n` al principio del registro: la vista puede avisarlo).
  */
 export function weeklyAverage(data, from = null, to = null, metric = 'loadTotal', n = 4) {
   const idx = getIndex(data);
@@ -897,7 +946,7 @@ export function weeklyAverage(data, from = null, to = null, metric = 'loadTotal'
       y = win.reduce((t, r) => t + def.get(r), 0) / win.length;
     }
     if (y == null || !Number.isFinite(y)) continue;
-    out.push({ x: rows[i].week, y, label: `${def.fmt(y)} · media ${win.length} sem.`, weeks: win.length });
+    out.push({ x: rows[i].week, y, label: def.fmt(y), weeks: win.length }); // weeks < n: ventana incompleta
   }
   return out;
 }
@@ -941,6 +990,7 @@ export function swimPaceSeries(data, from = null, to = null) {
  * Peso corporal para la gráfica: pesajes diarios y media móvil de 7 días (calculada sobre TODOS los pesajes y
  * recortada después, para que el primer punto del periodo tenga su semana completa), y la tendencia.
  * Los números son exactamente los de la vista de peso (activity-logic.bwStats / bwTrend).
+ * Etiquetas de punto solo con el valor («75,2 kg»), también en la media (el nombre de la serie lo pone la vista).
  * @returns {{daily:{x,y,label}[], ma:{x,y,label}[], trend:{ok, kgPerWeek?, reason?, n, span, label},
  *            count, last, ma7, ma7Date, ma7N}}
  */
@@ -959,7 +1009,7 @@ export function bodyweightSeries(data, from = null, to = null) {
     if (lastP && diffDays(p.date, lastP.date) < 7) ma7N++;
     if (!inRange(p.date, from, to)) continue;
     daily.push({ x: p.date, y: p.value, label: `${num(p.value, 1)} kg` });
-    maPts.push({ x: p.date, y: p.ma, label: `${num(p.ma, 1)} kg · media 7 días` });
+    maPts.push({ x: p.date, y: p.ma, label: `${num(p.ma, 1)} kg` });
   }
   return {
     daily,

@@ -159,12 +159,39 @@ const NICE_MANTISSAS = [1, 2, 2.5, 5];
 const TIME_STEPS = [1, 2, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600, 7200, 10800, 21600, 43200, 86400];
 
 /**
+ * Decimales que muestra un formateador de números (p. ej. fmtNum(v, 1) → 1; fmtNum(v, 0) → 0;
+ * (km) => metros → 3): el mayor d con fmt(b) ≠ fmt(b + 10^-d), probado en enteros b (baseA, baseB).
+ * null si no distingue ni unidades (texto fijo, formateador raro): entonces no se limita el paso.
+ */
+export function tickDecimals(fmt, baseA = 0, baseB = baseA) {
+  if (typeof fmt !== 'function') return null;
+  let out = null;
+  for (const raw of new Set([baseA, baseB])) {
+    const b = Number.isFinite(raw) ? Math.round(raw) : 0;
+    let s0;
+    try { s0 = String(fmt(b)); } catch { return null; }
+    let d = -1;
+    for (let k = 0; k <= 6; k++) {
+      let s1;
+      try { s1 = String(fmt(b + 10 ** -k)); } catch { s1 = s0; }
+      if (s1 === s0) break;
+      d = k;
+    }
+    if (d < 0) return null;
+    out = out == null ? d : Math.min(out, d);
+  }
+  return out;
+}
+
+/**
  * Marcas «redondas» del eje Y: paso ∈ {1, 2, 2,5, 5} × 10^n (o, con mode 'time', segundos redondos:
  * 5 s, 10 s, 15 s, 30 s, 1 min, 5 min…), entre minTicks y maxTicks marcas que cubren [min, max].
- * integer: solo pasos enteros (series, sesiones…). fixedMin / fixedMax: ese extremo no se redondea.
+ * integer: solo pasos enteros (series, sesiones…). maxDecimals: solo pasos que se escriben con esos decimales
+ * (el formateador del eje los muestra tal cual: nunca «27,5» rotulado «28»). fixedMin / fixedMax: ese extremo
+ * no se redondea.
  * → { min, max, step, ticks }
  */
-export function niceTicks(min, max, { maxTicks = 5, minTicks = 3, integer = false, mode = 'auto', fixedMin = false, fixedMax = false } = {}) {
+export function niceTicks(min, max, { maxTicks = 5, minTicks = 3, integer = false, maxDecimals = null, mode = 'auto', fixedMin = false, fixedMax = false } = {}) {
   if (!Number.isFinite(min) || !Number.isFinite(max)) { min = 0; max = 1; }
   if (min > max) [min, max] = [max, min];
   if (max - min < 1e-9) { // todos iguales: margen alrededor del valor
@@ -187,6 +214,11 @@ export function niceTicks(min, max, { maxTicks = 5, minTicks = 3, integer = fals
   if (integer) {
     steps = steps.filter((s) => s >= 1 && Math.abs(Math.round(s) - s) < 1e-9);
     if (!steps.length) steps = [1, 2, 5, 10];
+  }
+  if (Number.isInteger(maxDecimals) && maxDecimals >= 0) {
+    steps = steps.filter((s) => decimalsOf(s) <= maxDecimals);
+    // Rango más fino que lo que se puede rotular: los pasos más pequeños que sí se escriben.
+    if (!steps.length) steps = [1, 2, 5, 10].map((m) => snapTo(m * 10 ** -maxDecimals, maxDecimals));
   }
   // Entre los pasos que dan minTicks–maxTicks marcas, el que menos espacio vacío deja (y, a igualdad, más marcas).
   let pick = null;
@@ -514,32 +546,59 @@ function createChart(container, initialOpts, spec) {
     } else hide();
   }
 
+  /**
+   * y (en px del área de dibujo) desde la que nada fijo o pegajoso la tapa (cabecera, selector de periodo…):
+   * se mira qué hay encima del borde superior visible del área con elementFromPoint. 0 si no la tapa nada.
+   */
+  function uncoveredTop() {
+    if (typeof document.elementFromPoint !== 'function') return 0;
+    const vr = plot.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!vr.height || !vw || !vh) return 0;
+    const x = Math.min(Math.max(vr.left + vr.width / 2, 1), vw - 1);
+    const limit = Math.min(vr.bottom, vh);
+    let y = Math.max(0, vr.top);
+    for (let i = 0; i < 12 && y < limit; i++) {
+      const el = document.elementFromPoint(x, y + 1);
+      if (!el || plot.contains(el) || el.contains(plot)) break;
+      const b = el.getBoundingClientRect().bottom;
+      y = b > y + 1 ? b : y + 8;
+    }
+    return Math.max(0, y - vr.top);
+  }
+
   function showSel(s) {
     selKey = s.key;
     model.hover.replaceChildren();
     model.hoverUnder?.replaceChildren();
     s.draw(model.hover, model.hoverUnder || model.hover);
+    // Fila: marca de color + texto (valor y nombre; si no caben en una línea, el nombre baja y el valor parte).
     tip.replaceChildren(
       h('div.chart-tip-title', s.title),
       ...s.rows.map((r) => h('div.chart-tip-row', { class: r.strong ? 'chart-tip-total' : '' },
-        r.kind === 'none' ? null : h(`span.chart-key.chart-key-${r.kind || 'line'}`, { style: { color: r.color } }),
-        h('span.chart-tip-val', r.value),
-        r.name ? h('span.chart-tip-name', r.name) : null)),
+        r.kind === 'none' ? null : h('span.chart-tip-key', h(`span.chart-key.chart-key-${r.kind || 'line'}`, { style: { color: r.color } })),
+        h('span.chart-tip-txt',
+          h('span.chart-tip-val', r.value),
+          r.name ? h('span.chart-tip-name', r.name) : null))),
       ...(s.notes || []).filter((t) => t != null && t !== '').map((t) => h('div.chart-tip-note', String(t))));
     tip.hidden = false;
     const W = plot.clientWidth;
     const tw = tip.offsetWidth;
     const th = tip.offsetHeight;
+    const plotBottom = s.plotBottom ?? height();
+    // Nunca bajo la cabecera ni el selector pegajosos: como pronto, 4 px por debajo de lo que tapa el área.
+    const safe = Math.max(4, uncoveredTop() + 4);
     // Al lado de la guía si cabe; si no, centrado y arriba o abajo, donde no tape los puntos marcados.
     let left = s.gx + 14;
-    let top = 4;
+    let top = safe;
     if (left + tw > W - 2) left = s.gx - 14 - tw;
     if (left < 2) {
       left = Math.max(2, Math.min(W - tw - 2, s.gx - tw / 2));
-      const ys = s.marksY || [];
-      const low = Math.max(4, (s.plotBottom ?? height()) - th - 4);
+      const ys = (s.marksY || []).filter((y) => y >= safe - 8); // lo que queda tapado no cuenta
+      const low = Math.max(safe, plotBottom - th - 4);
       const hitsTop = ys.filter((y) => y < top + th + 8).length;
-      const hitsLow = ys.filter((y) => y > low - 8).length;
+      const hitsLow = ys.filter((y) => y > low - 8 && y < low + th + 8).length;
       if (hitsTop && hitsLow < hitsTop) top = low;
     }
     tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
@@ -669,15 +728,17 @@ export function legend(items = []) {
 // ---------------------------------------------------------------------------
 /**
  * opts = {
- *   series: [{ id, label, color, points:[{ x:'YYYY-MM-DD', y:number|null, label?:string }],
+ *   series: [{ id, label, color, points:[{ x:'YYYY-MM-DD', y:number|null, label?:string, note?:string|string[] }],
  *              line?:true, dots?:bool (defecto: sí si hay ≤ 24 puntos a la vista), width?:2, dashed?:false,
  *              emphasis?:false, opacity?, hidden? }],
  *   height: 200, yFormat(v) → texto (globo y eje), yTickFormat?(v) (solo eje), xLabel?(x) → título del globo,
+ *   yTickDecimals?: decimales que escribe el eje (si no, se deducen de yTickFormat/yFormat),
  *   xDomain?: [from|null, to|null], yMin?, yMax?, zeroBased?: false, invertY?: false,
  *   yTicks?: 'auto' | 'time' (segundos redondos) | number[],
  *   band?: { min, max, label?, color? }, legend?: true | false | items (defecto: automática con ≥ 2 series),
  *   empty: 'Sin datos en este periodo', ariaLabel }
- * y:null corta la línea. Con alguna serie emphasis, las demás se atenúan.
+ * y:null corta la línea. Con alguna serie emphasis, las demás se atenúan. Varios puntos el mismo día (dos
+ * carreras): el globo da una fila por punto. point.note: línea de nota bajo las filas (texto que parte línea).
  */
 export function lineChart(container, opts = {}) {
   return createChart(container, opts, { kind: 'line', draw: drawLine, legendItems: lineLegendItems });
@@ -732,7 +793,15 @@ function drawLine(svg, o, W, H) {
     for (let i = a; i < b; i++) if (P.pts[i].y != null) inside.push(P.pts[i]);
     if (!inside.length) continue;
     P.inside = inside;
-    P.path = P.pts.slice(Math.max(0, a - 1), Math.min(P.pts.length, b + 1)); // + vecinos fuera, recortados
+    // Trazo: los puntos del periodo y, si la línea viene de (o sigue hacia) un punto fuera del periodo, el tramo
+    // hasta el borde, cortado en d0 / d1 con el valor interpolado. Ese valor cuenta para la escala Y: la línea
+    // nunca se sale del área de dibujo (ni cruza el eje X hacia las fechas).
+    const path = P.pts.slice(a, b);
+    const edge = (out, inn, d) => ({ d, y: out.y + ((inn.y - out.y) * (d - out.d)) / (inn.d - out.d), edge: true });
+    if (a > 0 && a < P.pts.length && P.pts[a - 1].y != null && P.pts[a].y != null && P.pts[a].d > d0) path.unshift(edge(P.pts[a - 1], P.pts[a], d0));
+    if (b > 0 && b < P.pts.length && P.pts[b].y != null && P.pts[b - 1].y != null && P.pts[b - 1].d < d1) path.push(edge(P.pts[b], P.pts[b - 1], d1));
+    P.path = path;
+    P.showLine = P.s.line !== false && inside.length >= 2;
     vis.push(P);
   }
   if (!vis.length) return null;
@@ -744,10 +813,18 @@ function drawLine(svg, o, W, H) {
   let hi = -Infinity;
   let ints = true;
   for (const P of vis) for (const q of P.inside) { if (q.y < lo) lo = q.y; if (q.y > hi) hi = q.y; if (!Number.isInteger(q.y)) ints = false; }
+  for (const P of vis) {
+    if (!P.showLine) continue;
+    for (const q of [P.path[0], P.path[P.path.length - 1]]) {
+      if (!q?.edge) continue;
+      if (q.y < lo) lo = q.y;
+      if (q.y > hi) hi = q.y;
+      if (!Number.isInteger(q.y)) ints = false;
+    }
+  }
   const band = validBand(o.band);
   if (band) { lo = Math.min(lo, band.min); hi = Math.max(hi, band.max); if (!Number.isInteger(band.min) || !Number.isInteger(band.max)) ints = false; }
-  const scale = yScale(lo, hi, o, ints);
-  const tickLabels = scale.ticks.map((v) => fmtTick(v));
+  const { scale, labels: tickLabels } = yAxis(lo, hi, o, ints, fmtTick);
   const f = frame(W, H, tickLabels);
   const yPx = yMapper(scale, f, !!o.invertY);
   const padX = 6;
@@ -776,7 +853,7 @@ function drawLine(svg, o, W, H) {
     const opacity = Number.isFinite(s.opacity) ? s.opacity : faded ? 0.5 : 1;
     const g = sv('g', { class: `chart-s${s.emphasis ? ' chart-s-emph' : ''}`, 'data-id': s.id ?? P.si, opacity: opacity < 1 ? opacity : null }, gS);
     const n = P.inside.length;
-    const showLine = s.line !== false && n >= 2;
+    const showLine = P.showLine;
     if (showLine) {
       let d = '';
       let pen = false;
@@ -790,7 +867,8 @@ function drawLine(svg, o, W, H) {
       path.style.stroke = P.color;
     }
     const wantDots = s.dots ?? (s.line === false || n <= 24);
-    if (wantDots || !showLine) {
+    P.dotted = wantDots || !showLine;
+    if (P.dotted) {
       const spacing = (x1 - x0) / Math.max(1, n);
       const r = spacing < 4 ? 2 : spacing < 9 ? 2.5 : spacing < 18 ? 3 : 3.75;
       const pts = P.inside.map((q) => [xPx(q.d), yPx(q.y)]);
@@ -799,7 +877,12 @@ function drawLine(svg, o, W, H) {
       const dp = sv('path', { d: dd, class: 'chart-dots', 'stroke-width': r * 2 }, g);
       dp.style.stroke = P.color;
     }
-    P.byDay = new Map(P.inside.map((q) => [q.d, q]));
+    // Por día, TODOS sus puntos (dos carreras o dos salidas el mismo día: cada una se puede consultar).
+    P.byDay = new Map();
+    for (const q of P.inside) {
+      const arr = P.byDay.get(q.d);
+      if (arr) arr.push(q); else P.byDay.set(q.d, [q]);
+    }
   }
   bandLabel?.();
 
@@ -808,18 +891,25 @@ function drawLine(svg, o, W, H) {
   for (const P of vis) for (const q of P.inside) keySet.add(q.d);
   const keys = [...keySet].sort((a, b) => a - b);
   const title = (d) => { const x = dayStr(d); return typeof o.xLabel === 'function' ? String(o.xLabel(x)) : dateTitle(x); };
+  // Globo de un día: una fila por punto de las series con puntos a la vista (en su orden); una línea sin puntos
+  // (p. ej. una media móvil) da su valor al final del día. Notas de los puntos (point.note) debajo, sin repetir.
   const selAt = (d) => {
     const gx = xPx(d);
     const rows = [];
     const marks = [];
+    const notes = [];
     for (const P of vis) {
-      const q = P.byDay.get(d);
-      if (!q) continue;
-      rows.push({ color: P.color, kind: P.s.line === false ? 'dot' : P.s.dashed ? 'dashed' : 'line', value: q.p.label ?? fmtY(q.y), name: P.s.label || '' });
-      marks.push([yPx(q.y), P.color]);
+      const list = P.byDay.get(d);
+      if (!list) continue;
+      const kind = P.s.line === false ? 'dot' : P.s.dashed ? 'dashed' : 'line';
+      for (const q of P.dotted ? list : [list[list.length - 1]]) {
+        rows.push({ color: P.color, kind, value: q.p.label ?? fmtY(q.y), name: P.s.label || '' });
+        marks.push([yPx(q.y), P.color]);
+        for (const t of [].concat(q.p.note ?? [])) if (t != null && t !== '' && !notes.includes(String(t))) notes.push(String(t));
+      }
     }
     return {
-      key: d, gx, title: title(d), rows, marksY: marks.map((m) => m[0]), plotBottom: f.bottom,
+      key: d, gx, title: title(d), rows, notes, marksY: marks.map((m) => m[0]), plotBottom: f.bottom,
       draw(g) {
         const x = crisp(gx);
         sv('line', { class: 'chart-guide', x1: x, x2: x, y1: f.T, y2: f.bottom }, g);
@@ -842,7 +932,12 @@ function drawLine(svg, o, W, H) {
   };
 }
 
-function yScale(lo, hi, o, ints) {
+/**
+ * Escala Y y rótulos de sus marcas. El paso nunca necesita más decimales de los que escribe el formateador del
+ * eje (opts.yTickDecimals o, si no, los que muestra fmtTick): así cada rótulo es el valor exacto de su raya
+ * y no se repiten («27 | 27 | 27»). → { scale, labels }
+ */
+function yAxis(lo, hi, o, ints, fmtTick) {
   if (o.zeroBased) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
   const fixedMin = Number.isFinite(o.yMin);
   const fixedMax = Number.isFinite(o.yMax);
@@ -850,14 +945,27 @@ function yScale(lo, hi, o, ints) {
   if (fixedMax) hi = o.yMax;
   if (Array.isArray(o.yTicks) && o.yTicks.length) {
     const ticks = o.yTicks.filter(Number.isFinite).sort((a, b) => a - b);
-    return { min: Math.min(ticks[0], lo), max: Math.max(ticks[ticks.length - 1], hi), ticks, step: null };
+    return { scale: { min: Math.min(ticks[0], lo), max: Math.max(ticks[ticks.length - 1], hi), ticks, step: null }, labels: ticks.map((v) => fmtTick(v)) };
   }
-  return niceTicks(lo, hi, {
+  let maxDecimals = Number.isInteger(o.yTickDecimals) && o.yTickDecimals >= 0 ? o.yTickDecimals : tickDecimals(fmtTick, Math.floor(lo), Math.ceil(hi));
+  const nice = (md) => niceTicks(lo, hi, {
     integer: ints,
+    maxDecimals: md,
     mode: o.yTicks === 'time' ? 'time' : 'auto',
     fixedMin: fixedMin || (!!o.zeroBased && lo === 0),
     fixedMax,
   });
+  let scale = nice(maxDecimals);
+  let labels = scale.ticks.map((v) => fmtTick(v));
+  // Red de seguridad: rótulos repetidos → pasos con un decimal menos (formateadores que el sondeo no entiende).
+  for (let i = 0; i < 4 && new Set(labels).size < labels.length; i++) {
+    const md = Math.min(maxDecimals ?? Infinity, decimalsOf(scale.step)) - 1;
+    if (!(md >= 0)) break;
+    maxDecimals = md;
+    scale = nice(md);
+    labels = scale.ticks.map((v) => fmtTick(v));
+  }
+  return { scale, labels };
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +976,8 @@ function yScale(lo, hi, o, ints) {
  *   bars: [{ x:'YYYY-MM-DD' | 'texto', label?: nombre de la barra (título del globo; eje en barras de texto),
  *            segments:[{ key, value, color?, label?: valor exacto ya formateado, name?: nombre }],
  *            tooltip?: string[] (líneas extra del globo) }],
- *   stacked: true, height: 200, yFormat(v), yTickFormat?(v), xFormat?(x, i) → etiqueta del eje, xLabel?(x, bar) → título,
+ *   stacked: true, height: 200, yFormat(v), yTickFormat?(v), yTickDecimals?, xFormat?(x, i) → etiqueta del eje,
+ *   xLabel?(x, bar) → título,
  *   band?: { min, max, label?, color? } | (bar, i) => ({ min, max } | null), bandLabel?: 'Rango objetivo',
  *   overlay?: { points:[{ x, y, label? }], color?, label?, dashed? },   // se une a las barras por x
  *   legend?: [{ key, label, color, kind? }], totalLabel?: 'Total', yMin?, yMax?, yTicks?, barMax?: 24,
@@ -959,8 +1068,7 @@ function drawBars(svg, o, W, H) {
   }
   if (!any && o.emptyWhenZero !== false) return null;
 
-  const scale = yScale(lo, hi, { ...o, zeroBased: true }, ints);
-  const tickLabels = scale.ticks.map((v) => fmtTick(v));
+  const { scale, labels: tickLabels } = yAxis(lo, hi, { ...o, zeroBased: true }, ints, fmtTick);
   const f = frame(W, H, tickLabels);
   const yPx = yMapper(scale, f, false);
   const slot = f.pw / n;
@@ -1137,8 +1245,18 @@ function drawBars(svg, o, W, H) {
     if (bd) rows.push({ kind: 'band', color: bd.color || o.bandColor || COLORS.band, value: `${fmtY(bd.min)}–${fmtY(bd.max)}`, name: bd.label ?? o.bandLabel ?? 'Rango objetivo' });
     const t = typeof o.xLabel === 'function' ? String(o.xLabel(b.x, b)) : (b.label != null ? String(b.label) : dateTitle(b.x, weekly));
     const gx = cx(i);
+    // Extremos de la barra y punto de la media: el globo centrado no los tapa si puede (arriba o abajo).
+    let pos = 0;
+    let neg = 0;
+    for (const [s] of nz) {
+      if (stacked) { if (s.value > 0) pos += s.value; else neg += s.value; } else { pos = Math.max(pos, s.value); neg = Math.min(neg, s.value); }
+    }
+    const marksY = [];
+    if (pos > 0) marksY.push(yPx(pos));
+    if (neg < 0) marksY.push(yPx(neg));
+    if (ov) marksY.push(yPx(ov.y));
     return {
-      key: i, gx, title: t, rows, notes: Array.isArray(b.tooltip) ? b.tooltip : [],
+      key: i, gx, title: t, rows, notes: Array.isArray(b.tooltip) ? b.tooltip : [], marksY, plotBottom: f.bottom,
       draw(g, under) {
         const pad = Math.min(4, slot * 0.1);
         sv('rect', { class: 'chart-guide chart-guide-col', x: r1(f.L + slot * i + pad), y: f.T - 4, width: r1(Math.max(1, slot - pad * 2)), height: f.ph + 4, rx: Math.min(4, slot / 4) }, under);
