@@ -10,6 +10,7 @@ import {
 import { MUSCLE_LABEL, ACTIVITY_EMOJI, ACTIVITY_LABEL } from './seed.js';
 import { navigate } from './router.js';
 import { formatSet, prLabel, linkedActivities, syncAutoDuration } from './session-logic.js';
+import { checkinSummary } from './checkin.js';
 
 export function renderSummary(root, id) {
   const session = store.get('sessions', id);
@@ -131,6 +132,10 @@ export function renderSummary(root, id) {
       h('div.list-item-sub', [a.distanceKm ? fmtKm(a.distanceKm) : null, a.movingSec ? fmtDuration(a.movingSec) : (sessionDurationMin(a) ? fmtMinutes(sessionDurationMin(a)) : null)].filter(Boolean).join(' · ') || '—')),
     icon('chevron-right', 20, 'chev')))));
   }
+
+  // Check-in del día (antes / después), si lo hay
+  const checkin = checkinSummary({ date: session.date, sessionId: session.id });
+  if (checkin) c.append(checkin);
 
   if (session.notes) c.append(h('h2.section-title', 'Nota'), h('div.card.ses-sum-notes', h('p', session.notes)));
 

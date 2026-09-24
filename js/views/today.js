@@ -1,6 +1,7 @@
 // today.js — pantalla «Hoy»: aviso de copia, sesión en curso, lo que toca hoy (1 toque para
-// empezar), accesos rápidos, peso corporal y mini semana.
-// PROPIETARIO: módulo de calendario.
+// empezar), accesos rápidos, peso corporal y mini semana; al final (Fase 3) el check-in de hoy, el resumen del
+// panel semanal y los objetivos.
+// PROPIETARIO: módulo de calendario (el hueco .today-extra lo rellena la integración de la Fase 3).
 import * as store from '../store.js';
 import { navigate, refresh } from '../router.js';
 import { h, icon, screen } from '../ui.js';
@@ -22,7 +23,7 @@ const QUICK = [
   { kind: 'strength', emoji: '🏋️', label: 'Fuerza libre' },
 ];
 
-export function mountToday(root) {
+export async function mountToday(root) {
   const today = todayStr();
   const ctx = ctxFromStore(today);
   const content = screen(root, { title: 'Hoy', subtitle: cap(fmtDate(today, 'long')) });
@@ -38,16 +39,81 @@ export function mountToday(root) {
   content.appendChild(quickGrid(today));
   content.appendChild(bodyweightQuickEntry({}));
   content.appendChild(weekCard(today, ctx));
-  // Hueco para el panel semanal / objetivos (fase 3).
-  content.appendChild(h('div.today-extra'));
+  // Fase 3: al final, para no empujar «Te toca hoy» ni «Empezar».
+  const extra = h('div.today-extra');
+  content.appendChild(extra);
 
   // Si la app se queda abierta y cambia el día, se vuelve a montar al volver.
   const onVisible = () => { if (document.visibilityState === 'visible' && todayStr() !== today) refresh({ keepScroll: false }); };
   document.addEventListener('visibilitychange', onVisible);
-  return () => {
+  const cleanup = () => {
     timers.forEach(clearInterval);
     document.removeEventListener('visibilitychange', onVisible);
   };
+  // Lo principal ya está pintado; los módulos de la Fase 3 se cargan después (el router espera a que termine
+  // para restaurar el scroll).
+  await fillExtra(extra, today, active);
+  return cleanup;
+}
+
+// ---------------------------------------------------------------------------
+// Fase 3: check-in de hoy, resumen del panel semanal y objetivos
+// ---------------------------------------------------------------------------
+let extraModules = null;
+/** Se importan al usarse (no retrasan la primera pintura de Hoy) y una sola vez. */
+function loadExtraModules() {
+  if (!extraModules) {
+    extraModules = Promise.all([import('../checkin.js'), import('./weekly.js'), import('./goals.js')])
+      .catch((err) => { extraModules = null; throw err; });
+  }
+  return extraModules;
+}
+
+/** Un fallo en una tarjeta de la Fase 3 no puede dejar Hoy sin su botón «Empezar»: se aísla cada una. */
+function safely(label, fn) {
+  try {
+    return fn();
+  } catch (err) {
+    console.error(`[hoy] ${label}`, err);
+    return null;
+  }
+}
+
+/** Rellena el hueco y lo marca con data-ready="1" al terminar (haya tarjetas o no). */
+async function fillExtra(slot, today, active) {
+  let mods = null;
+  try {
+    mods = await loadExtraModules();
+  } catch (err) {
+    console.error('[hoy] módulos de la Fase 3', err);
+  }
+  if (mods && slot.isConnected) { // si se cambió de pantalla mientras cargaban, no se calcula nada
+    const [ci, weekly, goals] = mods;
+    const data = safely('datos', () => weekly.weeklyData(today)); // un único `data` para las dos tarjetas
+    slot.append(...[
+      safely('check-in', () => todayCheckin(ci, today, active)),
+      data ? safely('panel semanal', () => weekly.weeklySummaryCard({ data })) : null,
+      data ? safely('objetivos', () => goals.goalsSummaryCard({ data })) : null,
+    ].filter(Boolean));
+  }
+  slot.dataset.ready = '1';
+}
+
+/**
+ * Check-in de hoy (antes de entrenar), con las tres filas a la vista (3 toques). Solo si hoy no se ha hecho
+ * ninguno (ni antes ni después) ni se ha omitido, y si hoy no hay ya una sesión de fuerza terminada (su
+ * pantalla ya lo ofreció antes y después). Con una sesión de fuerza de hoy en curso, se enlaza a ella.
+ */
+function todayCheckin(ci, today, active) {
+  const all = store.all('checkins');
+  if (ci.TIMINGS.some((t) => ci.hasValues(ci.checkinFor(all, today, t)))) return null;
+  const sessionId = active && active.date === today ? active.id : null;
+  if (ci.TIMINGS.some((t) => ci.isDismissed({ date: today, timing: t, sessionId }))) return null;
+  const trained = store.all('sessions').some((s) => s.kind === 'strength' && s.status === 'done' && s.date === today);
+  if (trained) return null;
+  const el = ci.checkinCard({ date: today, timing: 'pre', sessionId, compact: true });
+  if (el) el.classList.add('card', 'today-checkin');
+  return el;
 }
 
 /** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */

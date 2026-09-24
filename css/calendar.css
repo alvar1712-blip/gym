@@ -172,6 +172,10 @@
 .today-tomorrow .list-item-title { white-space: normal; }
 .today-tomorrow .list-item-sub { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 
+/* Fase 3 al final de Hoy: check-in de hoy, resumen del panel semanal y objetivos */
+.today-extra { display: flex; flex-direction: column; gap: 12px; }
+.today-extra:empty { display: none; }
+
 /* ---------- Calendario (semana) ---------- */
 .cal-nav { display: flex; align-items: center; gap: 4px; }
 .cal-nav-btn { color: var(--accent); flex: none; }

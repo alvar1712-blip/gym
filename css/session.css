@@ -250,3 +250,87 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ses-bar-val { text-align: right; font-weight: 750; }
 .ses-sum-notes p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
 .ses-sum-actions { margin-top: 8px; }
+
+/* ---------- Check-in (js/checkin.js; la tarjeta también puede ir fuera de la sesión, p. ej. en Hoy) ---------- */
+.ci-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border); /* borde sin sumar altura: plegada mide 44 px */
+}
+.ci-card.ci-open { box-shadow: inset 0 0 0 1px rgba(184, 243, 74, 0.35); }
+.ci-bar { display: flex; align-items: stretch; min-height: 44px; }
+.ci-toggle {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.ci-toggle:active { background: var(--surface-2); }
+.ci-title { flex: none; font-size: 15px; font-weight: 750; }
+.ci-state { flex: 1; min-width: 0; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-ok { display: none; flex: none; color: var(--ok); }
+.ci-chev { flex: none; color: var(--muted); transition: transform 0.15s ease; }
+.ci-open .ci-chev { transform: rotate(180deg); }
+/* Plegada y contestada: el resumen ocupa la franja entera (tres columnas: pregunta arriba, valor debajo). */
+.ci-has:not(.ci-open) .ci-title { display: none; }
+.ci-has:not(.ci-open) .ci-ok { display: inline; }
+.ci-has:not(.ci-open) .ci-state { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ci-mini { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.ci-mini-k { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.ci-mini-v { font-size: 15px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-skip {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0 12px 12px 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 15px;
+  font-weight: 700;
+}
+.ci-skip:active { background: var(--surface-2); }
+.ci-body { display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 12px; }
+.ci-rows { display: flex; flex-direction: column; gap: 8px; }
+.ci-row { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); align-items: center; gap: 8px; }
+.ci-label { font-size: 15px; font-weight: 700; color: var(--text-2); }
+.ci-seg .seg-btn { min-height: 44px; font-size: 15px; padding: 0 2px; }
+/* Valor elegido bien visible bajo la luz del gimnasio. */
+.ci-seg .seg-btn.active { background: var(--accent); color: var(--accent-ink); font-weight: 800; box-shadow: none; }
+.ci-hint { font-size: 13px; line-height: 1.35; color: var(--muted); }
+
+/* Compacta (hoja «Terminar sesión»): las tres filas a la vista. */
+.ci-compact { display: flex; flex-direction: column; gap: 8px; }
+.ci-chead { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -6px 0 -4px; }
+.ci-chead-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.ci-copt { font-size: 13px; color: var(--muted); }
+.ci-compact .ci-skip { border: 1px solid var(--border); border-radius: 10px; }
+.ci-sheet-body > .ci-compact + .ci-compact { padding-top: 12px; border-top: 1px solid var(--border); }
+
+/* Resumen de la sesión */
+.ci-sum-wrap { display: flex; flex-direction: column; gap: 12px; }
+.ci-sum { gap: 10px; }
+.ci-sum-grid { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 4px 8px; align-items: baseline; }
+.ci-sum-row { display: contents; }
+.ci-sum-k, .ci-sum-when { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.ci-sum-when { padding-right: 4px; }
+.ci-sum-k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-sum-v { font-size: 16px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-sum-edit { min-height: 44px; margin-top: 2px; }
+
+/* Arriba de la sesión: plegada es una franja de 44 px pegada a la cabecera, para que en un iPhone SE
+   «Registrar serie 1» siga a la vista sin desplazar (criterio de 1–2 toques por serie). */
+.ses-content > .ci-card { margin-bottom: -6px; }
+.ses-content > .ci-card:first-child { margin-top: -8px; }

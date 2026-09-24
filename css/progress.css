@@ -107,11 +107,14 @@
 /* ---------- fin charts ---------- */
 
 /* ---------- progreso (vistas: js/views/progress.js, js/progress-ui.js) ---------- */
-.progress-extra:empty { display: none; } /* hueco de la Fase 3 (panel semanal y objetivos) */
+/* Fase 3: resumen del panel semanal y objetivos (js/views/weekly.js, js/views/goals.js) */
+.progress-extra { display: flex; flex-direction: column; gap: 12px; }
+.progress-extra:empty { display: none; }
 
-/* Accesos: Récords · Peso · Ejercicios */
-.prg-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+/* Accesos: Panel semanal · Objetivos (fila ancha) y Récords · Peso · Ejercicios */
+.prg-links { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .prg-link {
+  grid-column: span 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -128,6 +131,13 @@
 .prg-link:active { background: var(--surface-2); transform: scale(0.98); }
 .prg-link-emoji { flex: none; font-size: 20px; line-height: 1; }
 .prg-link-label { max-width: 100%; font-size: 14px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-link-wide { grid-column: span 3; flex-direction: row; gap: 6px; min-height: 52px; padding: 6px 4px; }
+.prg-link-wide .prg-link-label { min-width: 0; font-size: 15px; }
+/* 320 px: como las demás (emoji encima), para que «Panel semanal» quepa entero */
+@media (max-width: 359px) {
+  .prg-link-wide { flex-direction: column; gap: 5px; min-height: 62px; }
+  .prg-link-wide .prg-link-label { font-size: 14px; }
+}
 
 /* Gráficas que dependen del periodo, con su selector: el selector solo se pega mientras se ven (sticky dentro
    de este contenedor); la tabla «esta semana», la lista de ejercicios y el historial van fuera. */

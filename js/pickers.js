@@ -36,9 +36,11 @@ export function pickExercise({ title = 'Elegir ejercicio', excludeIds = [], filt
         items.sort((a, b) => (normalize(a.name).startsWith(q) ? 0 : 1) - (normalize(b.name).startsWith(q) ? 0 : 1));
       }
       const prefer = preferIds.map((id) => items.find((e) => e.id === id)).filter(Boolean);
-      const rest = items.filter((e) => !preferIds.includes(e.id));
+      // Al buscar no hay bloque «Sugeridos»: los sugeridos que coinciden van en la lista con los demás.
+      const showPrefer = prefer.length > 0 && !q;
+      const rest = showPrefer ? items.filter((e) => !preferIds.includes(e.id)) : items;
       const rows = [];
-      if (prefer.length && !q) {
+      if (showPrefer) {
         rows.push(h('div.pick-section', 'Sugeridos'));
         prefer.forEach((e) => rows.push(row(e)));
         rows.push(h('div.pick-section', 'Todos'));

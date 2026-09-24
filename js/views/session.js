@@ -16,6 +16,7 @@ import {
 } from '../session-logic.js';
 import { renderCard, activityRow, activitySummaryText } from '../session-view-card.js';
 import { renderSummary } from '../session-view-summary.js';
+import { checkinCard, moveSessionCheckins } from '../checkin.js';
 
 // ===========================================================================
 // Registro de la sesión
@@ -327,7 +328,9 @@ export function mountSession(root, params = {}) {
       ? h('div.banner.banner-info.ses-past-banner', h('div.banner-main',
         h('div.banner-text', `Sesión del ${fmtDate(session.date, 'long')} registrada a posteriori: sin cronómetro; la duración se indica al terminar.`)))
       : null;
-    content.replaceChildren(...[intro, listEl, orphansEl, renderFooter()].filter(Boolean));
+    // Check-in opcional «¿Cómo llegas hoy?»: plegado (una franja), no añade ningún toque para registrar series.
+    const checkin = session.status === 'active' ? checkinCard({ date: session.date, timing: 'pre', sessionId: session.id }) : null;
+    content.replaceChildren(...[intro, checkin, listEl, orphansEl, renderFooter()].filter(Boolean));
     renderList();
     startTimer();
   }
@@ -477,6 +480,7 @@ export function mountSession(root, params = {}) {
       const old = session.date;
       session.date = v;
       if (session.planDate === old) session.planDate = v;
+      moveSessionCheckins(session.id, old, v); // su check-in (antes / después) va con ella
       for (const a of linkedActivities(session, store.all('sessions'))) {
         a.date = v;
         if (a.planDate === old) a.planDate = v;
@@ -643,6 +647,7 @@ export function mountSession(root, params = {}) {
         field('Duración de la fuerza (min)', durInp, explain),
         durErr,
         h('div.field', h('span.field-label', 'Esfuerzo percibido de la sesión (1–10)'), rpePicker({ value: rpe, onChange: (v) => { rpe = v; session.rpe = v; ctx.save(); } })),
+        checkinCard({ date: session.date, timing: 'post', sessionId: session.id, compact: true }), // «¿Cómo ha ido?», opcional
         field('Nota de la sesión', notesInp),
         pending ? h('div.banner.banner-warn.ses-pending-warn', h('div.banner-main',
           h('div.banner-text', `${plural(pending, 'serie pendiente', 'series pendientes')} sin confirmar: se descartarán al terminar.`))) : null),

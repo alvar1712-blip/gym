@@ -1,5 +1,6 @@
 // progress.js — Fase 2: pestaña Progreso (#/progress), progreso de un ejercicio (#/progress/exercise/:id) y
-// récords (#/records). PROPIETARIO: módulo de progreso.
+// récords (#/records). PROPIETARIO: módulo de progreso. Fase 3 (integración): arriba, accesos al panel semanal
+// y a los objetivos, y sus tarjetas resumen (hueco .progress-extra).
 // Los números salen de js/stats.js (puro) con un `data` construido UNA vez por pantalla; las gráficas, de
 // js/charts.js. Cambiar el periodo o un chip solo filtra lo ya calculado y actualiza las gráficas afectadas;
 // al salir de la pantalla se destruyen todas (listeners y observers).
@@ -12,6 +13,8 @@ import { MUSCLES, MUSCLE_LABEL } from '../seed.js';
 import { emptyBests, addToBests, detectPRs } from '../calc.js';
 import { formatSet, fmtSec } from '../session-logic.js';
 import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts } from '../progress-ui.js';
+import { weeklySummaryCard } from './weekly.js';
+import { goalsSummaryCard } from './goals.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
 const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null };
@@ -152,9 +155,9 @@ export function mountProgress(root) {
     h: (px) => (range.first ? chartHeight(px) : 112),
   };
 
-  c.appendChild(h('div.progress-extra')); // Fase 3: panel semanal y objetivos
   const exSection = exercisesSection(ctx);
   c.appendChild(linksRow(ctx, exSection));
+  c.appendChild(progressExtra(data)); // Fase 3: resumen del panel semanal y objetivos
   if (!range.first) {
     c.appendChild(h('section.card.prg-nodata', emptyState({
       emoji: '📈',
@@ -188,12 +191,36 @@ export function mountProgress(root) {
   return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
 }
 
-/** Accesos: Récords, Peso corporal y salto a la lista de ejercicios. */
+/**
+ * Fase 3: tarjetas resumen del panel semanal (2–3 mensajes clave) y de los objetivos activos; cada una es null
+ * sin datos (sin sesiones / sin objetivos) y se aísla: un fallo en una no deja Progreso sin gráficas.
+ * Reutilizan el `data` de la pantalla (weeklySummaryCard le añade los check-ins).
+ */
+function progressExtra(data) {
+  const slot = h('div.progress-extra');
+  const make = [['panel semanal', () => weeklySummaryCard({ data })], ['objetivos', () => goalsSummaryCard({ data })]];
+  for (const [label, fn] of make) {
+    try {
+      const el = fn();
+      if (el) slot.appendChild(el);
+    } catch (err) {
+      console.error(`[progreso] ${label}`, err);
+    }
+  }
+  return slot;
+}
+
+/** Accesos: Panel semanal y Objetivos (Fase 3), Récords, Peso corporal y salto a la lista de ejercicios. */
 function linksRow(ctx, exSection) {
   const tile = (emoji, label, aria, onClick, key) => h('button.prg-link', { type: 'button', dataset: { link: key }, 'aria-label': aria, onClick },
     h('span.prg-link-emoji', { 'aria-hidden': 'true' }, emoji),
     h('span.prg-link-label', label));
+  const wide = (emoji, label, aria, onClick, key) => h('button.prg-link.prg-link-wide', { type: 'button', dataset: { link: key }, 'aria-label': aria, onClick },
+    h('span.prg-link-emoji', { 'aria-hidden': 'true' }, emoji),
+    h('span.prg-link-label', label));
   return h('nav.prg-links', { 'aria-label': 'Accesos de progreso' },
+    wide('📋', 'Panel semanal', 'Panel semanal: información y sugerencias de la semana', () => goChild('#/weekly'), 'weekly'),
+    wide('🎯', 'Objetivos', 'Objetivos: progreso y fecha estimada', () => goChild('#/goals'), 'goals'),
     tile('🏆', 'Récords', 'Récords de fuerza y resistencia', () => goChild('#/records'), 'records'),
     tile('⚖️', 'Peso', 'Peso corporal', () => goChild('#/bodyweight'), 'bodyweight'),
     tile('🏋️', 'Ejercicios', 'Ir a la lista de ejercicios', () => exSection.el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 'exercises'));
