@@ -250,6 +250,34 @@ test('rutina nueva sin tocar se descarta al salir; el editor muestra secciones y
   }
 });
 
+test('editor de rutina con muesca/isla: al desplegar un ejercicio, su cabecera no queda bajo la barra superior', async () => {
+  const app = await openApp();
+  const { page, context } = app;
+  try {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 59, bottom: 34, left: 0, right: 0 } });
+    await go(page, '#/template/tpl_d4');
+    await page.waitForSelector('.lib-item');
+    await page.waitForTimeout(300);
+    const barBottom = await page.evaluate(() => document.querySelector('.topbar').getBoundingClientRect().bottom);
+    assert.ok(barBottom > 110, `inset superior emulado (barra hasta ${barBottom}px)`);
+    // el 5.º ejercicio empieza tapado por la barra; se toca la parte visible de su cabecera
+    await page.evaluate(() => window.scrollBy(0, document.querySelectorAll('.lib-item')[4].getBoundingClientRect().top - 80));
+    await page.waitForTimeout(300);
+    const head = page.locator('.lib-item').nth(4).locator('.lib-item-head');
+    const box = await head.boundingBox();
+    await page.mouse.click(box.x + 40, box.y + box.height - 8);
+    await page.waitForSelector('.lib-item.open');
+    await page.waitForTimeout(900); // scroll suave
+    const top = await page.evaluate(() => document.querySelectorAll('.lib-item')[4].getBoundingClientRect().top);
+    assert.ok(top >= barBottom, `el ítem empieza en ${top}px y la barra acaba en ${barBottom}px`);
+    await shot(page, 'library-template-notch');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('biblioteca: buscar sin tildes, crear ejercicio propio, editar músculos, ficha con historial, archivar un ejercicio usado', async () => {
   const app = await openApp();
   const { page } = app;
@@ -369,7 +397,8 @@ test('biblioteca: buscar sin tildes, crear ejercicio propio, editar músculos, f
     const hrow = page.locator('.lib-hist-row');
     assert.strictEqual(await hrow.count(), 1);
     const htxt = await hrow.innerText();
-    assert.match(htxt, /Día 1 — Upper pesado[\s\S]*80×6 · 80×5[\s\S]*101,3 kg[\s\S]*1RM est\./i);
+    // mismo texto que «Última vez» en la sesión (session-logic.formatSet), con RIR
+    assert.match(htxt, /Día 1 — Upper pesado[\s\S]*80×6 @2 · 80×5 @1[\s\S]*101,3 kg[\s\S]*1RM est\./i);
     assert.ok(!htxt.includes('40×8'), 'sin calentamientos');
     assert.match(await page.locator('.lib-e1rm-note').innerText(), /estimación/);
     assert.match(await page.locator('.lib-count-rule').innerText(), /1 serie efectiva = 1 para cada principal y 0,5 para cada secundario/);
@@ -377,6 +406,22 @@ test('biblioteca: buscar sin tildes, crear ejercicio propio, editar músculos, f
     await shot(page, 'library-detail');
     await hrow.click();
     await page.waitForFunction((i) => location.hash === `#/session/${i}`, sid);
+
+    // asistencia: se etiqueta («−15 kg asist.»), no parece un peso negativo
+    await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      const date = u.addDays(u.todayStr(), -2);
+      await window.__app.store.save('sessions', {
+        id: 'hist_asist', kind: 'strength', date, planDate: date, templateId: null, templateName: '', status: 'done',
+        startedAt: u.tsFromDate(date, 18), endedAt: u.tsFromDate(date, 19), durationMin: 60, rpe: 7, notes: '', parentId: null, cursor: 0,
+        exercises: [{ id: 'se_a1', exerciseId: 'dominadas', exName: 'Dominadas', templateItemId: null, baseExerciseId: 'dominadas', alternatives: [], target: { sets: 3 }, notes: '', note: '', section: '', groupId: null, groupType: null,
+          sets: [{ id: u.uid('set_'), type: 'effective', weight: -15, reps: 8, repsR: null, rir: 1, timeSec: null, distanceM: null, heightCm: null, note: '', done: true, doneAt: Date.now() }] }],
+      });
+    });
+    await go(page, '#/exercise/dominadas');
+    await page.waitForSelector('.lib-hist-row');
+    assert.strictEqual(await page.locator('.lib-hist-row .lib-hist-sets').first().innerText(), '−15 kg asist. × 8 @1');
+    assert.strictEqual(await page.locator('.lib-hist-row').first().locator('.lib-hist-set').count(), 1);
 
     // --- cambiar el tipo de registro con historial: avisa (y se puede cancelar) ---
     await go(page, '#/exercise/press_banca/edit');

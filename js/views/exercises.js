@@ -6,6 +6,7 @@ import { h, icon, screen, segmented, chips, textInput, field, confirmDialog, und
 import { fmtDate, fmtNum, uid, plural } from '../util.js';
 import { MUSCLES, MUSCLE_LABEL, PATTERNS, PATTERN_LABEL, LOG_TYPES, LOG_TYPE_LABEL } from '../seed.js';
 import { makeBodyweightFn } from '../calc.js';
+import { formatSet } from '../session-logic.js';
 import * as L from '../library-logic.js';
 import { renderTemplatesList, createTemplate } from './templates.js';
 
@@ -214,7 +215,8 @@ export function mountExerciseDetail(root, params = {}) {
 
   // Historial
   const bwFn = makeBodyweightFn(store.bodyweightList(), settings.bodyweightDefault ?? 75);
-  const hist = L.exerciseHistory(store.all('sessions'), ex, { bwFn });
+  // Series con el mismo texto que «Última vez» en la sesión (asistencia, RIR, tiempo…).
+  const hist = L.exerciseHistory(store.all('sessions'), ex, { bwFn, fmtSet: formatSet });
   content.appendChild(h('div.row-between.lib-hist-head', h('h2.section-title', 'Historial'), hist.length ? h('span.muted.small', plural(hist.length, 'sesión', 'sesiones')) : null));
   if (!hist.length) {
     content.appendChild(h('p.muted.lib-hist-empty', 'Todavía no hay sesiones con este ejercicio.'));
@@ -226,7 +228,9 @@ export function mountExerciseDetail(root, params = {}) {
       h('span.list-item-main',
         h('span.list-item-title', fmtDate(r.date, 'full'), r.status === 'active' ? h('span.badge.badge-accent.lib-badge-inline', 'En curso') : null),
         r.templateName ? h('span.list-item-sub', r.templateName) : null,
-        h('span.lib-hist-sets.tnum', r.summary)),
+        h('span.lib-hist-sets.tnum', r.setTexts.length
+          ? r.setTexts.flatMap((t, i) => [i ? ' · ' : null, h('span.lib-hist-set', t)])
+          : r.summary)),
       r.bestE1rm != null
         ? h('span.lib-e1rm', h('span.lib-e1rm-v.tnum', `${fmtNum(r.bestE1rm, 1)} kg`), h('span.lib-e1rm-l', '1RM est.'))
         : null,

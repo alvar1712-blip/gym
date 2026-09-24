@@ -53,21 +53,41 @@ export async function init() {
   return true;
 }
 
+const seedExercise = (e, now) => ({ custom: false, archived: false, aliases: [], secondary: [], notes: '', ...deepClone(e), createdAt: now, updatedAt: now });
+const seedTemplates = (now) => SEED_TEMPLATES.map((t, i) => ({ order: i, notes: '', archived: false, ...deepClone(t), createdAt: now, updatedAt: now }));
+
+/** Carga inicial en UNA transacción: si la primera apertura se corta, no queda meta.app sin biblioteca. */
 async function seedAll() {
   const now = Date.now();
-  const app = { id: 'app', createdAt: now, seedVersion: SEED_VERSION, schema: 1 };
+  const app = { id: 'app', createdAt: now, seedVersion: SEED_VERSION, schema: 1, seedComplete: true };
   const settings = defaultSettings();
   settings.createdAt = now;
   settings.updatedAt = now;
-  const exercises = SEED_EXERCISES.map((e) => ({ custom: false, archived: false, aliases: [], secondary: [], notes: '', ...deepClone(e), createdAt: now, updatedAt: now }));
-  const templates = SEED_TEMPLATES.map((t, i) => ({ order: i, notes: '', archived: false, ...deepClone(t), createdAt: now, updatedAt: now }));
+  const exercises = SEED_EXERCISES.map((e) => seedExercise(e, now));
+  const templates = seedTemplates(now);
+  await db.putStores({ meta: [app, settings], exercises, templates });
   maps.meta.set('app', app);
   maps.meta.set('settings', settings);
   for (const e of exercises) maps.exercises.set(e.id, e);
   for (const t of templates) maps.templates.set(t.id, t);
-  await db.putMany('meta', [app, settings]);
-  await db.putMany('exercises', exercises);
-  await db.putMany('templates', templates);
+}
+
+/**
+ * Instalaciones sembradas con la versión antigua (tres transacciones): si la primera apertura se cortó,
+ * quedó meta.app sin ejercicios o sin rutinas. Se recupera UNA vez (después `seedComplete` lo impide,
+ * para no resucitar rutinas que el usuario haya borrado).
+ */
+async function repairPartialSeed(app) {
+  if (app.seedComplete) return;
+  const now = Date.now();
+  const data = {};
+  if (maps.exercises.size === 0) data.exercises = SEED_EXERCISES.map((e) => seedExercise(e, now));
+  if (maps.templates.size === 0 && maps.sessions.size === 0) data.templates = seedTemplates(now);
+  const next = { ...app, seedComplete: true };
+  await db.putStores({ ...data, meta: [next] });
+  for (const e of data.exercises || []) maps.exercises.set(e.id, e);
+  for (const t of data.templates || []) maps.templates.set(t.id, t);
+  maps.meta.set('app', next);
 }
 
 async function migrate() {
@@ -82,6 +102,7 @@ async function migrate() {
     fillDefaults(settings, defaultSettings());
     if (JSON.stringify(settings) !== before) await db.put('meta', settings);
   }
+  await repairPartialSeed(maps.meta.get('app'));
   // Biblioteca: añadir ejercicios semilla nuevos (sin sobrescribir ediciones del usuario).
   const app = maps.meta.get('app');
   if ((app.seedVersion || 0) < SEED_VERSION) {
@@ -89,7 +110,7 @@ async function migrate() {
     const added = [];
     for (const e of SEED_EXERCISES) {
       if (!maps.exercises.has(e.id)) {
-        const ex = { custom: false, archived: false, aliases: [], secondary: [], notes: '', ...deepClone(e), createdAt: now, updatedAt: now };
+        const ex = seedExercise(e, now);
         maps.exercises.set(ex.id, ex);
         added.push(ex);
       }

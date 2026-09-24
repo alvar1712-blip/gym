@@ -1,7 +1,10 @@
 // sw.js — service worker: la app funciona sin conexión (caché primero).
-// IMPORTANTE: al publicar cambios, sube VERSION para que el iPhone descargue la versión nueva.
-const VERSION = 'v1.0.0-f0';
+// IMPORTANTE: VERSION sale del contenido de la app. Antes de publicar ejecuta `node scripts/stamp-sw.mjs`
+// (lo comprueba `node scripts/check-assets.mjs`): si no cambia, los iPhone no descargan la versión nueva.
+const VERSION = 'v1-581c2a874a';
 const CACHE = `entreno-${VERSION}`;
+// Entrada que marca la caché que está sirviendo la versión activa (se escribe al activar).
+const ACTIVE_MARK = 'entreno-cache-activa';
 
 // Todos los archivos de la app (rutas relativas a este archivo). Comprobado por scripts/check-assets.mjs.
 const ASSETS = [
@@ -56,6 +59,16 @@ const ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
+    if (await caches.has(CACHE)) {
+      const existing = await caches.open(CACHE);
+      // Nunca se reescribe la caché que usa la versión activa (sw.js distinto con la misma VERSION):
+      // mezclaría archivos nuevos y viejos en la página abierta. La instalación falla y todo sigue igual.
+      if (self.registration.active && (await existing.match(ACTIVE_MARK))) {
+        throw new Error(`VERSION ${VERSION} repetida: ejecuta node scripts/stamp-sw.mjs antes de publicar`);
+      }
+      // Resto de una instalación interrumpida: se descarta y se llena de nuevo.
+      await caches.delete(CACHE);
+    }
     const cache = await caches.open(CACHE);
     // cache:'reload' evita guardar copias viejas de la caché HTTP.
     await cache.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })));
@@ -68,6 +81,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k.startsWith('entreno-') && k !== CACHE).map((k) => caches.delete(k)));
+    const cache = await caches.open(CACHE);
+    await cache.put(ACTIVE_MARK, new Response(VERSION));
     await self.clients.claim();
   })());
 });

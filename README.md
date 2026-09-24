@@ -27,4 +27,5 @@ node --test 'tests/unit/*.test.mjs'  # pruebas unitarias
 NODE_PATH=$(npm root -g) node --test 'tests/e2e/*.test.cjs'   # E2E (Playwright + Chromium, iPhone 13)
 ```
 
-Al publicar cambios, sube `VERSION` en `sw.js` para que los iPhone descarguen la versión nueva.
+Antes de publicar cambios ejecuta `node scripts/stamp-sw.mjs` (recalcula `VERSION` en `sw.js` a partir del contenido):
+si no cambia, los iPhone no descargan la versión nueva. `check-assets.mjs` avisa si se te olvida.

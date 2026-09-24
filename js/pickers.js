@@ -1,6 +1,6 @@
 // pickers.js — selectores reutilizables basados en datos (ejercicio, plantilla).
 import * as store from './store.js';
-import { h, sheet, icon, chips } from './ui.js';
+import { h, sheet, icon, chips, segmented } from './ui.js';
 import { normalize, uid } from './util.js';
 import { MUSCLES, MUSCLE_LABEL, LOG_TYPES, PATTERN_LABEL } from './seed.js';
 
@@ -80,9 +80,18 @@ export function pickExercise({ title = 'Elegir ejercicio', excludeIds = [], filt
 export function quickCreateExercise(name = '') {
   return new Promise((resolve) => {
     let created = null;
-    const data = { name, logType: 'weight_reps', primary: [], secondary: [] };
+    const data = { name, logType: 'weight_reps', sport: 'run', primary: [], secondary: [] };
     const nameInp = h('input.input', { type: 'text', value: name, placeholder: 'Nombre del ejercicio', autocomplete: 'off', onInput: (e) => { data.name = e.target.value; } });
-    const typeChips = chips({ options: LOG_TYPES.map((t) => ({ value: t.id, label: t.label })), value: data.logType, onChange: (v) => { data.logType = v; } });
+    // Cardio: el deporte decide qué formulario de actividad abre en la sesión (carrera, bici o natación).
+    const sportSeg = segmented({
+      options: [{ value: 'run', label: 'Carrera' }, { value: 'bike', label: 'Bici' }, { value: 'swim', label: 'Natación' }],
+      value: data.sport,
+      ariaLabel: 'Deporte',
+      onChange: (v) => { data.sport = v; },
+    });
+    const sportField = h('div.field', { hidden: true }, h('span.field-label', 'Deporte'), sportSeg,
+      h('span.field-hint', 'En una sesión abre el formulario de esa actividad.'));
+    const typeChips = chips({ options: LOG_TYPES.map((t) => ({ value: t.id, label: t.label })), value: data.logType, onChange: (v) => { data.logType = v; sportField.hidden = v !== 'cardio'; } });
     const primChips = chips({ options: MUSCLES.map((m) => ({ value: m.id, label: m.label })), value: [], multi: true, onChange: (v) => { data.primary = v; } });
     const secChips = chips({ options: MUSCLES.map((m) => ({ value: m.id, label: m.label })), value: [], multi: true, onChange: (v) => { data.secondary = v; } });
     const err = h('p.form-error', { hidden: true });
@@ -93,6 +102,7 @@ export function quickCreateExercise(name = '') {
       body: h('div.stack',
         h('label.field', h('span.field-label', 'Nombre'), nameInp),
         h('div.field', h('span.field-label', 'Tipo de registro'), typeChips),
+        sportField,
         h('div.field', h('span.field-label', 'Músculos principales'), primChips),
         h('div.field', h('span.field-label', 'Músculos secundarios'), secChips),
         h('p.field-hint', 'Podrás completar el patrón de movimiento y demás datos en Ejercicios.'),
@@ -106,9 +116,11 @@ export function quickCreateExercise(name = '') {
           if (store.exercisesList({ includeArchived: true }).some((e) => normalize(e.name) === normalize(nm))) {
             err.textContent = 'Ya existe un ejercicio con ese nombre.'; err.hidden = false; return;
           }
+          const cardio = data.logType === 'cardio';
           const ex = {
             id: uid('ex_'), name: nm, aliases: [], primary: data.primary, secondary: data.secondary.filter((m) => !data.primary.includes(m)),
-            pattern: data.logType === 'cardio' ? 'cardio' : 'isolation', logType: data.logType, category: 'isolation', region: 'upper',
+            pattern: cardio ? 'cardio' : 'isolation', logType: data.logType, category: 'isolation', region: 'upper',
+            ...(cardio ? { sport: data.sport || 'run' } : {}),
             custom: true, archived: false, notes: '',
           };
           await store.save('exercises', ex);

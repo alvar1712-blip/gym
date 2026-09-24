@@ -124,8 +124,12 @@
 }
 .ses-editor-edit { border-color: rgba(96, 165, 250, 0.55); }
 .ses-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
+/* «+ Calent.» junto a «Serie 1»: casi sin añadir altura (el botón, de 44 px, invade el relleno del editor). */
+.ses-editor-head .ses-add-warm { min-height: 44px; margin: -12px -4px -10px 0; padding: 0 10px; gap: 4px; border-color: transparent; color: var(--warn); font-size: 15px; }
 .ses-editor-num { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
 .ses-editor-edit .ses-editor-num { color: var(--info); }
+.ses-editor-warm { border-color: rgba(251, 191, 36, 0.5); }
+.ses-editor-warm .ses-editor-num { color: var(--warn); }
 
 .ses-field { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: start; gap: 8px; }
 .ses-field-label {
@@ -157,9 +161,19 @@
 .ses-rir .chip:first-child { flex-grow: 1.6; }
 
 .ses-type .seg-btn { min-height: 44px; font-size: 15px; padding: 0 2px; }
+/* Tipo elegido bien visible bajo la luz del gimnasio (decide si cuenta para volumen, series y récords). */
+.ses-type .seg-btn.active { background: var(--accent); color: var(--accent-ink); font-weight: 800; }
+.ses-type[data-type="warmup"] .seg-btn.active { background: var(--warn); color: #0b0d10; }
+.ses-type[data-type="failure"] .seg-btn.active,
+.ses-type[data-type="drop"] .seg-btn.active { background: var(--info); color: #0b0d10; }
+
+/* Lastre / asistencia (peso corporal): el signo se elige aquí, el campo es siempre positivo. */
+.ses-sign .seg-btn { min-height: 44px; font-size: 15px; }
+.ses-sign .seg-btn.active { background: var(--info-soft); color: var(--info); font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--info); }
 
 .ses-note-input { min-height: 44px; }
-.ses-register { min-height: 56px; font-size: 19px; border-radius: 14px; }
+.ses-register { min-height: 56px; font-size: 19px; border-radius: 14px; white-space: nowrap; }
+.ses-editor-warm .ses-register { font-size: 17px; }
 .ses-editor-links { display: flex; align-items: center; gap: 8px; margin: -2px -2px 0; }
 .ses-editor-links .btn { min-height: 44px; border-color: transparent; }
 
@@ -187,6 +201,8 @@
 .ses-act-edit { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--accent); font-weight: 700; font-size: 15px; }
 .ses-cardio-btn { min-height: 56px; }
 
+.ses-orphans { display: flex; flex-direction: column; gap: 8px; }
+
 /* ---------- Pie ---------- */
 .ses-footer { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
 .ses-add-ex { border-style: dashed; }
@@ -210,6 +226,13 @@
 }
 .ses-check-input { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--accent); }
 .ses-dur .input { font-size: 20px; font-weight: 750; }
+.ses-dur-error { margin-top: -6px; }
+
+/* ---------- Avisos durante la sesión ----------
+   Arriba (sobre la cabecera), como con una hoja abierta: abajo taparían «Registrar serie», que queda
+   justo encima de la barra de pestañas, durante los 5 s del aviso de récord. */
+body[data-route="/session/:id"] .toast { top: calc(var(--sat) + 10px); bottom: auto; transform: translateY(-20px); }
+body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 
 /* ---------- Resumen ---------- */
 .ses-sum-hero h2 { font-size: 21px; }
@@ -217,6 +240,8 @@
 .ses-kpi-pr { border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); }
 .ses-kpi-pr .kpi-value { color: var(--pr); }
 .ses-sum-emoji { font-size: 22px; flex: none; }
+.ses-sum-pr-set { font-size: 17px; font-weight: 750; color: var(--text); overflow-wrap: anywhere; }
+.ses-kpi-total { border-color: rgba(184, 243, 74, 0.35); }
 .ses-sum-muscles { gap: 8px; }
 .ses-bar-row { display: grid; grid-template-columns: minmax(0, 8.5em) 1fr 2.6em; align-items: center; gap: 8px; min-height: 28px; }
 .ses-bar-label { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

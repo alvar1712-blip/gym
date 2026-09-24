@@ -9,7 +9,7 @@ import {
 } from './calc.js';
 import { MUSCLE_LABEL, ACTIVITY_EMOJI, ACTIVITY_LABEL } from './seed.js';
 import { navigate } from './router.js';
-import { formatSet, prLabel, linkedActivities } from './session-logic.js';
+import { formatSet, prLabel, linkedActivities, syncAutoDuration } from './session-logic.js';
 
 export function renderSummary(root, id) {
   const session = store.get('sessions', id);
@@ -31,6 +31,9 @@ export function renderSummary(root, id) {
   const settings = store.settings();
   const bwFn = makeBodyweightFn(store.bodyweightList(), settings?.bodyweightDefault ?? 75);
   const all = store.all('sessions');
+  const acts = linkedActivities(session, all);
+  // Si las actividades enlazadas cambiaron después de terminar, la duración automática de la fuerza se recalcula.
+  if (syncAutoDuration(session, acts)) store.save('sessions', session).catch(() => {});
 
   const dur = sessionDurationMin(session);
   const load = sessionLoad(session);
@@ -38,9 +41,17 @@ export function renderSummary(root, id) {
   const work = sum(session.exercises || [], (se) => workSetCount(se));
   const prs = sessionPRs(session, all, exMap, bwFn);
   const muscles = Object.entries(sessionMuscleSets(session, exMap, settings)).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
-  const acts = linkedActivities(session, all);
 
   const kpi = (label, value, subTxt = null, cls = '') => h(`div.kpi${cls}`, h('div.kpi-label', label), h('div.kpi-value', value), subTxt ? h('div.kpi-sub', subTxt) : null);
+
+  // Con cardio enlazado (Día 3), la duración y la carga de la fuerza son solo una parte: también el total.
+  // (La carga guardada no cambia: la de cada actividad cuenta por su lado y no se suma dos veces.)
+  const actsMin = sum(acts, (a) => sessionDurationMin(a) || 0);
+  const actsLoad = sum(acts, (a) => sessionLoad(a) || 0);
+  const totals = acts.length ? [
+    kpi('Duración total', fmtMinutes((dur || 0) + actsMin), `fuerza ${dur != null ? fmtMinutes(dur) : '—'}`, '.ses-kpi-total'),
+    kpi('Carga total', fmtNum((load || 0) + actsLoad, 0), `fuerza ${load != null ? fmtNum(load, 0) : '—'}`, '.ses-kpi-total'),
+  ] : [];
 
   c.appendChild(h('div.card.card-accent.ses-sum-hero',
     h('div.row-between',
@@ -49,12 +60,13 @@ export function renderSummary(root, id) {
         h('div.card-sub', fmtDate(session.date, 'longy'))),
       session.status === 'active' ? h('span.badge.badge-warn', 'En curso') : h('span.badge.badge-ok', 'Terminada')),
     h('div.kpis.kpis-2',
-      kpi('Duración', dur != null ? fmtMinutes(dur) : '—'),
+      totals,
+      totals.length ? null : kpi('Duración', dur != null ? fmtMinutes(dur) : '—'),
       kpi('Esfuerzo', session.rpe ? `${session.rpe}/10` : '—', session.rpe ? RPE_HINTS[session.rpe] : 'sin indicar'),
-      kpi('Carga', load != null ? fmtNum(load, 0) : '—', 'min × esfuerzo'),
+      totals.length ? null : kpi('Carga', load != null ? fmtNum(load, 0) : '—', 'min × esfuerzo'),
       kpi('Volumen', vol > 0 ? `${fmtNum(vol, 0)} kg` : '—', 'sin calentamientos'),
       kpi('Series de trabajo', String(work), 'sin calentamientos'),
-      kpi('Récords', String(prs.size), prs.size ? '🏆 batidos hoy' : 'ninguno esta vez', prs.size ? '.ses-kpi-pr' : ''))));
+      kpi('Récords', String(prs.size), prs.size ? '🏆 en esta sesión' : 'ninguno esta vez', prs.size ? '.ses-kpi-pr' : ''))));
 
   // Récords
   if (prs.size) {
@@ -64,10 +76,12 @@ export function renderSummary(root, id) {
       for (const set of se.sets || []) {
         const list = prs.get(set.id);
         if (!list) continue;
+        // Nombre y serie en líneas separadas: el dato clave (peso × reps) nunca se corta.
         rows.push(h('div.list-item.ses-sum-pr',
           h('span.ses-sum-emoji', { 'aria-hidden': 'true' }, '🏆'),
           h('div.list-item-main',
-            h('div.list-item-title', `${ex?.name || se.exName} · ${formatSet(set, ex?.logType, { kg: true })}`),
+            h('div.list-item-title.ses-sum-pr-name', ex?.name || se.exName),
+            h('div.ses-sum-pr-set.tnum', formatSet(set, ex?.logType, { kg: true })),
             h('div.list-item-sub.wrap', list.map((p) => prLabel(p, ex)).join(' · ')))));
       }
     }

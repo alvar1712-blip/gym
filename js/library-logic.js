@@ -1,7 +1,7 @@
 // library-logic.js — lógica PURA de plantillas (rutinas) y biblioteca de ejercicios.
 // PROPIETARIO: módulo de biblioteca. No importa store.js ni ui.js: recibe los datos por parámetro
 // y se prueba en Node (tests/unit/library.test.mjs).
-import { normalize, uid, deepClone, fmtNum, sortBy } from './util.js';
+import { normalize, uid, deepClone, fmtNum, sortBy, plural } from './util.js';
 import { isWorkSet, setMetrics } from './calc.js';
 
 /** Campos de objetivo de un ítem de plantilla. */
@@ -508,42 +508,29 @@ export function exerciseUsage(exerciseId, { sessions = [], templates = [], goals
   return { sessions: ses, templates: tpls, goals: gls, used: ses.length + tpls.length + gls.length > 0 };
 }
 
-/** Texto corto de una serie para el historial de la ficha. */
-export function shortSet(set, logType) {
-  const w = typeof set.weight === 'number' ? set.weight : null;
-  const kg = (v) => fmtNum(v, 2);
-  switch (logType) {
-    case 'bodyweight':
-      if (!w) return `${set.reps ?? '—'} reps`;
-      return `${w > 0 ? '+' : '−'}${kg(Math.abs(w))}×${set.reps ?? '—'}`;
-    case 'unilateral':
-      return `${w != null ? `${kg(w)}×` : ''}${set.reps ?? '—'}/${set.repsR ?? '—'}`;
-    case 'time':
-      return `${fmtNum(set.timeSec, 0)} s${w ? ` (+${kg(w)} kg)` : ''}`;
-    case 'distance_time': {
-      const d = set.distanceM != null ? `${fmtNum(set.distanceM, 1)} m` : '';
-      const t = set.timeSec != null ? `${fmtNum(set.timeSec, 2)} s` : '';
-      return d && t ? `${d} en ${t}` : d || t || '—';
-    }
-    case 'jumps':
-      return `${set.reps ?? '—'}${set.heightCm ? ` · ${fmtNum(set.heightCm, 1)} cm` : ''}`;
-    default:
-      return w != null ? `${kg(w)}×${set.reps ?? '—'}` : `${set.reps ?? '—'} reps`;
-  }
+/**
+ * Series de trabajo resumidas: «80×6 @2 · 80×5 @1 · 77,5×6 @1».
+ * fmtSet(set, logType) es el formateador de la sesión (session-logic.formatSet, el de «Última vez»): la ficha lee
+ * cada serie igual que la sesión (p. ej. «−15 kg asist. × 8», nunca «−15×8»). Se recibe por parámetro para que
+ * este módulo siga siendo puro (session-logic importa store.js y ya depende de este módulo). pura
+ */
+export function summarizeSets(sets, logType, fmtSet, max = 6) {
+  return setTexts(sets, logType, fmtSet, max).join(' · ');
 }
 
-/** Series de trabajo resumidas: «80×6 · 80×5 · 77,5×6». */
-export function summarizeSets(sets, logType, max = 6) {
-  const txt = (sets || []).map((s) => shortSet(s, logType));
-  return txt.slice(0, max).join(' · ') + (txt.length > max ? ` · +${txt.length - max}` : '');
+/** Lo mismo, por piezas (una por serie y «+N» si hay más de max): la vista no parte una serie entre dos líneas. pura */
+export function setTexts(sets, logType, fmtSet, max = 6) {
+  const txt = (sets || []).map((s) => fmtSet(s, logType));
+  return txt.length > max ? [...txt.slice(0, max), `+${txt.length - max}`] : txt;
 }
 
 /**
  * Historial de un ejercicio (más reciente primero): una fila por sesión de fuerza con series de trabajo
  * (o, si es cardio, con actividades enlazadas).
- * @returns {{sessionId, date, templateName, status, workSets:number, summary, bestE1rm:number|null, activities:object[]}[]}
+ * opts.fmtSet: formateador de series (session-logic.formatSet); sin él, el resumen de fuerza da el nº de series.
+ * @returns {{sessionId, date, templateName, status, workSets:number, summary, setTexts:string[], bestE1rm:number|null, activities:object[]}[]}
  */
-export function exerciseHistory(sessions, exercise, { bwFn = () => null } = {}) {
+export function exerciseHistory(sessions, exercise, { bwFn = () => null, fmtSet = null } = {}) {
   const out = [];
   const lt = exercise.logType;
   for (const s of sessions || []) {
@@ -555,7 +542,7 @@ export function exerciseHistory(sessions, exercise, { bwFn = () => null } = {}) 
       const acts = sessions.filter((a) => a && a.kind !== 'strength' && a.parentId === s.id && ids.has(a.parentItemId));
       if (!acts.length) continue;
       const summary = acts.map((a) => [a.distanceKm ? `${fmtNum(a.distanceKm, 2)} km` : '', a.durationMin ? `${fmtNum(a.durationMin, 0)} min` : ''].filter(Boolean).join(' · ') || 'Actividad').join(' + ');
-      out.push({ sessionId: s.id, date: s.date, templateName: s.templateName || '', status: s.status, workSets: 0, summary, bestE1rm: null, activities: acts, key: s.startedAt || s.createdAt || 0 });
+      out.push({ sessionId: s.id, date: s.date, templateName: s.templateName || '', status: s.status, workSets: 0, summary, setTexts: [], bestE1rm: null, activities: acts, key: s.startedAt || s.createdAt || 0 });
       continue;
     }
     const work = ses.flatMap((se) => (se.sets || []).filter(isWorkSet));
@@ -566,7 +553,9 @@ export function exerciseHistory(sessions, exercise, { bwFn = () => null } = {}) 
       const m = setMetrics(set, exercise, bw);
       if (m.e1rm != null && (best == null || m.e1rm > best)) best = m.e1rm;
     }
-    out.push({ sessionId: s.id, date: s.date, templateName: s.templateName || '', status: s.status, workSets: work.length, summary: summarizeSets(work, lt), bestE1rm: best, activities: [], key: s.startedAt || s.createdAt || 0 });
+    const texts = fmtSet ? setTexts(work, lt, fmtSet) : [];
+    const summary = texts.length ? texts.join(' · ') : plural(work.length, 'serie', 'series');
+    out.push({ sessionId: s.id, date: s.date, templateName: s.templateName || '', status: s.status, workSets: work.length, summary, setTexts: texts, bestE1rm: best, activities: [], key: s.startedAt || s.createdAt || 0 });
   }
   return sortBy(out, '-date', (r) => -r.key);
 }

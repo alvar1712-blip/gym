@@ -1,14 +1,12 @@
 // activity-logic.js — lógica PURA del módulo de actividades (carrera, bici, natación, otras)
 // y del peso corporal. Sin DOM ni store: se prueba en Node (tests/unit/activity.test.mjs).
-import { isDateStr as looseDateStr, toDateStr, parseDate, round, fmtPace, fmtSpeed, fmtNum, fmtDuration, addDays, diffDays, sortBy, normalize } from './util.js';
+import { isDateStr, round, fmtPace, fmtSpeed, fmtNum, fmtDuration, addDays, diffDays, sortBy, normalize } from './util.js';
 import { pace, speed, pace100, sessionLoad, movingAverage, linearRegression, dayIndex } from './calc.js';
 import { RUN_TYPES, BIKE_TYPES, SWIM_STROKES, OTHER_TYPES, ACTIVITY_LABEL } from './seed.js';
 
 /** Tipos de actividad que gestiona este módulo (la fuerza va en #/session). */
 export const ACTIVITY_KINDS = ['run', 'bike', 'swim', 'other'];
 
-/** Fecha 'YYYY-MM-DD' que existe de verdad (util.isDateStr acepta p. ej. '2026-02-31'). */
-export const isDateStr = (str) => looseDateStr(str) && toDateStr(parseDate(str)) === str;
 export const isActivityKind = (k) => ACTIVITY_KINDS.includes(k);
 
 /** Textos de interfaz por tipo. */
@@ -27,6 +25,12 @@ export const KIND_FIELDS = {
   other: ['subtype'],
 };
 const OPTIONAL_FIELDS = ['distanceKm', 'elapsedSec', 'elevationM', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp', 'subtype', 'feel', 'poolType', 'poolLengthM', 'stroke'];
+/** Nombres de los campos opcionales para los avisos («se quitarán FC media y cadencia»). */
+const FIELD_NAMES = {
+  distanceKm: 'distancia', elapsedSec: 'tiempo total', elevationM: 'desnivel', hrAvg: 'FC media', hrMax: 'FC máxima',
+  cadence: 'cadencia', powerAvg: 'potencia media', powerNp: 'potencia normalizada', subtype: 'tipo de sesión',
+  feel: 'zona o sensaciones', poolType: 'piscina o aguas abiertas', poolLengthM: 'longitud de piscina', stroke: 'estilo',
+};
 const INT_FIELDS = ['elapsedSec', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp'];
 
 export const SUBTYPE_OPTIONS = { run: RUN_TYPES, bike: BIKE_TYPES, other: OTHER_TYPES };
@@ -94,20 +98,52 @@ export function validate(form) {
 }
 export const isValid = (form) => validate(form).length === 0;
 
+/** «a», «a y b», «a, b y c». */
+export function joinList(list) {
+  if (list.length <= 1) return list.join('');
+  return `${list.slice(0, -1).join(', ')} y ${list.at(-1)}`;
+}
+
 /** Mensaje corto con lo que falta para poder guardar. */
 export function missingText(errors) {
   const names = { kind: 'el tipo', date: 'la fecha', duration: 'la duración' };
   const list = errors.map((e) => names[e]).filter(Boolean);
   if (!list.length) return '';
-  const txt = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} y ${list.at(-1)}`;
-  return `Falta ${txt}`;
+  return `Falta ${joinList(list)}`;
 }
 
-/** ¿Ha escrito algo el usuario? (para decidir si merece la pena un borrador). */
-export function hasContent(form) {
+/**
+ * ¿Ha escrito algo el usuario? (para decidir si merece la pena un borrador).
+ * base: formulario prellenado de partida (p. ej. el tipo de sesión deducido de las notas de la
+ * plantilla); los campos que siguen igual que en base no cuentan como escritos.
+ */
+export function hasContent(form, base = null) {
   if (!form) return false;
   if (form.movingSec > 0 || form.rpe != null) return true;
-  return OPTIONAL_FIELDS.some((k) => form[k] != null && form[k] !== '') || !!String(form.notes || '').trim();
+  const typed = (k) => form[k] != null && form[k] !== '' && !(base && form[k] === base[k]);
+  return OPTIONAL_FIELDS.some(typed) || !!String(form.notes || '').trim();
+}
+
+/**
+ * Datos de un registro guardado que se perderían al cambiarlo al tipo `kind` (los campos que no
+ * aplican al tipo nuevo; el tipo de sesión nunca pasa de un deporte a otro).
+ * @returns {string[]} nombres legibles, p. ej. ['tipo de sesión «Ruta»', 'FC media']
+ */
+export function fieldsLostOnKindChange(rec, kind) {
+  if (!rec || rec.kind === kind) return [];
+  const allowed = KIND_FIELDS[kind] || [];
+  const out = [];
+  for (const k of OPTIONAL_FIELDS) {
+    const v = rec[k];
+    if (v == null || v === '') continue;
+    if (k === 'subtype') {
+      const lbl = subtypeLabel(rec.kind, v);
+      out.push(rec.kind === 'other' ? `tipo «${lbl}»` : lbl ? `tipo de sesión «${lbl}»` : FIELD_NAMES.subtype);
+    } else if (!allowed.includes(k)) {
+      out.push(FIELD_NAMES[k]);
+    }
+  }
+  return out;
 }
 
 const posNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
@@ -207,23 +243,25 @@ export function activityLoad(movingSec, rpe) {
 /**
  * Métrica principal calculada según el tipo:
  *  run → ritmo medio (s/km), bike → velocidad media (km/h), swim → ritmo /100 m (s), other → null.
- * Devuelve { label, value, text, sub } o null.
+ * Devuelve { label, value, text, num, unit, sub } o null. text = num + unit («5:00 /km»); la vista
+ * pinta num y unit por separado (unidad más pequeña) para que la unidad no se corte.
  */
 export function primaryMetric(form) {
   const sec = form.movingSec;
   const km = form.distanceKm;
   const need = 'Indica distancia y tiempo';
+  const out = (label, value, text, num, unit, sub) => (value ? { label, value, text, num, unit, sub } : { label, value, text: '—', num: '—', unit: '', sub: need });
   if (form.kind === 'run') {
     const v = pace(sec, km);
-    return { label: 'Ritmo medio', value: v, text: fmtPace(v), sub: v ? `${fmtNum(km, 2)} km a ${fmtSpeed(speed(sec, km))}` : need };
+    return out('Ritmo medio', v, fmtPace(v), v && fmtDuration(v), '/km', v && `${fmtNum(km, 2)} km a ${fmtSpeed(speed(sec, km))}`);
   }
   if (form.kind === 'bike') {
     const v = speed(sec, km);
-    return { label: 'Velocidad media', value: v, text: fmtSpeed(v), sub: v ? `${fmtNum(km, 1)} km en ${fmtDuration(sec)}` : need };
+    return out('Velocidad media', v, fmtSpeed(v), v && fmtNum(v, 1), 'km/h', v && `${fmtNum(km, 1)} km en ${fmtDuration(sec)}`);
   }
   if (form.kind === 'swim') {
     const v = pace100(sec, km);
-    return { label: 'Ritmo /100 m', value: v, text: fmtPace(v, '/100 m'), sub: v ? `${fmtNum(km * 1000, 0)} m en ${fmtDuration(sec)}` : need };
+    return out('Ritmo /100 m', v, fmtPace(v, '/100 m'), v && fmtDuration(v), '/100 m', v && `${fmtNum(km * 1000, 0)} m en ${fmtDuration(sec)}`);
   }
   return null;
 }

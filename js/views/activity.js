@@ -2,15 +2,14 @@
 // Obligatorios: tipo, fecha y duración. La actividad se crea en cuanto es válida y desde ahí
 // cada cambio se guarda al instante; antes se conserva un borrador en localStorage.
 import * as store from '../store.js';
-import { back, navigate, refresh, parseHash } from '../router.js';
+import { back, navigate, refresh, replaceUrl } from '../router.js';
 import {
   h, icon, header, segmented, chips, rpePicker, durationInput, field, textInput, numInput,
-  confirmDialog, undoToast, toast, emptyState,
+  confirmDialog, undoToast, emptyState,
 } from '../ui.js';
-import { todayStr, fmtDate, uid, fmtDuration, debounce } from '../util.js';
+import { todayStr, fmtDate, uid, fmtDuration, debounce, isDateStr, hhmm, relDay, deepClone, dateFromTs } from '../util.js';
 import { SWIM_STROKES } from '../seed.js';
 import * as L from '../activity-logic.js';
-import { isDateStr } from '../activity-logic.js';
 
 const DRAFT_PREFIX = 'draft:activity:';
 const DRAFT_TTL = 48 * 3600 * 1000; // un borrador de hace más de 2 días ya no se ofrece
@@ -33,6 +32,20 @@ function clearDraft(kind) {
   try { localStorage.removeItem(DRAFT_PREFIX + kind); } catch { /* sin almacenamiento */ }
 }
 const sameCtx = (a, b) => !!a && a.parent === b.parent && a.item === b.item && (!b.qdate || a.qdate === b.qdate);
+/** Borra el borrador de ese tipo solo si es de esta misma pantalla (no el de otra actividad). */
+function clearOwnDraft(kind, ctx) {
+  if (sameCtx(readDraft(kind)?.ctx, ctx)) clearDraft(kind);
+}
+
+/**
+ * Formulario prellenado de partida para un tipo (lo que no ha escrito el usuario): en una actividad
+ * enlazada, el tipo de sesión sale de las notas del ítem de la plantilla («Zona 2» → z2).
+ */
+function baseForKind(base, se, kind) {
+  if (!base) return null;
+  if (kind === base.kind) return base;
+  return { ...base, kind, subtype: se ? L.subtypeFromNotes(kind, se.notes) : null };
+}
 
 // ---------------------------------------------------------------------------
 // Montaje
@@ -43,7 +56,7 @@ const sameCtx = (a, b) => !!a && a.parent === b.parent && a.item === b.item && (
  * #/activity/:id                                      → editar (fuerza → #/session/:id)
  */
 export function mountActivity(root, params = {}) {
-  const id = routeId(params);
+  const id = params.id;
   if (id) {
     const rec = store.get('sessions', id);
     if (!rec) {
@@ -55,19 +68,10 @@ export function mountActivity(root, params = {}) {
       navigate(`#/session/${rec.id}`, { replace: true });
       return;
     }
-    return mountForm(root, { record: rec, form: L.formFromRecord(rec), showKindPicker: true });
+    // Una actividad enlazada es la del ítem de la sesión de fuerza («Correr»): no cambia de deporte.
+    return mountForm(root, { record: rec, form: L.formFromRecord(rec), showKindPicker: !rec.parentId });
   }
   return mountForm(root, newContext(params));
-}
-
-/**
- * Id de la ruta #/activity/:id. Solución local: el router del núcleo no rellena hoy los
- * parámetros de ruta (defineRoutes pierde `keys`), así que se lee también del hash.
- */
-function routeId(params) {
-  if (params.id) return params.id;
-  const m = /^\/activity\/([^/]+)$/.exec(parseHash().path);
-  return m && m[1] !== 'new' ? decodeURIComponent(m[1]) : null;
 }
 
 /** Contexto de una actividad nueva a partir de la query (incluye enlace a sesión de fuerza). */
@@ -106,10 +110,10 @@ function newContext(params) {
     const d = readDraft(k);
     if (d && sameCtx(d.ctx, draftCtx) && (!best || d.savedAt > best.savedAt)) best = d;
   }
-  if (best && L.hasContent(best.form)) {
+  if (best && L.hasContent(best.form, baseForKind(base, se, best.form.kind))) {
     form = { ...base, ...best.form, kind: best.form.kind };
     if (parent) Object.assign(form, { date: base.date, planDate: base.planDate, planFollows: base.planFollows, parentId: base.parentId, parentItemId: base.parentItemId, templateItemId: base.templateItemId });
-    restored = true;
+    restored = best.savedAt;
   }
   return { record: null, form, base, showKindPicker, parent, se, draftCtx, restored };
 }
@@ -126,6 +130,14 @@ function mountForm(root, ctx) {
   const parentSe = ctx.se || (parent && form.parentItemId ? (parent.exercises || []).find((x) => x.id === form.parentItemId) : null);
   const backFallback = form.parentId ? `#/session/${form.parentId}` : '#/today';
   const refs = {};
+  let alive = true;
+  // Tipo de sesión elegido en cada deporte, para no perderlo al cambiar de tipo e ir y volver.
+  const subtypeMemo = {};
+  const resetMemo = () => { Object.keys(subtypeMemo).forEach((key) => delete subtypeMemo[key]); subtypeMemo[form.kind] = form.subtype; };
+  resetMemo();
+  const baseFor = (kind) => baseForKind(ctx.base, parentSe, kind);
+  /** ¿Hay algo escrito por el usuario (no solo lo prellenado)? */
+  const userContent = () => L.hasContent(form, baseFor(form.kind));
 
   // ---------- cabecera ----------
   const trashBtn = h('button.icon-btn', { type: 'button', 'aria-label': 'Borrar actividad', title: 'Borrar actividad', hidden: !record, onClick: () => removeActivity() }, icon('trash', 22));
@@ -160,25 +172,48 @@ function mountForm(root, ctx) {
         bits.length ? h('div.banner-text', bits.join(' · ')) : null));
   }
 
+  // Aviso de borrador recuperado (dentro del formulario, lejos de «Listo»).
+  let restoredBanner = null;
+  if (ctx.restored) {
+    const when = ctx.restored;
+    restoredBanner = h('div.banner.banner-info.act-restored',
+      h('div.banner-main',
+        h('div.banner-title', 'Borrador recuperado'),
+        typeof when === 'number' ? h('div.banner-text', `Guardado ${relDay(dateFromTs(when))} a las ${hhmm(when)}.`) : null),
+      h('button.btn.btn-secondary.act-restored-discard', { type: 'button', onClick: () => discardDraft() }, 'Descartar'));
+  }
+
   const body = h('div.act-body');
   const deleteBtn = h('button.btn.btn-danger-ghost.btn-block.act-delete', { type: 'button', hidden: !record, onClick: () => removeActivity() }, icon('trash', 20), 'Borrar actividad');
   const discardBtn = h('button.btn.btn-ghost.btn-block.act-discard', { type: 'button', hidden: true, onClick: () => discardDraft() }, 'Descartar borrador');
   const statusEl = h('div.act-status', { role: 'status', 'aria-live': 'polite' });
   const doneBtn = h('button.btn.btn-primary.btn-lg.act-done', { type: 'button', onClick: () => done() }, icon('check', 22), 'Listo');
   const footer = h('div.act-footer', statusEl, doneBtn);
-  content.append(...[kindSeg, linkBanner, body, deleteBtn, discardBtn, footer].filter(Boolean));
+  content.append(...[kindSeg, restoredBanner, linkBanner, body, deleteBtn, discardBtn, footer].filter(Boolean));
 
-  const saveDraftSoon = debounce(() => {
-    if (!record && L.hasContent(form)) writeDraft(form, ctx.draftCtx);
-  }, 300);
+  const saveDraftSoon = debounce(() => storeDraft(), 300);
+  /** Borrador en localStorage (síncrono): lo escrito, o nada si no queda nada escrito. */
+  function storeDraft() {
+    if (record || removed) return;
+    if (userContent()) writeDraft(form, ctx.draftCtx);
+    else clearOwnDraft(form.kind, ctx.draftCtx);
+  }
 
   buildBody();
   paintTitle();
   updateLive();
   updateStatus();
-  let draftToast = ctx.restored
-    ? toast('Borrador recuperado', { actionLabel: 'Descartar', onAction: () => discardDraft(), duration: 5000 })
-    : null;
+
+  // Al pasar a segundo plano o cerrar la app se guarda ya (sin esperar al retardo del borrador).
+  const saveNow = () => {
+    if (removed) return;
+    saveDraftSoon.cancel();
+    if (record) flushRecord();
+    else storeDraft();
+  };
+  const onVisibility = () => { if (document.visibilityState === 'hidden') saveNow(); };
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', saveNow);
 
   // ---------- construcción de la parte dependiente del tipo ----------
   function buildBody() {
@@ -344,50 +379,105 @@ function mountForm(root, ctx) {
     saveDraftSoon.cancel();
     record = L.buildRecord(form, null, { id: uid('a_') });
     store.save('sessions', record);
-    clearDraft(form.kind);
+    clearOwnDraft(form.kind, ctx.draftCtx);
     // Cambia la URL sin volver a montar la vista (se conserva el foco y el scroll).
-    try { history.replaceState(history.state, '', `#/activity/${record.id}`); } catch { /* sin history */ }
+    replaceUrl(`#/activity/${record.id}`);
     trashBtn.hidden = false;
     deleteBtn.hidden = false;
-    if (draftToast) { draftToast.close(); draftToast = null; }
+    if (restoredBanner) { restoredBanner.remove(); restoredBanner = null; }
+    paintTitle();
   }
 
-  function switchKind(k) {
+  /** Vuelve a pintar todo el formulario (tras cambiar de tipo, deshacer…). */
+  function repaintAll() {
+    if (kindSeg) kindSeg.setValue(form.kind);
+    buildBody();
+    paintTitle();
+    updateLive();
+    updateStatus();
+  }
+
+  async function switchKind(k) {
     if (k === form.kind) return;
+    // En una actividad guardada, cambiar de tipo quita los datos que no aplican al tipo nuevo:
+    // se pide confirmación y se ofrece deshacer.
+    const lost = record ? L.fieldsLostOnKindChange(record, k) : [];
+    let prev = null;
+    if (lost.length) {
+      const name = L.KIND_UI[k].label.toLowerCase();
+      const ok = await confirmDialog({
+        title: `¿Cambiar a ${name}?`,
+        message: `Se quitarán de esta actividad los datos que no aplican a ${name}: ${L.joinList(lost)}.\n\nPodrás deshacerlo justo después.`,
+        confirmText: 'Cambiar',
+        danger: true,
+      });
+      if (!ok || !alive || removed) { if (kindSeg) kindSeg.setValue(form.kind); return; }
+      prev = deepClone(record);
+    }
     const old = form.kind;
+    subtypeMemo[old] = form.subtype;
     form.kind = k;
-    form.subtype = null; // los tipos de sesión son distintos en cada deporte
-    if (!record) clearDraft(old);
+    // Los tipos de sesión son distintos en cada deporte: se recupera el que tenía este, si lo hubo.
+    form.subtype = k in subtypeMemo ? subtypeMemo[k] : baseFor(k)?.subtype ?? null;
+    if (!record) clearOwnDraft(old, ctx.draftCtx);
     buildBody();
     paintTitle();
     updateLive();
     persist(true);
+    if (prev) undoToast(`Tipo cambiado a ${L.KIND_UI[k].label.toLowerCase()}`, () => undoKindSwitch(prev));
   }
 
+  /** Deshace un cambio de tipo: vuelve a dejar el registro exactamente como estaba. */
+  function undoKindSwitch(prev) {
+    const cur = store.get('sessions', prev.id);
+    if (!cur) return; // se borró entretanto
+    Object.keys(cur).forEach((key) => delete cur[key]);
+    Object.assign(cur, prev);
+    pendingSoon = false;
+    store.save('sessions', cur);
+    if (!alive || cur !== record) return;
+    Object.keys(form).forEach((key) => delete form[key]);
+    Object.assign(form, L.formFromRecord(record));
+    resetMemo();
+    repaintAll();
+  }
+
+  /** Descarta el borrador (con deshacer: se puede recuperar justo después). */
   function discardDraft() {
-    saveDraftSoon.cancel();
-    clearDraft(form.kind);
     if (record) return;
+    saveDraftSoon.cancel();
+    const snapshot = deepClone(form);
+    clearOwnDraft(form.kind, ctx.draftCtx);
     const keepKind = form.kind;
     Object.keys(form).forEach((key) => delete form[key]);
-    Object.assign(form, { ...ctx.base, kind: keepKind });
-    if (form.parentId && parentSe) form.subtype = L.subtypeFromNotes(keepKind, parentSe.notes);
-    buildBody();
-    updateLive();
-    updateStatus();
+    Object.assign(form, deepClone(baseFor(keepKind)));
+    resetMemo();
+    if (restoredBanner) { restoredBanner.remove(); restoredBanner = null; }
+    repaintAll();
+    if (L.hasContent(snapshot, baseFor(snapshot.kind))) {
+      undoToast('Borrador descartado', () => {
+        if (record) return; // ya se creó la actividad: el borrador viejo no vuelve
+        if (!alive) { writeDraft(snapshot, ctx.draftCtx); return; }
+        Object.keys(form).forEach((key) => delete form[key]);
+        Object.assign(form, snapshot);
+        resetMemo();
+        writeDraft(form, ctx.draftCtx);
+        repaintAll();
+      });
+    }
   }
 
   // ---------- partes que se actualizan en vivo ----------
   function paintTitle() {
     const ui = L.KIND_UI[form.kind];
-    titleEl.textContent = ctx.record ? ui.label : ui.newTitle;
+    titleEl.textContent = record ? ui.label : ui.newTitle;
     subEl.textContent = isDateStr(form.date) ? fmtDate(form.date, 'long') : '';
   }
 
   function updateLive() {
     const metric = L.primaryMetric(form);
     if (metric && refs.metricVal) {
-      refs.metricVal.textContent = metric.text;
+      refs.metricVal.replaceChildren(metric.num, metric.unit ? h('span.act-live-unit', ` ${metric.unit}`) : '');
       refs.metricSub.textContent = metric.sub;
     }
     const load = L.loadInfo(form);
@@ -418,14 +508,15 @@ function mountForm(root, ctx) {
     }
     const errs = L.validate(form);
     statusEl.className = 'act-status act-status-draft';
-    statusEl.replaceChildren(h('span', L.hasContent(form) ? `Borrador: ${L.missingText(errs).toLowerCase()}` : 'Se guarda al poner la duración'));
-    discardBtn.hidden = !L.hasContent(form);
+    const typed = userContent();
+    statusEl.replaceChildren(h('span', typed ? `Borrador: ${L.missingText(errs).toLowerCase()}` : 'Se guarda al poner la duración'));
+    discardBtn.hidden = !typed;
   }
 
   // ---------- acciones ----------
   function done() {
     if (!record) {
-      if (!L.hasContent(form)) { back(backFallback); return; }
+      if (!userContent()) { back(backFallback); return; }
       statusEl.replaceChildren(h('span', `${L.missingText(L.validate(form))} para guardar`));
       statusEl.className = 'act-status act-status-error';
       const first = refs.dur?.querySelector('input[aria-label$=": min"]');
@@ -462,12 +553,9 @@ function mountForm(root, ctx) {
 
   // Limpieza al salir: guarda ya lo pendiente (o el borrador).
   return () => {
-    if (removed) return;
-    if (record) {
-      flushRecord();
-    } else {
-      saveDraftSoon.cancel();
-      if (L.hasContent(form)) writeDraft(form, ctx.draftCtx);
-    }
+    alive = false;
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('pagehide', saveNow);
+    saveNow();
   };
 }

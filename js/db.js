@@ -90,6 +90,20 @@ export function putMany(store, values) {
   }));
 }
 
+/**
+ * Escribe en varias stores en UNA transacción (atómica: o se guarda todo o nada).
+ * @param {Record<string, object[]>} data  { store: [registros] }
+ */
+export function putStores(data) {
+  const names = Object.keys(data);
+  return withRetry((db) => runTx(db, names, 'readwrite', (t) => {
+    for (const s of names) {
+      const os = t.objectStore(s);
+      for (const v of data[s] || []) os.put(v);
+    }
+  }));
+}
+
 export function del(store, id) {
   return withRetry((db) => runTx(db, [store], 'readwrite', (t) => { t.objectStore(store).delete(id); }));
 }

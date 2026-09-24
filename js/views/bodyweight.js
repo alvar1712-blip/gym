@@ -3,8 +3,8 @@
 import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, stepper, toast, undoToast, sheet, confirmDialog, whyBox, field } from '../ui.js';
-import { todayStr, fmtDate, fmtNum, fmtKg, fmtSigned, relDay, parseDate } from '../util.js';
-import { bwStats, bwWithDeltas, roundKg, trendWord, isDateStr, BW_TREND } from '../activity-logic.js';
+import { todayStr, fmtDate, fmtNum, fmtKg, fmtSigned, relDay, parseDate, isDateStr } from '../util.js';
+import { bwStats, bwWithDeltas, roundKg, trendWord, BW_TREND } from '../activity-logic.js';
 
 const KG_MIN = 20;
 const KG_MAX = 300;
@@ -31,12 +31,20 @@ async function saveEntry(date, kg) {
   return { entry, prev };
 }
 
-/** Deshacer tras sustituir o crear un pesaje. */
-function offerUndo(msg, { entry, prev }) {
-  undoToast(msg, () => {
-    if (prev) store.restore('bodyweight', prev);
-    else store.remove('bodyweight', entry.id);
+/** Deshacer tras sustituir o crear un pesaje. onUndone: se llama cuando ya se ha deshecho. */
+function offerUndo(msg, { entry, prev }, onUndone) {
+  undoToast(msg, async () => {
+    if (prev) await store.restore('bodyweight', prev);
+    else await store.remove('bodyweight', entry.id);
+    if (onUndone) onUndone();
   });
+}
+
+/** Aviso tras guardar: si sustituye un pesaje distinto del mismo día, dice cuál y ofrece deshacer. */
+function notifySaved(res, onUndone) {
+  const replaced = res.prev && res.prev.kg !== res.entry.kg;
+  if (replaced) offerUndo(`Peso guardado: ${fmtKg(res.entry.kg)} (antes ${fmtKg(res.prev.kg)})`, res, onUndone);
+  else toast(`Peso guardado: ${fmtKg(res.entry.kg)}`, { kind: 'success' });
 }
 
 const fmtDay = (date) => {
@@ -65,9 +73,15 @@ export function bodyweightQuickEntry({ onSaved } = {}) {
     onClick: async () => {
       if (!validKg(val)) { toast(`Introduce un peso entre ${KG_MIN} y ${KG_MAX} kg.`, { kind: 'error' }); return; }
       const res = await saveEntry(today, val);
-      st.setValue(res.entry.kg);
+      val = res.entry.kg;
+      st.setValue(val);
       paint();
-      toast(`Peso guardado: ${fmtKg(res.entry.kg)}`, { kind: 'success' });
+      // Sustituir el pesaje de hoy se puede deshacer (vuelve el valor anterior).
+      notifySaved(res, () => {
+        val = initialKg(today);
+        st.setValue(val);
+        paint();
+      });
       if (onSaved) onSaved(res.entry);
     },
   }, 'Guardar');
@@ -134,11 +148,7 @@ export function mountBodyweight(root) {
     if (date > todayStr()) { toast('La fecha no puede ser futura.', { kind: 'error' }); return; }
     const res = await saveEntry(date, kg);
     st.setValue(res.entry.kg);
-    const msg = res.prev && res.prev.kg !== res.entry.kg
-      ? `Peso guardado: ${fmtKg(res.entry.kg)} (antes ${fmtKg(res.prev.kg)})`
-      : `Peso guardado: ${fmtKg(res.entry.kg)}`;
-    if (res.prev && res.prev.kg !== res.entry.kg) offerUndo(msg, res);
-    else toast(msg, { kind: 'success' });
+    notifySaved(res);
   }
 
   const entryCard = h('div.card.card-accent.bw-entry',
@@ -229,25 +239,39 @@ export function mountBodyweight(root) {
     });
     sst.classList.add('bw-stepper');
     const dInp = h('input.input', { type: 'date', value: entry.id, max: todayStr(), 'aria-label': 'Fecha del pesaje' });
-    dInp.addEventListener('change', async () => {
+    // Cambiar la fecha = mover el pesaje. Un cambio a la vez: si llegan varios seguidos (selector
+    // de fecha girando), se aplica el último al terminar el que está en curso.
+    let moving = false;
+    const onDate = async () => {
+      if (moving) return;
       const nd = dInp.value;
-      if (!isDateStr(nd) || nd === entry.id) return;
-      if (nd > todayStr()) { dInp.value = entry.id; toast('La fecha no puede ser futura.', { kind: 'error' }); return; }
-      const clash = store.get('bodyweight', nd);
-      if (clash) {
-        const ok = await confirmDialog({
-          title: 'Ya hay un pesaje ese día',
-          message: `El ${fmtDate(nd, 'long')} ya tiene ${fmtKg(clash.kg)}. ¿Sustituirlo por ${fmtKg(entry.kg)}?`,
-          confirmText: 'Sustituir',
-          danger: true,
-        });
-        if (!ok) { dInp.value = entry.id; return; }
+      const cur = store.get('bodyweight', entry.id);
+      if (!cur || !isDateStr(nd) || nd === cur.id) return;
+      if (nd > todayStr()) { dInp.value = cur.id; toast('La fecha no puede ser futura.', { kind: 'error' }); return; }
+      moving = true;
+      try {
+        const clash = store.get('bodyweight', nd);
+        if (clash) {
+          const ok = await confirmDialog({
+            title: 'Ya hay un pesaje ese día',
+            message: `El ${fmtDate(nd, 'long')} ya tiene ${fmtKg(clash.kg)}. ¿Sustituirlo por ${fmtKg(cur.kg)}?`,
+            confirmText: 'Sustituir',
+            danger: true,
+          });
+          if (!ok) { dInp.value = entry.id; return; }
+        }
+        // El estado nuevo se fija ANTES de esperar al disco (así un segundo cambio parte de él).
+        const next = { ...cur, id: nd };
+        entry = next;
+        const gone = store.remove('bodyweight', cur.id);
+        await Promise.all([gone, store.save('bodyweight', next)]);
+        s.el.querySelector('.sheet-title').textContent = `Pesaje del ${fmtDate(nd, 'day')}`;
+      } finally {
+        moving = false;
       }
-      const old = await store.remove('bodyweight', entry.id);
-      entry = { ...old, id: nd };
-      await store.save('bodyweight', entry);
-      s.el.querySelector('.sheet-title').textContent = `Pesaje del ${fmtDate(nd, 'day')}`;
-    });
+      if (dInp.value !== entry.id) onDate();
+    };
+    dInp.addEventListener('change', onDate);
     const s = sheet({
       title: `Pesaje del ${fmtDate(entry.id, 'day')}`,
       body: h('div.stack',

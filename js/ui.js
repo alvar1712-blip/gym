@@ -1,5 +1,5 @@
 // ui.js — utilidades DOM y componentes comunes (tema oscuro, pensado para una mano).
-import { back as routerBack } from './router.js';
+import { back as routerBack, routeEpoch } from './router.js';
 import { numToInput, parseNum, clamp, round } from './util.js';
 
 // ---------------------------------------------------------------------------
@@ -341,8 +341,14 @@ export function actionSheet({ title = '', actions = [] } = {}) {
 // ---------------------------------------------------------------------------
 let toastEl = null;
 let toastTimer = null;
+let toastCur = null; // { close, closeOnNavigate, epoch }
 
-export function toast(message, { actionLabel = null, onAction = null, duration = 3500, kind = 'info' } = {}) {
+/**
+ * closeOnNavigate (por defecto: sí si lleva acción): el aviso se cierra al cambiar de pantalla, para que
+ * «Deshacer» no actúe sin contexto desde otra pantalla ni tape sus botones. Un aviso mostrado justo
+ * después de navigate()/back() pertenece a la pantalla de destino y sigue visible allí.
+ */
+export function toast(message, { actionLabel = null, onAction = null, duration = 3500, kind = 'info', closeOnNavigate = !!actionLabel } = {}) {
   if (toastEl) { toastEl.remove(); toastEl = null; }
   clearTimeout(toastTimer);
   const el = h(`div.toast.toast-${kind}`, { role: 'status', 'aria-live': 'polite' },
@@ -355,10 +361,11 @@ export function toast(message, { actionLabel = null, onAction = null, duration =
     clearTimeout(toastTimer);
     el.classList.remove('show');
     setTimeout(() => el.remove(), 200);
-    if (toastEl === el) toastEl = null;
+    if (toastEl === el) { toastEl = null; toastCur = null; }
   }
   document.body.appendChild(el);
   toastEl = el;
+  toastCur = { close, closeOnNavigate, epoch: routeEpoch() };
   requestAnimationFrame(() => el.classList.add('show'));
   toastTimer = setTimeout(close, duration);
   return { close };
@@ -367,6 +374,11 @@ export function toast(message, { actionLabel = null, onAction = null, duration =
 /** Toast de «Eliminado · Deshacer». */
 export function undoToast(message, onUndo, duration = 7000) {
   return toast(message, { actionLabel: 'Deshacer', onAction: onUndo, duration, kind: 'undo' });
+}
+
+/** Cierra el aviso si es de una pantalla anterior (app.js lo llama en cada cambio de ruta). */
+export function closeStaleToasts() {
+  if (toastCur && toastCur.closeOnNavigate && toastCur.epoch < routeEpoch()) toastCur.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -529,18 +541,24 @@ export function rpePicker({ value = null, onChange = () => {} } = {}) {
 /**
  * Entrada de duración con campos h / min / s.
  * durationInput({ seconds, onChange(totalSec|null), showHours, showSeconds })
+ * Lo escrito se respeta tal cual (75 min = 4500 s, nunca se recorta en silencio). Al salir del campo se
+ * normaliza lo que desborda (75 min → 1 h 15 min; 90 s → 1 min 30 s) reescribiendo los campos: lo que se ve
+ * es siempre lo que se guarda.
  */
 export function durationInput({ seconds = null, onChange = () => {}, showHours = true, showSeconds = true, ariaLabel = 'Duración' } = {}) {
   const parts = { h: null, m: null, s: null };
+  const inputs = {};
   if (seconds != null) {
-    parts.h = showHours ? Math.floor(seconds / 3600) : 0;
-    parts.m = showHours ? Math.floor((seconds % 3600) / 60) : Math.floor(seconds / 60);
-    parts.s = Math.round(seconds % 60);
+    const sec = Math.max(0, Math.round(seconds));
+    parts.h = showHours ? Math.floor(sec / 3600) : 0;
+    parts.m = showHours ? Math.floor((sec % 3600) / 60) : Math.floor(sec / 60);
+    parts.s = sec % 60;
   }
-  const mk = (key, lbl, max) => {
+  const shown = (key) => (parts[key] == null ? '' : key === 'h' ? String(parts[key]) : String(parts[key]).padStart(2, '0'));
+  const mk = (key, lbl) => {
     const inp = h('input.dur-input', {
-      type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', maxlength: key === 'h' ? 3 : 2,
-      value: seconds != null ? String(key === 'h' ? parts.h : String(parts[key]).padStart(key === 'h' ? 1 : 2, '0')) : '',
+      type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', maxlength: key === 's' ? 2 : 3,
+      value: shown(key),
       placeholder: key === 'h' ? '0' : '00',
       'aria-label': `${ariaLabel}: ${lbl}`,
     });
@@ -548,20 +566,38 @@ export function durationInput({ seconds = null, onChange = () => {}, showHours =
     inp.addEventListener('input', () => {
       const v = inp.value.replace(/\D/g, '');
       if (v !== inp.value) inp.value = v;
-      parts[key] = v === '' ? null : Math.min(Number(v), max);
+      parts[key] = v === '' ? null : Number(v);
       emit();
     });
+    inp.addEventListener('change', normalize);
+    inputs[key] = inp;
     return h('label.dur-part', inp, h('span.dur-unit', lbl));
   };
   function total() {
     if (parts.h == null && parts.m == null && parts.s == null) return null;
     return (parts.h || 0) * 3600 + (parts.m || 0) * 60 + (showSeconds ? parts.s || 0 : 0);
   }
+  /** Pasa el desbordamiento a la unidad superior (el total no cambia) y reescribe los campos. */
+  function normalize() {
+    let changed = false;
+    if (showSeconds && parts.s > 59) {
+      parts.m = (parts.m || 0) + Math.floor(parts.s / 60);
+      parts.s %= 60;
+      changed = true;
+    }
+    if (showHours && parts.m > 59) {
+      parts.h = (parts.h || 0) + Math.floor(parts.m / 60);
+      parts.m %= 60;
+      changed = true;
+    }
+    if (!changed) return;
+    for (const [key, inp] of Object.entries(inputs)) inp.value = shown(key);
+  }
   function emit() { onChange(total()); }
   const el = h('div.dur', { role: 'group', 'aria-label': ariaLabel },
-    showHours ? mk('h', 'h', 999) : null,
-    mk('m', 'min', showHours ? 59 : 999),
-    showSeconds ? mk('s', 's', 59) : null);
+    showHours ? mk('h', 'h') : null,
+    mk('m', 'min'),
+    showSeconds ? mk('s', 's') : null);
   el.getValue = total;
   return el;
 }
@@ -619,19 +655,36 @@ export function whyBox(content, label = '¿Por qué?') {
 // Archivos: compartir (hoja de iOS) o descargar; elegir archivo.
 // ---------------------------------------------------------------------------
 
+let sharing = false;
+
 /**
  * Comparte un archivo con la hoja de compartir de iOS (Guardar en Archivos, Drive…).
- * Si no es posible, lo descarga. Devuelve 'shared' | 'downloaded' | 'cancelled'.
+ * Si el navegador no puede compartir archivos, lo descarga. Devuelve 'shared' | 'downloaded' | 'cancelled'.
+ * 'cancelled' también cuando la hoja ya está abierta (doble toque) o el sistema no deja abrirla
+ * (NotAllowedError, con aviso): en esos casos NO se descarga nada ni se da la copia por hecha.
  */
 export async function shareFile(file, { title = '', text = '' } = {}) {
+  if (sharing) return 'cancelled'; // doble toque: manda la primera hoja
+  let canShareFiles = false;
   try {
-    if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+    canShareFiles = !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+  } catch { canShareFiles = false; }
+  if (canShareFiles) {
+    sharing = true;
+    try {
       await navigator.share({ files: [file], title: title || file.name, text });
       return 'shared';
+    } catch (err) {
+      const name = err && err.name;
+      if (name === 'AbortError' || name === 'InvalidStateError') return 'cancelled';
+      if (name === 'NotAllowedError') {
+        toast('No se pudo abrir la hoja de compartir. Vuelve a pulsar el botón.', { kind: 'error', duration: 5000 });
+        return 'cancelled';
+      }
+      console.warn('[share] fallo, se descarga', err);
+    } finally {
+      sharing = false;
     }
-  } catch (err) {
-    if (err && err.name === 'AbortError') return 'cancelled';
-    console.warn('[share] fallo, se descarga', err);
   }
   downloadFile(file);
   return 'downloaded';

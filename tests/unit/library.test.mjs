@@ -5,9 +5,10 @@ import {
   duplicateTemplate, insertAfter, moveTemplate, renumber, templatePreviewText, patternDaysFor, templateCalendarUse,
   blocks, normalizeGroups, groupWithNext, ungroupItem, setGroupType, setSection, moveItem, canMove, removeItem,
   undoRemove, duplicateItem, groupLabels, sectionsOf, searchExercises, parseAliases, validateExerciseName,
-  assignMuscles, exerciseUsage, summarizeSets, exerciseHistory,
+  assignMuscles, exerciseUsage, summarizeSets, setTexts, exerciseHistory,
 } from '../../js/library-logic.js';
 import { SEED_TEMPLATES, SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
+import { formatSet } from '../../js/session-logic.js';
 
 const seq = (p) => { let n = 0; return () => `${p}${++n}`; };
 const it = (id, extra = {}) => ({ id, exerciseId: `ex_${id}`, alternatives: [], sets: 3, notes: '', section: '', groupId: null, groupType: null, ...extra });
@@ -365,17 +366,18 @@ test('exerciseHistory y resumen de series', () => {
     { id: 'none', kind: 'strength', date: '2026-09-20', status: 'done', exercises: [{ id: 'c', exerciseId: 'press_banca', sets: [set('warmup', 40, 8)] }] },
     { id: 'run', kind: 'run', date: '2026-09-10' },
   ];
-  const hist = exerciseHistory(sessions, bench);
+  const hist = exerciseHistory(sessions, bench, { fmtSet: formatSet });
   assert.deepEqual(hist.map((r) => r.sessionId), ['new', 'old'], 'más reciente primero; sin series de trabajo no sale');
-  assert.equal(hist[1].summary, '80×6 · 80×5', 'sin calentamientos ni pendientes');
+  assert.equal(hist[1].summary, '80×6 @2 · 80×5 @1', 'sin calentamientos ni pendientes; con RIR, como «Última vez»');
+  assert.equal(exerciseHistory(sessions, bench)[1].summary, '2 series', 'sin formateador: nº de series');
   assert.equal(hist[1].workSets, 2);
   assert.equal(Math.round(hist[1].bestE1rm * 10) / 10, 101.3, 'Epley con reps + RIR: 80 × (1 + 8/30)');
   assert.equal(Math.round(hist[0].bestE1rm * 10) / 10, 102, '85 × (1 + 6/30)');
 
   // peso corporal: el 1RM usa peso corporal + lastre
   const pull = { id: 'dominadas', logType: 'bodyweight' };
-  const hs = exerciseHistory([{ id: 'p', kind: 'strength', date: '2026-09-02', exercises: [{ id: 'x', exerciseId: 'dominadas', sets: [set('effective', 10, 8, 0), set('effective', null, 10, 0)] }] }], pull, { bwFn: () => 75 });
-  assert.equal(hs[0].summary, '+10×8 · 10 reps');
+  const hs = exerciseHistory([{ id: 'p', kind: 'strength', date: '2026-09-02', exercises: [{ id: 'x', exerciseId: 'dominadas', sets: [set('effective', 10, 8, 0), set('effective', null, 10, 0)] }] }], pull, { bwFn: () => 75, fmtSet: formatSet });
+  assert.equal(hs[0].summary, '+10 kg × 8 @0 · 10 reps @0');
   assert.equal(Math.round(hs[0].bestE1rm), Math.round(85 * (1 + 8 / 30)));
 
   // cardio: filas por actividades enlazadas
@@ -388,9 +390,24 @@ test('exerciseHistory y resumen de series', () => {
   assert.equal(hc.length, 1);
   assert.equal(hc[0].summary, '6,2 km · 35 min');
 
-  assert.equal(summarizeSets([set('effective', 20, 10, null, { repsR: 9 })], 'unilateral'), '20×10/9');
-  assert.equal(summarizeSets([set('effective', null, null, null, { distanceM: 20, timeSec: 3.4 })], 'distance_time'), '20 m en 3,4 s');
-  assert.equal(summarizeSets([set('effective', null, null, null, { timeSec: 45 })], 'time'), '45 s');
-  assert.equal(summarizeSets([set('effective', null, 3, null, { heightCm: 45 })], 'jumps'), '3 · 45 cm');
-  assert.equal(summarizeSets(Array.from({ length: 8 }, () => set('effective', 50, 10)), 'weight_reps', 6), '50×10 · 50×10 · 50×10 · 50×10 · 50×10 · 50×10 · +2');
+  // La ficha usa el formateador de la sesión: cada serie se lee igual que en «Última vez».
+  const cases = [
+    ['bodyweight', set('effective', -15, 8, 1)],
+    ['unilateral', set('effective', 20, 10, null, { repsR: 9 })],
+    ['distance_time', set('effective', null, null, null, { distanceM: 20, timeSec: 3.4 })],
+    ['time', set('effective', null, null, null, { timeSec: 45 })],
+    ['time', set('effective', 10, null, null, { timeSec: 90 })],
+    ['jumps', set('effective', null, 3, null, { heightCm: 45 })],
+  ];
+  for (const [lt, s] of cases) assert.equal(summarizeSets([s], lt, formatSet), formatSet(s, lt), lt);
+  // asistencia: etiquetada, no se confunde con un peso negativo
+  assert.equal(summarizeSets([set('effective', -15, 8, 1)], 'bodyweight', formatSet), '−15 kg asist. × 8 @1');
+  const hsa = exerciseHistory([{ id: 'p', kind: 'strength', date: '2026-09-02', exercises: [{ id: 'x', exerciseId: 'dominadas', sets: [set('effective', -15, 8, 1)] }] }], pull, { bwFn: () => 75, fmtSet: formatSet });
+  assert.equal(hsa[0].summary, '−15 kg asist. × 8 @1');
+  assert.deepEqual(hsa[0].setTexts, ['−15 kg asist. × 8 @1'], 'por piezas, para no partir una serie entre líneas');
+  // «1:30 min · +10 kg» es UNA pieza (el separador interno no se confunde con el de series)
+  assert.deepEqual(setTexts([set('effective', 10, null, null, { timeSec: 90 }), set('effective', null, null, null, { timeSec: 45 })], 'time', formatSet),
+    [formatSet({ timeSec: 90, weight: 10 }, 'time'), '45 s']);
+  assert.deepEqual(setTexts(Array.from({ length: 3 }, () => set('effective', 50, 10)), 'weight_reps', formatSet, 2), ['50×10', '50×10', '+1']);
+  assert.equal(summarizeSets(Array.from({ length: 8 }, () => set('effective', 50, 10)), 'weight_reps', formatSet, 6), '50×10 · 50×10 · 50×10 · 50×10 · 50×10 · 50×10 · +2');
 });

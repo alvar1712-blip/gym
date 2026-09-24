@@ -8,6 +8,16 @@ let mountToken = 0;
 let depth = 0; // nº de navegaciones internas apiladas (para «atrás»)
 let onRouteChange = () => {};
 let pendingScroll = null;
+let seq = 0; // nº de cambios de pantalla (hashchange); refresh() y replaceUrl() no cuentan
+let navPending = false; // se pidió navegar (navigate/back) y aún no ha llegado el hashchange
+
+/**
+ * Identificador de la pantalla que el usuario está viendo (o la que va a ver, si hay una navegación
+ * pedida y aún no montada). Sirve para cerrar avisos al cambiar de pantalla (ui.toast).
+ */
+export function routeEpoch() {
+  return navPending ? seq + 1 : seq;
+}
 
 /**
  * @param {Array<{pattern:string, tab:string, load:()=>Promise<object>, fn:string}>} list
@@ -45,11 +55,16 @@ function match(path) {
     const m = r.re.exec(path);
     if (m) {
       const params = {};
-      r.keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]); });
+      r.keys.forEach((k, i) => { params[k] = safeDecode(m[i + 1]); });
       return { route: r, params };
     }
   }
   return null;
+}
+
+/** decodeURIComponent sin excepciones: con una codificación % inválida (#/day/%ZZ) se usa el texto tal cual. */
+function safeDecode(v) {
+  try { return decodeURIComponent(v); } catch { return v; }
 }
 
 export function currentRoute() {
@@ -60,6 +75,7 @@ export function currentRoute() {
 export function navigate(hash, { replace = false } = {}) {
   if (!hash.startsWith('#')) hash = '#' + hash;
   if (hash === location.hash) { refresh({ keepScroll: false }); return; }
+  navPending = true;
   if (replace) {
     location.replace(hash);
   } else {
@@ -86,6 +102,7 @@ export function replaceUrl(hash) {
 export function back(fallback = '#/today') {
   if (depth > 0) {
     depth--;
+    navPending = true;
     history.back();
   } else {
     navigate(fallback, { replace: true });
@@ -101,7 +118,12 @@ export function refresh({ keepScroll = true } = {}) {
 export function start(el, onChange) {
   viewEl = el;
   if (onChange) onRouteChange = onChange;
-  window.addEventListener('hashchange', () => { pendingScroll = 0; render(); });
+  window.addEventListener('hashchange', () => {
+    seq++;
+    navPending = false;
+    pendingScroll = 0;
+    render();
+  });
   return render();
 }
 
@@ -119,7 +141,7 @@ async function render() {
     cleanup = null;
   }
   current = { path, raw, params: { ...query, ...params }, route };
-  onRouteChange(current);
+  try { onRouteChange(current); } catch (err) { console.error('[router] onRouteChange', err); }
   let mod;
   try {
     mod = await route.load();
@@ -153,7 +175,7 @@ async function render() {
 function showError(err) {
   console.error('[router]', err);
   const box = document.createElement('div');
-  box.className = 'content';
+  box.className = 'content content-safe'; // sin cabecera: deja sitio a la barra de estado (black-translucent)
   box.innerHTML = `
     <div class="card card-danger">
       <h2>Algo ha fallado al abrir esta pantalla</h2>

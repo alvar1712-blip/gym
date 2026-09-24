@@ -132,10 +132,15 @@ test('Empezar crea una sesión activa con UN toque; con sesión en curso se ofre
     assert.strictEqual(await hash(page), `#/session/${s.id}`);
     assert.deepStrictEqual([s.kind, s.status, s.templateId, s.date, s.planDate], ['strength', 'active', 'tpl_d1', MON, MON]);
 
-    // De vuelta en Hoy: tarjeta de sesión en curso y «Continuar» en lugar de «Empezar».
+    // De vuelta en Hoy: tarjeta de sesión en curso con «Continuar»; la del plan dice «En curso» sin repetir
+    // la vista previa ni el botón (ni «Pendiente»).
     await go(page, '#/today');
     assert.match(await page.locator('.today-active').innerText(), /Sesión en curso: Día 1 — Upper pesado · \d+:\d\d/);
-    assert.strictEqual(await page.locator('.today-start').innerText(), 'Continuar sesión en curso');
+    assert.strictEqual(await page.locator('.today-start').count(), 0);
+    assert.strictEqual(await page.getByRole('button', { name: /Continuar/ }).count(), 1);
+    assert.strictEqual(await page.locator('.today-plan .today-live').innerText(), 'En curso');
+    assert.strictEqual(await page.locator('.today-plan .status').count(), 0);
+    assert.strictEqual(await page.locator('.today-plan .cal-tpl-item').count(), 0);
     await shot(page, 'calendar-today-active');
     // Fuerza libre con una sesión en curso → aviso, sin crear otra.
     await page.locator('.today-quick-btn[data-kind="strength"]').click();
@@ -161,13 +166,16 @@ test('CRITERIO: sustituir el sábado de esta semana por una ruta en bici no camb
   try {
     const before = (await idbAll(page, 'meta')).find((m) => m.id === 'settings').weekPatterns;
     await go(page, `#/day/${SAT}`);
-    assert.match(await page.locator('.topbar h1').innerText(), /^Sábado, 26 de septiembre$/);
+    assert.match(await page.locator('.topbar h1').innerText(), /^Sábado 26 sep$/);
     assert.strictEqual(await page.locator('.cal-plan .today-plan-name').innerText(), 'Día 6 — Atlético + pierna ligera');
     assert.match(await page.locator('.cal-scope').innerText(), /Los cambios afectan solo a este día; tu semana tipo no cambia/);
 
+    // Se cambia desde abajo del todo: después la vista vuelve arriba (plan nuevo y su acción a la vista).
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await page.locator('.cal-act-change').click();
     await page.locator('.pick-row', { hasText: 'Ruta en bici' }).click();
     await page.locator('.toast').waitFor();
+    await page.waitForFunction(() => window.scrollY === 0, null, { timeout: 3000 });
     await settle(page);
     assert.strictEqual(await page.locator('.cal-plan .today-plan-name').innerText(), 'Ruta en bici');
     assert.match(await page.locator('.cal-plan').innerText(), /Cambiado\s+Semana tipo: Día 6 — Atlético \+ pierna ligera/);
@@ -195,7 +203,7 @@ test('CRITERIO: sustituir el sábado de esta semana por una ruta en bici no camb
     assert.strictEqual(await planName(page), 'Ruta en bici');
     await page.getByRole('button', { name: 'Registrar ruta en bici' }).click();
     await waitHash(page, /^#\/activity\/new/);
-    assert.strictEqual(await hash(page), `#/activity/new?kind=bike&date=${SAT}&planDate=${SAT}`);
+    assert.strictEqual(await hash(page), `#/activity/new?kind=bike&date=${SAT}&planDate=${SAT}&subtype=route`);
 
     // Restaurar semana tipo (con deshacer).
     await go(page, `#/day/${SAT}`);
@@ -243,6 +251,18 @@ test('mover días: intercambia los planes de dos días de la semana (y se puede 
     await go(page, `#/calendar?week=${MON}`);
     assert.match(await page.locator(`.cal-row[data-date="${MON}"]`).innerText(), /Día 2 — Pierna fuerza \+ potencia\s+cambiado/);
     assert.match(await page.locator(`.cal-row[data-date="${TUE}"]`).innerText(), /Día 1 — Upper pesado\s+cambiado/);
+    // Hacer la rutina movida: «hecho» o «hecho parcialmente» (no «sustituido»); otra rutina sí es «sustituido».
+    await seedStrength(page, { id: 's_mv', tpl: 'tpl_d2', date: MON });
+    await seedStrength(page, { id: 's_mv2', tpl: 'tpl_d1', date: TUE, skip: [0, 1] });
+    await go(page, '#/today');
+    await go(page, `#/calendar?week=${MON}`);
+    assert.strictEqual(await page.locator(`.cal-row[data-date="${MON}"]`).getAttribute('data-status'), 'done');
+    assert.strictEqual(await page.locator(`.cal-row[data-date="${TUE}"]`).getAttribute('data-status'), 'partial');
+    assert.match(await page.locator(`.cal-row[data-date="${MON}"]`).innerText(), /cambiado/);
+    await seedStrength(page, { id: 's_mv', tpl: 'tpl_d4', date: MON });
+    await go(page, '#/today');
+    await go(page, `#/calendar?week=${MON}`);
+    assert.strictEqual(await page.locator(`.cal-row[data-date="${MON}"]`).getAttribute('data-status'), 'substituted');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -293,6 +313,12 @@ test('calendario: estados de la semana, adherencia, sesiones hechas y vista mens
     assert.strictEqual(await page.locator('.cal-adh-text').innerText(), '2 de 5 hechas · 1 parcial · 1 extra');
     assert.match(await page.locator(`.cal-row[data-date="${MON}"]`).innerText(), /Día 1 — Upper pesado\s+Hecho\s+🏋️ 1 h 00 min/);
     assert.match(await page.locator(`.cal-row[data-date="${FRI}"]`).innerText(), /extra\s+🏃 Carrera · Rodaje \/ Z2 · 40 min/);
+    // «Hecho · extra» con espacio antes del punto medio.
+    const gap = await page.locator(`.cal-row[data-date="${FRI}"] .cal-row-state`).evaluate((el) => {
+      const [a, b] = [el.querySelector('.status'), el.querySelector('.cal-extra')];
+      return b.getBoundingClientRect().left - a.getBoundingClientRect().right;
+    });
+    assert.ok(gap >= 3, `hueco antes de «· extra» (${gap}px)`);
     assert.match(await page.locator('.cal-nav').innerText(), /21–27 sep\s+Esta semana/);
     await shot(page, 'calendar-week');
     assert.ok(await noHScroll(page));
@@ -347,7 +373,7 @@ test('día pasado: registrar la sesión de fuerza de ese día (pasada) y hoy «h
     assert.match(await page.locator('.today-plan .cal-ses-row').innerText(), /Día 3 — Cardio[\s\S]*1 h 00 min · carga 420/);
     assert.ok(await page.getByRole('button', { name: 'Otra sesión' }).isVisible());
     // Aviso de copia (hay datos y nunca se ha hecho copia) → Ajustes › Datos.
-    assert.match(await page.locator('.today-backup').innerText(), /Aún no has hecho ninguna copia/);
+    assert.match(await page.locator('.today-backup').innerText(), /Sin copia de seguridad/);
     await shot(page, 'calendar-today-done');
     await page.getByRole('button', { name: 'Otra sesión' }).click();
     await page.locator('.action-item', { hasText: 'Bici' }).click();
@@ -359,7 +385,7 @@ test('día pasado: registrar la sesión de fuerza de ese día (pasada) y hoy «h
     // Copia de hace 9 días.
     await page.evaluate(() => window.__app.store.saveSettings({ lastBackupAt: Date.now() - 9 * 86400000 }));
     await go(page, '#/today');
-    assert.match(await page.locator('.today-backup').innerText(), /Tu última copia es de hace 9 días/);
+    assert.match(await page.locator('.today-backup').innerText(), /Última copia: hace 9 días/);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -449,6 +475,123 @@ test('plantilla archivada en la semana tipo → «Plantilla eliminada» sin romp
     await go(page, '#/day/2026-09-28');
     assert.strictEqual(await page.locator('.cal-plan .today-plan-name').innerText(), 'Plantilla eliminada');
     assert.ok(await noHScroll(page));
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('iPhone SE con aviso de copia: «Empezar» se ve sin desplazar; el Día 3 lleva el emoji de carrera', async () => {
+  const app = await setup(MON);
+  const { page } = app;
+  try {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.evaluate(async () => {
+      const st = window.__app.store;
+      await st.save('bodyweight', { id: '2026-09-20', kg: 75.4 }); // hay datos → el aviso de copia aplica
+      await st.saveSettings({ lastBackupAt: Date.now() - 9 * 86400000 });
+    });
+    await reload(page);
+    await go(page, '#/today');
+    assert.match(await page.locator('.today-backup').innerText(), /Última copia: hace 9 días/);
+    const r = await page.evaluate(() => {
+      const b = document.querySelector('.today-start').getBoundingClientRect();
+      const tab = document.getElementById('tabbar').getBoundingClientRect().top;
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { bottom: b.bottom, tab, tappable: document.querySelector('.today-start').contains(hit), banner: document.querySelector('.today-backup').getBoundingClientRect().height };
+    });
+    assert.ok(r.bottom <= r.tab && r.tappable, `«Empezar» a la vista (${JSON.stringify(r)})`);
+    assert.ok(r.banner <= 72, `aviso de copia compacto (${r.banner}px)`);
+    // Pantalla baja: vista previa corta con «Ver los 7 ejercicios».
+    assert.strictEqual(await page.locator('.today-plan .cal-tpl-item').count(), 3);
+    await page.locator('.cal-tpl-more').click();
+    assert.strictEqual(await page.locator('.today-plan .cal-tpl-item').count(), 7);
+    await shot(page, 'calendar-today-se');
+    assert.ok(await noHScroll(page));
+    // Miércoles: «🏃 Día 3 — Cardio» (no 🏋️) en Hoy y en la mini semana («Mañana» el martes).
+    await setClock(app, WED);
+    assert.strictEqual(await page.locator('.today-plan .today-plan-emoji').innerText(), '🏃');
+    await setClock(app, TUE);
+    assert.match(await page.locator('.today-tomorrow').innerText(), /🏃 Día 3 — Cardio/);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Día 3: la carrera registrada con el acceso rápido de Hoy cuenta para la rutina (parcial, no «sustituido»)', async () => {
+  const app = await setup(WED);
+  const { page } = app;
+  try {
+    // Como la guarda el acceso rápido «Carrera»: suelta, sin sesión padre ni fecha de plan.
+    await seedActivity(page, { id: 'a_run', kind: 'run', date: WED, planDate: null, km: 6.2, sec: 2100, templateName: 'Carrera' });
+    await go(page, '#/today');
+    assert.strictEqual(await page.locator('.today-plan').getAttribute('data-status'), 'partial');
+    assert.match(await page.locator('.today-plan').innerText(), /1 de 3 ejercicios registrados\. Sin registrar: Bici, Plancha/);
+    await shot(page, 'calendar-today-d3-run');
+    // También en la vista Día, y sin «sustituido».
+    await go(page, `#/day/${WED}`);
+    assert.strictEqual(await page.locator('.cal-state .status').getAttribute('data-status'), 'partial');
+    assert.strictEqual(await page.locator('.cal-primary').innerText(), 'Empezar');
+    await go(page, '#/today');
+    // La rutina se puede empezar igualmente (para la bici y la plancha).
+    await page.getByRole('button', { name: 'Empezar la rutina' }).click();
+    await waitHash(page, /^#\/session\/s_/);
+    const s = (await idbAll(page, 'sessions')).find((x) => x.kind === 'strength');
+    assert.deepStrictEqual([s.templateId, s.date, s.planDate], ['tpl_d3', WED, WED]);
+    // Con la bici también suelta y la plancha hecha en la sesión → hecho.
+    await seedActivity(page, { id: 'a_bike', kind: 'bike', date: WED, planDate: null, km: 30, sec: 3600, templateName: 'Bici' });
+    await page.evaluate(async (id) => {
+      const st = window.__app.store;
+      const ses = st.get('sessions', id);
+      const plank = ses.exercises.find((se) => se.exerciseId === 'plancha');
+      plank.sets = [{ id: 'set_p', type: 'effective', weight: null, reps: null, repsR: null, rir: null, timeSec: 60, distanceM: null, heightCm: null, note: '', done: true, doneAt: Date.now() }];
+      ses.status = 'done';
+      ses.endedAt = Date.now();
+      await st.save('sessions', ses);
+    }, s.id);
+    await go(page, `#/calendar?week=${MON}`);
+    assert.strictEqual(await page.locator(`.cal-row[data-date="${WED}"]`).getAttribute('data-status'), 'done');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('ejercicio quitado de una sesión registrada a posteriori: «hecho parcialmente», también tras editar la rutina', async () => {
+  const app = await setup(WED);
+  const { page } = app;
+  try {
+    // Sesión pasada del martes (Día 2, 9 ejercicios) creada con la lógica real; se quita el último y
+    // se registran los demás.
+    await page.evaluate(async (date) => {
+      const S = await import('./js/session-logic.js');
+      const st = window.__app.store;
+      const s = await S.createStrengthSession({ templateId: 'tpl_d2', date, planDate: date, past: true });
+      s.exercises.pop();
+      for (const se of s.exercises) se.sets = [{ id: `${se.id}_w`, type: 'effective', weight: 40, reps: 8, repsR: 8, rir: 2, timeSec: 30, distanceM: 20, heightCm: null, note: '', done: true, doneAt: Date.now() }];
+      s.status = 'done';
+      s.durationMin = 60;
+      await st.save('sessions', s);
+    }, TUE);
+    const status = async () => {
+      await go(page, '#/today');
+      await go(page, `#/calendar?week=${MON}`);
+      return page.locator(`.cal-row[data-date="${TUE}"]`).getAttribute('data-status');
+    };
+    assert.strictEqual(await status(), 'partial');
+    await go(page, `#/day/${TUE}`);
+    assert.match(await page.locator('.cal-state').innerText(), /8 de 9 ejercicios registrados\. Sin registrar: Elevaciones de piernas/);
+    // Guardar la rutina después (reordenar + renombrar): el día pasado no cambia de estado.
+    await page.evaluate(async () => {
+      const st = window.__app.store;
+      const t = st.get('templates', 'tpl_d2');
+      [t.items[0], t.items[1]] = [t.items[1], t.items[0]];
+      t.name = 'Día 2 — Pierna';
+      t.updatedAt = Date.now() + 60000;
+      await st.save('templates', t);
+    });
+    assert.strictEqual(await status(), 'partial');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

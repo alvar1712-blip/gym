@@ -5,8 +5,8 @@ import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, header, screen, segmented, sheet, actionSheet, undoToast, emptyState } from '../ui.js';
 import {
-  todayStr, fmtDate, fmtWeekRange, weekStart, addDays, addMonths, parseDate, isDateStr, weekDates, diffDays,
-  DAY_SHORT, DAY_LETTER, MONTH_LONG,
+  todayStr, fmtDate, fmtWeekRange, weekStart, addDays, addMonths, parseDate, isDateStr, weekDates, diffDays, dow,
+  DAY_SHORT, DAY_LONG, DAY_LETTER, MONTH_LONG, MONTH_SHORT,
 } from '../util.js';
 import { pickTemplate } from '../pickers.js';
 import {
@@ -16,7 +16,7 @@ import {
 import { sessionSummary } from '../history-logic.js';
 import {
   cap, routeParam, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart,
-  otherSessionMenu, activityHref, freeActionLabel,
+  otherSessionMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 
 const SCOPE_NOTE = 'Los cambios afectan solo a este día; tu semana tipo no cambia.';
@@ -136,7 +136,7 @@ function dayRow(d, i, today, opts) {
     // En un descanso sin nada más, la píldora «Descanso» repetiría el plan.
     d.plan.kind === 'rest' && d.status === 'rest' && !d.manual
       ? null
-      : h('span.cal-row-state', statusPill(d.status, { manual: d.manual }), d.extra ? h('span.cal-extra', ' · extra') : null),
+      : h('span.cal-row-state', statusPill(d.status, { manual: d.manual }), d.extra ? h('span.cal-extra', '· extra') : null),
     sessions),
   icon('chevron-right', 20, 'chev'));
 }
@@ -210,7 +210,10 @@ export function mountDay(root, params = {}) {
   const ws = weekStart(date);
   const rel = date === today ? 'Hoy' : date === addDays(today, -1) ? 'Ayer' : date === addDays(today, 1) ? 'Mañana' : `Semana ${fmtWeekRange(ws)}`;
   const content = h('div.content.cal-dayview');
-  root.replaceChildren(header({ title: cap(fmtDate(date, parseDate(date).getFullYear() === parseDate(today).getFullYear() ? 'long' : 'longy')), subtitle: rel, back: `#/calendar?week=${ws}` }), content);
+  // Título corto para que no se corte («Miércoles 23 sep»); el año (si no es el actual) va en el subtítulo.
+  const y = parseDate(date).getFullYear();
+  const sub = y === parseDate(today).getFullYear() ? rel : `${rel} · ${y}`;
+  root.replaceChildren(header({ title: dayTitle(date), subtitle: sub, back: `#/calendar?week=${ws}` }), content);
 
   function render() {
     const ctx = ctxFromStore(today);
@@ -232,6 +235,12 @@ export function mountDay(root, params = {}) {
     queueMicrotask(() => { queued = false; render(); });
   });
   return off;
+}
+
+/** «Miércoles 23 sep». */
+function dayTitle(date) {
+  const d = parseDate(date);
+  return cap(`${DAY_LONG[dow(date)]} ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`);
 }
 
 function planSection(date, st, ctx) {
@@ -279,7 +288,10 @@ function actionsSection(date, st, today) {
   const past = date < today;
   const active = store.activeSession();
   let primary = null;
-  if (!st.sessions.length) {
+  // Solo actividades sueltas que cubren parte de la rutina (la carrera del Día 3): la rutina se puede registrar.
+  const looseOnly = st.sessions.length && st.status === 'partial' && !st.manual && eff.kind === 'template' && eff.template
+    && !st.sessions.some((s) => s.kind === 'strength' && s.templateId === eff.templateId);
+  if (!st.sessions.length || looseOnly) {
     if (eff.kind === 'template' && eff.template) {
       primary = !past && active
         ? { label: 'Continuar sesión en curso', onClick: () => navigate(`#/session/${active.id}`) }
@@ -289,7 +301,7 @@ function actionsSection(date, st, today) {
     } else if (eff.kind === 'free' && eff.activityKind === 'strength') {
       primary = { label: past ? 'Registrar fuerza libre' : 'Empezar fuerza libre', onClick: () => startStrength({ templateId: null, date, planDate: date, past }) };
     } else if (eff.kind === 'free') {
-      primary = { label: freeActionLabel(eff.label), onClick: () => navigate(activityHref(eff.activityKind, date, date)) };
+      primary = { label: freeActionLabel(eff.label), onClick: () => navigate(activityHref(eff.activityKind, date, date, freeSubtype(eff))) };
     } else {
       primary = { label: 'Entrenar igualmente', onClick: () => pickAndStart({ date, planDate: date, past, title: '¿Qué entrenaste?' }) };
     }
@@ -324,11 +336,20 @@ function planningSection(date, st, ctx) {
 // ---------------------------------------------------------------------------
 // Acciones del día (todas con «Deshacer»)
 // ---------------------------------------------------------------------------
+/**
+ * Tras cambiar el plan (se hace desde la parte baja de la vista), vuelve arriba: el plan nuevo y su
+ * acción principal («Registrar ruta en bici») quedarían si no ocultos bajo la cabecera.
+ */
+function showTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 async function changeDay(date) {
   const choice = await pickTemplate({ title: 'Cambiar este día por…', includeRest: true, includeFree: true });
   if (!choice) return;
   const undo = planSnapshot(date);
   await overrideDay(date, choice);
+  showTop();
   undoToast(`Día cambiado a «${planLabel(choice, store.all('templates'))}». Tu semana tipo no cambia.`, undo);
 }
 
@@ -348,6 +369,7 @@ function moveDay(date, ctx) {
             s.close();
             const undo = planSnapshot(date, d);
             await swapDays(date, d);
+            showTop();
             undoToast(`Intercambiado con el ${fmtDate(d)}.`, undo);
           },
         }, h('span.pick-name', cap(fmtDate(d))), h('span.pick-meta', `${planEmoji(info.plan)} ${info.plan.label} · ${STATUS_LABEL[info.status]}`));
@@ -362,6 +384,7 @@ function markDay(date, st) {
     onClick: async () => {
       const undo = planSnapshot(date);
       await setManualStatus(date, status);
+      showTop();
       undoToast(status ? `Marcado como ${STATUS_LABEL[status]}.` : 'Estado automático.', undo);
     },
   });
@@ -377,5 +400,6 @@ function markDay(date, st) {
 async function restoreDay(date, eff, ctx) {
   const undo = planSnapshot(date);
   await resetDay(date);
+  showTop();
   undoToast(`Día restaurado: ${planLabel(eff.patternDay, ctx.templates)}.`, undo);
 }

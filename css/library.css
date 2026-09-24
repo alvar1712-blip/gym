@@ -109,6 +109,8 @@
 .lib-hist-head { margin-top: 4px; }
 .lib-hist-row { align-items: center; }
 .lib-hist-sets { font-size: 14px; color: var(--text); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+/* Cada serie salta de línea entera («−15 kg asist. × 8 @1»); solo se parte si no cabe sola. */
+.lib-hist-set { display: inline-block; }
 .lib-e1rm { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .lib-e1rm-v { font-weight: 800; font-size: 16px; color: var(--accent); white-space: nowrap; }
 .lib-e1rm-l { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -165,7 +167,8 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  scroll-margin-top: 90px;
+  /* Cabecera sticky: 52 px + muesca/isla (--sat) + borde; con margen para que el ítem quede a la vista. */
+  scroll-margin-top: calc(var(--sat) + 76px);
   scroll-margin-bottom: calc(var(--tabbar-h) + var(--sab) + 16px);
 }
 .lib-item.open { border-color: var(--border-strong); background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 120px), var(--surface); }

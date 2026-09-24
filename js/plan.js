@@ -132,19 +132,33 @@ export function planLabel(plan, templates) {
   return t ? t.name : MISSING_TEMPLATE_LABEL;
 }
 
-/** Emoji del plan: 🏋️ plantilla, 😴 descanso, el de la actividad en sesión libre. */
-export function planEmoji(plan) {
+/**
+ * Emoji del plan: 😴 descanso, el de la actividad en sesión libre y, en una plantilla, 🏋️ salvo que
+ * la mayoría de sus ítems sean de cardio (entonces, el del deporte del primero: «Día 3 — Cardio» → 🏃).
+ * Acepta el resultado de effectiveDay (que ya trae `emoji`) o un DayPlan con `template` + mapa de ejercicios.
+ */
+export function planEmoji(plan, exercises = null) {
+  if (plan && typeof plan.emoji === 'string') return plan.emoji;
   const p = normalizePlan(plan);
   if (p.kind === 'rest') return '😴';
   if (p.kind === 'free') return ACTIVITY_EMOJI[p.activityKind] || '⚡';
+  const items = (plan && plan.template && plan.template.items) || [];
+  const exMap = toMap(exercises);
+  const sports = items.map((it) => cardioSport(exMap.get(it.exerciseId))).filter(Boolean);
+  if (items.length && sports.length * 2 > items.length) return ACTIVITY_EMOJI[sports[0]] || '🏋️';
   return '🏋️';
+}
+
+/** Deporte de un ejercicio de cardio (logType 'cardio' con `sport`), o null. */
+function cardioSport(ex) {
+  return ex && ex.logType === 'cardio' && ex.sport ? ex.sport : null;
 }
 
 /**
  * Plan efectivo de un día: excepción del calendario si cambia el plan; si no, semana tipo vigente.
  * @returns {{date, kind, templateId, label, activityKind, source:'pattern'|'override', substituted:boolean,
- *            override:object|null, patternDay:object, template:object|null, missing:boolean}}
- *  substituted = hay excepción y su plan es distinto del de la semana tipo.
+ *            override:object|null, patternDay:object, template:object|null, missing:boolean, emoji:string}}
+ *  substituted = hay excepción y su plan es distinto del de la semana tipo (distintivo «Cambiado»).
  *  missing     = el plan es una plantilla borrada o archivada.
  */
 export function effectiveDay(date, ctx) {
@@ -166,6 +180,7 @@ export function effectiveDay(date, ctx) {
     patternDay: pDay,
     template,
     missing: plan.kind === 'template' && !template,
+    emoji: planEmoji({ ...plan, template }, c.exercises),
   };
 }
 
@@ -202,44 +217,77 @@ export function daySessions(date, ctx) {
 }
 
 /**
+ * Instante (ms) codificado en un id de util.uid() («s_» + Date.now() en base 36 + aleatorio), o null si
+ * el id no tiene ese formato (ids de la carga inicial como 'ti_d1_1', ids escritos a mano…). pura
+ */
+export function idTime(id) {
+  const m = /^[a-z]+_([0-9a-z]{8})/.exec(typeof id === 'string' ? id : '');
+  if (!m) return null;
+  const t = parseInt(m[1], 36);
+  return t > 1e12 && t < 4e12 ? t : null; // 2001–2096: descarta textos que solo lo parecen
+}
+
+/**
  * ¿Está completa una sesión de fuerza respecto a su plantilla?
- * Un ítem está cubierto si su ejercicio de sesión tiene ≥1 serie de trabajo o una actividad enlazada.
- * Ítems considerados: los de la plantilla. Si la plantilla se editó después de crear la sesión, solo
- * los ítems que la sesión conoce (los añadidos más tarde no la convierten en parcial). Si la plantilla
- * ya no existe, se usa la instantánea de la sesión (sus ejercicios con templateItemId).
- * @param {object} session
+ * Un ítem está cubierto si su ejercicio de sesión tiene ≥1 serie de trabajo o una actividad enlazada
+ * (parentId = session.id) o, si es de cardio, una actividad SUELTA del mismo deporte (`opts.loose`: la
+ * carrera o la bici del día registradas fuera de la sesión; cada una cubre un solo ítem).
+ * Ítems considerados (no depende de `updatedAt`, así que editar la plantilla no cambia días pasados):
+ *  - con `session.templateItemIds` (instantánea al crear la sesión): esos ítems, si siguen en la plantilla;
+ *  - sin ella: los ítems que la sesión conoce más los que ya existían al crearla (por el instante de su
+ *    id; los ids sin instante, como los de la carga inicial, cuentan como previos).
+ *  Así, un ejercicio quitado con «Quitar de esta sesión» sigue contando como pendiente, y uno añadido a la
+ *  plantilla después no convierte la sesión en parcial. Si la plantilla ya no existe, se usa la
+ *  instantánea de la sesión (sus ejercicios con templateItemId).
+ * @param {object} session  (`{exercises:[]}` para evaluar solo actividades sueltas)
  * @param {object|null} template
- * @param {{sessions?:object[], exercises?:Map}} [ctx] actividades enlazadas (parentId = session.id) y nombres
+ * @param {{sessions?:object[], exercises?:Map}} [ctx] actividades enlazadas y ejercicios (nombres, deporte)
+ * @param {{loose?:object[]}} [opts]
  * @returns {{total:number, covered:number, complete:boolean, missing:string[]}}  missing = nombres
  */
-export function completeness(session, template, ctx = null) {
+export function completeness(session, template, ctx = null, { loose = [] } = {}) {
   const ses = (session && session.exercises) || [];
-  const linked = (ctx && Array.isArray(ctx.sessions) ? ctx.sessions : [])
-    .filter((a) => a && a.parentId === session.id && a.kind !== 'strength');
-  const exName = (id) => (ctx && ctx.exercises instanceof Map ? ctx.exercises.get(id)?.name : null) || id;
+  const sid = session && session.id;
+  const linked = sid ? (ctx && Array.isArray(ctx.sessions) ? ctx.sessions : [])
+    .filter((a) => a && a.parentId === sid && a.kind !== 'strength') : [];
+  const exMap = ctx && ctx.exercises instanceof Map ? ctx.exercises : null;
+  const exName = (id) => (exMap ? exMap.get(id)?.name : null) || id;
+  const sportOf = (ids) => ids.map((id) => cardioSport(exMap && exMap.get(id))).find(Boolean) || null;
   const covers = (se) => (se.sets || []).some(isWorkSet) || linked.some((a) => a.parentItemId === se.id);
-  const missing = [];
-  let total = 0;
-  let covered = 0;
+
+  // Unidades a cubrir: {mine: ejercicios de sesión, exIds: ejercicio(s) del ítem, name}.
+  const units = [];
   const items = template && Array.isArray(template.items) ? template.items : null;
   if (items) {
     const known = new Set(ses.map((se) => se.templateItemId).filter(Boolean));
-    const edited = template.updatedAt != null && session.createdAt != null && template.updatedAt > session.createdAt;
+    const snap = session && Array.isArray(session.templateItemIds) ? new Set(session.templateItemIds) : null;
+    const born = sid ? idTime(sid) ?? session.createdAt ?? null : null;
+    const existed = (it) => {
+      const t = idTime(it.id);
+      return t == null || born == null || t <= born;
+    };
     for (const it of items) {
-      if (edited && !known.has(it.id)) continue;
-      total++;
+      if (!known.has(it.id) && !(snap ? snap.has(it.id) : existed(it))) continue;
       const mine = ses.filter((se) => se.templateItemId === it.id);
-      if (mine.some(covers)) covered++;
-      else missing.push((mine[0] && mine[0].exName) || exName(it.exerciseId));
+      units.push({ mine, exIds: [...mine.map((se) => se.exerciseId), it.exerciseId], name: (mine[0] && mine[0].exName) || exName(it.exerciseId) });
     }
   } else {
     const snap = ses.filter((se) => se.templateItemId);
-    for (const se of snap.length ? snap : ses) {
-      total++;
-      if (covers(se)) covered++;
-      else missing.push(se.exName || exName(se.exerciseId));
-    }
+    for (const se of snap.length ? snap : ses) units.push({ mine: [se], exIds: [se.exerciseId], name: se.exName || exName(se.exerciseId) });
   }
+
+  const done = units.map((u) => u.mine.some(covers));
+  // Actividades sueltas: solo para los ítems de cardio aún sin cubrir, cada una una vez.
+  const pool = (loose || []).filter((a) => a && !a.parentId && a.kind !== 'strength');
+  units.forEach((u, i) => {
+    if (done[i] || !pool.length) return;
+    const sport = sportOf(u.exIds);
+    const at = sport ? pool.findIndex((a) => a.kind === sport) : -1;
+    if (at >= 0) { pool.splice(at, 1); done[i] = true; }
+  });
+  const total = units.length;
+  const covered = done.filter(Boolean).length;
+  const missing = units.filter((_, i) => !done[i]).map((u) => u.name);
   return { total, covered, complete: total === 0 ? true : covered === total, missing };
 }
 
@@ -252,20 +300,35 @@ function autoStatus(date, eff, sessions, c) {
     return { status: 'pending', reason: date === c.today ? 'Aún no has registrado la sesión de hoy.' : 'Día futuro.' };
   }
   if (eff.kind === 'rest') return { status: 'done', extra: true, reason: 'Entreno extra en un día de descanso.' };
-  if (eff.substituted) {
+  if (eff.kind === 'template') {
+    // Plantilla del día (de la semana tipo, cambiada o movida): hecho / parcial según lo registrado de
+    // ESA plantilla; las actividades sueltas cubren sus ítems de cardio (la carrera del Día 3 desde Hoy).
+    const own = sessions.filter((s) => s.kind === 'strength' && s.templateId && s.templateId === eff.templateId);
+    const loose = sessions.filter((s) => s.kind !== 'strength');
+    const tpl = c.templates.get(eff.templateId) || null;
+    const comps = own.map((s) => completeness(s, tpl, c, { loose }));
+    if (!own.length && tpl && loose.length) {
+      const only = completeness({ exercises: [] }, tpl, c, { loose });
+      if (only.covered) comps.push(only);
+    }
+    if (!comps.length) {
+      return {
+        status: 'substituted',
+        reason: eff.substituted
+          ? `Has hecho otra sesión en lugar de la planificada (semana tipo: ${planLabel(eff.patternDay, c.templates)}).`
+          : 'Has hecho otra sesión en lugar de la planificada.',
+      };
+    }
+    const best = comps.reduce((a, b) => (b.covered / (b.total || 1) > a.covered / (a.total || 1) ? b : a));
+    if (comps.some((x) => x.complete)) return { status: 'done', completeness: best, reason: 'Todos los ejercicios de la rutina están registrados.' };
+    const miss = best.missing.length ? ` Sin registrar: ${best.missing.slice(0, 4).join(', ')}${best.missing.length > 4 ? '…' : ''}.` : '';
+    return { status: 'partial', completeness: best, reason: `${best.covered} de ${best.total} ejercicios registrados.${miss}` };
+  }
+  // Sesión libre. Si sustituye a una rutina de la semana tipo (p. ej. el Día 6 → ruta en bici) el día
+  // queda «sustituido»; si está en la semana tipo o se planifica en un descanso, «hecho» si coincide el tipo.
+  if (eff.substituted && eff.patternDay.kind !== 'rest') {
     return { status: 'substituted', reason: `Has cambiado el plan de este día (semana tipo: ${planLabel(eff.patternDay, c.templates)}).` };
   }
-  if (eff.kind === 'template') {
-    const own = sessions.filter((s) => s.kind === 'strength' && s.templateId && s.templateId === eff.templateId);
-    if (!own.length) return { status: 'substituted', reason: 'Has hecho otra sesión en lugar de la planificada.' };
-    const tpl = c.templates.get(eff.templateId) || null;
-    const comps = own.map((s) => completeness(s, tpl, c));
-    const best = comps.reduce((a, b) => (b.covered / (b.total || 1) > a.covered / (a.total || 1) ? b : a));
-    if (comps.some((x) => x.complete)) return { status: 'done', completeness: best, reason: 'Todos los ejercicios de la rutina tienen al menos una serie de trabajo.' };
-    const miss = best.missing.length ? ` Sin series: ${best.missing.slice(0, 4).join(', ')}${best.missing.length > 4 ? '…' : ''}.` : '';
-    return { status: 'partial', completeness: best, reason: `${best.covered} de ${best.total} ejercicios con series de trabajo.${miss}` };
-  }
-  // Sesión libre planificada en la semana tipo (sin excepción).
   const want = eff.activityKind;
   if (sessions.some((s) => s.kind === want)) return { status: 'done', reason: 'Has registrado la actividad planificada.' };
   return { status: 'substituted', reason: 'Has hecho otra actividad en lugar de la planificada.' };
@@ -274,9 +337,11 @@ function autoStatus(date, eff, sessions, c) {
 /**
  * Estado de un día (ver §4 de ARCHITECTURE.md):
  *  1. estado manual si existe; 2. sesiones que cuentan; 3. descanso → rest / done (extra);
- *  4. excepción que cambia el plan + sesión → substituted; 5. plantilla → done / partial,
- *  otra sesión → substituted; 6. sin sesiones → skipped (pasado) / pending (hoy o futuro);
- *  antes de ctx.since (inicio del registro) → none.
+ *  4. plantilla (de la semana tipo, cambiada o movida) → done / partial según lo registrado de ESA
+ *  plantilla (las actividades sueltas cubren sus ítems de cardio); nada de ella → substituted;
+ *  5. sesión libre que sustituye a una rutina de la semana tipo → substituted; en la semana tipo o en
+ *  un descanso → done si coincide el tipo, si no substituted;
+ *  6. sin sesiones → skipped (pasado) / pending (hoy o futuro); antes de ctx.since → none.
  * @returns {{status, manual:boolean, auto:string, sessions:object[], reason:string, extra:boolean,
  *            completeness:object|null, plan:object}}
  */

@@ -37,6 +37,15 @@ informe final (`coreRequests`). Puedes crear archivos nuevos propios (p. ej. `js
 entonces **añádelos a `ASSETS` en `sw.js`** (única excepción permitida de edición del núcleo: añadir líneas a
 `ASSETS`) y comprueba con `node scripts/check-assets.mjs`.
 
+**Versión del service worker:** `VERSION` de `sw.js` sale del contenido (hash de todos los `ASSETS` y del propio
+`sw.js`); no se edita a mano. Tras cualquier cambio en la app, y siempre antes de publicar, ejecuta
+`node scripts/stamp-sw.mjs` (o `npm run stamp`): si `VERSION` no cambia, los iPhone que ya tienen la app instalada
+no reciben la versión nueva. `check-assets.mjs` falla si `VERSION` no corresponde al contenido. Cada versión usa su
+propia caché (`entreno-<VERSION>`); el SW nunca reescribe la caché de la versión activa (si llegara un `sw.js`
+distinto con la misma `VERSION`, la instalación falla y la versión actual sigue intacta). La versión nueva se
+ofrece con un aviso fijo «Hay una versión nueva · Actualizar» en las pantallas raíz de las pestañas; solo recarga
+cuando el usuario lo pulsa.
+
 ---
 
 ## 2. Rutas (definidas en `js/app.js`)
@@ -71,6 +80,9 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/weekly?week=` | weekly · `mountWeekly` | Fase 3 |
 | `#/goals`, `#/goal/new`, `#/goal/:id` | goals · `mountGoals` / `mountGoalEdit` | Fase 3 |
 
+Pestaña resaltada: la de la ruta; las rutas de sesión y actividad (`inherit` en la tabla) mantienen la pestaña
+desde la que se abrieron (p. ej. Calendario › Historial › sesión), salvo una sesión de fuerza en curso, que es de «Hoy».
+
 Navegación: `import { navigate, back, refresh, replaceUrl } from '../router.js'` (`replaceUrl(hash)` cambia la URL sin
 volver a montar la vista). `navigate('#/x')` apila; `back(fallback)`
 vuelve dentro de la app (en modo standalone de iOS no hay botón atrás del navegador: **toda pantalla que no sea
@@ -88,7 +100,7 @@ Fechas de calendario: **siempre** cadenas locales `'YYYY-MM-DD'` (usa `util.toda
 (`util.weekStart()`); `dow()` devuelve 0 = lunes … 6 = domingo. Números en UI: coma decimal (`fmtNum`, `parseNum`).
 
 ### meta
-- `{ id:'app', createdAt, seedVersion, schema }`
+- `{ id:'app', createdAt, seedVersion, schema, seedComplete }` (la carga inicial —meta, ejercicios y rutinas— se escribe en una sola transacción)
 - `{ id:'settings', ...defaultSettings() }` — ver `seed.js`. Claves principales:
   - `weekPatterns: [{ from:'YYYY-MM-DD', days:[7 × DayPlan] }]` — vigencias de la semana tipo (la vigente para una
     fecha es la de mayor `from` ≤ fecha). Cambiar la semana tipo **añade** una vigencia con `from = lunes de la semana
@@ -205,11 +217,15 @@ Adherencia semanal = días planificados (no descanso) frente a días con `done`/
 `value`/`checked`/`disabled` como propiedad, `html`, `text`), `icon(name, size)`, `header({title, subtitle, back, actions})`,
 `screen(root, headerOpts)` → contenedor `.content`, `sheet({title, body, actions, onClose, tall})`,
 `confirmDialog({title, message, confirmText, danger, requireText})` → Promise<bool>, `promptDialog()`,
-`actionSheet({title, actions:[{label, icon, danger, onClick}]})`, `toast(msg, {actionLabel, onAction, kind})`,
-`undoToast(msg, onUndo)`, `stepper({value, step, min, max, decimals, inputmode, suffix, label, showStep, size:'lg'|'md'|'sm', onChange(v,{final})})`,
+`actionSheet({title, actions:[{label, icon, danger, onClick}]})`, `toast(msg, {actionLabel, onAction, kind, duration, closeOnNavigate})`,
+`undoToast(msg, onUndo)` (los avisos con acción se cierran al cambiar de pantalla; uno mostrado justo después de
+`navigate()`/`back()` pertenece a la pantalla de destino y sigue visible allí), `stepper({value, step, min, max, decimals, inputmode, suffix, label, showStep, size:'lg'|'md'|'sm', onChange(v,{final})})`,
 `segmented({options, value, onChange})`, `chips({options, value, multi, allowNone, onChange})`,
-`rpePicker({value, onChange})`, `durationInput({seconds, onChange, showHours, showSeconds})`, `field(label, control, hint)`,
-`textInput()`, `numInput()`, `emptyState()`, `whyBox(content)`, `shareFile(file)` → 'shared'|'downloaded'|'cancelled',
+`rpePicker({value, onChange})`, `durationInput({seconds, onChange, showHours, showSeconds})` (no recorta: 75 min =
+4500 s; al salir del campo normaliza a 1 h 15 min), `field(label, control, hint)`,
+`textInput()`, `numInput()`, `emptyState()`, `whyBox(content)`, `shareFile(file)` → 'shared'|'downloaded'|'cancelled'
+('downloaded' solo si el navegador no puede compartir archivos; con la hoja ya abierta —doble toque— o sin permiso
+del sistema devuelve 'cancelled' y no descarga nada: no des la copia por hecha),
 `downloadFile(file)`, `pickFile({accept})`, `isStandalone()`, `closeAllSheets()`.
 Iconos disponibles: ver `ICON_NAMES` en ui.js. Para deportes usa emojis (`ACTIVITY_EMOJI` en seed.js).
 
@@ -220,6 +236,10 @@ Iconos disponibles: ver `ICON_NAMES` en ui.js. Para deportes usa emojis (`ACTIVI
 `pace`, `speed`, `pace100`, `riegel`, `movingAverage(points, 7)`, `linearRegression(xs, ys)`, `dayIndex`,
 `lastPerformance(sessions, exerciseId, {excludeSessionId})`, `bestsForExercise`, `addToBests`, `detectPRs`,
 `sessionPRs(session, sessions, exMap, bwFn)` → Map(setId → récords), `bestSet`, `weeksBetween`, `orderKeyOf`.
+Récords: solo si hay historial ANTERIOR a la sesión (`bests.prior`, lo fija `bestsForExercise`; `addToBests` lo deja
+igual): en la primera sesión con un ejercicio no hay récords aunque una serie supere a otra del mismo día. En peso
+corporal, el récord de 1RM compara con el peso corporal del día (si solo sube el peso corporal, no es récord).
+`bestSet`: por 1RM; tiempo → más larga; saltos → más alta; distancia+tiempo → más rápida.
 `exMap` puede ser un `Map` o un objeto; construye uno con `new Map(store.all('exercises').map(e => [e.id, e]))`.
 
 ### plan.js (contrato mínimo, lo usa Ajustes)
@@ -272,5 +292,6 @@ swapDays, setManualStatus, resetDay…).
   (captura en `test-results/`; revísala con la herramienta Read para comprobar el diseño).
   En la página: `window.__app.store` y `window.__app.navigate`.
   Nombra tus pruebas `tests/e2e/<módulo>.test.cjs` y `tests/unit/<módulo>.test.mjs`.
-- `node scripts/check-assets.mjs` verifica que `sw.js` precachea todos los archivos.
+- `node scripts/check-assets.mjs` verifica que `sw.js` precachea todos los archivos y que `VERSION` corresponde al
+  contenido (si falla por eso: `node scripts/stamp-sw.mjs`).
 - Antes de terminar, todo lo anterior debe pasar y la consola del navegador no debe tener errores.

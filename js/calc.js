@@ -274,9 +274,32 @@ function weightKey(w) {
   return String(round(w ?? 0, 0.25));
 }
 
-/** Estructura vacía de mejores marcas. */
+/**
+ * Estructura vacía de mejores marcas.
+ *  count  = series de trabajo incorporadas (incluidas las de la sesión en curso, vía addToBests)
+ *  prior  = series del historial ANTERIOR (lo fija bestsForExercise; addToBests no lo toca). Sin historial
+ *           previo no hay récords, tampoco entre las series de la primera sesión con el ejercicio.
+ *  bwFront = peso corporal: frente de pares {w: lastre, r: reps+RIR} para comparar el 1RM estimado con el
+ *           peso corporal del DÍA (si solo sube el peso corporal, no es récord).
+ */
 export function emptyBests() {
-  return { count: 0, maxLoad: null, maxWeight: null, maxE1rm: null, repsAtWeight: {}, maxReps: null, maxTime: null, maxHeight: null, bestTimeAtDist: {}, maxVolumeSet: null };
+  return { count: 0, prior: null, maxLoad: null, maxWeight: null, maxE1rm: null, repsAtWeight: {}, maxReps: null, maxTime: null, maxHeight: null, bestTimeAtDist: {}, maxVolumeSet: null, bwFront: [] };
+}
+
+/** 1RM (Epley) con repeticiones efectivas ya sumadas (reps + RIR). */
+function e1rmFromEffective(load, r) {
+  if (!(load > 0) || !(r >= 1)) return null;
+  return r <= 1 ? load : load * (1 + r / 30);
+}
+
+/** Mejor 1RM estimado del historial de un ejercicio de peso corporal, recalculado con el peso corporal `bwKg`. */
+function bwFrontE1rm(front, bwKg) {
+  let best = null;
+  for (const p of front || []) {
+    const v = e1rmFromEffective(bwKg + p.w, p.r);
+    if (v != null && (best == null || v > best)) best = v;
+  }
+  return best;
 }
 
 /** Incorpora una serie de trabajo a las mejores marcas (muta y devuelve `bests`). */
@@ -296,6 +319,15 @@ export function addToBests(bests, set, exercise, bwKg = null) {
     }
     if (m.load != null && (bests.maxLoad == null || m.load > bests.maxLoad)) bests.maxLoad = m.load;
     if (m.e1rm != null && (bests.maxE1rm == null || m.e1rm > bests.maxE1rm)) bests.maxE1rm = m.e1rm;
+    if (t === 'bodyweight' && m.e1rm != null) {
+      // Frente de Pareto (lastre, reps efectivas): basta para recalcular el mejor 1RM con cualquier peso corporal.
+      const p = { w: set.weight || 0, r: m.reps + (rirValue(set.rir) ?? 0) };
+      const front = bests.bwFront || (bests.bwFront = []);
+      if (!front.some((q) => q.w >= p.w && q.r >= p.r)) {
+        bests.bwFront = front.filter((q) => !(p.w >= q.w && p.r >= q.r));
+        bests.bwFront.push(p);
+      }
+    }
     if (m.volume != null && (bests.maxVolumeSet == null || m.volume > bests.maxVolumeSet)) bests.maxVolumeSet = m.volume;
   }
   if (m.reps != null && (bests.maxReps == null || m.reps > bests.maxReps)) bests.maxReps = m.reps;
@@ -321,14 +353,16 @@ export function bestsForExercise(sessions, exerciseId, exercise, { excludeSessio
       for (const set of se.sets || []) addToBests(bests, set, exercise, bwFn(s.date));
     }
   }
+  bests.prior = bests.count;
   return bests;
 }
 
 /**
- * Récords que bate `set` frente a `bests` (solo si ya había historial).
+ * Récords que bate `set` frente a `bests` (solo si ya había historial ANTERIOR a la sesión: `bests.prior`;
+ * en la primera sesión con un ejercicio no hay récords, aunque una serie supere a otra del mismo día).
  * Devuelve [{kind:'weight'|'e1rm'|'reps'|'time'|'height', value, prev}]
  *  - weight: más peso (en peso corporal: más lastre / menos asistencia)
- *  - e1rm:   mayor 1RM estimado
+ *  - e1rm:   mayor 1RM estimado (en peso corporal, comparando con el peso corporal de hoy en todas las series)
  *  - reps:   más repeticiones con ese mismo peso
  *  - time:   más tiempo (tipo tiempo) o menos tiempo a igual distancia (sprints)
  *  - height: salto más alto
@@ -336,12 +370,14 @@ export function bestsForExercise(sessions, exerciseId, exercise, { excludeSessio
 export function detectPRs(set, exercise, bests, bwKg = null) {
   const out = [];
   if (!isWorkSet(set) || !exercise || !bests || bests.count === 0) return out;
+  if ((bests.prior ?? bests.count) === 0) return out;
   const m = setMetrics(set, exercise, bwKg);
   const t = exercise.logType;
   if (t === 'weight_reps' || t === 'unilateral' || t === 'bodyweight') {
     const w = t === 'bodyweight' ? (set.weight || 0) : set.weight;
     if (w != null && bests.maxWeight != null && w > bests.maxWeight && (m.reps ?? 0) >= 1) out.push({ kind: 'weight', value: w, prev: bests.maxWeight });
-    if (m.e1rm != null && bests.maxE1rm != null && m.e1rm > bests.maxE1rm + 1e-9) out.push({ kind: 'e1rm', value: m.e1rm, prev: bests.maxE1rm });
+    const prevE1rm = t === 'bodyweight' && bests.bwFront && bwKg != null ? bwFrontE1rm(bests.bwFront, bwKg) : bests.maxE1rm;
+    if (m.e1rm != null && prevE1rm != null && m.e1rm > prevE1rm + 1e-9) out.push({ kind: 'e1rm', value: m.e1rm, prev: prevE1rm });
     if (w != null && m.reps != null) {
       const prev = bests.repsAtWeight[weightKey(w)];
       if (prev != null && m.reps > prev) out.push({ kind: 'reps', value: m.reps, prev, weight: w });
@@ -383,14 +419,24 @@ export function sessionPRs(session, sessions, exMap, bwFn = () => null) {
   return out;
 }
 
-/** Mejor serie (por 1RM estimado; si no aplica, por reps) de una lista de series. */
+/**
+ * Mejor serie de una lista de series: por 1RM estimado; si no aplica, por reps. Tiempo: la más larga;
+ * saltos: la más alta (o más reps); distancia+tiempo: la más rápida (m/s; sin tiempo, la más larga).
+ */
 export function bestSet(sets, exercise, bwKg = null) {
   let best = null;
   let bestVal = -Infinity;
+  const t = exercise?.logType;
   for (const s of sets || []) {
     if (!isWorkSet(s)) continue;
     const m = setMetrics(s, exercise, bwKg);
-    const val = m.e1rm ?? (exercise.logType === 'time' ? s.timeSec : exercise.logType === 'jumps' ? (s.heightCm || s.reps) : m.reps) ?? -Infinity;
+    let val;
+    if (m.e1rm != null) val = m.e1rm;
+    else if (t === 'time') val = s.timeSec;
+    else if (t === 'jumps') val = s.heightCm || s.reps;
+    else if (t === 'distance_time') val = s.distanceM > 0 && s.timeSec > 0 ? s.distanceM / s.timeSec : s.distanceM;
+    else val = m.reps;
+    if (typeof val !== 'number' || !Number.isFinite(val)) continue;
     if (val > bestVal) { bestVal = val; best = s; }
   }
   return best;

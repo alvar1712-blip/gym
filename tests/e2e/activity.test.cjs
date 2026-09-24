@@ -42,11 +42,13 @@ test('carrera: 10 km en 50:00 → ritmo 5:00 /km, carga con esfuerzo; borrador y
     assert.ok(draft && draft.form.distanceKm === 10, 'borrador en localStorage');
     assert.match(await page.locator('.act-status').innerText(), /falta la duración/i);
 
-    // El borrador se restaura al volver.
+    // El borrador se restaura al volver, con un aviso dentro del formulario (no un toast sobre «Listo»).
     await reload(page);
     assert.strictEqual(await hash(page), '#/activity/new?kind=run&date=2026-09-20');
     assert.strictEqual(await val(page, '[aria-label="Distancia (km)"]'), '10');
-    assert.match(await page.locator('.toast').innerText(), /Borrador recuperado/);
+    assert.match(await page.locator('.act-restored').innerText(), /Borrador recuperado[\s\S]*Guardado hoy a las \d\d:\d\d/);
+    assert.strictEqual(await page.locator('.toast').count(), 0);
+    await shot(page, 'activity-draft-restored');
 
     // Con la duración ya es válida: se crea y la URL pasa a #/activity/:id sin perder el foco.
     const minInput = page.locator('[aria-label="Tiempo en movimiento: min"]');
@@ -59,6 +61,10 @@ test('carrera: 10 km en 50:00 → ritmo 5:00 /km, carga con esfuerzo; borrador y
     assert.ok(await minInput.evaluate((el) => el === document.activeElement), 'el foco sigue en el campo');
     assert.strictEqual(await page.evaluate(() => localStorage.getItem('draft:activity:run')), null);
     assert.match(await page.locator('.act-status').innerText(), /Guardado/);
+    // La URL cambia con router.replaceUrl: la ruta actual del router también es la nueva.
+    assert.strictEqual(await page.evaluate(async () => (await import('./js/router.js')).currentRoute().path), `/activity/${id}`);
+    assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Carrera');
+    assert.strictEqual(await page.locator('.act-restored').count(), 0, 'el aviso de borrador se quita al crear');
 
     // Carga: sin esfuerzo no hay carga; con esfuerzo 7 → 50 × 7 = 350.
     assert.strictEqual(await page.locator('.act-load').innerText(), '—');
@@ -163,6 +169,9 @@ test('bici con velocidad media y natación con ritmo /100 m', async () => {
     await page.fill('[aria-label="Distancia (m)"]', '1500');
     await page.fill('[aria-label="Tiempo: min"]', '30');
     assert.strictEqual(await page.locator('.act-live-value').first().innerText(), '2:00 /100 m');
+    // La unidad va aparte (más pequeña) y no se corta.
+    assert.strictEqual((await page.locator('.act-live-value .act-live-unit').first().innerText()).trim(), '/100 m');
+    assert.ok(await page.locator('.act-live-value').first().evaluate((el) => el.scrollWidth <= el.clientWidth), 'ritmo /100 m sin cortar');
     await page.getByRole('button', { name: 'Piscina', exact: true }).click();
     await page.getByRole('button', { name: '25 m', exact: true }).click();
     await page.getByRole('button', { name: 'Crol', exact: true }).click();
@@ -254,11 +263,31 @@ test('otra actividad con selector de tipo y tipo libre; borrar con confirmación
     await page.waitForTimeout(250);
     assert.strictEqual((await storeAll(page, 'sessions')).length, 1);
 
-    // Descartar un borrador sin guardar
+    // Descartar un borrador sin guardar (con deshacer)
     await go(page, '#/activity/new?kind=run');
     await page.fill('[aria-label="Distancia (km)"]', '5');
     await page.locator('.act-discard').click();
     assert.strictEqual(await val(page, '[aria-label="Distancia (km)"]'), '');
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('draft:activity:run')), null);
+    assert.match(await page.locator('.toast').innerText(), /Borrador descartado/);
+    await page.locator('.toast-action').click();
+    assert.strictEqual(await val(page, '[aria-label="Distancia (km)"]'), '5');
+    assert.strictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('draft:activity:run')).form.distanceKm), 5);
+
+    // Descartar desde el aviso de borrador recuperado
+    await go(page, '#/today');
+    await go(page, '#/activity/new?kind=run');
+    assert.strictEqual(await val(page, '[aria-label="Distancia (km)"]'), '5');
+    await page.locator('.act-restored-discard').click();
+    assert.strictEqual(await page.locator('.act-restored').count(), 0);
+    assert.strictEqual(await val(page, '[aria-label="Distancia (km)"]'), '');
+    assert.strictEqual(await page.evaluate(() => localStorage.getItem('draft:activity:run')), null);
+
+    // Vaciar lo escrito y salir no deja un borrador viejo que se recupere después.
+    await page.fill('[aria-label="Distancia (km)"]', '7');
+    await settle(page);
+    await page.fill('[aria-label="Distancia (km)"]', '');
+    await go(page, '#/today');
     assert.strictEqual(await page.evaluate(() => localStorage.getItem('draft:activity:run')), null);
 
     assert.deepStrictEqual(app.errors, []);
@@ -273,7 +302,8 @@ test('actividad enlazada a una sesión de fuerza (parent + item)', async () => {
   try {
     await seedStrength(page);
     // Abierta sin historial interno: «Listo» usa el fallback #/session/:parent.
-    await page.evaluate(() => { location.hash = '#/activity/new?kind=run&date=2026-09-22&parent=s_test&item=se_run'; });
+    const linkedUrl = '#/activity/new?kind=run&date=2026-09-22&parent=s_test&item=se_run';
+    await page.evaluate((u) => { location.hash = u; }, linkedUrl);
     await page.waitForTimeout(250);
     const banner = await page.locator('.act-link').innerText();
     assert.match(banner, /Día 3 — Cardio/);
@@ -282,7 +312,17 @@ test('actividad enlazada a una sesión de fuerza (parent + item)', async () => {
     assert.ok(await page.getByRole('button', { name: 'Rodaje / Z2', exact: true }).evaluate((b) => b.classList.contains('active')), 'tipo prellenado de las notas');
     assert.match(await page.locator('.act-dur-hint').innerText(), /Objetivo: 30–45 min/);
     assert.strictEqual(await val(page, '[aria-label="Tiempo en movimiento: min"]'), '', 'la duración objetivo es pista, no valor');
+    // Lo prellenado (tipo de sesión de las notas) no es un borrador: «Listo» sale y no queda nada guardado.
+    assert.strictEqual(await page.locator('.act-status').innerText(), 'Se guarda al poner la duración');
+    assert.strictEqual(await page.locator('.act-discard').isVisible(), false);
     await shot(page, 'activity-linked');
+    await page.locator('.act-done').click();
+    await page.waitForTimeout(250);
+    assert.strictEqual(await hash(page), '#/session/s_test');
+    assert.deepStrictEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('draft:'))), []);
+    await page.evaluate((u) => { location.hash = u; }, linkedUrl);
+    await page.waitForTimeout(250);
+    assert.strictEqual(await page.locator('.act-restored').count(), 0, 'sin «Borrador recuperado» fantasma');
 
     await page.fill('[aria-label="Tiempo en movimiento: min"]', '40');
     await page.fill('[aria-label="Distancia (km)"]', '7');
@@ -296,6 +336,11 @@ test('actividad enlazada a una sesión de fuerza (parent + item)', async () => {
     assert.strictEqual(rec.subtype, 'z2');
     assert.strictEqual(rec.movingSec, 2400);
     assert.deepStrictEqual(app.errors, []);
+    // Una actividad enlazada ya guardada no ofrece cambiar de deporte.
+    await reload(page);
+    assert.strictEqual(await hash(page), `#/activity/${rec.id}`);
+    assert.strictEqual(await page.locator('.act-link').count(), 1);
+    assert.strictEqual(await page.locator('.act-kinds').count(), 0);
 
     await page.locator('.act-done').click();
     await page.waitForTimeout(250);
@@ -310,6 +355,113 @@ test('actividad enlazada a una sesión de fuerza (parent + item)', async () => {
     await go(page, '#/activity/s_test');
     await page.waitForTimeout(200);
     assert.strictEqual(await hash(page), '#/session/s_test');
+  } finally {
+    await app.close();
+  }
+});
+
+test('cambiar el tipo de una actividad guardada pide confirmación, se puede deshacer y conserva el tipo de sesión', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await page.evaluate(async () => {
+      const L = await import('./js/activity-logic.js');
+      const f = L.emptyForm('bike', { date: '2026-09-20' });
+      Object.assign(f, { movingSec: 5400, distanceKm: 45, rpe: 6, hrAvg: 140, hrMax: 172, powerAvg: 190, powerNp: 205, elevationM: 600, cadence: 85, subtype: 'route', notes: 'Ruta' });
+      await window.__app.store.save('sessions', L.buildRecord(f, null, { id: 'a_bike' }));
+    });
+    const original = (await idbAll(page, 'sessions'))[0];
+    await go(page, '#/activity/a_bike');
+    const seg = page.locator('.act-kinds .seg-btn');
+
+    // Cancelar: no cambia nada y el selector vuelve a «Bici».
+    await seg.nth(2).click();
+    await page.waitForTimeout(250);
+    const msg = await page.locator('.sheet-panel').innerText();
+    assert.match(msg, /¿Cambiar a natación\?/);
+    assert.match(msg, /tipo de sesión «Ruta»/);
+    assert.match(msg, /FC media/);
+    assert.match(msg, /potencia normalizada/);
+    assert.doesNotMatch(msg, /distancia/, 'la distancia sí aplica a natación');
+    await shot(page, 'activity-kind-confirm');
+    await page.locator('.sheet-panel .btn-secondary').click();
+    await page.waitForTimeout(250);
+    assert.ok(await seg.nth(1).evaluate((b) => b.classList.contains('active')), 'sigue en Bici');
+    assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Bici');
+    assert.deepStrictEqual(await idbAll(page, 'sessions'), [original]);
+
+    // Confirmar: se quita lo que no aplica; «Deshacer» deja el registro exactamente como estaba.
+    await seg.nth(2).click();
+    await page.waitForTimeout(250);
+    await page.locator('.sheet-panel .btn-danger').click();
+    await page.waitForTimeout(300);
+    let rec = (await idbAll(page, 'sessions'))[0];
+    assert.strictEqual(rec.kind, 'swim');
+    assert.strictEqual(rec.distanceKm, 45);
+    assert.strictEqual(rec.hrAvg, null);
+    assert.strictEqual(rec.subtype, null);
+    assert.match(await page.locator('.toast').innerText(), /Tipo cambiado a natación/);
+    await page.locator('.toast-action').click();
+    await page.waitForTimeout(300);
+    rec = (await idbAll(page, 'sessions'))[0];
+    const { updatedAt: _a, ...restoredRec } = rec;
+    const { updatedAt: _b, ...origRec } = original;
+    assert.deepStrictEqual(restoredRec, origRec);
+    assert.ok(await seg.nth(1).evaluate((b) => b.classList.contains('active')), 'el selector vuelve a Bici');
+    assert.strictEqual(await val(page, '[aria-label="Potencia media (W)"]'), '190');
+    assert.ok(await page.getByRole('button', { name: 'Ruta', exact: true }).evaluate((b) => b.classList.contains('active')));
+
+    // Ir a «Otra» y volver a «Bici» en la misma pantalla recupera los datos y el tipo de sesión.
+    await seg.nth(3).click();
+    await page.waitForTimeout(250);
+    await page.locator('.sheet-panel .btn-danger').click();
+    await page.waitForTimeout(300);
+    assert.strictEqual((await storeAll(page, 'sessions'))[0].kind, 'other');
+    await seg.nth(1).click();
+    await page.waitForTimeout(300);
+    assert.strictEqual(await page.locator('.sheet-panel').count(), 0, 'volver a Bici no quita nada: sin confirmación');
+    rec = (await storeAll(page, 'sessions'))[0];
+    assert.strictEqual(rec.kind, 'bike');
+    assert.strictEqual(rec.subtype, 'route');
+    assert.strictEqual(rec.hrAvg, 140);
+    assert.strictEqual(rec.powerNp, 205);
+
+    // Una actividad sin datos específicos cambia de tipo sin preguntar.
+    await page.evaluate(async () => {
+      const L = await import('./js/activity-logic.js');
+      const f = { ...L.emptyForm('run', { date: '2026-09-21' }), movingSec: 1800, distanceKm: 5 };
+      await window.__app.store.save('sessions', L.buildRecord(f, null, { id: 'a_run' }));
+    });
+    await go(page, '#/activity/a_run');
+    await page.locator('.act-kinds .seg-btn').nth(1).click();
+    await page.waitForTimeout(250);
+    assert.strictEqual(await page.locator('.sheet-panel').count(), 0);
+    assert.strictEqual((await storeAll(page, 'sessions')).find((x) => x.id === 'a_run').kind, 'bike');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('el borrador se guarda al pasar a segundo plano o cerrar la app, sin esperar', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await go(page, '#/activity/new?kind=run');
+    await page.fill('[aria-label="Distancia (km)"]', '8,4');
+    // Ocultar enseguida (antes de los 300 ms del borrador)
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    assert.strictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('draft:activity:run') || 'null')?.form.distanceKm), 8.4);
+    await page.evaluate(() => { delete document.visibilityState; localStorage.removeItem('draft:activity:run'); });
+    await page.fill('[aria-label="Distancia (km)"]', '9');
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    assert.strictEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('draft:activity:run') || 'null')?.form.distanceKm), 9);
+    await reload(page);
+    assert.strictEqual(await val(page, '[aria-label="Distancia (km)"]'), '9');
+    assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
   }
@@ -385,6 +537,26 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     const after = (await idbAll(page, 'bodyweight')).find((b) => b.id === secondId).kg;
     assert.strictEqual(after, Math.round((before + 0.1) * 10) / 10);
 
+    // Cambiar la fecha dos veces seguidas (selector girando): se mueve al último día, sin perder el peso.
+    const kgNow = (await storeAll(page, 'bodyweight')).find((b) => b.id === secondId).kg;
+    const free = await page.evaluate(async (t) => { const u = await import('./js/util.js'); return [u.addDays(t, -40), u.addDays(t, -41)]; }, today);
+    await page.evaluate(([d1, d2]) => {
+      const i = document.querySelector('.sheet-panel input[type=date]');
+      i.value = d1; i.dispatchEvent(new Event('change'));
+      i.value = d2; i.dispatchEvent(new Event('change'));
+    }, free);
+    await settle(page, 400);
+    let all = await idbAll(page, 'bodyweight');
+    assert.strictEqual(all.some((b) => b.id === secondId || b.id === free[0]), false);
+    assert.strictEqual(all.find((b) => b.id === free[1])?.kg, kgNow);
+    assert.ok(all.every((b) => b.kg > 0), 'ningún pesaje sin kg');
+    // …y vuelta a su fecha
+    await page.evaluate((d) => { const i = document.querySelector('.sheet-panel input[type=date]'); i.value = d; i.dispatchEvent(new Event('change')); }, secondId);
+    await settle(page, 300);
+    all = await idbAll(page, 'bodyweight');
+    assert.strictEqual(all.find((b) => b.id === secondId)?.kg, kgNow);
+    assert.strictEqual(all.length, 28);
+
     // Borrar desde la hoja → deshacer
     await page.locator('.sheet-panel .btn-danger-ghost').click();
     await settle(page, 300);
@@ -411,7 +583,18 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     assert.strictEqual(await page.evaluate(() => window.__bwSaved && window.__bwSaved.kg), 76.2);
     assert.strictEqual((await idbAll(page, 'bodyweight')).find((b) => b.id === today).kg, 76.2);
     assert.match(await page.locator('#bwq-test .bwq-info').innerText(), /Hoy 76,2 kg/);
+    // Sustituye el pesaje de hoy (75,4 → 76,2): lo dice y se puede deshacer.
+    assert.match(await page.locator('.toast').innerText(), /Peso guardado: 76,2 kg \(antes 75,4 kg\)/);
     await shot(page, 'bodyweight-quick');
+    await page.locator('.toast-action').click();
+    await settle(page, 200);
+    assert.strictEqual((await idbAll(page, 'bodyweight')).find((b) => b.id === today).kg, 75.4);
+    assert.strictEqual(await val(page, '#bwq-test [aria-label="Peso de hoy (kg)"]'), '75,4');
+    assert.match(await page.locator('#bwq-test .bwq-info').innerText(), /Hoy 75,4 kg/);
+    // Guardar el mismo valor no sustituye nada: sin deshacer.
+    await page.locator('#bwq-test .bwq-save').click();
+    await settle(page, 200);
+    assert.strictEqual(await page.locator('.toast-action').count(), 0);
 
     assert.deepStrictEqual(app.errors, []);
   } finally {

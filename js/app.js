@@ -1,20 +1,21 @@
 // app.js — arranque, rutas, barra de pestañas, service worker y avisos globales.
 import * as store from './store.js';
 import { defineRoutes, start, navigate, currentRoute, refresh } from './router.js';
-import { h, icon, toast, closeAllSheets } from './ui.js';
+import { h, icon, toast, closeAllSheets, closeStaleToasts } from './ui.js';
 
 const v = (name) => () => import(`./views/${name}.js`);
 
-// Tabla de rutas. `tab` = pestaña resaltada.
+// Tabla de rutas. `tab` = pestaña resaltada. `inherit: true` = pantalla compartida entre pestañas
+// (sesión, actividad): se queda resaltada la pestaña desde la que se abrió (ver tabFor).
 export const ROUTES = [
   { pattern: '/today', tab: 'today', load: v('today'), fn: 'mountToday' },
   { pattern: '/calendar', tab: 'calendar', load: v('calendar'), fn: 'mountCalendar' },
   { pattern: '/day/:date', tab: 'calendar', load: v('calendar'), fn: 'mountDay' },
   { pattern: '/history', tab: 'calendar', load: v('history'), fn: 'mountHistory' },
-  { pattern: '/session/:id', tab: 'today', load: v('session'), fn: 'mountSession' },
-  { pattern: '/session/:id/summary', tab: 'today', load: v('session'), fn: 'mountSessionSummary' },
-  { pattern: '/activity/new', tab: 'today', load: v('activity'), fn: 'mountActivity' },
-  { pattern: '/activity/:id', tab: 'today', load: v('activity'), fn: 'mountActivity' },
+  { pattern: '/session/:id', tab: 'today', inherit: true, load: v('session'), fn: 'mountSession' },
+  { pattern: '/session/:id/summary', tab: 'today', inherit: true, load: v('session'), fn: 'mountSessionSummary' },
+  { pattern: '/activity/new', tab: 'today', inherit: true, load: v('activity'), fn: 'mountActivity' },
+  { pattern: '/activity/:id', tab: 'today', inherit: true, load: v('activity'), fn: 'mountActivity' },
   { pattern: '/bodyweight', tab: 'progress', load: v('bodyweight'), fn: 'mountBodyweight' },
   { pattern: '/exercises', tab: 'exercises', load: v('exercises'), fn: 'mountExercises' },
   { pattern: '/exercise/new', tab: 'exercises', load: v('exercises'), fn: 'mountExerciseEdit' },
@@ -44,6 +45,8 @@ const TABS = [
 ];
 
 let tabButtons = {};
+let activeTab = null;
+const ROOT_ROUTES = new Set(TABS.map((t) => t.href.slice(1)));
 
 function renderTabbar() {
   const bar = document.getElementById('tabbar');
@@ -68,9 +71,20 @@ function renderTabbar() {
   updateBadges();
 }
 
+/** Pestaña que se resalta: la de la ruta; en sesión/actividad, la de origen (una sesión en curso es de «Hoy»). */
+function tabFor(route) {
+  const r = route.route;
+  if (!r.inherit) return r.tab;
+  if (r.pattern.startsWith('/session/') && store.get('sessions', route.params.id)?.status === 'active') return 'today';
+  return activeTab || r.tab;
+}
+
 function onRouteChange(route) {
-  for (const [id, b] of Object.entries(tabButtons)) b.classList.toggle('active', id === route.route.tab);
+  activeTab = tabFor(route);
+  for (const [id, b] of Object.entries(tabButtons)) b.classList.toggle('active', id === activeTab);
   document.body.dataset.route = route.route.pattern;
+  closeStaleToasts();
+  paintUpdateBar();
   try { localStorage.setItem('lastRoute', route.raw); } catch { /* sin almacenamiento */ }
 }
 
@@ -82,32 +96,66 @@ function updateBadges() {
 // ---------------------------------------------------------------------------
 // Service worker y actualizaciones
 // ---------------------------------------------------------------------------
+let updateBar = null; // { el, worker }
+
+/**
+ * Aviso fijo «Hay una versión nueva» (no es un toast: ningún otro aviso lo sustituye). Se muestra en las
+ * pantallas raíz de las pestañas (no interrumpe una sesión ni un formulario) hasta que se pulsa;
+ * «×» lo oculta hasta la próxima vez que la app vuelve a primer plano.
+ */
+function showUpdateBar(worker, onUpdate) {
+  if (updateBar && updateBar.worker === worker) return;
+  hideUpdateBar();
+  const el = h('div.update-bar', { role: 'status', 'aria-live': 'polite' },
+    h('span.update-bar-msg', 'Hay una versión nueva de la app.'),
+    h('button.btn.btn-primary.btn-sm.update-bar-btn', { type: 'button', onClick: () => { hideUpdateBar(); onUpdate(); } }, 'Actualizar'),
+    h('button.icon-btn.update-bar-close', { type: 'button', 'aria-label': 'Ahora no', onClick: hideUpdateBar }, icon('x', 20)));
+  document.body.appendChild(el);
+  updateBar = { el, worker };
+  paintUpdateBar();
+}
+function hideUpdateBar() {
+  if (updateBar) updateBar.el.remove();
+  updateBar = null;
+}
+function paintUpdateBar() {
+  if (updateBar) updateBar.el.hidden = !ROOT_ROUTES.has(document.body.dataset.route);
+}
+
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+  // Solo se recarga al cambiar de versión si el usuario pulsó «Actualizar» o si ya había una versión
+  // controlando la página (actualizada desde otra pestaña). En la primera instalación clients.claim()
+  // también dispara 'controllerchange' y no hay nada que recargar (se perdería lo que se esté tecleando).
+  const hadController = !!navigator.serviceWorker.controller;
+  let userAsked = false;
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
+    if (reloading || (!userAsked && !hadController)) return;
     reloading = true;
     store.flush().finally(() => location.reload());
   });
   navigator.serviceWorker.register('sw.js').then((reg) => {
-    const offer = (worker) => {
-      if (!worker || !navigator.serviceWorker.controller) return;
-      toast('Hay una versión nueva de la app.', {
-        actionLabel: 'Actualizar',
-        duration: 15000,
-        onAction: () => worker.postMessage({ type: 'SKIP_WAITING' }),
+    const offer = (worker = reg.waiting) => {
+      if (!worker || worker.state === 'redundant' || !navigator.serviceWorker.controller) return;
+      showUpdateBar(worker, () => {
+        userAsked = true;
+        worker.postMessage({ type: 'SKIP_WAITING' });
       });
     };
-    if (reg.waiting) offer(reg.waiting);
+    offer();
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
       if (!w) return;
       w.addEventListener('statechange', () => { if (w.state === 'installed') offer(w); });
     });
+    // Al volver a primer plano (iOS suele suspender la app en vez de cerrarla): buscar versión nueva y
+    // volver a ofrecer la que ya esté esperando.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      if (document.visibilityState !== 'visible') return;
+      offer();
+      reg.update().then(() => offer(), () => {});
     });
   }).catch((err) => console.warn('[sw] registro fallido', err));
 }
@@ -122,7 +170,7 @@ async function boot() {
     await store.init();
   } catch (err) {
     console.error(err);
-    viewEl.replaceChildren(h('div.content',
+    viewEl.replaceChildren(h('div.content.content-safe',
       h('div.card.card-danger',
         h('h2', 'No se pudo abrir el almacenamiento'),
         h('p', 'La app necesita IndexedDB. Si estás en modo privado de Safari, ábrela en modo normal o desde la pantalla de inicio.'),

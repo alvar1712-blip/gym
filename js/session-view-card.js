@@ -2,12 +2,12 @@
 // PROPIETARIO: módulo de sesión. La vista (views/session.js) crea el contexto `ctx` y monta las tarjetas.
 // Cada tarjeta se vuelve a pintar sola (ctx.rerenderCard) al confirmar/editar series: nunca toda la vista.
 import { h, icon, stepper, chips, segmented, toast, undoToast, confirmDialog, haptic } from './ui.js';
-import { fmtDate, fmtNum, fmtKm, fmtDuration, fmtPace, fmtSpeed, uniq } from './util.js';
+import { fmtDate, fmtKm, fmtDuration, fmtPace, fmtSpeed, uniq } from './util.js';
 import { pace, speed, pace100, sessionDurationMin } from './calc.js';
 import { ACTIVITY_EMOJI } from './seed.js';
 import { navigate } from './router.js';
 import {
-  LOAD_REP_TYPES, formatSet, targetText, prMessage, inheritWeight, validateSet,
+  LOAD_REP_TYPES, formatSet, targetText, prMessage, inheritWeight, validateSet, missingField,
   extraSet, warmupSet, switchExercise,
 } from './session-logic.js';
 
@@ -70,8 +70,8 @@ export function renderCard(ctx, se) {
     return card;
   }
 
-  // Última vez
-  const last = ctx.lastFor(se.exerciseId);
+  // Última vez (de ESTE ejercicio de la sesión: distingue los repetidos, p. ej. Sprint 20 m / 30 m)
+  const last = ctx.lastFor(se);
   if (last) {
     const parts = [];
     last.sets.forEach((s, i) => {
@@ -88,11 +88,16 @@ export function renderCard(ctx, se) {
   // Series
   const prs = ctx.prsFor(se.exerciseId);
   const editId = currentEditId(ctx, se);
+  const editSet = se.sets.find((s) => s.id === editId) || null;
+  // Mientras no hay ninguna serie de trabajo hecha, «+ Calent.» va en la cabecera del editor (a mano,
+  // junto a «Serie 1»); después, abajo con «+ Serie».
+  const warmInHead = !!editSet && !editSet.done && editSet.type !== 'warmup'
+    && !se.sets.some((s) => s.done && s.type !== 'warmup');
   const list = h('div.ses-sets');
   let workN = 0;
   se.sets.forEach((set) => {
     const num = set.type === 'warmup' ? 'C' : String(++workN);
-    if (set.id === editId) list.appendChild(renderEditor(ctx, se, set, ex, logType, num));
+    if (set.id === editId) list.appendChild(renderEditor(ctx, se, set, ex, logType, num, { warmInHead }));
     else list.appendChild(renderRow(ctx, se, set, logType, num, prs.get(set.id)));
   });
   if (list.childNodes.length) card.appendChild(list);
@@ -101,7 +106,7 @@ export function renderCard(ctx, se) {
   const btnCls = hasPending ? 'btn.btn-ghost.btn-sm' : 'btn.btn-secondary';
   card.appendChild(h('div.btn-row.ses-card-actions',
     h(`button.${btnCls}.ses-add-set`, { type: 'button', onClick: () => addSet(ctx, se, logType) }, icon('plus', 18), 'Serie'),
-    h(`button.${btnCls}.ses-add-warm`, { type: 'button', onClick: () => addWarmup(ctx, se, logType) }, icon('plus', 18), 'Calentamiento')));
+    warmInHead ? null : h(`button.${btnCls}.ses-add-warm`, { type: 'button', onClick: () => addWarmup(ctx, se, logType) }, icon('plus', 18), 'Calentamiento')));
   return card;
 }
 
@@ -138,31 +143,61 @@ function renderRow(ctx, se, set, logType, num, prs) {
 // ---------------------------------------------------------------------------
 // Editor grande
 // ---------------------------------------------------------------------------
-function renderEditor(ctx, se, set, ex, logType, num) {
+function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {}) {
   const pending = !set.done;
-  // Peso prellenado al abrir el editor (para la herencia de peso al confirmar).
-  if (pending && !ctx.origWeights.has(set.id)) ctx.origWeights.set(set.id, set.weight ?? null);
 
-  const changed = () => { ctx.touch(se); ctx.saveSoon(); };
-  const bind = (key) => (v) => { set[key] = v; changed(); };
+  // Toques (botones, chips) se guardan al instante; lo que se teclea, con un pequeño retardo.
+  const changed = (final = true) => { ctx.touch(se); if (final) ctx.save(); else ctx.saveSoon(); };
+  const isFinal = (o) => !o || o.final !== false;
+  const bind = (key) => (v, o) => { set[key] = v; changed(isFinal(o)); };
+  // Herencia de peso: el peso prellenado se guarda EN la serie (origWeight) al primer cambio, así que
+  // confirmar tras cerrar y volver a abrir la app da el mismo resultado que sin cerrar.
+  const setWeight = (v) => {
+    if (pending && !('origWeight' in set)) set.origWeight = set.weight ?? null;
+    set.weight = v;
+  };
   const fields = [];
   const field = (lbl, ctl, extra = null) => h('div.ses-field', h('span.ses-field-label', lbl), h('div.ses-field-ctl', ctl, extra));
-  const weightStep = (lbl, opts = {}) => stepper({
+  const tag = (st, key) => { st.input.dataset.field = key; return st; };
+  const weightStep = (lbl, opts = {}) => tag(stepper({
     value: set.weight, step: 2.5, decimals: 2, inputmode: 'decimal', suffix: 'kg', showStep: true, min: 0, max: 999,
-    ariaLabel: lbl, onChange: bind('weight'), ...opts,
-  });
-  const repsStep = (key, lbl) => stepper({
+    ariaLabel: lbl, onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
+  }), 'weight');
+  const repsStep = (key, lbl) => tag(stepper({
     value: set[key], step: 1, decimals: 0, inputmode: 'numeric', min: 0, max: 999, ariaLabel: lbl, onChange: bind(key),
-  });
+  }), key);
 
   switch (logType) {
     case 'bodyweight': {
-      const hint = h('div.ses-hint');
-      const paint = (w) => { hint.textContent = w > 0 ? `Lastre de ${fmtNum(w, 2)} kg` : w < 0 ? `Asistencia de ${fmtNum(-w, 2)} kg` : 'Peso corporal (negativo = asistencia)'; };
-      paint(set.weight);
-      fields.push(field('Lastre', weightStep('Lastre', {
-        min: -300, onChange: (v) => { set.weight = v; paint(v); changed(); },
-      }), hint));
+      // Lastre (+) o asistencia (−): el teclado decimal del iPhone no tiene signo menos, así que el signo
+      // se elige con el segmentado y el campo es siempre positivo (se guarda weight < 0 = asistencia).
+      let sign = set.weight < 0 ? -1 : 1;
+      const lblEl = h('span.ses-field-label');
+      const paintLbl = () => { lblEl.textContent = sign < 0 ? 'Asist.' : 'Lastre'; };
+      const st = weightStep('Lastre', {
+        value: set.weight == null ? null : Math.abs(set.weight),
+        min: 0, max: 300,
+        onChange: (v, o) => { setWeight(v == null ? null : v === 0 ? 0 : sign * v); changed(isFinal(o)); },
+      });
+      st.input.placeholder = 'sin lastre';
+      const signSeg = segmented({
+        options: [{ value: 1, label: 'Lastre' }, { value: -1, label: 'Asistencia' }],
+        value: sign,
+        ariaLabel: 'Lastre o asistencia',
+        onChange: (v) => {
+          sign = v;
+          const abs = st.getValue();
+          if (abs != null && abs !== 0) setWeight(sign * Math.abs(abs));
+          st.input.setAttribute('aria-label', sign < 0 ? 'Asistencia' : 'Lastre');
+          st.input.placeholder = sign < 0 ? 'kg' : 'sin lastre';
+          paintLbl();
+          changed();
+        },
+      });
+      signSeg.classList.add('ses-sign');
+      if (sign < 0) { st.input.setAttribute('aria-label', 'Asistencia'); st.input.placeholder = 'kg'; }
+      paintLbl();
+      fields.push(h('div.ses-field', lblEl, h('div.ses-field-ctl', st, signSeg)));
       fields.push(field('Reps', repsStep('reps', 'Repeticiones')));
       break;
     }
@@ -172,12 +207,12 @@ function renderEditor(ctx, se, set, ex, logType, num) {
       fields.push(field('Reps der.', repsStep('repsR', 'Repeticiones lado derecho')));
       break;
     case 'time':
-      fields.push(field('Tiempo', stepper({ value: set.timeSec, step: 5, decimals: 0, inputmode: 'numeric', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') })));
+      fields.push(field('Tiempo', tag(stepper({ value: set.timeSec, step: 5, decimals: 0, inputmode: 'numeric', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') }), 'timeSec')));
       fields.push(field('Lastre', weightStep('Lastre (opcional)', { size: 'md', placeholder: 'opcional' })));
       break;
     case 'distance_time':
-      fields.push(field('Metros', stepper({ value: set.distanceM, step: 5, decimals: 1, inputmode: 'decimal', suffix: 'm', min: 0, max: 100000, showStep: true, ariaLabel: 'Metros', onChange: bind('distanceM') })));
-      fields.push(field('Tiempo', stepper({ value: set.timeSec, step: 0.1, decimals: 2, inputmode: 'decimal', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') })));
+      fields.push(field('Metros', tag(stepper({ value: set.distanceM, step: 5, decimals: 1, inputmode: 'decimal', suffix: 'm', min: 0, max: 100000, showStep: true, ariaLabel: 'Metros', onChange: bind('distanceM') }), 'distanceM')));
+      fields.push(field('Tiempo', tag(stepper({ value: set.timeSec, step: 0.1, decimals: 2, inputmode: 'decimal', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') }), 'timeSec')));
       break;
     case 'jumps':
       fields.push(field('Reps', repsStep('reps', 'Repeticiones')));
@@ -189,10 +224,13 @@ function renderEditor(ctx, se, set, ex, logType, num) {
   }
 
   // RIR (solo tipos con carga y repeticiones)
+  // (no en calentamientos: no cuentan para nada y así «Registrar calentamiento» queda más a mano)
   let rirChips = null;
+  let rirBlock = null;
   if (LOAD_REP_TYPES.includes(logType)) {
     rirChips = chips({ options: RIR_OPTS, value: set.rir ?? null, allowNone: true, className: 'ses-rir', onChange: (v) => { set.rir = v; changed(); } });
-    fields.push(h('div.ses-sub', h('span.ses-sub-label', 'RIR · repeticiones en reserva'), rirChips));
+    rirBlock = h('div.ses-sub', { hidden: set.type === 'warmup' }, h('span.ses-sub-label', 'RIR · repeticiones en reserva'), rirChips);
+    fields.push(rirBlock);
   }
 
   const submit = h('button.btn.btn-primary.btn-lg.btn-block.ses-register', { type: 'button' });
@@ -212,15 +250,19 @@ function renderEditor(ctx, se, set, ex, logType, num) {
       if (v === 'failure') { set.rir = 'F'; rirChips?.setValue('F'); }
       if (v === 'warmup') { set.rir = null; rirChips?.setValue(null); }
       num = v === 'warmup' ? 'C' : String(se.sets.filter((s) => s.type !== 'warmup').indexOf(set) + 1);
+      typeSeg.dataset.type = v;
+      if (rirBlock) rirBlock.hidden = v === 'warmup';
+      editorEl.classList.toggle('ses-editor-warm', v === 'warmup');
       paintSubmit();
       changed();
     },
   });
   typeSeg.classList.add('ses-type');
+  typeSeg.dataset.type = set.type;
 
   // Nota opcional de la serie
   const noteInp = h('input.input.ses-note-input', { type: 'text', value: set.note || '', placeholder: 'Nota de la serie', maxlength: 200, 'aria-label': 'Nota de la serie', hidden: !set.note });
-  noteInp.addEventListener('input', () => { set.note = noteInp.value; changed(); });
+  noteInp.addEventListener('input', () => { set.note = noteInp.value; changed(false); });
   const noteBtn = h('button.btn.btn-ghost.btn-sm.ses-note-btn', {
     type: 'button',
     onClick: () => { noteInp.hidden = false; noteInp.focus(); noteBtn.hidden = true; },
@@ -238,28 +280,40 @@ function renderEditor(ctx, se, set, ex, logType, num) {
     else closeEditor(ctx, se);
   });
 
-  return h(`div.ses-editor${pending ? '' : '.ses-editor-edit'}`, { dataset: { set: set.id, state: pending ? 'editing' : 'editing-done' } },
+  // «Registrar» justo debajo de los datos (a mano del pulgar); el tipo de serie y los enlaces, debajo.
+  const editorEl = h(`div.ses-editor${pending ? '' : '.ses-editor-edit'}${set.type === 'warmup' ? '.ses-editor-warm' : ''}`, { dataset: { set: set.id, state: pending ? 'editing' : 'editing-done' } },
     h('div.ses-editor-head',
       headNum,
-      pending ? null : h('span.badge.badge-ok', 'Hecha · editando')),
+      pending ? null : h('span.badge.badge-ok', 'Hecha · editando'),
+      warmInHead ? h('button.btn.btn-ghost.btn-sm.ses-add-warm', {
+        type: 'button', 'aria-label': 'Añadir calentamiento antes de esta serie', onClick: () => addWarmup(ctx, se, logType),
+      }, icon('plus', 18), 'Calent.') : null),
     fields,
-    typeSeg,
     noteInp,
     submit,
+    typeSeg,
     h('div.ses-editor-links', noteBtn, h('span.grow'), delBtn));
+  return editorEl;
 }
 
 /** Confirma una serie pendiente (1 toque con los valores prellenados). */
 function registerSet(ctx, se, set, ex, logType) {
   const err = validateSet(set, logType);
-  if (err) { toast(err, { kind: 'error' }); return; }
+  if (err) {
+    toast(err, { kind: 'error' });
+    // Lleva al campo que falta (abre el teclado: estamos dentro del toque).
+    const key = missingField(set, logType);
+    const inp = key && ctx.cardEl?.(se)?.querySelector(`.ses-editor [data-field="${key}"]`);
+    if (inp) inp.focus();
+    return;
+  }
   const i = se.sets.indexOf(set);
   set.done = true;
   set.doneAt = Date.now();
   if (set.type === 'failure' && set.rir == null) set.rir = 'F';
-  if (ctx.origWeights.has(set.id)) {
-    inheritWeight(se.sets, i, ctx.origWeights.get(set.id), set.weight ?? null);
-    ctx.origWeights.delete(set.id);
+  if ('origWeight' in set) {
+    inheritWeight(se.sets, i, set.origWeight, set.weight ?? null);
+    delete set.origWeight;
   }
   ctx.editing.delete(se.id);
   ctx.guardUntil.set(se.id, performance.now() + 300);
@@ -269,7 +323,9 @@ function registerSet(ctx, se, set, ex, logType) {
   const prs = set.type !== 'warmup' ? ctx.prsFor(se.exerciseId).get(set.id) : null;
   if (prs) toast(prMessage(prs, ex), { kind: 'pr', duration: 5000 });
   ctx.rerenderCard(se);
+  // La fila hecha empuja el editor hacia abajo: que «Registrar» siga a la vista (no bajo las pestañas).
   if (!se.sets.some((s) => !s.done)) ctx.scrollToNext(se);
+  else ctx.revealEditor?.(se);
 }
 
 function closeEditor(ctx, se) {
@@ -283,7 +339,6 @@ function deleteSet(ctx, se, set, msg) {
   if (i < 0) return;
   se.sets.splice(i, 1);
   ctx.editing.delete(se.id);
-  ctx.origWeights.delete(set.id);
   ctx.touch(se);
   ctx.save();
   ctx.rerenderCard(se);
@@ -295,21 +350,23 @@ function deleteSet(ctx, se, set, msg) {
 }
 
 function addSet(ctx, se, logType) {
-  const set = extraSet(se, ctx.lastFor(se.exerciseId), logType);
+  const set = extraSet(se, ctx.lastFor(se), logType);
   se.sets.push(set);
   if (!se.sets.some((s) => !s.done && s !== set)) ctx.editing.set(se.id, set.id);
   ctx.touch(se);
   ctx.save();
   ctx.rerenderCard(se);
+  ctx.revealEditor?.(se);
 }
 
 function addWarmup(ctx, se, logType) {
-  const { set, index } = warmupSet(se, ctx.lastFor(se.exerciseId), logType);
+  const { set, index } = warmupSet(se, ctx.lastFor(se), logType);
   se.sets.splice(index, 0, set);
   ctx.editing.set(se.id, set.id);
   ctx.touch(se);
   ctx.save();
   ctx.rerenderCard(se);
+  ctx.revealEditor?.(se);
 }
 
 /** Elegir otra alternativa del ítem (si ya hay series hechas, se pide confirmación). */
@@ -326,34 +383,44 @@ async function chooseAlternative(ctx, se, id, altChips) {
     });
     if (!ok) { altChips.setValue(se.exerciseId); return; }
   }
+  // Un ítem de cardio con carrera/bici ya registrada: no dejarla huérfana.
+  const dropped = ctx.confirmLinked ? await ctx.confirmLinked(se, id) : [];
+  if (dropped == null) { altChips.setValue(se.exerciseId); return; }
+  const before = dropped.length ? JSON.parse(JSON.stringify(se)) : null;
   switchExercise(se, id, ctx.session);
   ctx.editing.delete(se.id);
   ctx.touch(se);
   ctx.save();
   ctx.rerenderCard(se);
+  if (dropped.length) ctx.afterDropLinked(se, before, dropped, `Cambiado a «${to}»`);
 }
 
 // ---------------------------------------------------------------------------
 // Ítems de cardio: se registran como actividad enlazada
 // ---------------------------------------------------------------------------
+
+/** «6,2 km · 35:00 · 5:39 /km» de una actividad. */
+export function activitySummaryText(a) {
+  const km = a.distanceKm;
+  const sec = a.movingSec ?? (sessionDurationMin(a) != null ? sessionDurationMin(a) * 60 : null);
+  let rate = '';
+  if (a.kind === 'run') rate = fmtPace(pace(sec, km));
+  else if (a.kind === 'bike') rate = fmtSpeed(speed(sec, km));
+  else if (a.kind === 'swim') rate = fmtPace(pace100(sec, km), '/100 m');
+  return [km ? fmtKm(km) : null, sec ? fmtDuration(sec) : null, rate && rate !== '—' ? rate : null].filter(Boolean).join(' · ');
+}
+
+/** Fila de una actividad enlazada (abre su edición). */
+export function activityRow(a) {
+  return h('button.ses-act', { type: 'button', dataset: { activity: a.id }, onClick: () => navigate(`#/activity/${a.id}`) },
+    h('span.ses-act-emoji', { 'aria-hidden': 'true' }, ACTIVITY_EMOJI[a.kind] || '⚡'),
+    h('span.ses-act-main.tnum', activitySummaryText(a) || 'Actividad registrada'),
+    h('span.ses-act-edit', 'Editar', icon('chevron-right', 18)));
+}
 function renderCardio(ctx, se, ex, card) {
   const sport = ex?.sport || 'run';
   const acts = ctx.linked(se.id);
-  if (acts.length) {
-    card.appendChild(h('div.ses-acts', acts.map((a) => {
-      const km = a.distanceKm;
-      const sec = a.movingSec ?? (sessionDurationMin(a) != null ? sessionDurationMin(a) * 60 : null);
-      let rate = '';
-      if (a.kind === 'run') rate = fmtPace(pace(sec, km));
-      else if (a.kind === 'bike') rate = fmtSpeed(speed(sec, km));
-      else if (a.kind === 'swim') rate = fmtPace(pace100(sec, km), '/100 m');
-      const parts = [km ? fmtKm(km) : null, sec ? fmtDuration(sec) : null, rate && rate !== '—' ? rate : null].filter(Boolean);
-      return h('button.ses-act', { type: 'button', dataset: { activity: a.id }, onClick: () => navigate(`#/activity/${a.id}`) },
-        h('span.ses-act-emoji', { 'aria-hidden': 'true' }, ACTIVITY_EMOJI[a.kind] || '⚡'),
-        h('span.ses-act-main.tnum', parts.join(' · ') || 'Actividad registrada'),
-        h('span.ses-act-edit', 'Editar', icon('chevron-right', 18)));
-    })));
-  }
+  if (acts.length) card.appendChild(h('div.ses-acts', acts.map(activityRow)));
   const [firstTxt, againTxt] = SPORT_BTN[sport] || ['Registrar actividad', 'Añadir otra actividad'];
   card.appendChild(h(`button.btn.btn-lg.btn-block.ses-cardio-btn${acts.length ? '.btn-secondary' : '.btn-primary'}`, {
     type: 'button',

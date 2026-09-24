@@ -36,10 +36,16 @@ Si el trabajo sigue en la rama `claude/personal-training-mobile-app-e82j38`, pue
 2. Espera a que cargue del todo (la primera vez necesita internet).
 3. Pulsa el botón **Compartir** (el cuadrado con la flecha hacia arriba, abajo en el centro).
 4. Desliza y pulsa **«Añadir a pantalla de inicio»**. Deja el nombre **Entreno** y pulsa **Añadir**.
-5. **A partir de ahora abre siempre la app desde el icono** de la pantalla de inicio (no desde Safari): se abre a
+5. **Abre ya el icono una vez con internet** (wifi o datos, en casa, no en el gimnasio) y espera unos segundos con la
+   app abierta. La app instalada no aprovecha lo que Safari descargó en el paso 2: es en esta primera apertura
+   cuando se guarda en el iPhone para funcionar sin conexión.
+   *Para comprobarlo:* activa el modo avión, cierra la app desde el selector de apps y vuelve a abrirla desde el
+   icono. Si abre normal, ya está lista. Si no abre, quita el modo avión, ábrela de nuevo, espera un poco y repite.
+6. **A partir de ahora abre siempre la app desde el icono** de la pantalla de inicio (no desde Safari): se abre a
    pantalla completa, sin barra de Safari, y funciona **sin conexión** (en el gimnasio sin cobertura).
 
-> ⚠️ **Importante:** los datos de la app instalada en la pantalla de inicio son independientes de los de Safari.
+> ⚠️ **Importante:** los datos de la app instalada en la pantalla de inicio son independientes de los de Safari
+> (también lo que descarga para funcionar sin conexión, por eso hace falta el paso 5).
 > Usa siempre el icono. Si borras el icono de la pantalla de inicio, **se borran sus datos**: haz antes una copia.
 
 ---
@@ -76,6 +82,7 @@ Si no aparece, cierra la app desde el selector de apps y vuelve a abrirla.
 |---|---|
 | No aparece «Añadir a pantalla de inicio» | Asegúrate de estar en **Safari** (no en otra app ni en el navegador de Instagram/WhatsApp). |
 | La app sale con la barra de Safari | La has abierto desde Safari: ábrela desde el **icono**. |
+| Sin cobertura, el icono no abre la app | Aún no se había abierto nunca con internet. Ábrela una vez desde el icono con conexión y espera unos segundos (paso 2.5). |
 | «No se pudo abrir el almacenamiento» | No uses el modo de navegación privada. Abre la app desde el icono. |
 | Quiero pasar mis datos a otro móvil | Exporta la copia en el viejo, instala en el nuevo e **Importa copia**. |
 | Borré el icono sin copia | Los datos de ese icono se pierden. Por eso la app te recuerda hacer copias. |

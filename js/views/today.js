@@ -10,7 +10,7 @@ import {
 } from '../plan.js';
 import {
   cap, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart, otherSessionMenu,
-  activityMenu, activityHref, freeActionLabel,
+  activityMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 import { bodyweightQuickEntry } from './bodyweight.js';
 
@@ -50,19 +50,23 @@ export function mountToday(root) {
   };
 }
 
-/** Aviso de copia de seguridad pendiente → Ajustes › Datos. */
+/** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */
 function backupBanner() {
   const last = store.settings()?.lastBackupAt;
   const days = last ? Math.max(0, Math.floor((Date.now() - last) / 86400000)) : null;
   const title = days == null
-    ? 'Aún no has hecho ninguna copia'
-    : `Tu última copia es de hace ${days} ${days === 1 ? 'día' : 'días'}`;
-  return h('button.banner.banner-warn.today-backup', { type: 'button', onClick: () => navigate('#/settings/data') },
-    icon('alert', 22, 'warn'),
-    h('span.banner-main',
-      h('span.banner-title', title),
-      h('span.banner-text', 'Tus datos solo están en este iPhone. Toca para exportar una copia.')),
-    icon('chevron-right', 20, 'chev'));
+    ? 'Sin copia de seguridad'
+    : `Última copia: hace ${days} ${days === 1 ? 'día' : 'días'}`;
+  return h('button.banner.banner-warn.today-backup', {
+    type: 'button',
+    'aria-label': `${title}. Tus datos solo están en este iPhone. Toca para exportar una copia.`,
+    onClick: () => navigate('#/settings/data'),
+  },
+  icon('alert', 20, 'warn'),
+  h('span.banner-main',
+    h('span.banner-title', title),
+    h('span.banner-text', 'Toca para exportar una copia')),
+  icon('chevron-right', 20, 'chev'));
 }
 
 /** Tarjeta destacada de la sesión en curso con su cronómetro. */
@@ -80,11 +84,15 @@ function activeCard(s, timers) {
 function planCard(today, ctx, active) {
   const st = dayStatus(today, ctx);
   const eff = st.plan;
-  const card = h('section.card.today-plan', { dataset: { kind: eff.kind, status: st.status } },
-    h('div.today-plan-top',
-      h('span.today-kicker', 'Te toca hoy'),
-      // En un descanso normal la píldora «Descanso» repetiría el título.
-      eff.kind === 'rest' && st.status === 'rest' && !st.manual ? null : statusPill(st.status, { manual: st.manual })),
+  // Sesión en curso que cuenta para hoy: la tarjeta de arriba ya lleva «Continuar»; aquí solo «En curso».
+  const liveToday = !!active && (active.planDate ?? active.date) === today;
+  const live = liveToday && !st.sessions.length && !st.manual;
+  let pill = statusPill(st.status, { manual: st.manual });
+  if (live) pill = h('span.badge.badge-accent.today-live', 'En curso');
+  // En un descanso normal la píldora «Descanso» repetiría el título.
+  else if (eff.kind === 'rest' && st.status === 'rest' && !st.manual) pill = null;
+  const card = h('section.card.today-plan', { dataset: live ? { kind: eff.kind, status: st.status, live: '1' } : { kind: eff.kind, status: st.status } },
+    h('div.today-plan-top', h('span.today-kicker', 'Te toca hoy'), pill),
     h('div.today-plan-title',
       h('span.today-plan-emoji', { 'aria-hidden': 'true' }, planEmoji(eff)),
       h('h2.today-plan-name', eff.label)),
@@ -92,49 +100,56 @@ function planCard(today, ctx, active) {
       ? h('div.cal-changed', h('span.badge.badge-info', 'Cambiado'), ` Semana tipo: ${planLabel(eff.patternDay, ctx.templates)}`)
       : null);
 
+  const startBtn = (label, onClick, withIcon = true) => h('button.btn.btn-primary.btn-lg.btn-block.today-start', { type: 'button', onClick },
+    withIcon ? icon('play', 20) : null, label);
+  // Con una sesión en curso de otro día no se puede empezar otra: se dice, sin repetir «Continuar».
+  const busy = () => h('p.small.text-2.today-busy', 'Termina la sesión en curso (arriba) para empezar otra.');
+  const canStartPlan = eff.kind === 'template' && !eff.missing;
+  const startPlan = () => startStrength({ templateId: eff.templateId, date: today, planDate: today });
+
+  if (live) {
+    card.append(dayLink(today));
+    return card;
+  }
+
   // Ya hay sesiones que cuentan para hoy: estado + resumen + «Otra sesión».
   if (st.sessions.length) {
     const opts = summaryOpts();
+    // Parcial solo con actividades sueltas (la carrera del Día 3): la rutina aún se puede empezar.
+    const ownDone = st.sessions.some((s) => s.kind === 'strength' && s.templateId === eff.templateId);
+    const offerStart = canStartPlan && st.status === 'partial' && !st.manual && !ownDone && !liveToday;
     card.append(
       st.status === 'done' && !st.extra ? null : h('p.small.text-2', st.reason),
       h('div.list.today-sessions', st.sessions.map((s) => sessionRow(s, opts))),
+      offerStart ? (active ? busy() : startBtn('Empezar la rutina', startPlan)) : null,
       h('button.btn.btn-secondary.btn-lg.btn-block', { type: 'button', onClick: () => otherSessionMenu({ date: today }) }, icon('plus', 20), 'Otra sesión'));
     card.append(dayLink(today));
     return card;
   }
 
-  const continueBtn = () => h('button.btn.btn-primary.btn-lg.btn-block.today-start', {
-    type: 'button', onClick: () => navigate(`#/session/${active.id}`),
-  }, icon('play', 20), 'Continuar sesión en curso');
-
-  if (eff.kind === 'template' && !eff.missing) {
-    card.append(templatePreview(eff.template, { max: 6 }));
-    card.append(active ? continueBtn() : h('button.btn.btn-primary.btn-lg.btn-block.today-start', {
-      type: 'button',
-      onClick: () => startStrength({ templateId: eff.templateId, date: today, planDate: today }),
-    }, icon('play', 20), 'Empezar'));
+  if (canStartPlan) {
+    // «Empezar» justo debajo del título (a la vista aunque haya aviso de copia); después, la vista previa.
+    // En pantallas bajas (iPhone SE) la vista previa es más corta.
+    const short = typeof matchMedia === 'function' && matchMedia('(max-height: 700px)').matches;
+    card.append(
+      active ? busy() : startBtn('Empezar', startPlan),
+      templatePreview(eff.template, { max: short ? 3 : 6 }));
   } else if (eff.kind === 'template') {
     card.append(
       h('p.text-2', 'La rutina de este día ya no existe. Elige otra para hoy o cambia tu semana tipo.'),
-      active ? continueBtn() : h('button.btn.btn-primary.btn-lg.btn-block.today-start', {
-        type: 'button', onClick: () => pickAndStart({ date: today }),
-      }, 'Elegir rutina'),
+      active ? busy() : startBtn('Elegir rutina', () => pickAndStart({ date: today }), false),
       h('button.btn.btn-ghost.btn-block', { type: 'button', onClick: () => navigate('#/settings/week') }, 'Editar semana tipo'));
   } else if (eff.kind === 'free') {
     if (eff.activityKind === 'strength') {
-      card.append(active ? continueBtn() : h('button.btn.btn-primary.btn-lg.btn-block.today-start', {
-        type: 'button', onClick: () => startStrength({ templateId: null, date: today, planDate: today }),
-      }, icon('play', 20), 'Empezar fuerza libre'));
+      card.append(active ? busy() : startBtn('Empezar fuerza libre', () => startStrength({ templateId: null, date: today, planDate: today })));
     } else {
-      card.append(h('button.btn.btn-primary.btn-lg.btn-block.today-start', {
-        type: 'button', onClick: () => navigate(activityHref(eff.activityKind, today, today)),
-      }, freeActionLabel(eff.label)));
+      card.append(startBtn(freeActionLabel(eff.label), () => navigate(activityHref(eff.activityKind, today, today, freeSubtype(eff))), false));
     }
   } else {
     card.append(
       h('p.text-2', 'Hoy toca descansar. Si entrenas, contará como entreno extra.'),
       h('div.stack-sm.today-rest-actions',
-        active ? continueBtn() : h('button.btn.btn-secondary.btn-block', { type: 'button', onClick: () => pickAndStart({ date: today, title: '¿Qué vas a entrenar?' }) }, icon('dumbbell', 20), 'Entrenar igualmente'),
+        active ? busy() : h('button.btn.btn-secondary.btn-block', { type: 'button', onClick: () => pickAndStart({ date: today, title: '¿Qué vas a entrenar?' }) }, icon('dumbbell', 20), 'Entrenar igualmente'),
         h('button.btn.btn-secondary.btn-block', { type: 'button', onClick: () => activityMenu({ date: today }) }, icon('plus', 20), 'Registrar actividad')));
   }
   card.append(dayLink(today));

@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
 import {
   patternFor, patternDay, effectiveDay, daySessions, completeness, dayStatus, weekPlan, adherence, adherenceText,
   STATUS_LABEL, planLabel, planEmoji, makeCtx, samePlan, normalizePlan, monthWeeks, trackingSince,
-  recordWithPlan, recordWithStatus, recordWithoutPlan, swapRecords, MISSING_TEMPLATE_LABEL,
+  recordWithPlan, recordWithStatus, recordWithoutPlan, swapRecords, MISSING_TEMPLATE_LABEL, idTime,
 } from '../../js/plan.js';
 import {
   filterSessions, groupByMonth, keyStat, sessionTitle, sessionSummary, workSets, monthLabel,
 } from '../../js/history-logic.js';
-import { defaultSettings, SEED_TEMPLATES, TEMPLATE_IDS } from '../../js/seed.js';
+import { defaultSettings, SEED_TEMPLATES, SEED_EXERCISES, TEMPLATE_IDS } from '../../js/seed.js';
 import { deepClone } from '../../js/util.js';
 
 // Semana del lunes 21 al domingo 27 de septiembre de 2026; «hoy» = miércoles 23.
@@ -27,7 +27,12 @@ const TODAY = WED;
 const T0 = 1_000; // las plantillas se crearon en T0; las sesiones, después
 const templates = () => SEED_TEMPLATES.map((t) => ({ ...deepClone(t), archived: false, createdAt: T0, updatedAt: T0 }));
 const tplMap = () => new Map(templates().map((t) => [t.id, t]));
+const exMap = () => new Map(SEED_EXERCISES.map((e) => [e.id, e]));
 const WORK = { type: 'effective', done: true, weight: 50, reps: 5 };
+// Ids como los de util.uid(): prefijo + instante en base 36 + aleatorio.
+const idAt = (prefix, t) => `${prefix}${t.toString(36)}k3j9x2`;
+const T_SES = new Date(2026, 8, 21, 18).getTime(); // instante real de creación de una sesión
+const T_LATER = new Date(2026, 8, 23, 9).getTime(); // edición posterior de la plantilla
 
 /** Sesión de fuerza de una plantilla; `skip` = índices de ítems sin series de trabajo. */
 function strength(id, templateId, date, { planDate = date, skip = [], status = 'done', createdAt = 5_000, drop = [] } = {}) {
@@ -45,8 +50,8 @@ const activity = (id, kind, date, extra = {}) => ({
   id, kind, date, planDate: date, status: 'done', parentId: null, createdAt: 6_000, movingSec: 3600, durationMin: 60, rpe: 5, ...extra,
 });
 
-function ctx({ sessions = [], plan = [], settings = defaultSettings(), tpls = tplMap(), today = TODAY, since = null } = {}) {
-  return makeCtx({ settings, plan, sessions, templates: tpls, today, since });
+function ctx({ sessions = [], plan = [], settings = defaultSettings(), tpls = tplMap(), today = TODAY, since = null, exercises = undefined } = {}) {
+  return makeCtx({ settings, plan, sessions, templates: tpls, today, since, exercises });
 }
 
 // ---------------------------------------------------------------------------
@@ -153,11 +158,14 @@ test('completeness: ítems con ≥1 serie de trabajo o actividad enlazada', () =
   const removed = completeness(strength('s', 'tpl_d1', MON, { drop: [6] }), tpl, { exercises: new Map([['crunch_polea', { name: 'Crunch en polea' }]]) });
   assert.equal(removed.complete, false);
   assert.deepEqual(removed.missing, ['Crunch en polea']);
-  // Plantilla editada DESPUÉS de la sesión (ítem nuevo): no convierte la sesión en parcial.
+  // Plantilla editada DESPUÉS de la sesión (ítem nuevo, id de uid() posterior): no la convierte en parcial.
   const edited = deepClone(tpl);
-  edited.items.push({ id: 'ti_new', exerciseId: 'curl_martillo', sets: 3 });
-  edited.updatedAt = 9_000;
-  assert.equal(completeness(strength('s', 'tpl_d1', MON), edited).complete, true);
+  edited.items.push({ id: idAt('ti_', T_LATER), exerciseId: 'curl_martillo', sets: 3 });
+  edited.updatedAt = T_LATER;
+  assert.equal(completeness(strength(idAt('s_', T_SES), 'tpl_d1', MON), edited).complete, true);
+  // …pero un ítem que ya existía al crear la sesión sí cuenta (ids sin instante = previos).
+  edited.items.push({ id: idAt('ti_', T_SES - 60_000), exerciseId: 'curl_martillo', sets: 3 });
+  assert.equal(completeness(strength(idAt('s_', T_SES), 'tpl_d1', MON), edited).complete, false);
   // Cardio: cubierto por la actividad enlazada a ese ejercicio de sesión.
   const d3 = tplMap().get('tpl_d3');
   const s = strength('s3', 'tpl_d3', WED, { skip: [0, 1] }); // correr y bici sin series (son actividades)
@@ -167,6 +175,113 @@ test('completeness: ítems con ≥1 serie de trabajo o actividad enlazada', () =
   assert.equal(completeness(s, d3, { sessions: [run, bike] }).complete, true);
   assert.equal(dayStatus(WED, ctx({ sessions: [s, run, bike] })).status, 'done');
   assert.equal(dayStatus(WED, ctx({ sessions: [s, run] })).status, 'partial');
+});
+
+test('idTime: instante de un id de uid(); null si el id no lo lleva', () => {
+  assert.equal(idTime(idAt('s_', T_SES)), T_SES);
+  assert.equal(idTime('ti_d1_1'), null);
+  assert.equal(idTime('s1'), null);
+  assert.equal(idTime('ti_new'), null);
+  assert.equal(idTime(null), null);
+});
+
+test('completeness: quitar un ejercicio de la sesión lo deja pendiente aunque después se edite la plantilla', () => {
+  // Plantilla con i1..i3 (ids de la carga inicial); sesión con i1 e i2 (i3 quitado), ambos con series.
+  const tpl = { id: 't', updatedAt: 1000, items: [{ id: 'i1', exerciseId: 'a' }, { id: 'i2', exerciseId: 'b' }, { id: 'i3', exerciseId: 'c' }] };
+  const mk = (id, createdAt) => ({ id, createdAt, exercises: [
+    { id: 'x1', exerciseId: 'a', templateItemId: 'i1', sets: [WORK] },
+    { id: 'x2', exerciseId: 'b', templateItemId: 'i2', sets: [WORK] }] });
+  const live = mk(idAt('s_', T_SES), T_SES);
+  assert.deepEqual(completeness(live, tpl), { total: 3, covered: 2, complete: false, missing: ['c'] });
+  // Renombrar la plantilla, reordenarla o aplicarle los cambios de otra sesión (updatedAt posterior): igual.
+  tpl.updatedAt = T_LATER;
+  assert.deepEqual(completeness(live, tpl), { total: 3, covered: 2, complete: false, missing: ['c'] });
+  // Sesión registrada a posteriori: createdAt = mediodía de la fecha pasada (anterior a todo). Igual.
+  const past = mk(idAt('s_', T_LATER + 1000), new Date(2026, 8, 14, 12).getTime());
+  assert.equal(completeness(past, tpl).complete, false);
+  // Sesión sin id con instante: se usa createdAt; ítem nuevo (posterior) no cuenta, el quitado sí.
+  const tpl2 = deepClone(tpl);
+  tpl2.items.push({ id: idAt('ti_', T_LATER), exerciseId: 'd' });
+  assert.deepEqual(completeness(mk('legacy', T_SES), tpl2).missing, ['c']);
+  // Instantánea explícita al crear la sesión (templateItemIds): manda sobre la deducción.
+  const snap = { ...mk('snap', T_SES), templateItemIds: ['i1', 'i2', 'i3'] };
+  assert.deepEqual(completeness(snap, tpl2).missing, ['c']);
+  // Ítem quitado también de la plantilla («Aplicar a la plantilla»): ya no cuenta.
+  const tpl3 = { ...tpl, items: tpl.items.filter((it) => it.id !== 'i3') };
+  assert.equal(completeness(snap, tpl3).complete, true);
+  assert.equal(completeness(live, tpl3).complete, true);
+  // Día de la semana: el estado no cambia al guardar la plantilla después.
+  const tpls = tplMap();
+  const s = strength(idAt('s_', T_SES), 'tpl_d1', MON, { drop: [6], createdAt: T_SES });
+  assert.equal(dayStatus(MON, ctx({ tpls, sessions: [s] })).status, 'partial');
+  tpls.get('tpl_d1').updatedAt = T_LATER;
+  assert.equal(dayStatus(MON, ctx({ tpls, sessions: [s] })).status, 'partial');
+});
+
+test('Día 3: la carrera o la bici registradas fuera de la sesión cubren sus ítems de cardio', () => {
+  const exercises = exMap();
+  const run = activity('r', 'run', WED);
+  const bike = activity('b', 'bike', WED);
+  // Solo la carrera desde el acceso rápido de Hoy (sin sesión de la rutina): parcial, no sustituido.
+  let st = dayStatus(WED, ctx({ exercises, sessions: [run] }));
+  assert.equal(st.status, 'partial');
+  assert.match(st.reason, /1 de 3 ejercicios registrados\. Sin registrar: Bici, Plancha/);
+  // Sesión D3 con la plancha y la carrera enlazada + bici suelta del mismo día → hecho.
+  const s = strength('s3', 'tpl_d3', WED, { skip: [0, 1] });
+  const linkedRun = activity('lr', 'run', WED, { parentId: 's3', parentItemId: 's3_se0' });
+  assert.equal(dayStatus(WED, ctx({ exercises, sessions: [s, linkedRun, bike] })).status, 'done');
+  assert.equal(dayStatus(WED, ctx({ exercises, sessions: [s, linkedRun] })).status, 'partial');
+  // Sesión D3 solo con la plancha + carrera y bici sueltas → hecho.
+  assert.equal(dayStatus(WED, ctx({ exercises, sessions: [s, run, bike] })).status, 'done');
+  // Cada actividad cubre un solo ítem: dos ítems de carrera necesitan dos carreras.
+  const tpls = tplMap();
+  const t = tpls.get('tpl_d3');
+  t.items = [{ id: 'ra', exerciseId: 'correr' }, { id: 'rb', exerciseId: 'correr' }];
+  assert.equal(completeness({ exercises: [] }, t, { exercises }, { loose: [run] }).covered, 1);
+  assert.equal(completeness({ exercises: [] }, t, { exercises }, { loose: [run, { ...run, id: 'r2' }] }).complete, true);
+  // Una actividad de otro deporte no cubre nada; en un día de fuerza, una carrera sigue siendo «sustituido».
+  assert.equal(dayStatus(WED, ctx({ exercises, sessions: [activity('w', 'swim', WED)] })).status, 'substituted');
+  assert.equal(dayStatus(MON, ctx({ exercises, sessions: [activity('r1', 'run', MON)] })).status, 'substituted');
+  // La actividad enlazada a OTRA sesión no es suelta.
+  const other = activity('o', 'run', WED, { parentId: 'zzz', parentItemId: 'q' });
+  assert.equal(completeness({ exercises: [] }, tplMap().get('tpl_d3'), { exercises }, { loose: [other] }).covered, 0);
+});
+
+test('día movido o cambiado a otra rutina: hecho / parcial según esa rutina; «sustituido» si se hace otra cosa', () => {
+  // Jueves D4 ↔ viernes descanso: el D4 se hace el viernes.
+  const plan = [{ id: THU, kind: 'rest' }, { id: FRI, kind: 'template', templateId: 'tpl_d4' }];
+  const full = dayStatus(FRI, ctx({ plan, sessions: [strength('s', 'tpl_d4', FRI)], today: SUN }));
+  assert.equal(full.status, 'done');
+  assert.equal(full.plan.substituted, true, 'sigue marcado como cambiado');
+  const half = dayStatus(FRI, ctx({ plan, sessions: [strength('s', 'tpl_d4', FRI, { skip: [2, 3, 4, 5, 6, 7, 8] })], today: SUN }));
+  assert.equal(half.status, 'partial');
+  assert.match(half.reason, /2 de 9/);
+  // Otra rutina en el día movido → sustituido (con la semana tipo en el motivo).
+  const other = dayStatus(FRI, ctx({ plan, sessions: [strength('s', 'tpl_d1', FRI)], today: SUN }));
+  assert.equal(other.status, 'substituted');
+  assert.match(other.reason, /Descanso/);
+  // Lunes cambiado a D4 y hecho el D4 → hecho.
+  const ch = [{ id: MON, kind: 'template', templateId: 'tpl_d4' }];
+  assert.equal(dayStatus(MON, ctx({ plan: ch, sessions: [strength('s', 'tpl_d4', MON)] })).status, 'done');
+  assert.equal(dayStatus(MON, ctx({ plan: ch, sessions: [strength('s', 'tpl_d1', MON)] })).status, 'substituted');
+  // Sesión libre planificada en un descanso (viernes → carrera) y hecha → hecho, no sustituido.
+  const runFri = [{ id: FRI, kind: 'free', label: 'Carrera', activityKind: 'run' }];
+  assert.equal(dayStatus(FRI, ctx({ plan: runFri, sessions: [activity('r', 'run', FRI)], today: SUN })).status, 'done');
+  // Adherencia: el día movido y hecho cuenta como hecho.
+  const a = adherence(WS, ctx({ plan, sessions: [strength('s', 'tpl_d4', FRI)], today: SUN }));
+  assert.equal(a.done, 1);
+  assert.equal(a.substituted, 0);
+});
+
+test('planEmoji: rutina mayoritariamente de cardio → emoji del deporte; si no, 🏋️', () => {
+  const c = ctx({ exercises: exMap() });
+  assert.equal(planEmoji(effectiveDay(WED, c)), '🏃');
+  assert.equal(effectiveDay(WED, c).emoji, '🏃');
+  assert.equal(planEmoji(effectiveDay(MON, c)), '🏋️');
+  assert.equal(planEmoji(effectiveDay(FRI, c)), '😴');
+  // Sin mapa de ejercicios (o plan sin plantilla), plantilla → 🏋️.
+  assert.equal(planEmoji({ kind: 'template', templateId: 'tpl_d3' }), '🏋️');
+  assert.equal(planEmoji({ kind: 'template', template: tplMap().get('tpl_d3') }, exMap()), '🏃');
 });
 
 // ---------------------------------------------------------------------------

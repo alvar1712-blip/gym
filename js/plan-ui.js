@@ -9,6 +9,7 @@ import * as sessionLogic from './session-logic.js';
 import { pickTemplate } from './pickers.js';
 import { STATUS_LABEL } from './plan.js';
 import { sessionSummary } from './history-logic.js';
+import { subtypeFromNotes } from './activity-logic.js';
 
 export const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
@@ -77,11 +78,17 @@ export function templatePreview(tpl, { max = 6 } = {}) {
   return h('div.cal-tpl', list, more);
 }
 
-/** Enlace al formulario de actividad nueva con fecha y fecha de plan. */
-export function activityHref(kind, date, planDate = date) {
+/** Enlace al formulario de actividad nueva con fecha, fecha de plan y, si se conoce, tipo de sesión. */
+export function activityHref(kind, date, planDate = date, subtype = null) {
   const q = new URLSearchParams({ kind, date });
   if (planDate) q.set('planDate', planDate);
+  if (subtype) q.set('subtype', subtype);
   return `#/activity/new?${q.toString()}`;
+}
+
+/** Tipo de sesión que sugiere el nombre de una sesión libre («Ruta en bici» → route), o null. */
+export function freeSubtype(plan) {
+  return plan && plan.kind === 'free' ? subtypeFromNotes(plan.activityKind, plan.label) : null;
 }
 
 /** «Registrar ruta en bici», «Registrar carrera»… */

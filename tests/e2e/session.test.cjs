@@ -92,20 +92,31 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     const prToast = page.locator('.toast.toast-pr');
     await prToast.waitFor();
     assert.match(await prToast.innerText(), /Récord: 82,5 kg en Press banca/);
+    // durante la sesión el aviso va arriba (abajo taparía «Registrar serie»)
+    const toastBox = await prToast.boundingBox();
+    assert.ok(toastBox.y < 150, `aviso arriba (${toastBox.y})`);
     assert.strictEqual(await bc.locator('.ses-row-pr').count(), 1, 'badge 🏆 en la fila');
     await shot(page, 'session-pr');
     // la tercera pendiente tenía otro peso (77,5): no hereda
     s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets[2].weight, 77.5);
 
-    // Herencia de peso en dominadas (lastre +10 → +12,5 en todas las pendientes con +10)
-    const pc = card(page, pull.id);
+    // Herencia de peso en dominadas (lastre +10 → +12,5 en todas las pendientes con +10),
+    // también si la app se cierra entre el cambio y la confirmación (el peso prellenado va en la serie).
+    let pc = card(page, pull.id);
     assert.strictEqual(await pc.locator('.ses-editor input[aria-label="Lastre"]').inputValue(), '10');
     await pc.locator('.ses-editor button[aria-label="Sumar 2,5"]').first().click();
+    disk = (await idbAll(page, 'sessions')).find((x) => x.id === id);
+    assert.deepStrictEqual([disk.exercises[1].sets[0].weight, disk.exercises[1].sets[0].origWeight], [12.5, 10], 'un toque se guarda al instante');
+    await reload(page);
+    await page.waitForSelector('.ses-card');
+    pc = card(page, pull.id);
+    assert.strictEqual(await pc.locator('.ses-editor input[aria-label="Lastre"]').inputValue(), '12,5');
     await pc.locator('.ses-register').click();
     s = await getSession(page, id);
     assert.deepStrictEqual(s.exercises[1].sets.map((x) => x.weight), [12.5, 12.5, 12.5]);
     assert.match(await page.locator('.toast.toast-pr').innerText(), /Récord: \+12,5 kg en Dominadas/);
+    assert.strictEqual('origWeight' in s.exercises[1].sets[0], false, 'se limpia al confirmar');
 
     // Calentamiento: se inserta antes de la pendiente y no cuenta para récords
     await bc.locator('.ses-add-warm').click();
@@ -159,10 +170,15 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     await page.waitForFunction((sid) => window.__app.store.get('sessions', sid).exercises.length === 8, id);
     assert.strictEqual(await card(page, added.id).count(), 1);
     // registra una serie del añadido y quita Face pull (sin deshacer)
+    // sin historial: sin peso no se registra (una serie efectiva sin carga no cuenta bien) y lleva al campo
+    await card(page, added.id).locator('.ses-register').click();
+    assert.match(await page.locator('.toast.toast-error').innerText(), /Indica el peso y las repeticiones/);
+    assert.strictEqual(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Peso');
     await card(page, added.id).locator('.ses-editor input[aria-label="Peso"]').fill('14');
     // sin historial ni objetivo de reps: hay que indicarlas
     await card(page, added.id).locator('.ses-register').click();
     assert.match(await page.locator('.toast.toast-error').innerText(), /Indica las repeticiones/);
+    assert.strictEqual(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Repeticiones');
     await card(page, added.id).locator('.ses-editor input[aria-label="Repeticiones"]').fill('12');
     await settle(page);
     await card(page, added.id).locator('.ses-register').click();
@@ -216,6 +232,10 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     assert.match(sum, /Mejor serie por ejercicio/i);
     assert.match(sum, /Series de trabajo\n4\n/, 'series de trabajo sin calentamientos');
     assert.match(sum, /8\/10/);
+    assert.match(sum, /🏆 en esta sesión/);
+    // récord: nombre y serie en líneas separadas (el peso × reps no se corta)
+    assert.deepStrictEqual(await page.locator('.ses-sum-pr .ses-sum-pr-set').allInnerTexts(), ['82,5 kg × 5 @1', '+12,5 kg × 8 @1']);
+    assert.deepStrictEqual(await page.locator('.ses-sum-pr .ses-sum-pr-name').allInnerTexts(), ['Press banca', 'Dominadas']);
     await shot(page, 'session-summary');
     assert.ok(histDate);
     assert.deepStrictEqual(app.errors, []);
@@ -322,11 +342,51 @@ test('alternativas, cardio enlazado y cursor al volver', async () => {
     await page.evaluate((sid) => { const ses = window.__app.store.get('sessions', sid); ses.startedAt = Date.now() - 100 * 60000; }, id3);
     await go(page, `#/session/${id3}`);
     await page.waitForSelector('.ses-card');
+    // la bici enlazada a un ítem que ya no está no queda oculta
+    assert.strictEqual(await page.locator('.ses-orphans .ses-act').count(), 1);
+    assert.match(await page.locator('.ses-orphans').innerText(), /Otras actividades de esta sesión/i);
+    // quitar el ítem de la carrera: avisa y la borra con él (con deshacer), no la deja huérfana
+    await card(page, run.id).locator('.ses-more').click();
+    await page.locator('.action-item', { hasText: 'Quitar de esta sesión' }).click();
+    const confRm = page.locator('.sheet-panel', { hasText: '¿Quitar «Correr' });
+    await confRm.waitFor();
+    assert.match(await confRm.innerText(), /6,2 km · 35:00/);
+    await confRm.locator('button', { hasText: 'Sí, borrar también la actividad' }).click();
+    await page.waitForFunction(() => !window.__app.store.get('sessions', 'act_2'));
+    assert.strictEqual(await card(page, run.id).count(), 0);
+    assert.strictEqual((await idbAll(page, 'sessions')).some((x) => x.id === 'act_2'), false);
+    await page.locator('.toast-undo .toast-action').click();
+    await card(page, run.id).locator('.ses-act').waitFor();
+    assert.strictEqual(await card(page, run.id).locator('.ses-act').count(), 1, 'deshacer restaura el ítem y su carrera');
+    await page.waitForFunction(async () => (await new Promise((res) => {
+      const r = indexedDB.open('entreno');
+      r.onsuccess = () => { const q = r.result.transaction('sessions').objectStore('sessions').get('act_2'); q.onsuccess = () => { res(!!q.result); r.result.close(); }; };
+    })));
     await page.locator('.ses-finish').click();
     const fin = page.locator('.sheet-panel.ses-finish-sheet');
     await fin.waitFor();
     assert.strictEqual(await fin.locator('.ses-dur input').inputValue(), '25');
     assert.match(await fin.innerText(), /100 min desde el inicio − 75 min/);
+    // campo vacío = la propuesta (no el transcurrido entero, que contaría dos veces el cardio)
+    await fin.locator('.ses-dur input').fill('');
+    await fin.locator('.rpe-chips .chip', { hasText: /^5$/ }).click();
+    await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
+    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id3);
+    s = await getSession(page, id3);
+    assert.deepStrictEqual([s.status, s.durationMin, s.durationAuto], ['done', 25, true]);
+    // resumen: duración y carga totales (fuerza + actividades), con la de la fuerza aparte
+    await page.waitForSelector('.ses-kpi-total');
+    const kpis = await page.locator('.ses-sum-hero .kpis').innerText();
+    assert.match(kpis, /Duración total\n1 h 40 min\nfuerza 25 min/);
+    assert.match(kpis, /Carga total\n125\nfuerza 125/);
+    await shot(page, 'session-summary-cardio');
+    // se borra luego la bici enlazada: la duración automática de la fuerza se recalcula (100 − 35)
+    await page.evaluate(async () => { await window.__app.store.remove('sessions', 'act_1'); });
+    await go(page, `#/session/${id3}`);
+    await page.waitForSelector('.ses-card');
+    assert.match(await page.locator('.toast').innerText(), /recalculada: 1 h 05 min/);
+    s = await getSession(page, id3);
+    assert.strictEqual(s.durationMin, 65);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -358,19 +418,34 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     await card(page, first.id).locator('.ses-register').click();
     await shot(page, 'session-past');
 
-    // Terminar: la duración se pide a mano
+    // Terminar: la duración se pide a mano y es obligatoria (sin ella no hay carga)
     await page.locator('.ses-finish').click();
-    const fin = page.locator('.sheet-panel.ses-finish-sheet');
+    let fin = page.locator('.sheet-panel.ses-finish-sheet');
     await fin.waitFor();
     assert.strictEqual(await fin.locator('.ses-dur input').inputValue(), '');
-    assert.match(await fin.innerText(), /indica la duración a mano/i);
+    assert.match(await fin.innerText(), /indica cuánto duró la fuerza/i);
+    await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
+    assert.match(await fin.locator('.ses-dur-error').innerText(), /Indica la duración/);
+    assert.strictEqual((await getSession(page, id)).status, 'active', 'no se termina sin duración');
+    // lo escrito en la hoja se guarda al momento: si la app se cierra antes de confirmar, sigue ahí
     await fin.locator('.ses-dur input').fill('55');
+    await fin.locator('.rpe-chips .chip', { hasText: /^6$/ }).click();
+    await page.waitForTimeout(300);
+    await reload(page);
+    await page.waitForSelector('.ses-card');
+    await page.locator('.ses-finish').click();
+    fin = page.locator('.sheet-panel.ses-finish-sheet');
+    await fin.waitFor();
+    assert.strictEqual(await fin.locator('.ses-dur input').inputValue(), '55');
+    assert.strictEqual(await fin.locator('.rpe-chips .chip.active').innerText(), '6');
     await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
     await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id);
     s = await getSession(page, id);
     assert.strictEqual(s.durationMin, 55);
+    assert.strictEqual(s.rpe, 6);
     assert.strictEqual(s.endedAt, null);
     assert.strictEqual(s.status, 'done');
+    assert.strictEqual(s.durationAuto, false);
 
     // Editar la sesión pasada: sin «Terminar»; editar y borrar una serie con deshacer
     await page.locator('.ses-sum-edit').click();
@@ -394,11 +469,16 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets.length, 1);
 
-    // Cambiar fecha
+    // Cambiar fecha: no se admiten días futuros (como en el calendario y el peso)
     await page.locator('.ses-menu-btn').click();
     await page.locator('.action-item', { hasText: 'Cambiar fecha' }).click();
-    const newDate = await page.evaluate(async () => { const u = await import('./js/util.js'); return u.addDays(u.todayStr(), -4); });
+    const [newDate, future, today] = await page.evaluate(async () => { const u = await import('./js/util.js'); return [u.addDays(u.todayStr(), -4), u.addDays(u.todayStr(), 3), u.todayStr()]; });
     const di = page.locator('.ses-date-input');
+    assert.strictEqual(await di.getAttribute('max'), today);
+    await di.fill(future);
+    await di.dispatchEvent('change');
+    assert.match(await page.locator('.toast.toast-error').innerText(), /no puede ser posterior a hoy/);
+    assert.strictEqual((await getSession(page, id)).date, date);
     await di.fill(newDate);
     await di.dispatchEvent('change');
     s = await getSession(page, id);
@@ -418,6 +498,151 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     await page.locator('.toast-undo .toast-action').click();
     await page.waitForFunction((sid) => !!window.__app.store.get('sessions', sid), id);
     assert.strictEqual((await idbAll(page, 'sessions')).some((x) => x.id === id), true);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('ejercicio repetido (Sprint 20 m y 30 m), asistencia en peso corporal y cambio a un ejercicio de otro tipo', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    // Día 6 de hace una semana: sprints de 20 m (~3,1 s) y de 30 m (~4,4 s); dominadas asistidas (−15 kg).
+    await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      const m = await import('./js/session-logic.js');
+      const { store } = window.__app;
+      const s = await m.createStrengthSession({ templateId: 'tpl_d6', date: u.addDays(u.todayStr(), -7), past: true });
+      const byItem = (ti) => s.exercises.find((x) => x.templateItemId === ti);
+      byItem('ti_d6_3').sets.forEach((x, i) => Object.assign(x, { distanceM: 20, timeSec: 3.1 + i * 0.05, done: true, doneAt: 1 }));
+      const s30 = byItem('ti_d6_4');
+      s30.sets.forEach((x, i) => Object.assign(x, { distanceM: 30, timeSec: 4.4 + i * 0.1, done: true, doneAt: 1 }));
+      byItem('ti_d6_9').sets.forEach((x) => Object.assign(x, { weight: -15, reps: 8, rir: 1, done: true, doneAt: 1 }));
+      m.finishSession(s, { durationMin: 60, rpe: 7 });
+      await store.save('sessions', s);
+    });
+    const id = await createSession(page, { templateId: 'tpl_d6' });
+    await go(page, `#/session/${id}`);
+    await page.waitForSelector('.ses-card');
+    let s = await getSession(page, id);
+    const se20 = s.exercises.find((x) => x.templateItemId === 'ti_d6_3');
+    const se30 = s.exercises.find((x) => x.templateItemId === 'ti_d6_4');
+    // Cada bloque ve SU última vez y se prellena con ella (no el de 30 m con los de 20 m)
+    const c30 = card(page, se30.id);
+    const last30 = await c30.locator('.ses-last').innerText();
+    assert.ok(last30.includes('30 m en 4,4 s · 30 m en 4,5 s'), last30);
+    assert.ok(!last30.includes('20 m'), last30);
+    assert.match(await c30.locator('.ses-target').innerText(), /Objetivo 2–3×30 m/);
+    assert.strictEqual(await c30.locator('.ses-editor input[aria-label="Metros"]').inputValue(), '30');
+    assert.strictEqual(await c30.locator('.ses-editor input[aria-label="Segundos"]').inputValue(), '4,4');
+    assert.match(await card(page, se20.id).locator('.ses-last').innerText(), /20 m en 3,1 s/);
+    assert.strictEqual(await card(page, se20.id).locator('.ses-editor input[aria-label="Metros"]').inputValue(), '20');
+    await c30.locator('.ses-register').click();
+    s = await getSession(page, id);
+    const r30 = s.exercises.find((x) => x.id === se30.id).sets[0];
+    assert.deepStrictEqual([r30.done, r30.distanceM, r30.timeSec], [true, 30, 4.4]);
+
+    // Dominadas asistidas: el signo se elige con «Lastre / Asistencia» (el teclado decimal no tiene «−»)
+    const pull = s.exercises.find((x) => x.templateItemId === 'ti_d6_9');
+    const pc = card(page, pull.id);
+    assert.strictEqual(await pc.locator('.ses-sign .seg-btn.active').innerText(), 'Asistencia');
+    assert.strictEqual(await pc.locator('.ses-editor input[aria-label="Asistencia"]').inputValue(), '15');
+    await pc.locator('.ses-sign .seg-btn', { hasText: 'Lastre' }).click();
+    s = await getSession(page, id);
+    assert.strictEqual(s.exercises.find((x) => x.id === pull.id).sets[0].weight, 15);
+    await pc.locator('.ses-sign .seg-btn', { hasText: 'Asistencia' }).click();
+    const inp = pc.locator('.ses-editor input[aria-label="Asistencia"]');
+    await inp.fill('20');
+    await inp.dispatchEvent('change');
+    s = await getSession(page, id);
+    assert.strictEqual(s.exercises.find((x) => x.id === pull.id).sets[0].weight, -20);
+    await pc.locator('.ses-register').click();
+    s = await getSession(page, id);
+    // la serie hecha es −20 y la pendiente (prellenada con −15) hereda la nueva asistencia
+    assert.deepStrictEqual(s.exercises.find((x) => x.id === pull.id).sets.map((x) => x.weight), [-20, -20]);
+    assert.match(await pc.locator('.ses-row[data-state="done"]').innerText(), /−20 kg asist\./);
+
+    // Cambiar Pogo jumps (saltos) por Plancha (tiempo): el objetivo pasa a ser de tiempo
+    const pogo = s.exercises[0];
+    await card(page, pogo.id).locator('.ses-more').click();
+    await page.locator('.action-item', { hasText: 'Cambiar por otro ejercicio' }).click();
+    await page.locator('.pick-sheet .search-input').fill('plancha');
+    await page.locator('.pick-row', { hasText: 'Plancha' }).first().click();
+    await page.waitForFunction(({ sid, seId }) => window.__app.store.get('sessions', sid).exercises.find((x) => x.id === seId).exerciseId === 'plancha', { sid: id, seId: pogo.id });
+    assert.match(await card(page, pogo.id).locator('.ses-target').innerText(), /Objetivo 2×30–45 s/);
+    s = await getSession(page, id);
+    assert.deepStrictEqual(s.exercises[0].sets.map((x) => [x.reps, x.timeSec]), [[null, 30], [null, 30]]);
+    await shot(page, 'session-repeated');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('una mano en iPhone SE: «Registrar serie» siempre a la vista (sin desplazar) y avisos arriba', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.addStyleTag({ content: ':root{--sat:20px !important}' });
+    // Día 1 anterior con todos los ejercicios hechos (el prellenado trae peso y reps)
+    await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      const m = await import('./js/session-logic.js');
+      const { store } = window.__app;
+      const s = await m.createStrengthSession({ templateId: 'tpl_d1', date: u.addDays(u.todayStr(), -7), past: true });
+      for (const se of s.exercises) {
+        const lt = store.exercise(se.exerciseId).logType;
+        se.sets.forEach((x, i) => Object.assign(x, { weight: lt === 'bodyweight' ? 5 : 40, reps: (se.target.repMax || 8) - i, rir: 1, done: true, doneAt: 1 }));
+      }
+      m.finishSession(s, { durationMin: 60, rpe: 7 });
+      await store.save('sessions', s);
+    });
+    const id = await createSession(page, { templateId: 'tpl_d1' });
+    await go(page, `#/session/${id}`);
+    await page.waitForSelector('.ses-card');
+    const state = () => page.evaluate(() => {
+      const ed = document.querySelector('.ses-editor[data-state="editing"]');
+      if (!ed) return null;
+      const b = ed.querySelector('.ses-register');
+      const r = b.getBoundingClientRect();
+      const hdr = document.querySelector('.topbar').getBoundingClientRect().bottom;
+      const tab = document.getElementById('tabbar').getBoundingClientRect().top;
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { label: b.textContent, top: Math.round(r.top), bottom: Math.round(r.bottom), ok: r.top >= hdr - 1 && r.bottom <= tab + 1 && b.contains(hit) };
+    });
+    // «+ Calent.» a mano junto a «Serie 1» (no al final de la tarjeta, bajo las pestañas)
+    const warmBtn = await page.locator('.ses-card').first().locator('.ses-editor-head .ses-add-warm').boundingBox();
+    assert.ok(warmBtn && warmBtn.y + warmBtn.height < 610, `«+ Calent.» visible (${warmBtn && warmBtn.y})`);
+    const misses = [];
+    let taps = 0;
+    for (let guard = 0; guard < 40; guard++) {
+      const st = await state();
+      if (!st) break;
+      if (!st.ok) misses.push(`${st.label} ${st.top}-${st.bottom}`);
+      if (taps === 1) await page.locator('.ses-editor[data-state="editing"] button[aria-label="Sumar 2,5"]').first().click();
+      await page.locator('.ses-editor[data-state="editing"] .ses-register').first().click();
+      taps++;
+      if (taps === 2) {
+        // récord (+2,5 kg): el aviso va arriba, no sobre «Registrar serie 3»
+        const t = await page.locator('.toast.toast-pr').boundingBox();
+        assert.ok(t && t.y < 120, `aviso de récord arriba (${t && t.y})`);
+      }
+      // espera a que termine el desplazamiento automático (el usuario no desplaza nada)
+      await page.waitForTimeout(400);
+      for (let k = 0, y = -1; k < 20; k++) {
+        const y2 = await page.evaluate(() => window.scrollY);
+        if (y2 === y) break;
+        y = y2;
+        await page.waitForTimeout(120);
+      }
+    }
+    assert.ok(taps >= 18, `series registradas: ${taps}`);
+    assert.deepStrictEqual(misses, [], 'el botón «Registrar» siempre visible y tocable');
+    const s = await getSession(page, id);
+    assert.strictEqual(s.exercises.flatMap((x) => x.sets).filter((x) => !x.done).length, 0);
+    await shot(page, 'session-se-onehand');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

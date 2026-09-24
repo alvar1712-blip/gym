@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   templateDiff, applyTemplateDiff, inheritWeight, formatSet, targetText, prMessage, proposedDuration,
-  finishSession, prefillFromLast, newSet, extraSet, warmupSet, validateSet, pendingCount, linkedActivities,
-  itemFromSessionExercise,
+  finishSession, prefillFromLast, newSet, extraSet, warmupSet, validateSet, missingField, pendingCount, linkedActivities,
+  itemFromSessionExercise, lastPerformanceFor, switchedTarget, autoDuration, syncAutoDuration, orphanActivities,
 } from '../../js/session-logic.js';
 import { SEED_TEMPLATES } from '../../js/seed.js';
 import { detectPRs, bestsForExercise } from '../../js/calc.js';
+import { targetText as libTargetText } from '../../js/library-logic.js';
 
 const D1 = SEED_TEMPLATES.find((t) => t.id === 'tpl_d1');
 const D2 = SEED_TEMPLATES.find((t) => t.id === 'tpl_d2');
@@ -226,11 +227,24 @@ test('extraSet y warmupSet', () => {
 });
 
 test('validateSet', () => {
-  assert.equal(validateSet({ reps: 5 }, 'weight_reps'), null);
-  assert.ok(validateSet({ reps: null }, 'weight_reps'));
+  assert.equal(validateSet({ weight: 60, reps: 5 }, 'weight_reps'), null);
+  assert.ok(validateSet({ weight: 60, reps: null }, 'weight_reps'));
   assert.equal(validateSet({ timeSec: 30 }, 'time'), null);
   assert.ok(validateSet({ timeSec: null }, 'time'));
-  assert.equal(validateSet({ reps: null, repsR: 8 }, 'unilateral'), null);
+  assert.equal(validateSet({ weight: 20, reps: null, repsR: 8 }, 'unilateral'), null);
+  // peso corporal: sin lastre vale
+  assert.equal(validateSet({ weight: null, reps: 8 }, 'bodyweight'), null);
+});
+
+test('validateSet: en peso × reps y unilateral el peso es obligatorio (0 = sin carga vale)', () => {
+  // primera sesión sin historial: el prellenado trae reps (del objetivo) pero no peso
+  assert.equal(missingField({ weight: null, reps: 4 }, 'weight_reps'), 'weight');
+  assert.match(validateSet({ weight: null, reps: 4 }, 'weight_reps'), /Indica el peso/);
+  assert.match(validateSet({ weight: null, reps: null }, 'weight_reps'), /peso y las repeticiones/);
+  assert.equal(validateSet({ weight: 0, reps: 12 }, 'weight_reps'), null);
+  assert.equal(missingField({ weight: null, reps: 8, repsR: 8 }, 'unilateral'), 'weight');
+  assert.equal(missingField({ weight: 14, reps: null }, 'weight_reps'), 'reps');
+  assert.equal(missingField({ timeSec: null, distanceM: null }, 'distance_time'), 'distanceM');
 });
 
 test('proposedDuration resta las actividades enlazadas; sesión pasada → null', () => {
@@ -264,7 +278,132 @@ test('finishSession: descarta pendientes y cierra', () => {
   assert.equal(past.rpe, null);
 });
 
+test('finishSession: duración automática, borrador y peso de herencia fuera', () => {
+  const s = {
+    id: 's1', status: 'active', startedAt: 1000, notes: '', durationDraft: 70,
+    exercises: [{ sets: [{ done: true, weight: 80, origWeight: 77.5 }, { done: false }] }],
+  };
+  finishSession(s, { durationMin: 65, rpe: 7, now: 1000 + 65 * 60000, auto: true });
+  assert.equal(s.durationAuto, true);
+  assert.equal('durationDraft' in s, false, 'el borrador se borra al terminar');
+  assert.equal('origWeight' in s.exercises[0].sets[0], false);
+  // sesión a posteriori: nunca automática
+  const past = { startedAt: null, exercises: [] };
+  finishSession(past, { durationMin: 50, auto: true });
+  assert.equal(past.durationAuto, false);
+});
+
+test('autoDuration / syncAutoDuration: recalcula la fuerza si cambian las actividades enlazadas', () => {
+  const t0 = Date.UTC(2026, 8, 23, 17, 0);
+  const s = { id: 's1', kind: 'strength', status: 'done', startedAt: t0, endedAt: t0 + 100 * 60000, durationMin: 65, durationAuto: true };
+  const run = { id: 'a1', kind: 'run', parentId: 's1', parentItemId: 'se1', movingSec: 35 * 60 };
+  const bike = { id: 'a2', kind: 'bike', parentId: 's1', parentItemId: 'se2', movingSec: 60 * 60 };
+  assert.deepEqual(autoDuration(s, [run]), { elapsedMin: 100, activitiesMin: 35, value: 65 });
+  assert.equal(syncAutoDuration(s, [run]), null, 'sin cambios');
+  // se registra después la bici olvidada: 100 − 35 − 60 = 5
+  assert.deepEqual(syncAutoDuration(s, [run, bike]), { from: 65, to: 5 });
+  assert.equal(s.durationMin, 5);
+  // se borra la carrera: 100 − 60 = 40
+  assert.deepEqual(syncAutoDuration(s, [bike]), { from: 5, to: 40 });
+  // actividades que no caben en la sesión (hechas fuera): no se toca
+  assert.equal(syncAutoDuration(s, [bike, { ...bike, id: 'a3' }]), null);
+  assert.equal(s.durationMin, 40);
+  // escrita a mano: no se recalcula
+  const manual = { ...s, durationMin: 50, durationAuto: false };
+  assert.equal(syncAutoDuration(manual, [run, bike]), null);
+  assert.equal(manual.durationMin, 50);
+  // huérfanas: enlazadas a un ítem que ya no está
+  const ses = { id: 's1', exercises: [{ id: 'se1' }] };
+  assert.deepEqual(orphanActivities(ses, [run, bike]).map((a) => a.id), ['a2']);
+});
+
+test('lastPerformanceFor: ejercicio repetido (Sprint 20 m y 30 m del Día 6) toma su equivalente', () => {
+  const sprint = (id, tiId, dist, times, extra = {}) => ({
+    id, exerciseId: 'sprint', templateItemId: tiId, target: { sets: times.length, distance: dist },
+    sets: times.map((t, i) => ({ id: `${id}_${i}`, type: 'effective', distanceM: dist, timeSec: t, done: true })), ...extra,
+  });
+  const old = { id: 'old', kind: 'strength', date: '2026-09-05', status: 'done', exercises: [sprint('o20', 'ti_d6_3', 20, [3.3]), sprint('o30', 'ti_d6_4', 30, [4.8, 4.7])] };
+  const last = { id: 'last', kind: 'strength', date: '2026-09-19', status: 'done', exercises: [sprint('l20', 'ti_d6_3', 20, [3.1, 3.15, 3.2, 3.2]), sprint('l30', 'ti_d6_4', 30, [4.4, 4.5])] };
+  const cur = { id: 'cur', kind: 'strength', date: '2026-09-26', exercises: [] };
+  const se20 = { id: 'c20', exerciseId: 'sprint', templateItemId: 'ti_d6_3', target: { sets: 4, distance: 20 }, sets: [] };
+  const se30 = { id: 'c30', exerciseId: 'sprint', templateItemId: 'ti_d6_4', target: { sets: 2, setsMax: 3, distance: 30 }, sets: [] };
+  cur.exercises.push(se20, se30);
+  const all = [old, last, cur];
+  assert.equal(lastPerformanceFor(all, se20, cur).sessionExercise.id, 'l20');
+  const l30 = lastPerformanceFor(all, se30, cur);
+  assert.equal(l30.sessionExercise.id, 'l30');
+  assert.equal(l30.session.id, 'last');
+  // prellenado del bloque de 30 m: 30 m con los tiempos de 30 m
+  assert.deepEqual(prefillFromLast(l30, se30, 2, 'distance_time').map((x) => [x.distanceM, x.timeSec]), [[30, 4.4], [30, 4.5]]);
+  // al crear la sesión (el de 30 m aún no está en la lista, el de 20 m sí): igual
+  const creating = { ...cur, exercises: [se20] };
+  assert.equal(lastPerformanceFor(all, se30, creating).sessionExercise.id, 'l30');
+  // la última vez se saltó el de 30 m: la última vez que SÍ se hizo
+  last.exercises[1].sets = [];
+  const back = lastPerformanceFor(all, se30, cur);
+  assert.equal(back.session.id, 'old');
+  assert.equal(back.sessionExercise.id, 'o30');
+  // nunca se hizo el de 30 m: lo último de sprint (20 m), pero el prellenado va a 30 m sin el tiempo de 20 m
+  old.exercises[1].sets = [];
+  const none = lastPerformanceFor(all, se30, cur);
+  assert.equal(none.sessionExercise.id, 'l20');
+  assert.deepEqual(prefillFromLast(none, se30, 2, 'distance_time').map((x) => [x.distanceM, x.timeSec]), [[30, null], [30, null]]);
+  // sin plantilla (ítems añadidos a mano): por distancia objetivo
+  last.exercises[1].sets = [{ id: 'z', type: 'effective', distanceM: 30, timeSec: 4.6, done: true }];
+  const free = { id: 'free', kind: 'strength', date: '2026-09-27', exercises: [] };
+  const f20 = { id: 'f20', exerciseId: 'sprint', templateItemId: null, target: { distance: 20 }, sets: [] };
+  const f30 = { id: 'f30', exerciseId: 'sprint', templateItemId: null, target: { distance: 30 }, sets: [] };
+  free.exercises.push(f20, f30);
+  assert.equal(lastPerformanceFor([...all, free], f30, free).sessionExercise.id, 'l30');
+  assert.equal(lastPerformanceFor([...all, free], f20, free).sessionExercise.id, 'l20');
+  // un ejercicio no repetido: lo mismo que calc.lastPerformance
+  const bench = { id: 'b', exerciseId: 'press_banca', templateItemId: 'ti_d1_1', target: {}, sets: [] };
+  assert.equal(lastPerformanceFor(all, bench, cur), null);
+});
+
+test('switchedTarget: al cambiar a un ejercicio de otro tipo el objetivo se adapta', () => {
+  const bench = { sets: 3, setsMax: null, repMin: 4, repMax: 6, timeMin: null, timeMax: null, distance: null };
+  // Press banca → Plancha: 3×30–45 s (conserva las series), no «3×4–6»
+  const plank = switchedTarget(bench, 'weight_reps', 'time');
+  assert.deepEqual([plank.sets, plank.repMin, plank.timeMin, plank.timeMax], [3, null, 30, 45]);
+  assert.equal(targetText(plank, 'time'), '3×30–45 s');
+  // mismo tipo (reps → reps, p. ej. Dominadas ↔ Jalón): se conserva
+  assert.deepEqual(switchedTarget(bench, 'weight_reps', 'bodyweight'), bench);
+  // de vuelta al ejercicio del ítem: su objetivo
+  const back = switchedTarget(plank, 'time', 'weight_reps', { sets: 3, repMin: 4, repMax: 6 }, 'weight_reps');
+  assert.equal(targetText(back, 'weight_reps'), '3×4–6');
+  // a cardio: el de cardio
+  assert.equal(targetText(switchedTarget(bench, 'weight_reps', 'cardio'), 'cardio'), '30–45 min');
+});
+
+test('targetText es el mismo que el del editor de plantillas', () => {
+  const cases = [
+    [{ sets: 1, timeMin: 1800, distance: 400 }, 'cardio'],
+    [{ sets: 3, repMin: 10 }, 'time'],
+    [{ sets: 3, timeMin: 30 }, 'distance_time'],
+    [{ sets: 4, setsMax: 3, repMin: 8, repMax: 12 }, 'weight_reps'],
+    [{ sets: 2, setsMax: 3, distance: 30 }, 'distance_time'],
+  ];
+  for (const [t, lt] of cases) assert.equal(targetText(t, lt), libTargetText(t, lt), JSON.stringify(t));
+});
+
 test('itemFromSessionExercise usa el objetivo si lo hay', () => {
   const it = itemFromSessionExercise({ exerciseId: 'plancha', section: 'Core', target: { sets: 3, timeMin: 30, timeMax: 45 }, sets: [] }, 'x');
   assert.deepEqual(it, { id: 'x', exerciseId: 'plancha', alternatives: [], sets: 3, notes: '', section: 'Core', groupId: null, groupType: null, timeMin: 30, timeMax: 45 });
+});
+
+test('itemFromSessionExercise: sin objetivo ni series hechas usa el de por defecto del tipo', () => {
+  const se = { exerciseId: 'curl_martillo', section: '', target: { sets: 3, repMin: null, repMax: null }, sets: [] };
+  const it = itemFromSessionExercise(se, 'x', 'weight_reps');
+  assert.deepEqual([it.sets, it.repMin, it.repMax], [3, 8, 12]);
+  assert.equal(itemFromSessionExercise({ exerciseId: 'plancha', target: {}, sets: [] }, 'y', 'time').timeMin, 30);
+  // con series hechas manda lo hecho
+  const done = { exerciseId: 'curl_martillo', target: {}, sets: [{ type: 'effective', weight: 14, reps: 12, done: true }] };
+  assert.deepEqual([itemFromSessionExercise(done, 'z', 'weight_reps').repMin, itemFromSessionExercise(done, 'z', 'weight_reps').repMax], [12, 12]);
+  // applyTemplateDiff con logTypeOf
+  const s = sessionFrom(D1);
+  s.exercises.push({ id: 'seX', exerciseId: 'curl_martillo', templateItemId: null, alternatives: [], target: { sets: 3 }, sets: [] });
+  const out = applyTemplateDiff(D1, s, ['add:seX'], { newId: () => 'n1', logTypeOf: () => 'weight_reps' });
+  const nu = out.items.find((i) => i.id === 'n1');
+  assert.deepEqual([nu.sets, nu.repMin, nu.repMax], [3, 8, 12]);
 });

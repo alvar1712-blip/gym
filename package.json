@@ -8,6 +8,7 @@
     "serve": "node tests/serve.mjs 8080",
     "test": "node --test 'tests/unit/*.test.mjs'",
     "e2e": "NODE_PATH=$(npm root -g) node --test --test-concurrency=4 'tests/e2e/*.test.cjs'",
-    "check": "node scripts/check-assets.mjs && node --test 'tests/unit/*.test.mjs'"
+    "check": "node scripts/check-assets.mjs && node --test 'tests/unit/*.test.mjs'",
+    "stamp": "node scripts/stamp-sw.mjs"
   }
 }

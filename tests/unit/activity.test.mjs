@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   emptyForm, formFromRecord, validate, isValid, missingText, hasContent, buildRecord, cleanField,
   primaryMetric, loadInfo, activityLoad, activityTitle, subtypeLabel, subtypeFromNotes, targetText,
-  bwStats, bwTrend, bwWithDeltas, bwPoints, roundKg, trendWord, KIND_FIELDS,
+  bwStats, bwTrend, bwWithDeltas, bwPoints, roundKg, trendWord, KIND_FIELDS, fieldsLostOnKindChange, joinList,
 } from '../../js/activity-logic.js';
 import { movingAverage } from '../../js/calc.js';
 import { addDays } from '../../js/util.js';
@@ -31,6 +31,56 @@ test('hasContent: detecta si el usuario ha escrito algo', () => {
   assert.equal(hasContent({ ...f, notes: '  ' }), false);
   assert.equal(hasContent({ ...f, notes: 'hola' }), true);
   assert.equal(hasContent({ ...f, rpe: 5 }), true);
+});
+
+test('hasContent con base: lo prellenado (tipo de sesión de las notas) no cuenta como escrito', () => {
+  const base = { ...emptyForm('run', { date: D }), parentId: 's_1', subtype: 'z2' };
+  assert.equal(hasContent(base), true, 'sin base, el subtipo cuenta');
+  assert.equal(hasContent(base, base), false);
+  assert.equal(hasContent({ ...base }, base), false);
+  assert.equal(hasContent({ ...base, subtype: 'intervals' }, base), true, 'cambiar el tipo sí es escribir');
+  assert.equal(hasContent({ ...base, subtype: null }, base), false);
+  assert.equal(hasContent({ ...base, distanceKm: 8.4 }, base), true);
+  assert.equal(hasContent({ ...base, movingSec: 60 }, base), true);
+  assert.equal(hasContent({ ...base, notes: 'x' }, base), true);
+});
+
+test('fieldsLostOnKindChange: lo que se quitaría al cambiar el tipo de una actividad guardada', () => {
+  const bike = buildRecord({
+    ...emptyForm('bike', { date: D }), movingSec: 5400, distanceKm: 45, rpe: 6, hrAvg: 140, hrMax: 172,
+    powerAvg: 190, powerNp: 205, elevationM: 600, cadence: 85, subtype: 'route', elapsedSec: 5600,
+  }, null, { id: 'b' });
+  assert.deepEqual(fieldsLostOnKindChange(bike, 'bike'), []);
+  assert.deepEqual(fieldsLostOnKindChange(bike, 'swim'),
+    ['tiempo total', 'desnivel', 'FC media', 'FC máxima', 'cadencia', 'potencia media', 'potencia normalizada', 'tipo de sesión «Ruta»']);
+  assert.deepEqual(fieldsLostOnKindChange(bike, 'run'), ['potencia media', 'potencia normalizada', 'tipo de sesión «Ruta»']);
+  assert.deepEqual(fieldsLostOnKindChange(bike, 'other'),
+    ['distancia', 'tiempo total', 'desnivel', 'FC media', 'FC máxima', 'cadencia', 'potencia media', 'potencia normalizada', 'tipo de sesión «Ruta»']);
+  // Solo duración, esfuerzo, notas y distancia: correr → bici no pierde nada.
+  const run = buildRecord({ ...emptyForm('run', { date: D }), movingSec: 1800, distanceKm: 5, rpe: 5, notes: 'ok' }, null, { id: 'r' });
+  assert.deepEqual(fieldsLostOnKindChange(run, 'bike'), []);
+  assert.deepEqual(fieldsLostOnKindChange({ ...run, feel: 'Z2' }, 'bike'), ['zona o sensaciones']);
+  const other = buildRecord({ ...emptyForm('other', { date: D }), movingSec: 3600, subtype: 'Pádel' }, null, { id: 'o' });
+  assert.deepEqual(fieldsLostOnKindChange(other, 'run'), ['tipo «Pádel»']);
+  const swim = buildRecord({ ...emptyForm('swim', { date: D }), movingSec: 1800, distanceKm: 1.5, poolType: 'pool', poolLengthM: 25, stroke: 'free' }, null, { id: 's' });
+  assert.deepEqual(fieldsLostOnKindChange(swim, 'run'), ['piscina o aguas abiertas', 'longitud de piscina', 'estilo']);
+  assert.deepEqual(fieldsLostOnKindChange(null, 'run'), []);
+  assert.equal(joinList(['a']), 'a');
+  assert.equal(joinList(['a', 'b', 'c']), 'a, b y c');
+});
+
+test('primaryMetric: número y unidad por separado (la unidad no se corta en pantalla)', () => {
+  const s = primaryMetric({ ...emptyForm('swim', { date: D }), distanceKm: 1.5, movingSec: 2320 });
+  assert.equal(s.num, '2:35');
+  assert.equal(s.unit, '/100 m');
+  assert.equal(s.text, '2:35 /100 m');
+  const b = primaryMetric({ ...emptyForm('bike', { date: D }), distanceKm: 31.5, movingSec: 4400 });
+  assert.equal(`${b.num} ${b.unit}`, b.text);
+  assert.equal(b.unit, 'km/h');
+  const r = primaryMetric({ ...emptyForm('run', { date: D }), distanceKm: 10, movingSec: 3000 });
+  assert.deepEqual([r.num, r.unit], ['5:00', '/km']);
+  const none = primaryMetric({ ...emptyForm('swim', { date: D }), movingSec: 1800 });
+  assert.deepEqual([none.num, none.unit, none.text], ['—', '', '—']);
 });
 
 test('carrera: 10 km en 50:00 → ritmo 5:00 /km, carga = min × esfuerzo', () => {
