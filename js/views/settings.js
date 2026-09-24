@@ -324,10 +324,11 @@ const BLOCKS = [
   {
     id: 'runkm',
     title: 'Aviso de km de carrera',
-    why: 'Igual que el anterior, con los kilómetros semanales de carrera: aviso si suben más de este porcentaje.',
+    why: 'Igual que el anterior, con los kilómetros semanales de carrera: aviso si suben más de este porcentaje frente a la semana anterior (solo si esa semana llegó al mínimo de km, para no avisar por cambios pequeños).',
     fields: [
       { path: ['runKmWarn', 'low'], label: 'Umbral bajo', step: 1, min: 0, max: 100, suffix: '%', ...INT, pair: ['runKmWarn', 'high'], role: 'lo' },
       { path: ['runKmWarn', 'high'], label: 'Umbral alto', step: 1, min: 0, max: 100, suffix: '%', ...INT, pair: ['runKmWarn', 'low'], role: 'hi' },
+      { path: ['runKmWarn', 'minBaseKm'], label: 'Mínimo semana anterior', step: 1, min: 0, max: 100, suffix: 'km', ...INT },
     ],
   },
   {

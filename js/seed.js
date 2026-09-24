@@ -149,7 +149,7 @@ export function defaultSettings() {
     progression: { minRir: 1 },
     // Avisos de carga (% sobre la media de las 4 semanas previas).
     loadWarn: { low: 20, high: 30 },
-    runKmWarn: { low: 10, high: 15 },
+    runKmWarn: { low: 10, high: 15, minBaseKm: 5 },
     // Estancamiento: sin mejora del 1RM estimado en N sesiones o N semanas.
     stall: { sessions: 3, weeks: 3 },
     // Descarga: nº de ejercicios estancados, RPE medio alto y semanas a mirar.
