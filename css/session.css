@@ -284,10 +284,14 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 /* Plegada y contestada: el resumen ocupa la franja entera (tres columnas: pregunta arriba, valor debajo). */
 .ci-has:not(.ci-open) .ci-title { display: none; }
 .ci-has:not(.ci-open) .ci-ok { display: inline; }
-.ci-has:not(.ci-open) .ci-state { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.ci-mini { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
-.ci-mini-k { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.ci-mini-v { font-size: 15px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-has:not(.ci-open) .ci-state { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; overflow: visible; }
+.ci-mini { display: flex; flex-direction: column; min-width: 0; }
+/* Sin recortar por arriba: la tilde de «ENERGÍA» y la virgulilla de «SUEÑO» sobresalen de una línea ajustada. La
+   elipsis va en cada texto, y el de la pregunta tiene holgura arriba (padding) para los signos de las mayúsculas. */
+.ci-mini-k,
+.ci-mini-v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-mini-k { padding-top: 3px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.ci-mini-v { font-size: 15px; font-weight: 750; line-height: 1.25; color: var(--text); }
 .ci-skip {
   flex: none;
   min-width: 44px;
@@ -317,7 +321,8 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ci-chead-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .ci-copt { font-size: 13px; color: var(--muted); }
 .ci-compact .ci-skip { border: 1px solid var(--border); border-radius: 10px; }
-.ci-sheet-body > .ci-compact + .ci-compact { padding-top: 12px; border-top: 1px solid var(--border); }
+/* Dos seguidas (antes y después: hoja «Editar check-in» o «Terminar» de una sesión a posteriori), con separador. */
+.ci-compact + .ci-compact { padding-top: 12px; border-top: 1px solid var(--border); }
 
 /* Resumen de la sesión */
 .ci-sum-wrap { display: flex; flex-direction: column; gap: 12px; }

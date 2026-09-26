@@ -125,15 +125,16 @@ test('router y pestañas: % inválido no rompe, pestaña de origen al abrir una 
     // Pantalla de error (vista que no se puede cargar, como un archivo que falta sin conexión)
     const cdp = await context.newCDPSession(page);
     const inset = await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 47, bottom: 34, left: 0, right: 0 } }).then(() => true, () => false);
-    await context.route('**/js/views/weekly.js', (r) => r.abort());
-    await go(page, '#/weekly');
+    // (una vista que Hoy no carga al arrancar: Hoy ya importa weekly.js y goals.js para sus tarjetas de la Fase 3)
+    await context.route('**/js/views/progress.js', (r) => r.abort());
+    await go(page, '#/records');
     await page.waitForSelector('.content-safe .card-danger');
     const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.content-safe')).paddingTop));
     assert.ok(pad >= (inset ? 47 + 14 : 14), `padding-top ${pad}`);
     const cardTop = await page.locator('.content-safe .card-danger').boundingBox();
     if (inset) assert.ok(cardTop.y >= 47, 'la tarjeta de error empieza bajo la barra de estado');
     await shot(page, 'core-router-error');
-    await context.unroute('**/js/views/weekly.js');
+    await context.unroute('**/js/views/progress.js');
     app.errors.length = 0; // el fallo de carga provocado deja errores en consola
 
     // Codificación % inválida: sin URIError y la pantalla corresponde a la URL

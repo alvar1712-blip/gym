@@ -67,13 +67,21 @@ test('goalRules: umbrales de settings.goals con valores por defecto', () => {
   assert.deepEqual(goalRules({ goals: { minRecords: 1, minWeeks: 1 } }), { minRecords: 4, minWeeks: 1 }, 'una regresión necesita ≥ 2 registros');
 });
 
-test('sufficiency: registros y semanas distintas (lunes a domingo), con lo que falta', () => {
+test('sufficiency: registros, semanas distintas (lunes a domingo) y días entre el primero y el último, con lo que falta', () => {
   const r = sufficiency(['2026-09-14', '2026-09-20', '2026-09-21'], { minRecords: 4, minWeeks: 3 });
-  assert.deepEqual(r, { records: 3, weeks: 2, minRecords: 4, minWeeks: 3, missingRecords: 1, missingWeeks: 1, ok: false });
+  assert.deepEqual(r, { records: 3, weeks: 2, spanDays: 7, minRecords: 4, minWeeks: 3, minSpanDays: 14, missingRecords: 1, missingWeeks: 1, missingSpan: 7, ok: false });
   assert.equal(sufficiency(['2026-09-01', '2026-09-08', '2026-09-15', '2026-09-22'], DEFAULT_RULES).ok, true);
-  assert.deepEqual(sufficiency([], DEFAULT_RULES), { records: 0, weeks: 0, minRecords: 4, minWeeks: 3, missingRecords: 4, missingWeeks: 3, ok: false });
-  // domingo y lunes siguiente = dos semanas
-  assert.equal(sufficiency(['2026-09-20', '2026-09-21'], { minRecords: 2, minWeeks: 2 }).ok, true);
+  assert.deepEqual(sufficiency([], DEFAULT_RULES), { records: 0, weeks: 0, spanDays: 0, minRecords: 4, minWeeks: 3, minSpanDays: 14, missingRecords: 4, missingWeeks: 3, missingSpan: 14, ok: false });
+  // Domingo, lunes, domingo y lunes: 4 registros que tocan 3 semanas pero solo abarcan 8 días → no bastan
+  const tight = sufficiency(['2026-09-13', '2026-09-14', '2026-09-20', '2026-09-21'], DEFAULT_RULES);
+  assert.deepEqual([tight.records, tight.weeks, tight.spanDays, tight.missingSpan, tight.ok], [4, 3, 8, 6, false]);
+  // Con 14 días entre el primero y el último, sí (el orden de las fechas da igual)
+  assert.equal(sufficiency(['2026-09-21', '2026-09-07', '2026-09-14', '2026-09-15'], DEFAULT_RULES).ok, true);
+  // Domingo y lunes siguiente = dos semanas, pero 1 día: con minWeeks 2 hacen falta 7 días
+  assert.equal(sufficiency(['2026-09-20', '2026-09-21'], { minRecords: 2, minWeeks: 2 }).ok, false);
+  assert.equal(sufficiency(['2026-09-14', '2026-09-21'], { minRecords: 2, minWeeks: 2 }).ok, true);
+  // minWeeks 1: sin mínimo de días
+  assert.equal(sufficiency(['2026-09-21', '2026-09-21'], { minRecords: 2, minWeeks: 1 }).minSpanDays, 0);
 });
 
 test('etaRange: pendiente ± 1 error típico con un mínimo de ±20 % del tiempo restante', () => {
@@ -136,7 +144,9 @@ test('progressPercent: de inicio a objetivo (subir y bajar), razón en «solo di
   assert.equal(progressPercent({ start: 3000, current: 2850, target: 2700, dir: -1 }), 50, 'tiempo: bajar');
   assert.equal(progressPercent({ start: 78, current: 77, target: 74, dir: -1 }), 25, 'peso: bajar');
   assert.equal(progressPercent({ start: 6, current: 8, target: 10, dir: 1, ratio: true }), 80);
-  assert.equal(progressPercent({ start: null, current: 8, target: 10, dir: 1 }), 80, 'sin inicio → razón');
+  assert.equal(progressPercent({ start: null, current: 8, target: 10, dir: 1 }), null, 'sin inicio → sin porcentaje («—»), no actual / objetivo');
+  assert.equal(progressPercent({ start: null, current: 3000, target: 2700, dir: -1 }), null);
+  assert.equal(progressPercent({ start: null, current: 12, target: 10, dir: 1 }), 100, 'sin inicio pero ya llega');
   assert.equal(progressPercent({ start: 95, current: 85, target: 90, dir: 1 }), (85 / 90) * 100, 'ya estaba por encima al crearlo');
   assert.equal(progressPercent({ start: 95, current: 92, target: 90, dir: 1 }), 100);
   assert.equal(progressPercent({ start: 80, current: 82, target: 90, dir: 1, achieved: true }), 100);
@@ -244,7 +254,7 @@ test('fuerza: datos insuficientes con recuentos (y los umbrales salen de setting
   assert.equal(p.statusLabel, 'Datos insuficientes');
   assert.equal(p.eta, null);
   assert.deepEqual([p.counts.records, p.counts.weeks, p.counts.missingRecords, p.counts.missingWeeks], [3, 2, 1, 1]);
-  assert.equal(p.explanation, 'Datos insuficientes para estimar: 3 sesiones con Remo en 2 semanas (las últimas 12 semanas). Hacen falta 4 registros en al menos 3 semanas distintas: faltan 1 sesión y 1 semana más con registros.');
+  assert.equal(p.explanation, 'Datos insuficientes para estimar: 3 sesiones con Remo en 2 semanas (las últimas 12 semanas). Hacen falta 4 registros en al menos 3 semanas distintas, con 14 días o más entre el primero y el último: faltan 1 sesión y 1 semana más con registros.');
   assert.equal(p.current, e1rm(62, 5, 0), 'el valor actual se muestra igualmente');
   assert.equal(p.dataUsed.length, 3);
   // Solo falta un registro
@@ -293,12 +303,18 @@ test('fuerza: la tendencia solo usa las últimas 12 semanas (o minWeeks si es ma
   assert.equal(p.counts.records, 6);
   assert.equal(p.counts.windowFrom, addDays(TODAY, -(TREND_WEEKS * 7 - 1)));
   assert.equal(p.dataUsed.length, 6);
-  // minWeeks = 20 → ventana de 20 semanas: entran las antiguas
+  // minWeeks = 20 → ventana de 20 semanas: entran más semanas
   const settings = defaultSettings();
   settings.goals = { minRecords: 4, minWeeks: 20 };
-  const q = goalProgress(data({ sessions: [...old, ...recent], settings }), strengthGoal());
+  const long = rowWeekly(18, 50, 1);
+  assert.equal(goalProgress(data({ sessions: long }), strengthGoal()).counts.records, 12);
+  const q = goalProgress(data({ sessions: long, settings }), strengthGoal());
   assert.equal(q.counts.windowWeeks, 20);
-  assert.equal(q.counts.records, 8);
+  assert.equal(q.counts.records, 18);
+  // …pero las antiguas separadas por una pausa de 13 semanas no cuentan (la tendencia empieza tras la pausa)
+  const r = goalProgress(data({ sessions: [...old, ...recent], settings }), strengthGoal());
+  assert.equal(r.counts.records, 6);
+  assert.deepEqual(r.counts.pause, { from: monday(18), to: monday(5), days: 91 });
 });
 
 test('fuerza: dos sesiones el mismo día cuentan como un registro (la mejor)', () => {
@@ -397,6 +413,127 @@ test('fuerza: inicio = el mejor de los 28 días hasta la creación; sin datos pr
   assert.equal(p.start, e1rm(60, 5, 0));
 });
 
+test('fuerza: estancado (regla de settings.stall) → sin tendencia aunque la pendiente de 12 semanas sea positiva', () => {
+  // Sube 4 semanas (90 → 105 kg × 5) y se queda en 105 kg 6 sesiones más: la regresión de las 10 sesiones es
+  // positiva, pero no hay mejor marca desde el 10 ago (R3C-02).
+  const ws = [90, 95, 100, 105, 105, 105, 105, 105, 105, 105];
+  const sessions = ws.map((w, i) => ses(monday(ws.length - 1 - i), 'row', [set(w, 5)]));
+  const p = goalProgress(data({ sessions }), strengthGoal({ weight: 120, reps: 5 }));
+  assert.ok(p.trend.slopePerWeek > 0, 'la pendiente sigue siendo positiva');
+  assert.equal(p.status, 'no_trend');
+  assert.equal(p.statusLabel, 'Sin tendencia');
+  assert.equal(p.eta, null);
+  assert.equal(p.etaText, '');
+  assert.deepEqual(
+    { since: p.stall.since, best: p.stall.best, after: p.stall.after, label: p.stall.bestLabel, S: p.stall.sessions, W: p.stall.weeks },
+    { since: monday(6), best: e1rm(105, 5, 0), after: 6, label: '122,5 kg', S: 3, W: 3 },
+  );
+  assert.equal(p.explanation, 'Con la tendencia actual no se acerca: tu 1RM estimado no supera 122,5 kg (10 ago) en las 6 sesiones siguientes. Con tu umbral de estancamiento (3 sesiones o 3 semanas sin superar tu mejor marca) no se estima una fecha: la pendiente de +1,6 kg/sem en las últimas 12 semanas viene de las subidas anteriores.');
+  assert.match(p.rule, /Si el ejercicio está estancado \(3 sesiones o 3 semanas sin superar su mejor marca/);
+  // Umbrales de Ajustes más largos (7 sesiones / 8 semanas) → aún no está estancado → estimación
+  const settings = defaultSettings();
+  settings.stall = { sessions: 7, weeks: 8 };
+  const q = goalProgress(data({ sessions, settings }), strengthGoal({ weight: 120, reps: 5 }));
+  assert.equal(q.status, 'estimate');
+  assert.equal(q.stall, null);
+  assert.ok(q.eta);
+  // Una meseta más corta que el umbral (2 sesiones iguales tras la mejor marca) no cuenta
+  const short = [90, 95, 100, 105, 110, 115, 120, 120, 120].map((w, i, a) => ses(monday(a.length - 1 - i), 'row', [set(w, 5)]));
+  const r = goalProgress(data({ sessions: short }), strengthGoal({ weight: 130, reps: 5 }));
+  assert.equal(r.status, 'estimate');
+  assert.equal(r.stall, null);
+  // Estancado en repeticiones (más de 12 reps): mismo criterio
+  const reps = [14, 15, 16, 16, 16, 16].map((n, i, a) => ses(monday(a.length - 1 - i), 'row', [set(40, n)]));
+  const t = goalProgress(data({ sessions: reps }), strengthGoal({ weight: 40, reps: 20 }));
+  assert.equal(t.metric, 'reps');
+  assert.equal(t.status, 'no_trend');
+  assert.match(t.explanation, /tu máximo de repeticiones no supera 16 reps \(31 ago\) en las 3 sesiones siguientes/);
+  // Resistencia y peso corporal no usan esta regla
+  assert.equal(goalProgress(data({ sessions }), runGoal()).stall, null);
+});
+
+test('fuerza: «actual» ante un empate de marca = el registro más reciente', () => {
+  // 80 × 5 el 31 ago, el 7 y el 14 sep; 75 × 5 el 21 sep (R3C-09)
+  const sessions = [ses(monday(3), 'row', [set(80, 5)]), ses(monday(2), 'row', [set(80, 5)]), ses(monday(1), 'row', [set(80, 5)]), ses(monday(0), 'row', [set(75, 5)])];
+  const p = goalProgress(data({ sessions }), strengthGoal({ weight: 90 }));
+  assert.equal(p.current, e1rm(80, 5, 0));
+  assert.equal(p.currentNote, '80 kg × 5 @0 · 14 sep');
+  // Sin registros recientes: el más reciente de los empatados de los 28 días que acaban en el último registro
+  const old = [ses('2026-06-01', 'row', [set(70, 5)]), ses('2026-06-08', 'row', [set(70, 5)]), ses('2026-06-15', 'row', [set(65, 5)])];
+  const q = goalProgress(data({ sessions: old }), strengthGoal({ createdAt: created('2026-05-01') }));
+  assert.equal(q.currentNote, '70 kg × 5 @0 · último registro 8 jun');
+});
+
+test('fuerza: 4 sesiones en 8 días (tocan 3 semanas) no bastan para estimar', () => {
+  // Domingo 13, lunes 14, domingo 20 y lunes 21 sep (L2)
+  const sessions = [
+    ses('2026-09-13', 'row', [set(80, 5)]), ses('2026-09-14', 'row', [set(82.5, 5)]),
+    ses('2026-09-20', 'row', [set(82.5, 6)]), ses('2026-09-21', 'row', [set(85, 5)]),
+  ];
+  const p = goalProgress(data({ sessions }), strengthGoal({ weight: 120, reps: 5 }));
+  assert.equal(p.status, 'insufficient');
+  assert.equal(p.eta, null);
+  assert.deepEqual([p.counts.records, p.counts.weeks, p.counts.spanDays, p.counts.missingSpan], [4, 3, 8, 6]);
+  assert.equal(p.explanation, 'Datos insuficientes para estimar: 4 sesiones con Remo en 3 semanas, pero entre el primero y el último solo hay 8 días (las últimas 12 semanas). Hacen falta 4 registros en al menos 3 semanas distintas, con 14 días o más entre el primero y el último: faltan registros más separados en el tiempo.');
+  assert.match(p.rule, /al menos 3 semanas distintas y con 14 días o más entre el primero y el último/);
+  // Una sesión más una semana después → ya hay estimación
+  const q = goalProgress(data({ sessions: [ses('2026-09-06', 'row', [set(77.5, 5)]), ...sessions] }), strengthGoal({ weight: 120, reps: 5 }));
+  assert.equal(q.status, 'estimate');
+});
+
+test('fuerza: tras una pausa de 4 semanas o más, la tendencia empieza de nuevo', () => {
+  // 90 × 5 cada semana en junio–julio; pausa; 70 → 82,5 kg en 6 sesiones en septiembre (L3)
+  const old = [];
+  for (let i = 0; i < 8; i++) old.push(ses(addDays('2026-06-01', 7 * i), 'row', [set(90, 5)]));
+  const back = ['2026-09-07', '2026-09-10', '2026-09-14', '2026-09-17', '2026-09-21', '2026-09-24'].map((d, i) => ses(d, 'row', [set(70 + 2.5 * i, 5)]));
+  const goal = strengthGoal({ weight: 95, reps: 5, createdAt: created('2026-09-07') });
+  const p = goalProgress(data({ sessions: [...old, ...back] }), goal);
+  assert.equal(p.status, 'estimate');
+  assert.ok(p.trend.slopePerWeek > 0, 'sin la pausa, la regresión saldría en contra');
+  assert.deepEqual(p.counts.pause, { from: '2026-07-20', to: '2026-09-07', days: 49 });
+  assert.equal(p.counts.trendFrom, '2026-09-07');
+  assert.equal(p.counts.records, 6);
+  assert.equal(p.dataUsed.length, 6);
+  assert.equal(p.dataUsed[0].date, '2026-09-07');
+  const pts = back.map((s) => [dayIndex(s.date), e1rm(s.exercises[0].sets[0].weight, 5, 0)]);
+  const reg = linearRegression(pts.map((x) => x[0]), pts.map((x) => x[1]));
+  assert.ok(Math.abs(p.trend.slopePerWeek - reg.slope * 7) < 1e-9);
+  assert.match(p.explanation, /\(6 sesiones desde el 7 sep, tras una pausa sin registros desde el 20 jul\), llegarías entre/);
+  assert.match(p.method, /Hubo una pausa sin registros entre el 20 jul y el 7 sep \(49 días\): la tendencia solo usa lo registrado desde el 7 sep\.$/);
+  assert.match(p.rule, /Tras una pausa de 4 semanas o más sin registros, la tendencia empieza de nuevo/);
+  // Recién vuelto (2 sesiones): datos insuficientes, explicando que la tendencia empieza de nuevo
+  const q = goalProgress(data({ sessions: [...old, ...back.slice(-2)] }), goal);
+  assert.equal(q.status, 'insufficient');
+  assert.equal(q.counts.records, 2);
+  assert.match(q.explanation, /^Datos insuficientes para estimar: 2 sesiones con Remo en 1 semana \(desde el 21 sep, tras una pausa sin registros desde el 20 jul\)\..*Tras una pausa de 4 semanas o más, la tendencia empieza de nuevo con lo registrado desde la vuelta\.$/);
+  // Un hueco de 27 días no es una pausa
+  const gap = [ses('2026-08-01', 'row', [set(60, 5)]), ses('2026-08-08', 'row', [set(62.5, 5)]), ses('2026-09-04', 'row', [set(65, 5)]), ses('2026-09-11', 'row', [set(67.5, 5)])];
+  const r = goalProgress(data({ sessions: gap }), strengthGoal());
+  assert.equal(r.counts.pause, null);
+  assert.equal(r.counts.records, 4);
+});
+
+test('sin inicio (nada en los 28 días antes de crearlo ni después): progreso «—», no actual / objetivo', () => {
+  // Press solo en junio–julio; objetivo creado el 20 sep (L4)
+  const sessions = [];
+  for (let i = 0; i < 6; i++) sessions.push(ses(addDays('2026-06-01', 7 * i), 'row', [set(75 + i, 5)]));
+  const runs = [];
+  for (let i = 0; i < 6; i++) runs.push(act('run', addDays('2026-06-01', 7 * i), 5, 25 * 60));
+  const d = data({ sessions: [...sessions, ...runs] });
+  const p = goalProgress(d, strengthGoal({ weight: 90, reps: 5, createdAt: created('2026-09-20') }));
+  assert.equal(p.start, null);
+  assert.equal(p.startLabel, '—');
+  assert.equal(p.current, e1rm(80, 5, 0));
+  assert.equal(p.progressPct, null, 'antes: 93 / 105 = 89 %');
+  const q = goalProgress(d, runGoal({ createdAt: created('2026-09-20') }));
+  assert.equal(q.start, null);
+  assert.equal(q.progressPct, null);
+  // Con un registro desde la creación, ese es el inicio
+  const r = goalProgress(data({ sessions: [...sessions, ses('2026-09-22', 'row', [set(78, 5)])] }), strengthGoal({ weight: 90, reps: 5, createdAt: created('2026-09-20') }));
+  assert.equal(r.start, e1rm(78, 5, 0));
+  assert.equal(r.progressPct, 0);
+});
+
 // ===========================================================================
 // Resistencia
 // ===========================================================================
@@ -471,7 +608,7 @@ test('carrera: sin tendencia si las predicciones empeoran; insuficiente con recu
   const few = [act('run', '2026-09-09', 6, 1900), act('run', '2026-09-16', 8, 2600)];
   const q = goalProgress(data({ sessions: few }), runGoal());
   assert.equal(q.status, 'insufficient');
-  assert.match(q.explanation, /2 carreras de 3 km o más en 2 semanas \(las últimas 12 semanas\)\. Hacen falta 4 registros en al menos 3 semanas distintas: faltan 2 carreras y 1 semana más con registros\./);
+  assert.match(q.explanation, /2 carreras de 3 km o más en 2 semanas \(las últimas 12 semanas\)\. Hacen falta 4 registros en al menos 3 semanas distintas, con 14 días o más entre el primero y el último: faltan 2 carreras y 1 semana más con registros\./);
 });
 
 test('bici y natación con tiempo: Riegel con aviso de menor fiabilidad; natación en metros', () => {
@@ -587,6 +724,34 @@ test('peso corporal: datos insuficientes (pocos pesajes o pocas semanas) y venta
   assert.ok(q.start > 75 && q.start < q.current);
   const pct = ((q.current - q.start) / (77 - q.start)) * 100;
   assert.ok(Math.abs(q.progressPct - pct) < 1e-9);
+});
+
+test('peso corporal: solo hay tendencia cuando #/bodyweight la da (4 pesajes en 14 días o más)', () => {
+  // 13, 14, 20 y 21 sep (hoy 21 sep): 4 pesajes que tocan 3 semanas pero abarcan 8 días (L2)
+  const bw = [{ id: '2026-09-13', kg: 80 }, { id: '2026-09-14', kg: 79.6 }, { id: '2026-09-20', kg: 79.4 }, { id: '2026-09-21', kg: 79 }];
+  const goal = bwGoal({ targetKg: 75, direction: 'down', createdAt: created('2026-09-01') });
+  const s = bwStats(bw, '2026-09-21');
+  assert.equal(s.trend.ok, false, '#/bodyweight: «Datos insuficientes»');
+  const p = goalProgress(data({ bodyweight: bw, today: '2026-09-21' }), goal);
+  assert.equal(p.status, 'insufficient');
+  assert.equal(p.trend, null);
+  assert.equal(p.eta, null);
+  assert.deepEqual([p.counts.records, p.counts.weeks, p.counts.spanDays], [4, 3, 8]);
+  assert.match(p.explanation, /4 pesajes en 3 semanas, pero entre el primero y el último solo hay 8 días \(los últimos 28 días\)/);
+  // Aunque en Ajustes se pida menos (2 registros en 1 semana), sin la tendencia de #/bodyweight no se estima
+  const settings = defaultSettings();
+  settings.goals = { minRecords: 2, minWeeks: 1 };
+  const q = goalProgress(data({ bodyweight: bw, today: '2026-09-21', settings }), goal);
+  assert.equal(q.counts.ok, true);
+  assert.equal(q.status, 'insufficient');
+  assert.equal(q.explanation, `Datos insuficientes para ver la tendencia (la misma que en Peso corporal): ${s.trend.reason}`);
+  // Con 14 días de pesajes, las dos pantallas dan la misma tendencia
+  const bw2 = [{ id: '2026-09-07', kg: 80.4 }, ...bw];
+  const s2 = bwStats(bw2, '2026-09-21');
+  const r = goalProgress(data({ bodyweight: bw2, today: '2026-09-21' }), goal);
+  assert.equal(s2.trend.ok, true);
+  assert.equal(r.status, 'estimate');
+  assert.ok(Math.abs(r.trend.slopePerWeek - s2.trend.kgPerWeek) < 1e-9);
 });
 
 test('rango muy lejano: «más de 2 años al ritmo actual»', () => {

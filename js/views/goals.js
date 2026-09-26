@@ -75,12 +75,15 @@ function etaLine(p, today) {
     case 'achieved': return `Conseguido el ${G.fmtDay(p.achievedOn, today)}`;
     case 'ready': return 'Al alcance: tu nivel actual ya llega al objetivo';
     case 'estimate': return `Estimación: ${p.etaText}`;
-    case 'no_trend': return 'Sin tendencia: con la tendencia actual no se acerca';
+    case 'no_trend': return p.stall
+      ? `Sin tendencia: estancado desde el ${G.fmtDay(p.stall.since, today)} (${p.stall.bestLabel})`
+      : 'Sin tendencia: con la tendencia actual no se acerca';
     default: {
       const c = p.counts;
       const parts = [];
       if (c && c.missingRecords) parts.push(`${c.records} de ${c.minRecords} registros`);
       if (c && c.missingWeeks) parts.push(`${c.weeks} de ${c.minWeeks} semanas`);
+      else if (c && c.missingSpan) parts.push(`solo ${c.spanDays} de ${c.minSpanDays} días entre el primero y el último`);
       return parts.length ? `Datos insuficientes: ${parts.join(', ')}` : 'Datos insuficientes';
     }
   }
@@ -101,7 +104,7 @@ function whyContent(p) {
   return h('div.goal-why', items);
 }
 
-/** Valores, barra de progreso, línea de estado y «¿Por qué?» de un objetivo. */
+/** Valores, barra de progreso, línea de estado y «¿Por qué?» de un objetivo (lista sin huecos: se usa con replaceChildren). */
 function goalBody(goal, p, today) {
   const k = statusKey(p);
   const pct = p.progressPct;
@@ -122,7 +125,7 @@ function goalBody(goal, p, today) {
       ? h('p.goal-warn', `Riegel está pensada para carrera: en ${goal.sport === 'bike' ? 'bici' : 'natación'} tómalo como una referencia aproximada.`)
       : null,
     whyBox(whyContent(p)),
-  ];
+  ].filter(Boolean);
 }
 
 function goalCard(goal, p, today) {
@@ -641,6 +644,13 @@ export function mountGoalEdit(root, params = {}) {
 // ===========================================================================
 // CONTRATO (lo usan Hoy y Progreso): tarjeta breve con los objetivos activos y su progreso.
 // ===========================================================================
+/** Qué mide la cifra «actual / objetivo» de la fila resumen (sin la ficha al lado, «107,7 kg / 105 kg» no se entiende). */
+const SUM_METRIC = { e1rm: '1RM est. ', time: 'Predicción ', bodyweight: 'Media 7 días ' };
+function sumValues(p) {
+  const pre = p.currentLabel && p.currentLabel !== '—' ? SUM_METRIC[p.metric] || '' : '';
+  return `${pre}${p.currentLabel} / ${p.targetLabel}`;
+}
+
 /**
  * Tarjeta con los objetivos activos (máx. `max`, los más nuevos primero) y, si queda hueco, los conseguidos en
  * los últimos 7 días: título, barra de progreso y rango de fechas o estado. Cada fila y «Ver todos» abren #/goals.
@@ -670,7 +680,7 @@ export function goalsSummaryCard({ data = null, max = 3 } = {}) {
         h('span.goal-sum-name', `${G.goalEmoji(g)} ${keep(g.title)}`),
         h('span.goal-sum-pct', p.progressPct == null ? '—' : `${fmtNum(Math.floor(p.progressPct), 0)} %`)),
       h('span.goal-bar.goal-bar-sm', { 'aria-hidden': 'true' }, h('span.goal-bar-fill', { style: { width: `${pct.toFixed(1)}%` } })),
-      h('span.goal-sum-eta', keep(`${etaLine(p, today)} · ${p.currentLabel} / ${p.targetLabel}`)));
+      h('span.goal-sum-eta', keep(`${etaLine(p, today)} · ${sumValues(p)}`)));
   });
   return h('section.card.goal-sum', { dataset: { goalsSummary: '1' } },
     h('div.card-head',

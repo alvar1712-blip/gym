@@ -436,14 +436,10 @@ test('#/weekly a 375×667 y tarjeta resumen weeklySummaryCard() (2–3 mensajes 
     await scrollShots(page, 'weekly-375');
     for (let i = 0; i < n; i++) await page.locator('.wk-msg .why-btn').nth(i).click();
 
-    // Tarjeta resumen montada en el hueco de Hoy (la integración definitiva la hace Hoy/Progreso)
+    // Tarjeta resumen: Hoy la pinta en su hueco (.today-extra) al terminar de cargar lo principal
     await open(page, '#/today');
-    await page.evaluate(async () => {
-      const m = await import('./js/views/weekly.js');
-      const card = m.weeklySummaryCard();
-      document.querySelector('.today-extra').appendChild(card);
-      card.scrollIntoView({ block: 'center' });
-    });
+    await page.waitForFunction(() => document.querySelector('.today-extra')?.dataset.ready === '1', null, { timeout: 5000 });
+    await page.locator('.today-extra .wk-summary').evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await page.waitForTimeout(150);
     const card = page.locator('.wk-summary');
     assert.strictEqual(await card.count(), 1);

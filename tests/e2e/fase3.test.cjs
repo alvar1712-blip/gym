@@ -267,6 +267,9 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     assert.ok(n >= 2 && n <= 3, `2–3 mensajes clave (${n})`);
     // Objetivos: los dos activos
     assert.deepStrictEqual(await page.locator('.today-extra .goal-sum .goal-sum-row').evaluateAll((els) => els.map((e) => e.dataset.goal)), ['g_bw', 'g_press']);
+    // La cifra «actual / objetivo» dice qué mide (sin la ficha al lado, «107,7 kg / 105 kg» no se entiende)
+    assert.match(await page.locator('.today-extra .goal-sum-row[data-goal="g_press"] .goal-sum-eta').innerText(), /1RM est\.\s\d/);
+    assert.match(await page.locator('.today-extra .goal-sum-row[data-goal="g_bw"] .goal-sum-eta').innerText(), /Media 7 días\s\d/);
     assert.ok(await noHScroll(page), 'sin desbordamiento horizontal');
     await scrollShots(page, 'fase3-today-390');
     await shotAt(page, '.today-extra', 'fase3-today-390-extra');

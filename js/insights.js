@@ -8,7 +8,8 @@
 // ENTRADA `data` (la de stats.js más los check-ins; ver progress-ui.dataFromStore):
 //   { sessions, exercises: Map, templates: Map, plan: Map, settings, bodyweight, checkins: [...], today }
 //   checkins: store 'checkins' { id, date, timing:'pre'|'post', sessionId, sleep, energy, soreness } (1 bajo,
-//   2 normal, 3 alto). Solo se usan como contexto en la sugerencia de descarga.
+//   2 normal, 3 alto). Solo son contexto: un mensaje de información «Check-ins de la semana» y la condición (c)
+//   de la sugerencia de descarga (ninguna otra regla depende de ellos).
 //
 // SALIDA de weeklyInsights(data, weekStart):
 //   { week, weekEnd, today, ref, inProgress, future, daysLeft, hasHistory, beforeHistory, firstDate,
@@ -19,13 +20,14 @@
 //     fila anterior (p. ej. las series de un ejercicio). tag = texto corto opcional para la etiqueta de nivel.
 //   - Todos los umbrales salen de `settings` (Ajustes › Umbrales); si falta alguno, el de defaultSettings().
 import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtPct, fmtWeekRange } from './util.js';
-import { isWorkSet, rirValue, muscleContrib, workSetCount } from './calc.js';
+import { isWorkSet, rirValue, muscleContrib, workSetCount, setMetrics } from './calc.js';
 import {
   weeklySeries, muscleTable, exerciseHistory, exercisesWithHistory, dataRange, fmtMetric, fmtNumFast, weightLabel, KINDS,
 } from './stats.js';
 import { PATTERNS, PATTERN_LABEL, SET_TYPE_LABEL, defaultSettings } from './seed.js';
 import { formatSet, targetText, LOAD_REP_TYPES } from './session-logic.js';
 import { joinList } from './activity-logic.js';
+import { checkinsBetween, isLowCheckin, valueText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
 
 // ===========================================================================
 // Constantes y formato
@@ -47,8 +49,6 @@ const GROUP_OF = Object.fromEntries(PATTERNS.map((p) => [p.id, p.group]));
 const PUSH_PATTERNS = PATTERNS.filter((p) => p.group === 'push');
 const PULL_PATTERNS = PATTERNS.filter((p) => p.group === 'pull');
 const LEG_PATTERNS = PATTERNS.filter((p) => p.group === 'legs').map((p) => p.id);
-const CK_LEVEL = { 1: 'bajo', 2: 'normal', 3: 'alto' };
-const CK_SORE = { 1: 'bajas', 2: 'normales', 3: 'altas' };
 
 const num = fmtNumFast;
 const n1 = (v) => num(v, 1);
@@ -62,8 +62,24 @@ const pctTxt = (p) => fmtPct(p, 0);
 const signedTxt = (d) => (Math.abs(d) < 0.05 ? '=' : d > 0 ? `+${n1(d)}` : `−${n1(-d)}`);
 const rangeTxt = (min, max) => (min == null && max == null ? '—' : `${n1(min ?? 0)}–${n1(max ?? min)}`);
 const day = (date) => fmtDate(date, 'day'); // «23 sep»
+/** Tramo de fechas: «11–24 sep» o «31 ago – 13 sep». */
+function spanTxt(a, b) {
+  const [da, ma] = day(a).split(' ');
+  const [db, mb] = day(b).split(' ');
+  return ma === mb ? `${da}–${db} ${mb}` : `${day(a)} – ${day(b)}`;
+}
 /** «4 días (hoy incluido)» / «1 día (hoy)». */
 const daysTxt = (n) => (n === 1 ? '1 día (hoy)' : `${n} días (hoy incluido)`);
+/** Lo mismo sin paréntesis, para ir dentro de otro paréntesis: «4 días, hoy incluido» / «1 día, hoy». */
+const daysIn = (n) => (n === 1 ? '1 día, hoy' : `${n} días, hoy incluido`);
+/** «la última semana» / «las últimas 3 semanas» (W = 1 no dice «las últimas 1 semanas»). */
+const lastWeeksTxt = (w) => (w === 1 ? 'la última semana' : `las últimas ${num(w, 0)} semanas`);
+/** «la semana anterior» / «las 3 semanas anteriores». */
+const prevWeeksTxt = (w) => (w === 1 ? 'la semana anterior' : `las ${num(w, 0)} semanas anteriores`);
+/** «su última sesión» / «sus últimas 3 sesiones». */
+const lastSessionsTxt = (n) => (n === 1 ? 'su última sesión' : `sus últimas ${num(n, 0)} sesiones`);
+/** «la sesión anterior» / «las 3 sesiones anteriores». */
+const prevSessionsTxt = (n) => (n === 1 ? 'la sesión anterior' : `las ${num(n, 0)} sesiones anteriores`);
 const pctChange = (cur, base) => (base > 0 ? ((cur - base) / base) * 100 : null);
 const cumple = (ok) => (ok ? 'se cumple' : 'no se cumple');
 const plural = (n, one, many) => `${num(n, 0)} ${n === 1 ? one : many}`;
@@ -153,6 +169,7 @@ export function weeklyInsights(data, weekArg = null) {
     loadMessage(ctx),
     kmMessage(ctx),
     ...progressMessages(ctx),
+    checkinMessage(ctx),
   ].filter(Boolean);
   out.suggestions = [
     ...doubleProgressionMessages(ctx),
@@ -269,15 +286,16 @@ function muscleMessages(ctx) {
   const nIn = withT.length - below.length - above.length;
   const total = ctx.cur.workSets;
   const prevTotalTxt = ctx.hasPrev ? `semana anterior: ${num(ctx.prev.workSets, 0)}` : 'primera semana con registros';
-  const pending = ctx.inProgress ? ` La semana está en curso (quedan ${daysTxt(ctx.daysLeft)}): lo que aún no llega al mínimo se puede completar.` : '';
+  const pending = ctx.inProgress ? ` La semana está en curso (quedan ${daysIn(ctx.daysLeft)}): lo que aún no llega al mínimo se puede completar.` : '';
+  const effTxt = `${num(total, 1)} ${total === 1 ? 'serie efectiva' : 'series efectivas'}`;
   const out = [];
 
   // 1 · Tabla de todos los músculos frente a su rango.
   out.push(info('muscles', !below.length && !above.length ? 'good' : 'neutral', {
     title: 'Series efectivas por músculo',
     text: ctx.inProgress
-      ? `Semana en curso, a falta de ${daysTxt(ctx.daysLeft)}: ${nIn} de ${withT.length} músculos ya dentro de su rango, ${above.length} por encima y ${below.length} aún sin llegar al mínimo. Llevas ${setsTxt(total)} efectivas (${prevTotalTxt}).`
-      : `${nIn} de ${withT.length} músculos dentro de su rango, ${below.length} por debajo y ${above.length} por encima. ${setsTxt(total)} efectivas de fuerza (${prevTotalTxt}).`,
+      ? `Semana en curso, a falta de ${daysTxt(ctx.daysLeft)}: ${nIn} de ${withT.length} músculos ya dentro de su rango, ${above.length} por encima y ${below.length} aún sin llegar al mínimo. Llevas ${effTxt} (${prevTotalTxt}).`
+      : `${nIn} de ${withT.length} músculos dentro de su rango, ${below.length} por debajo y ${above.length} por encima. ${effTxt} de fuerza (${prevTotalTxt}).`,
     rule: `${factorRule(ctx)} El rango de cada músculo es el de Ajustes › Umbrales › Series semanales por músculo; Δ es la diferencia con la semana anterior.${pending}`,
     data: rows.map((r) => ({ label: r.name, value: `${setsTxt(r.sets)} · rango ${r.range ?? 'sin rango'} · ${prevSetsTxt(ctx, r)}` })),
     items: rows,
@@ -295,7 +313,7 @@ function muscleMessages(ctx) {
       ? (below.length === 1 ? ' También estaba por debajo la semana anterior.' : ' Todos estaban también por debajo la semana anterior.')
       : alsoPrev.length ? ` ${alsoPrev.length === 1 ? `${alsoPrev[0].name} ya estaba` : `${alsoPrev.length} ya estaban`} por debajo la semana anterior.` : '';
     const base = {
-      rule: `Un músculo está por debajo si sus series efectivas de la semana no llegan al mínimo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}${ctx.inProgress ? ` La semana no ha terminado (quedan ${daysTxt(ctx.daysLeft)}): es un recuento provisional, no un resultado.` : ''}`,
+      rule: `Un músculo está por debajo si sus series efectivas de la semana no llegan al mínimo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}${ctx.inProgress ? ` La semana no ha terminado (quedan ${daysIn(ctx.daysLeft)}): es un recuento provisional, no un resultado.` : ''}`,
       data: muscleWhyRows(ctx, below, breakdown),
       items: below.map((r) => ({ ...r, value: `${n1(r.sets)} / ${r.range} · faltan ${n1(r.missing)}${ctx.hasPrev ? ` · sem. ant. ${n1(r.prevSets)}` : ''}` })),
     };
@@ -327,7 +345,7 @@ function muscleMessages(ctx) {
       tag: 'Por encima',
       title: one ? `${one.name} por encima del rango` : `${above.length} músculos por encima del rango`,
       text: one
-        ? `${setsTxt(one.sets)} esta semana; tu máximo es ${n1(one.max)}. ${ctx.hasPrev ? `Semana anterior: ${n1(one.prevSets)} (${one.deltaLabel}).` : 'Es la primera semana con registros.'}`
+        ? `${setsTxt(one.sets)} esta semana; tu máximo es ${n1(one.max)}. ${ctx.hasPrev ? `Semana anterior: ${n1(one.prevSets)}${ctx.inProgress ? '' : ` (${one.deltaLabel})`}.` : 'Es la primera semana con registros.'}`
         : `Superan el máximo de su rango: ${shortList(above.map((r) => `${r.name} (${n1(r.sets)} de ${n1(r.max)})`))}.${ctx.inProgress ? ` Quedan ${daysTxt(ctx.daysLeft)}.` : ''}`,
       rule: `Un músculo está por encima si sus series efectivas de la semana superan el máximo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}`,
       data: muscleWhyRows(ctx, above, breakdown),
@@ -372,7 +390,7 @@ function pushPullMessage(ctx) {
   if (!ctx.hasStrength) return null;
   const prevTxt = ctx.hasPrev ? `semana anterior: ${num(p.pull, 0)} de tirón y ${num(p.push, 0)} de empuje` : 'primera semana con registros';
   const labels = (list) => joinList(list.map((x) => x.label.toLowerCase()));
-  const rule = `Se cuentan las series efectivas de cada ejercicio según su patrón de movimiento (ficha del ejercicio): empuje = ${labels(PUSH_PATTERNS)}; tirón = ${labels(PULL_PATTERNS)}. Cada serie cuenta 1 (sin factor de músculo secundario) y los ejercicios de aislamiento (curl, tríceps, elevaciones…) no cuentan. Con tu prioridad de espalda, lo deseable es que los tirones igualen o superen a los empujes.`;
+  const rule = `Se cuentan las series efectivas de cada ejercicio según su patrón de movimiento (ficha del ejercicio): empuje = ${labels(PUSH_PATTERNS)}; tirón = ${labels(PULL_PATTERNS)}. Cada serie cuenta 1 (sin factor de músculo secundario). No cuentan los ejercicios con patrón de aislamiento o de core (curl, extensiones de tríceps, elevaciones laterales…); si un ejercicio de aislamiento tiene patrón de tirón o de empuje en su ficha (p. ej. el face pull, tirón horizontal), sí cuenta. Con tu prioridad de espalda, lo deseable es que los tirones igualen o superen a los empujes.`;
   const data = [{ label: 'Tirón', value: setsTxt(c.pull) }];
   for (const e of c.list.filter((x) => x.group === 'pull')) data.push({ label: `${e.name} · ${PATTERN_LABEL[e.pattern]}`, value: setsTxt(e.sets), sub: true });
   data.push({ label: 'Empuje', value: setsTxt(c.push) });
@@ -385,7 +403,7 @@ function pushPullMessage(ctx) {
       ...extra,
       title: 'Empuje/tirón: sin series esta semana',
       text: ctx.inProgress
-        ? `Aún no hay series de empuje ni de tirón (quedan ${daysTxt(ctx.daysLeft)}); ${prevTxt}.`
+        ? `Aún no hay series de empuje ni de tirón (quedan ${daysIn(ctx.daysLeft)}); ${prevTxt}.`
         : `No hubo series de empuje ni de tirón; ${prevTxt}.`,
     });
   }
@@ -425,15 +443,33 @@ function loadStats(ctx) {
   const avg = (fn) => (weeks ? prevRows.reduce((t, r) => t + fn(r), 0) / weeks : null);
   const mean = avg((r) => r.loadTotal);
   const pct = enough && mean > 0 ? pctChange(cur.loadTotal, mean) : null;
+  // Por tipo, la misma regla que el total y que los km: con menos de 2 semanas previas con carga de ese tipo
+  // no hay referencia (ni media ni %), aunque el total sí la tenga.
   const byKind = KINDS.map((k) => {
+    const kWith = prevRows.filter((r) => r.load[k] > 0).length;
+    const kEnough = kWith >= 2;
     const m = avg((r) => r.load[k]);
-    return { kind: k, name: KIND_LABEL[k], value: cur.load[k], mean: m, pct: enough && m > 0 ? pctChange(cur.load[k], m) : null };
+    return { kind: k, name: KIND_LABEL[k], value: cur.load[k], mean: m, enough: kEnough, withData: kWith, pct: kEnough && m > 0 ? pctChange(cur.load[k], m) : null };
   });
   ctx.memo.load = { total: cur.loadTotal, mean, enough, withData, weeks, pct, byKind, noLoad: cur.noLoad };
   return ctx.memo.load;
 }
 
 const weeksTxt = (n) => (n === 1 ? 'la semana previa' : `las ${n} semanas previas`);
+/** «Media de las 4 semanas previas»; sin semanas previas (primera semana), «Media de semanas previas». */
+const meanLabel = (n) => (n > 0 ? `Media de ${weeksTxt(n)}` : 'Media de semanas previas');
+/** «sin referencia suficiente (1 semana con km)»; sin semanas previas: «aún no hay semanas previas». */
+const noRefTxt = (weeks, withN, what) => (weeks > 0 ? `sin referencia suficiente (${withN === 0 ? 'ninguna semana' : withN === 1 ? '1 semana' : `${withN} semanas`} con ${what})` : 'aún no hay semanas previas');
+/**
+ * % de un aviso: sin decimales, salvo a menos de 1 punto de un umbral (entonces 1 decimal: «+20,3 %» y no «+20 %»
+ * junto a «aviso desde +20 %»). Los avisos comparan este mismo valor redondeado a 1 decimal (warnOver).
+ */
+const r1 = (p) => Math.round(p * 10) / 10;
+const warnPct = (p, ths, signed = true) => fmtPct(r1(p), ths.some((t) => Math.abs(p - t) < 1) ? 1 : 0, signed);
+const warnOver = (p, t) => p != null && r1(p) > t + EPS;
+/** % de carga / de km de carrera con el mismo formato que sus avisos (información y sugerencias coinciden). */
+const lwPct = (ctx, p) => warnPct(p, [ctx.cfg.loadWarn.low, ctx.cfg.loadWarn.high]);
+const kmPct = (ctx, kind, p) => (kind === 'run' ? warnPct(p, [ctx.cfg.runKmWarn.low, ctx.cfg.runKmWarn.high]) : pctTxt(p));
 
 function loadRule() {
   return 'Carga de cada sesión = duración en minutos × esfuerzo percibido (RPE 1–10), en fuerza y en actividades. Se compara el total de la semana con la media de las 4 semanas anteriores (sin contar esta; si empezaste a registrar hace menos, las que haya). Con menos de 2 semanas previas con carga no hay referencia suficiente. Las sesiones sin esfuerzo percibido no suman carga.';
@@ -454,11 +490,11 @@ function loadMessage(ctx) {
   } else if (ctx.inProgress) {
     text = `De momento ${loadTxt(L.total)} (minutos × esfuerzo), el ${num((L.total / L.mean) * 100, 0)} % de la media de ${weeksTxt(L.weeks)} (${loadTxt(L.mean)}), a falta de ${daysTxt(ctx.daysLeft)}.`;
   } else {
-    text = `${loadTxt(L.total)} (minutos × esfuerzo), ${pctTxt(L.pct)} frente a la media de ${weeksTxt(L.weeks)} (${loadTxt(L.mean)}).`;
+    text = `${loadTxt(L.total)} (minutos × esfuerzo), ${lwPct(ctx, L.pct)} frente a la media de ${weeksTxt(L.weeks)} (${loadTxt(L.mean)}).`;
   }
   const items = L.byKind.filter((k) => k.value > 0 || k.mean > 0).map((k) => ({
-    kind: k.kind, label: k.name, value: `${loadTxt(k.value)} · media ${k.mean != null ? loadTxt(k.mean) : '—'}${!ctx.inProgress && k.pct != null ? ` (${pctTxt(k.pct)})` : ''}`,
-    load: k.value, mean: k.mean, pct: k.pct,
+    kind: k.kind, label: k.name, value: `${loadTxt(k.value)} · media ${k.enough ? loadTxt(k.mean) : 'sin ref.'}${!ctx.inProgress && k.pct != null ? ` (${pctTxt(k.pct)})` : ''}`,
+    load: k.value, mean: k.enough ? k.mean : null, pct: k.pct,
   }));
   const data = [
     { label: 'Esta semana', value: `${loadTxt(L.total)}${ctx.inProgress ? ' (en curso)' : ''}` },
@@ -468,7 +504,7 @@ function loadMessage(ctx) {
     { label: 'Media de las semanas previas', value: L.enough ? loadTxt(L.mean) : 'sin referencia suficiente' },
     {
       label: ctx.inProgress ? 'De momento' : 'Variación',
-      value: L.pct == null ? 'sin referencia suficiente' : ctx.inProgress ? `el ${num((L.total / L.mean) * 100, 0)} % de la media (semana en curso)` : pctTxt(L.pct),
+      value: L.pct == null ? 'sin referencia suficiente' : ctx.inProgress ? `el ${num((L.total / L.mean) * 100, 0)} % de la media (semana en curso)` : lwPct(ctx, L.pct),
     },
     L.noLoad ? { label: 'Sesiones sin esfuerzo percibido', value: `${L.noLoad} (no suman carga)` } : null,
   ];
@@ -503,21 +539,21 @@ function kmStats(ctx) {
 function kmMessage(ctx) {
   const list = kmStats(ctx);
   if (!list.length) return null;
-  const vsPrev = (x) => (!ctx.hasPrev ? 'primera semana con registros' : x.prev > 0 ? `${pctTxt(x.pctPrev)} frente a la semana anterior` : 'sin km la semana anterior');
+  const vsPrev = (x) => (!ctx.hasPrev ? 'primera semana con registros' : x.prev > 0 ? `${kmPct(ctx, x.kind, x.pctPrev)} frente a la semana anterior` : 'sin km la semana anterior');
   const text = ctx.inProgress
     ? `De momento, a falta de ${daysTxt(ctx.daysLeft)}: ${list.map((x) => `${x.name} ${distTxt(x.kind, x.cur)} (semana anterior ${distTxt(x.kind, x.prev)})`).join(' · ')}.`
     : `${list.map((x) => `${x.name} ${distTxt(x.kind, x.cur)} (${vsPrev(x)})`).join(' · ')}.`;
   const items = list.map((x) => ({
     kind: x.kind, label: x.name,
-    value: `${distTxt(x.kind, x.cur)} · sem. ant. ${distTxt(x.kind, x.prev)}${!ctx.inProgress && x.prev > 0 ? ` (${pctTxt(x.pctPrev)})` : ''} · media ${x.enough ? distTxt(x.kind, x.mean) : 'sin ref.'}${!ctx.inProgress && x.pctMean != null ? ` (${pctTxt(x.pctMean)})` : ''}`,
+    value: `${distTxt(x.kind, x.cur)} · sem. ant. ${distTxt(x.kind, x.prev)}${!ctx.inProgress && x.prev > 0 ? ` (${kmPct(ctx, x.kind, x.pctPrev)})` : ''} · media ${x.enough ? distTxt(x.kind, x.mean) : 'sin ref.'}${!ctx.inProgress && x.pctMean != null ? ` (${pctTxt(x.pctMean)})` : ''}`,
     km: x.cur, prevKm: x.prev, meanKm: x.enough ? x.mean : null, pctPrev: x.pctPrev, pctMean: x.pctMean,
   }));
   const data = [];
   for (const x of list) {
     data.push({ label: x.name, value: `${distTxt(x.kind, x.cur)} esta semana${ctx.inProgress ? ' (en curso)' : ''}` });
     const vary = (p) => (ctx.inProgress || p == null ? '' : ` (variación ${pctTxt(p)})`);
-    data.push({ label: 'Semana anterior', value: x.prev > 0 ? `${distTxt(x.kind, x.prev)}${vary(x.pctPrev)}` : `${distTxt(x.kind, 0)} (sin variación calculable)`, sub: true });
-    data.push({ label: `Media de ${weeksTxt(x.weeks)}`, value: x.enough ? `${distTxt(x.kind, x.mean)}${vary(x.pctMean)}` : `sin referencia suficiente (${x.withKm} ${x.withKm === 1 ? 'semana' : 'semanas'} con km)`, sub: true });
+    data.push({ label: 'Semana anterior', value: x.prev > 0 ? `${distTxt(x.kind, x.prev)}${ctx.inProgress || x.pctPrev == null ? '' : ` (variación ${kmPct(ctx, x.kind, x.pctPrev)})`}` : `${distTxt(x.kind, 0)} (sin variación calculable)`, sub: true });
+    data.push({ label: meanLabel(x.weeks), value: x.enough ? `${distTxt(x.kind, x.mean)}${vary(x.pctMean)}` : noRefTxt(x.weeks, x.withKm, 'km'), sub: true });
     data.push({ label: 'Semanas previas', value: ctx.prevRows.length ? ctx.prevRows.map((r) => distTxt(x.kind, r.km[x.kind])).join(' · ') : '—', sub: true });
   }
   return info('km', 'neutral', {
@@ -532,73 +568,139 @@ function kmMessage(ctx) {
 // INFORMACIÓN 6 · Ejercicios que progresan, se mantienen o se estancan
 // ===========================================================================
 
+/** Días seguidos sin un ejercicio a partir de los cuales su comparación vuelve a empezar (parón, vacaciones…). */
+export const GAP_DAYS = 28;
+
+/**
+ * Mejor serie de una sesión de peso corporal por 1RM estimado con el peso corporal `bw` (calc.setMetrics):
+ * { value, label } o null. Etiqueta como stats.js («+5 kg × 8 @1», «Sin lastre · 10 reps @1»).
+ */
+function bestAtBodyweight(sets, ex, bw) {
+  let best = null;
+  for (const st of sets || []) {
+    if (!isWorkSet(st)) continue;
+    const v = setMetrics(st, ex, bw).e1rm;
+    if (v != null && (!best || v > best.value + EPS)) best = { value: v, set: st };
+  }
+  if (!best) return null;
+  const txt = formatSet(best.set, 'bodyweight', { kg: true });
+  return { value: best.value, label: best.set.weight ? txt : `Sin lastre · ${txt}` };
+}
+
+/**
+ * Evalúa un tramo de sesiones frente a su referencia. Una sesión «mejora» si su 1RM estimado supera al de todas
+ * las sesiones de la referencia y al de las anteriores del tramo.
+ * @returns {{tramo, refs, marks:boolean[], prev:({value, entry}|null)[], improved:boolean}}
+ */
+function evalTramo(tramo, refs) {
+  const prev = tramo.map((e, i) => {
+    let best = null;
+    for (const r of refs.concat(tramo.slice(0, i))) if (!best || r.e1rm > best.value) best = { value: r.e1rm, entry: r };
+    return best;
+  });
+  const marks = tramo.map((e, i) => !!prev[i] && e.e1rm > prev[i].value + EPS);
+  return { tramo, refs, marks, prev, improved: marks.some(Boolean) };
+}
+
+const maxBy = (list) => list.reduce((b, e) => (!b || e.e1rm > b.e1rm + EPS ? e : b), null);
+
 /**
  * Clasificación de los ejercicios con 1RM estimado hasta `ctx.ref`: progress | maintain | stalled.
  * Solo ejercicios con ≥ MIN_SESSIONS sesiones con 1RM estimado y alguna en las últimas stall.weeks semanas.
+ * Se compara lo reciente con lo inmediatamente anterior (referencia acotada, no el mejor de siempre):
+ *  - por sesiones: las últimas S sesiones frente a las S anteriores;
+ *  - por semanas: las sesiones de las últimas W semanas frente a las de las W semanas anteriores (si en esas W
+ *    semanas no hubo sesiones, frente a las anteriores del propio tramo, y no se puede hablar de estancamiento).
+ * Tras un parón de GAP_DAYS o más sin el ejercicio, lo de antes deja de ser referencia (vuelta de vacaciones, de
+ * una lesión…: si mejora sesión a sesión, progresa, aunque siga por debajo de su nivel de antes).
+ * Peso corporal: el 1RM de TODAS las sesiones se recalcula con un mismo peso corporal (el de la última sesión),
+ * así que si solo cambia la báscula no hay mejora ni empeora (la idea de los récords de calc.detectPRs) y las
+ * cifras del «¿Por qué?» se pueden comparar entre sí.
+ * Estancado = sin mejora por sesiones (con S anteriores) o por semanas (con ≥ 2 sesiones en el tramo y alguna en
+ * la referencia). Progresa = alguna mejora. Se mantiene = el resto.
  */
 function classify(ctx) {
   if (ctx.memo.classes) return ctx.memo.classes;
   const S = Math.max(1, Math.round(ctx.cfg.stall.sessions));
   const W = Math.max(1, Math.round(ctx.cfg.stall.weeks));
   const from = addDays(ctx.ref, -7 * W + 1);
+  const priorFrom = addDays(from, -7 * W);
   const out = [];
   for (const it of exercisesWithHistory(ctx.d)) {
+    const ex = it.exercise;
+    const isBw = ex.logType === 'bodyweight';
     const hist = exerciseHistory(ctx.d, it.exerciseId, { labels: false }).filter((e) => e.date <= ctx.ref && e.e1rm != null);
     if (hist.length < MIN_SESSIONS || hist[hist.length - 1].date < from) continue;
-    let best = -Infinity;
-    const entries = hist.map((e, i) => {
-      const record = i > 0 && e.e1rm > best + EPS;
-      if (e.e1rm > best + EPS) best = e.e1rm;
-      return { date: e.date, sessionId: e.sessionId, e1rm: e.e1rm, label: e.bestSetLabel, record };
+    let start = 0;
+    for (let i = 1; i < hist.length; i++) if (diffDays(hist[i - 1].date, hist[i].date) >= GAP_DAYS) start = i;
+    const lastH = hist[hist.length - 1];
+    const bwRef = isBw && lastH.bw > 0 ? lastH.bw : null;
+    const era = hist.slice(start).map((e) => {
+      const o = { date: e.date, sessionId: e.sessionId, e1rm: e.e1rm, label: e.bestSetLabel };
+      const b = bwRef != null ? bestAtBodyweight(e.sets, ex, bwRef) : null;
+      if (b) { o.e1rm = b.value; o.label = b.label; }
+      return o;
     });
-    const n = entries.length;
-    const lastS = entries.slice(-S);
-    const win = entries.filter((e) => e.date >= from);
-    const hasPrior = entries.some((e) => e.date < from);
-    const bySessions = n >= S + 1 && !lastS.some((e) => e.record);
-    const byWeeks = win.length >= 2 && hasPrior && !win.some((e) => e.record);
-    const recS = lastS.some((e) => e.record);
-    const recW = win.some((e) => e.record);
-    const status = bySessions || byWeeks ? 'stalled' : recS || recW ? 'progress' : 'maintain';
-    // Tramo que se enseña en el «¿Por qué?»: el que decide el estado (el más largo si deciden los dos),
-    // precedido del mejor 1RM estimado de antes de ese tramo.
-    const idxS = n - lastS.length;
-    const idxW = win.length ? n - win.length : n;
-    let startIdx;
-    if (status === 'stalled') startIdx = bySessions && byWeeks ? Math.min(idxS, idxW) : bySessions ? idxS : idxW;
-    else if (status === 'progress') startIdx = recS && recW ? Math.min(idxS, idxW) : recS ? idxS : idxW;
-    else startIdx = idxS;
-    startIdx = Math.max(0, Math.min(startIdx, n - 1));
-    let priorBest = null;
-    for (const e of entries.slice(0, startIdx)) if (!priorBest || e.e1rm > priorBest.e1rm + EPS) priorBest = e;
-    let bestE = null;
-    for (const e of entries) if (!bestE || e.e1rm > bestE.e1rm + EPS) bestE = e;
+    const n = era.length;
+    const lastS = era.slice(-S);
+    const prevS = era.slice(Math.max(0, n - 2 * S), n - lastS.length);
+    const bySes = { kind: 'sessions', ...evalTramo(lastS, prevS) };
+    const win = era.filter((e) => e.date >= from);
+    const prior = era.filter((e) => e.date >= priorFrom && e.date < from);
+    const byWk = { kind: 'weeks', ...evalTramo(win, prior) };
+    // Tras un parón, con menos de MIN_SESSIONS sesiones desde entonces aún no se valora (como un ejercicio nuevo).
+    const fresh = n < MIN_SESSIONS;
+    const bySessions = !fresh && prevS.length > 0 && !bySes.improved;
+    const byWeeks = !fresh && prior.length > 0 && win.length >= 2 && !byWk.improved;
+    const status = bySessions || byWeeks ? 'stalled' : !fresh && (bySes.improved || byWk.improved) ? 'progress' : 'maintain';
+    // Tramo que se enseña en el «¿Por qué?»: el que decide el estado (el más largo si deciden los dos).
+    const longer = (a, b) => (a.tramo.length >= b.tramo.length ? a : b);
+    let sh;
+    if (status === 'stalled') sh = bySessions && byWeeks ? longer(bySes, byWk) : bySessions ? bySes : byWk;
+    else if (status === 'progress') sh = bySes.improved && byWk.improved ? longer(bySes, byWk) : bySes.improved ? bySes : byWk;
+    else sh = bySes;
+    if (fresh) sh = { kind: 'sessions', tramo: era, refs: [], marks: era.map(() => false), prev: era.map(() => null) };
+    const shown = sh.tramo.map((e, i) => ({ ...e, record: sh.marks[i] }));
+    const recIdx = sh.marks.lastIndexOf(true);
     out.push({
-      exerciseId: it.exerciseId, name: it.name, status, bySessions, byWeeks,
-      sessions: n, shown: entries.slice(startIdx), priorBest, best: bestE, last: entries[n - 1],
+      exerciseId: it.exerciseId, name: it.name, archived: !!it.archived, isBw: bwRef != null, bwRef, status, bySessions, byWeeks, fresh, eraSessions: n,
+      sessions: hist.length, gapFrom: start > 0 ? hist[start - 1].date : null,
+      refKind: sh.kind, refs: sh.refs, refBest: maxBy(sh.refs), shown,
+      rec: recIdx >= 0 ? shown[recIdx] : null, recPrev: recIdx >= 0 ? sh.prev[recIdx] : null,
+      best: maxBy(era), last: era[n - 1],
     });
   }
   out.sort((a, b) => (a.last.date === b.last.date ? a.name.localeCompare(b.name, 'es') : a.last.date < b.last.date ? 1 : -1));
-  ctx.memo.classes = { list: out, S, W, from };
+  ctx.memo.classes = { list: out, S, W, from, priorFrom };
   return ctx.memo.classes;
 }
 
 function progressRule(S, W) {
-  return `1RM estimado (Epley con repeticiones + RIR, series de 1 a 12 repeticiones) de la mejor serie de cada sesión, en ejercicios con al menos ${MIN_SESSIONS} sesiones y alguna en las últimas ${W} semanas. Progresa: nuevo mejor 1RM estimado en sus últimas ${S} sesiones o ${W} semanas. Estancado: sin superar su mejor 1RM estimado previo en las últimas ${S} sesiones o en las últimas ${W} semanas (con al menos 2 sesiones en ese tramo). Se mantiene: el resto (sin nuevo mejor reciente, pero sin sesiones suficientes para hablar de estancamiento). Umbrales en Ajustes › Umbrales › Estancamiento.`;
+  return `1RM estimado (Epley con repeticiones + RIR, series de 1 a 12 repeticiones) de la mejor serie de cada sesión, en ejercicios con al menos ${MIN_SESSIONS} sesiones y alguna en ${lastWeeksTxt(W)}. Se compara lo reciente con lo inmediatamente anterior: ${lastSessionsTxt(S)} con ${prevSessionsTxt(S)}, y ${lastWeeksTxt(W)} con ${prevWeeksTxt(W)}. Una sesión «mejora» si su 1RM estimado supera al de esa referencia y al de las sesiones anteriores del tramo. Progresa: alguna sesión mejora. Estancado: ninguna mejora en ${lastSessionsTxt(S)} o en ${lastWeeksTxt(W)} (con al menos 2 sesiones en ese tramo). Se mantiene: el resto (sin mejora, pero aún sin sesiones anteriores con las que comparar). Tras un parón de ${GAP_DAYS / 7} semanas o más sin el ejercicio, la comparación empieza de cero (no se compara con tu nivel de antes del parón) y hacen falta otra vez ${MIN_SESSIONS} sesiones para valorarlo. En ejercicios de peso corporal, el 1RM de todas las sesiones se calcula con el mismo peso corporal (el de tu última sesión): si solo cambia tu peso, no cuenta como mejora. Umbrales en Ajustes › Umbrales › Estancamiento.`;
 }
 
-function classWhyRows(list) {
+/** «de las 3 sesiones anteriores» / «de las 3 semanas anteriores (17 ago–6 sep)». */
+function refTxt(x, cls) {
+  return x.refKind === 'sessions' ? prevSessionsTxt(x.refs.length) : `${prevWeeksTxt(cls.W)} (${spanTxt(cls.priorFrom, addDays(cls.from, -1))})`;
+}
+function classWhyRows(list, cls) {
   const rows = [];
   for (const x of list) {
-    rows.push({ label: x.name, value: x.priorBest ? `mejor anterior ${kg1(x.priorBest.e1rm)} (${day(x.priorBest.date)})` : 'sin sesiones anteriores al tramo' });
-    for (const e of x.shown) rows.push({ label: day(e.date), value: `${kg1(e.e1rm)} · ${e.label}${e.record ? ' · nuevo mejor' : ''}`, sub: true });
+    let value;
+    if (x.refBest) value = `mejor de ${refTxt(x, cls)}: ${kg1(x.refBest.e1rm)} (${day(x.refBest.date)})`;
+    else if (x.gapFrom) value = `sin sesiones anteriores desde el parón (último registro previo: ${day(x.gapFrom)})`;
+    else value = 'sin sesiones anteriores al tramo';
+    rows.push({ label: x.name, value });
+    if (x.isBw) rows.push({ label: 'Peso corporal usado', value: `${kg1(x.bwRef)} en todas las sesiones (el del ${day(x.last.date)})`, sub: true });
+    for (const e of x.shown) rows.push({ label: day(e.date), value: `${kg1(e.e1rm)} · ${e.label}${e.record ? ' · mejora' : ''}`, sub: true });
   }
   return rows;
 }
 
 function progressMessages(ctx) {
   if (!ctx.hasStrength) return [];
-  const { list, S, W } = classify(ctx);
+  const cls = classify(ctx);
+  const { list, S, W } = cls;
   const rule = progressRule(S, W);
   if (!list.length) {
     const counts = exercisesWithHistory(ctx.d).map((it) => ({
@@ -606,15 +708,19 @@ function progressMessages(ctx) {
     })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 8);
     return [info('ex-none', 'neutral', {
       title: 'Aún sin datos para valorar el progreso',
-      text: `Hace falta que un ejercicio tenga al menos ${MIN_SESSIONS} sesiones con 1RM estimado y alguna en las últimas ${W} semanas.`,
+      text: `Hace falta que un ejercicio tenga al menos ${MIN_SESSIONS} sesiones con 1RM estimado y alguna en ${lastWeeksTxt(W)}.`,
       rule,
       data: counts.length ? counts.map((x) => ({ label: x.name, value: plural(x.n, 'sesión', 'sesiones') })) : [{ label: 'Ejercicios con 1RM estimado', value: 'ninguno todavía' }],
     })];
   }
   const out = [];
+  const recent = `${S === 1 ? 'su última sesión' : `sus últimas ${num(S, 0)} sesiones`} o en ${lastWeeksTxt(W)}`;
+  const names = (arr) => shortList(arr.map((x) => x.name));
   const item = (x) => ({
     exerciseId: x.exerciseId, label: x.name,
-    value: x.status === 'progress' ? `${kg1(x.best.e1rm)} (${day(x.best.date)})` : `mejor ${kg1(x.best.e1rm)} · última ${kg1(x.last.e1rm)}`,
+    value: x.status === 'progress' ? `${kg1(x.rec.e1rm)} (${day(x.rec.date)})`
+      : x.status === 'stalled' ? `mejor previo ${kg1(x.refBest.e1rm)} · última ${kg1(x.last.e1rm)}`
+        : `mejor ${kg1(x.best.e1rm)} · última ${kg1(x.last.e1rm)}`,
     status: x.status, best: x.best.e1rm, lastE1rm: x.last.e1rm, sessions: x.sessions,
   });
   const prog = list.filter((x) => x.status === 'progress');
@@ -622,13 +728,12 @@ function progressMessages(ctx) {
   const stall = list.filter((x) => x.status === 'stalled');
   if (prog.length) {
     const one = prog.length === 1 ? prog[0] : null;
-    const rec = one ? [...one.shown].reverse().find((e) => e.record) : null;
     out.push(info('ex-progress', 'good', {
       title: one ? `${one.name} progresa` : `${prog.length} ejercicios progresan`,
       text: one
-        ? `Nuevo mejor 1RM estimado: ${kg1(rec.e1rm)} (${day(rec.date)}, ${rec.label}).`
-        : `Con un nuevo mejor 1RM estimado en sus últimas ${S} sesiones o ${W} semanas.`,
-      rule, data: classWhyRows(prog), items: prog.map(item),
+        ? `Mejora su 1RM estimado: ${kg1(one.rec.e1rm)} (${day(one.rec.date)}, ${one.rec.label}), por encima de ${kg1(one.recPrev.value)} (${day(one.recPrev.entry.date)})${one.isBw ? `, con tu peso corporal de ${kg1(one.bwRef)} en todas` : ''}.`
+        : `Mejoran su 1RM estimado en ${recent}: ${names(prog)}.`,
+      rule, data: classWhyRows(prog, cls), items: prog.map(item),
     }));
   }
   if (keep.length) {
@@ -636,21 +741,31 @@ function progressMessages(ctx) {
     out.push(info('ex-maintain', 'neutral', {
       title: one ? `${one.name} se mantiene` : `${keep.length} ejercicios se mantienen`,
       text: one
-        ? `Sin nuevo mejor 1RM estimado reciente (mejor: ${kg1(one.best.e1rm)}, ${day(one.best.date)}), pero aún sin sesiones suficientes para hablar de estancamiento.`
-        : 'Sin nuevo mejor 1RM estimado reciente, pero aún sin sesiones suficientes para hablar de estancamiento.',
-      rule, data: classWhyRows(keep), items: keep.map(item),
+        ? (one.fresh
+          ? `Vuelve tras un parón (último registro previo: ${day(one.gapFrom)}): la comparación empieza de cero y, con ${plural(one.eraSessions, 'sesión', 'sesiones')} desde entonces, aún no se valora (hacen falta ${MIN_SESSIONS}).`
+          : `Sin mejora del 1RM estimado (mejor: ${kg1(one.best.e1rm)}, ${day(one.best.date)}), pero aún sin sesiones suficientes para hablar de estancamiento.`)
+        : keep.some((x) => x.fresh)
+          ? `Aún sin sesiones suficientes para valorar si progresan o se estancan (sin mejora reciente o de vuelta tras un parón): ${names(keep)}.`
+          : `Sin mejora del 1RM estimado, pero aún sin sesiones suficientes para hablar de estancamiento: ${names(keep)}.`,
+      rule, data: classWhyRows(keep, cls), items: keep.map(item),
     }));
   }
   if (stall.length) {
     const one = stall.length === 1 ? stall[0] : null;
-    const why = (x) => (x.bySessions && x.byWeeks ? `las últimas ${S} sesiones ni en las últimas ${W} semanas` : x.bySessions ? `las últimas ${S} sesiones` : `las últimas ${W} semanas`);
+    const oneText = (x) => {
+      const ref = `${kg1(x.refBest.e1rm)}, ${day(x.refBest.date)}`;
+      if (x.bySessions && x.byWeeks) return `Ni en ${lastSessionsTxt(S)} ni en ${lastWeeksTxt(W)} supera su mejor 1RM estimado de antes (${ref}).`;
+      if (x.bySessions) {
+        const subj = S === 1 ? 'Su última sesión no supera' : `Sus últimas ${num(S, 0)} sesiones no superan`;
+        return `${subj} el mejor 1RM estimado de ${prevSessionsTxt(x.refs.length)} (${ref}).`;
+      }
+      return `En ${lastWeeksTxt(W)} no supera el mejor 1RM estimado de ${prevWeeksTxt(W)} (${ref}).`;
+    };
     out.push(info('ex-stalled', 'warn', {
       tag: 'Estancado',
       title: one ? `${one.name} estancado` : `${stall.length} ejercicios estancados`,
-      text: one
-        ? `Sin superar su mejor 1RM estimado (${kg1(one.priorBest ? one.priorBest.e1rm : one.best.e1rm)}, ${day((one.priorBest || one.best).date)}) en ${why(one)}.`
-        : `Sin superar su mejor 1RM estimado en las últimas ${S} sesiones o ${W} semanas.`,
-      rule, data: classWhyRows(stall), items: stall.map(item),
+      text: one ? oneText(one) : `Sin mejora del 1RM estimado en ${recent}: ${names(stall)}.`,
+      rule, data: classWhyRows(stall, cls), items: stall.map(item),
     }));
   }
   return out;
@@ -693,7 +808,8 @@ function dpEvaluations(ctx) {
   const out = [];
   for (const it of exercisesWithHistory(ctx.d)) {
     const ex = it.exercise;
-    if (!ex || !LOAD_REP_TYPES.includes(ex.logType)) continue;
+    // Archivado = ya no está en tu rutina: no se sugiere nada para él.
+    if (!ex || ex.archived || !LOAD_REP_TYPES.includes(ex.logType)) continue;
     const hist = exerciseHistory(ctx.d, it.exerciseId, { labels: false }).filter((e) => e.date <= ctx.ref);
     const last = hist[hist.length - 1];
     if (!last || last.date < ctx.prevWeek) continue;
@@ -719,11 +835,18 @@ function dpEvaluations(ctx) {
       const type = st.type && st.type !== 'effective' ? ` (${SET_TYPE_LABEL[st.type]?.toLowerCase() || st.type})` : '';
       return { set: st, reps, rir, repsOk, rirOk, ok: repsOk && rirOk, note, type, text: formatSet(st, lt, { kg: true }) };
     });
+    // Series que pide el objetivo (target.sets): si se hicieron menos, no se sube aunque las hechas lleguen al tope.
+    const reqSets = Number.isFinite(se.target.sets) && se.target.sets >= 1 ? se.target.sets : null;
+    const setsOk = reqSets == null || checks.length >= reqSets;
+    const nTop = checks.filter((c) => c.repsOk).length;
+    const allOk = checks.every((c) => c.ok);
     out.push({
       exercise: ex, exerciseId: ex.id, name: ex.name || ex.id, logType: lt, date: last.date, sessionId: last.sessionId,
       templateName: s?.templateName || 'Sesión libre', target: se.target, targetLabel: targetText(se.target, lt), top, minRir,
-      checks, up: checks.every((c) => c.ok), nTop: checks.filter((c) => c.repsOk).length,
+      checks, reqSets, setsOk, up: setsOk && allOk, nTop,
       nRirLow: checks.filter((c) => c.repsOk && !c.rirOk).length, weight: Math.max(...weights),
+      // Motivo de mantener: faltan series del objetivo · faltan reps hasta el tope · solo falla el RIR
+      hold: setsOk && allOk ? null : !setsOk ? 'sets' : nTop < checks.length ? 'reps' : 'rir',
     });
   }
   out.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name, 'es') : a.date < b.date ? 1 : -1));
@@ -738,7 +861,8 @@ function upAction(ev, inc) {
     if (w < 0) {
       const after = w + (inc.text === '1–2 kg' ? 1 : inc.kg);
       return {
-        short: `reduce ${inc.text} la asistencia`,
+        // Con menos asistencia que el incremento, no se puede «reducir 2,5 kg»: se quita.
+        short: after >= 0 ? 'quita la asistencia' : `reduce ${inc.text} la asistencia`,
         detail: after >= 0 ? `quita la asistencia (ahora ${weightLabel('bodyweight', w)})` : `asistencia de ${num(-w, 2)} a ${inc.text === '1–2 kg' ? `${num(-w - 2, 2)}–${num(-w - 1, 2)}` : num(-after, 2)} kg`,
       };
     }
@@ -755,7 +879,7 @@ function dpRule(ctx) {
   const inc = ctx.cfg.increments;
   const minRir = num(Number(ctx.cfg.progression.minRir) || 0, 0);
   const iso = Number(inc.isolation) === 1 ? '1–2 kg' : kg(Number(inc.isolation) || 0);
-  return `Doble progresión (última sesión de cada ejercicio con rango de repeticiones, de esta semana o la anterior): si TODAS las series efectivas (efectiva, al fallo o drop; sin calentamientos) llegaron al tope del rango con RIR ≥ ${minRir}, se sugiere subir el peso: ${kg(Number(inc.upperCompound) || 0)} en compuestos de tren superior, ${kg(Number(inc.lowerCompound) || 0)} en compuestos de tren inferior y ${iso} en aislamiento y core (peso corporal: añade lastre o reduce asistencia; unilateral: por lado). Si no, se mantiene el peso y se buscan más repeticiones dentro del rango. Incrementos y RIR mínimo en Ajustes › Umbrales › Doble progresión.`;
+  return `Doble progresión (última sesión de cada ejercicio con rango de repeticiones, de esta semana o la anterior): si hiciste al menos las series del objetivo y TODAS las series efectivas (efectiva, al fallo o drop; sin calentamientos) llegaron al tope del rango con RIR ≥ ${minRir}, se sugiere subir el peso: ${kg(Number(inc.upperCompound) || 0)} en compuestos de tren superior, ${kg(Number(inc.lowerCompound) || 0)} en compuestos de tren inferior y ${iso} en aislamiento y core (peso corporal: añade lastre o reduce asistencia; unilateral: por lado). Si no, se mantiene el peso: si faltan repeticiones, se buscan más hasta el tope; si ya estás en el tope pero con RIR por debajo de ${minRir}, se busca completarlo con RIR ≥ ${minRir}; si faltaron series, se completan todas. Incrementos y RIR mínimo en Ajustes › Umbrales › Doble progresión.`;
 }
 
 function setRows(ev) {
@@ -773,12 +897,12 @@ function doubleProgressionMessages(ctx) {
     out.push(sugg(`dp-up-${ev.exerciseId}`, 'good', {
       tag: 'Subir peso',
       title: `${ev.name}: ${act.short}`,
-      text: `En la última sesión (${day(ev.date)}) todas las series efectivas llegaron al tope del rango (${num(ev.top, 0)} reps) con RIR ≥ ${num(ev.minRir, 0)}. Próxima vez: ${act.detail}.`,
+      text: `En la última sesión (${day(ev.date)}) ${ev.reqSets != null ? `hiciste las ${plural(ev.reqSets, 'serie', 'series')} del objetivo y ` : ''}todas las series efectivas llegaron al tope del rango (${num(ev.top, 0)} reps) con RIR ≥ ${num(ev.minRir, 0)}. Próxima vez: ${act.detail}.`,
       rule,
       data: [
         { label: 'Última sesión', value: `${fmtDate(ev.date)} · ${ev.templateName}` },
         { label: 'Objetivo', value: `${ev.targetLabel || `${num(ev.top, 0)} reps`} (tope ${num(ev.top, 0)} reps)` },
-        { label: 'Series efectivas', value: `${ev.checks.length} de ${ev.checks.length} en el tope con RIR ≥ ${num(ev.minRir, 0)}` },
+        { label: 'Series efectivas', value: `${ev.checks.length} de ${ev.checks.length} en el tope con RIR ≥ ${num(ev.minRir, 0)}${ev.reqSets != null ? ` (objetivo: ${plural(ev.reqSets, 'serie', 'series')})` : ''}` },
         ...setRows(ev),
         { label: 'Incremento', value: `${inc.label}: ${inc.text}${ev.logType === 'unilateral' ? ' por lado' : ''}` },
       ],
@@ -788,24 +912,45 @@ function doubleProgressionMessages(ctx) {
   }
   const hold = evs.filter((e) => !e.up);
   if (hold.length) {
-    const reason = (ev) => (ev.nTop < ev.checks.length
-      ? `${ev.nTop} de ${ev.checks.length} series en el tope (${num(ev.top, 0)} reps)`
-      : `todas en el tope, pero ${ev.nRirLow} con RIR por debajo de ${num(ev.minRir, 0)} o sin registrar`);
+    const rir = num(hold[0].minRir, 0);
+    const reason = (ev) => {
+      if (ev.hold === 'sets') {
+        const done = ev.checks.length;
+        return `${done} de ${ev.reqSets} series del objetivo registradas${ev.nTop < done ? ` (${ev.nTop} en el tope)` : done === 1 ? ' (en el tope)' : ' (todas en el tope)'}`;
+      }
+      if (ev.hold === 'reps') return `${ev.nTop} de ${ev.checks.length} series en el tope (${num(ev.top, 0)} reps)`;
+      return `todas en el tope, pero ${ev.nRirLow === ev.checks.length ? (ev.nRirLow === 1 ? 'con' : `las ${ev.nRirLow} con`) : `${ev.nRirLow} con`} RIR por debajo de ${num(ev.minRir, 0)} o sin registrar`;
+    };
+    // Qué hacer con el mismo peso, según el motivo (no «busca más repeticiones» si ya estás en el tope).
+    const ADVICE = {
+      reps: 'intenta sumar repeticiones hasta el tope',
+      rir: `busca completar el tope con RIR ≥ ${rir}`,
+      sets: 'completa todas las series del objetivo en el tope',
+    };
+    const TITLE = {
+      reps: 'Mantén el peso y busca más repeticiones',
+      rir: `Mantén el peso y termina con RIR ≥ ${rir}`,
+      sets: 'Mantén el peso y completa las series',
+    };
+    const kinds = ['reps', 'rir', 'sets'].filter((k) => hold.some((ev) => ev.hold === k));
     const one = hold.length === 1 ? hold[0] : null;
     const data = [];
     for (const ev of hold) {
       data.push({ label: `${ev.name} · ${ev.targetLabel || `tope ${num(ev.top, 0)}`}`, value: `${day(ev.date)} · ${reason(ev)}` });
       data.push(...setRows(ev));
     }
+    const groups = kinds.map((k) => `${ADVICE[k]}: ${shortList(hold.filter((ev) => ev.hold === k).map((ev) => ev.name), 3)}`);
     out.push(sugg('dp-hold', 'neutral', {
       tag: 'Mantener',
-      title: 'Mantén el peso y busca más repeticiones',
+      title: kinds.length === 1 ? TITLE[kinds[0]] : 'Mantén el peso',
       text: one
-        ? `${one.name}: ${reason(one)} en la última sesión (${day(one.date)}). Con el mismo peso, intenta sumar repeticiones hasta el tope.`
-        : `En ${hold.length} ejercicios no todas las series efectivas llegaron al tope del rango con RIR ≥ ${num(hold[0].minRir, 0)}; con el mismo peso, intenta sumar repeticiones hasta el tope.`,
+        ? `${one.name}: ${reason(one)} en la última sesión (${day(one.date)}). Con el mismo peso, ${ADVICE[one.hold]}.`
+        : kinds.length === 1
+          ? `En ${hold.length} ejercicios aún no toca subir (${shortList(hold.map((ev) => ev.name), 3)}); con el mismo peso, ${ADVICE[kinds[0]]}.`
+          : `En ${hold.length} ejercicios aún no toca subir. Con el mismo peso, ${groups.join('; ')}.`,
       rule,
       data,
-      items: hold.map((ev) => ({ exerciseId: ev.exerciseId, label: ev.name, value: reason(ev), date: ev.date, sessionId: ev.sessionId, weight: ev.weight })),
+      items: hold.map((ev) => ({ exerciseId: ev.exerciseId, label: ev.name, value: reason(ev), date: ev.date, sessionId: ev.sessionId, weight: ev.weight, hold: ev.hold })),
     }));
   }
   return out;
@@ -828,42 +973,44 @@ function loadWarningMessages(ctx) {
   const L = loadStats(ctx);
   const R = runKmStats(ctx);
   const { low, high } = ctx.cfg.loadWarn;
-  const now = ctx.inProgress ? `De momento (quedan ${daysTxt(ctx.daysLeft)}), la` : 'La';
+  const now = ctx.inProgress ? `De momento (quedan ${daysIn(ctx.daysLeft)}), la` : 'La';
+  const loadPct = (p, signed = true) => warnPct(p, [low, high], signed);
+  const runPct = (p, signed = true) => warnPct(p, [R.low, R.high], signed);
   const loadRuleTxt = `Aviso orientativo si la carga de la semana (minutos × esfuerzo) supera la media de las 4 semanas previas en más de un ${num(low, 0)} % (aviso suave) o de un ${num(high, 0)} % (aviso). Umbrales en Ajustes › Umbrales › Aviso de carga semanal. Es una referencia prudente para que las subidas sean graduales, no una predicción de lesión.`;
   const runRuleTxt = `Aviso orientativo si los km de carrera de la semana suben más de un ${num(R.low, 0)} % (aviso suave) o de un ${num(R.high, 0)} % (aviso) frente a la semana anterior; solo se evalúa si la semana anterior tuvo al menos ${num(R.minBaseKm, 1)} km (con menos, un cambio pequeño da porcentajes grandes). Umbrales en Ajustes › Umbrales › Aviso de km de carrera. Es una referencia prudente, no una predicción de lesión.`;
   const loadData = () => [
     { label: 'Esta semana', value: `${loadTxt(L.total)}${ctx.inProgress ? ' (en curso)' : ''}` },
-    { label: `Media de ${weeksTxt(L.weeks)}`, value: L.enough ? loadTxt(L.mean) : `sin referencia suficiente (${L.withData} ${L.withData === 1 ? 'semana' : 'semanas'} con carga)` },
+    { label: meanLabel(L.weeks), value: L.enough ? loadTxt(L.mean) : noRefTxt(L.weeks, L.withData, 'carga') },
     ...loadWeekRows(ctx),
-    { label: 'Variación', value: L.pct != null ? pctTxt(L.pct) : '—' },
+    { label: 'Variación', value: L.pct != null ? loadPct(L.pct) : '—' },
     { label: 'Umbrales', value: `+${num(low, 0)} % aviso suave · +${num(high, 0)} % aviso` },
   ];
   const runData = () => [
     { label: 'Km de carrera esta semana', value: `${distTxt('run', R.cur)}${ctx.inProgress ? ' (en curso)' : ''}` },
     { label: 'Semana anterior', value: distTxt('run', R.prev) },
-    { label: 'Variación', value: R.pct != null ? pctTxt(R.pct) : R.prev > 0 ? `no se evalúa (menos de ${num(R.minBaseKm, 1)} km)` : 'no se evalúa (sin km la semana anterior)' },
+    { label: 'Variación', value: R.pct != null ? runPct(R.pct) : R.prev > 0 ? `no se evalúa (menos de ${num(R.minBaseKm, 1)} km)` : 'no se evalúa (sin km la semana anterior)' },
     { label: 'Umbrales', value: `+${num(R.low, 0)} % aviso suave · +${num(R.high, 0)} % aviso · mínimo ${num(R.minBaseKm, 1)} km la semana anterior` },
   ];
   const out = [];
-  if (L.pct != null && L.pct > low + EPS) {
-    const hi = L.pct > high + EPS;
+  if (warnOver(L.pct, low)) {
+    const hi = warnOver(L.pct, high);
     out.push(sugg('load-warn', 'warn', {
       tag: hi ? 'Aviso' : 'Aviso suave',
       severity: hi ? 'high' : 'soft',
-      title: `${hi ? 'Aviso' : 'Aviso suave'}: la carga sube un ${num(L.pct, 0)} %`,
-      text: `${now} carga de esta semana (${loadTxt(L.total)}) supera en un ${num(L.pct, 0)} % la media de ${weeksTxt(L.weeks)} (${loadTxt(L.mean)}). Aviso orientativo: conviene que las subidas de carga sean graduales.`,
+      title: `${hi ? 'Aviso' : 'Aviso suave'}: la carga sube un ${loadPct(L.pct, false)}`,
+      text: `${now} carga de esta semana (${loadTxt(L.total)}) supera en un ${loadPct(L.pct, false)} la media de ${weeksTxt(L.weeks)} (${loadTxt(L.mean)}). Aviso orientativo: conviene que las subidas de carga sean graduales.`,
       rule: loadRuleTxt,
       data: loadData(),
       pct: L.pct,
     }));
   }
-  if (R.pct != null && R.pct > R.low + EPS) {
-    const hi = R.pct > R.high + EPS;
+  if (warnOver(R.pct, R.low)) {
+    const hi = warnOver(R.pct, R.high);
     out.push(sugg('runkm-warn', 'warn', {
       tag: hi ? 'Aviso' : 'Aviso suave',
       severity: hi ? 'high' : 'soft',
-      title: `${hi ? 'Aviso' : 'Aviso suave'}: km de carrera +${num(R.pct, 0)} %`,
-      text: `${ctx.inProgress ? 'De momento llevas' : 'Corriste'} ${distTxt('run', R.cur)} esta semana frente a ${distTxt('run', R.prev)} la anterior (+${num(R.pct, 0)} %). Aviso orientativo: en carrera conviene subir el volumen de forma gradual.`,
+      title: `${hi ? 'Aviso' : 'Aviso suave'}: km de carrera ${runPct(R.pct)}`,
+      text: `${ctx.inProgress ? 'De momento llevas' : 'Corriste'} ${distTxt('run', R.cur)} esta semana frente a ${distTxt('run', R.prev)} la anterior (${runPct(R.pct)}). Aviso orientativo: en carrera conviene subir el volumen de forma gradual.`,
       rule: runRuleTxt,
       data: runData(),
       pct: R.pct,
@@ -875,10 +1022,10 @@ function loadWarningMessages(ctx) {
   const parts = [];
   if (!L.enough) parts.push('Carga: sin referencia suficiente (hacen falta 2 semanas previas con carga)');
   else if (ctx.inProgress) parts.push(`De momento, la carga (${loadTxt(L.total)}) no supera la media de ${weeksTxt(L.weeks)} (${loadTxt(L.mean)}) en más de un ${num(low, 0)} %`);
-  else parts.push(`La carga queda ${L.pct >= 0 ? `un ${num(L.pct, 0)} % por encima` : `un ${num(-L.pct, 0)} % por debajo`} de tu media (aviso desde +${num(low, 0)} %)`);
+  else parts.push(`La carga queda ${L.pct >= 0 ? `un ${loadPct(L.pct, false)} por encima` : `un ${loadPct(L.pct, false)} por debajo`} de tu media (aviso desde +${num(low, 0)} %)`);
   const runs = R.cur > 0 || R.prev > 0;
   if (runs) {
-    if (R.evaluated) parts.push(ctx.inProgress ? `km de carrera: de momento ${distTxt('run', R.cur)} frente a ${distTxt('run', R.prev)} (aviso desde +${num(R.low, 0)} %)` : `km de carrera ${pctTxt(R.pct)} frente a la semana anterior (aviso desde +${num(R.low, 0)} %)`);
+    if (R.evaluated) parts.push(ctx.inProgress ? `km de carrera: de momento ${distTxt('run', R.cur)} frente a ${distTxt('run', R.prev)} (aviso desde +${num(R.low, 0)} %)` : `km de carrera ${runPct(R.pct)} frente a la semana anterior (aviso desde +${num(R.low, 0)} %)`);
     else parts.push(R.prev > 0 ? `km de carrera: no se evalúa (la semana anterior tuvo ${distTxt('run', R.prev)}, menos de ${num(R.minBaseKm, 1)} km)` : 'km de carrera: no se evalúa (sin carrera la semana anterior)');
   }
   return [sugg('load-ok', 'neutral', {
@@ -893,17 +1040,39 @@ function loadWarningMessages(ctx) {
 // SUGERENCIA 3 · Semana de descarga
 // ===========================================================================
 
-/** Check-in «bajo»: sueño o energía bajos (1) o agujetas altas (3). */
-export function isLowCheckin(c) {
-  return !!c && (c.sleep === 1 || c.energy === 1 || c.soreness === 3);
-}
+/** Check-in «bajo»: sueño o energía bajos (1) o agujetas altas (3). El mismo criterio que checkin-logic.js. */
+export { isLowCheckin };
 
+/** «sueño bajo · energía baja · agujetas normales» (concordado, solo lo contestado; checkin-logic.valueText). */
 function checkinText(c) {
-  const parts = [];
-  if (c.sleep) parts.push(`sueño ${CK_LEVEL[c.sleep] || '—'}`);
-  if (c.energy) parts.push(`energía ${CK_LEVEL[c.energy] || '—'}`);
-  if (c.soreness) parts.push(`agujetas ${CK_SORE[c.soreness] || '—'}`);
-  return parts.join(' · ') || 'sin valores';
+  return FIELD_KEYS.map((k) => valueText(k, c[k])).filter(Boolean).join(' · ') || 'sin valores';
+}
+/** Fila de un check-in en un «¿Por qué?»: «22 sep · antes» → «sueño bajo · energía normal · agujetas normales → cuenta como bajo». */
+const checkinRow = (k) => ({
+  label: `${day(k.date)} · ${k.timing === 'post' ? 'después' : 'antes'}`,
+  value: `${checkinText(k)}${isLowCheckin(k) ? ' → cuenta como bajo' : ''}`,
+  sub: true,
+});
+const CK_RULE = 'Un check-in cuenta como bajo si el sueño o la energía son bajos o las agujetas altas.';
+
+/**
+ * INFORMACIÓN · Check-ins de la semana (solo si los hay). Es contexto: ninguna regla del panel depende de él salvo
+ * la sugerencia de descarga. Resumen con checkin-logic.summary.
+ */
+function checkinMessage(ctx) {
+  const sum = checkinSummary(ctx.d.checkins, ctx.week, ctx.ref);
+  if (!sum.count) return null;
+  return info('checkins', 'neutral', {
+    tag: 'Contexto',
+    title: 'Check-ins de la semana',
+    text: `${ctx.inProgress ? 'De momento, ' : ''}${sum.text}. Es contexto: solo lo tiene en cuenta la sugerencia de descarga (si al menos la mitad de los check-ins de su periodo son bajos).`,
+    rule: `Check-ins opcionales de la semana, antes o después de entrenar: sueño, energía y agujetas (bajo, normal o alto). ${CK_RULE} Ninguna regla del panel depende de ellos salvo la sugerencia de descarga.`,
+    data: [
+      { label: 'Check-ins', value: `${plural(sum.count, 'check-in', 'check-ins')} en ${plural(sum.days, 'día', 'días')} · ${plural(sum.low, 'bajo', 'bajos')}` },
+      ...sum.list.map(checkinRow),
+    ],
+    count: sum.count, low: sum.low,
+  });
 }
 
 function deloadMessage(ctx) {
@@ -911,49 +1080,78 @@ function deloadMessage(ctx) {
   const { minStalled, rpeHigh } = ctx.cfg.deload;
   const W = Math.max(1, Math.round(ctx.cfg.deload.weeks));
   const from = addDays(ctx.ref, -7 * W + 1);
-  const stalled = classify(ctx).list.filter((x) => x.status === 'stalled');
+  // (a) Los archivados (ya fuera de tu rutina) no cuentan.
+  const stalled = classify(ctx).list.filter((x) => x.status === 'stalled' && !x.archived);
   const a = stalled.length >= minStalled;
+  // (b) Esfuerzo alto SOSTENIDO: el periodo se parte en W bloques de 7 días (hasta hoy o el domingo) y en cada uno
+  // tiene que haber sesiones de fuerza con esfuerzo registrado y un RPE medio ≥ rpeHigh (una semana sin entrenar
+  // rompe la racha); además, al menos MIN_RPE_SESSIONS sesiones en total.
   const rpeSessions = ctx.sessions.filter((s) => s.kind === 'strength' && s.date >= from && s.date <= ctx.ref && s.rpe >= 1)
     .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+  const blocks = [];
+  for (let k = W - 1; k >= 0; k--) {
+    const bEnd = addDays(ctx.ref, -7 * k);
+    const bStart = addDays(bEnd, -6);
+    const list = rpeSessions.filter((s) => s.date >= bStart && s.date <= bEnd);
+    const mean = list.length ? list.reduce((t, s) => t + s.rpe, 0) / list.length : null;
+    blocks.push({ from: bStart, to: bEnd, list, mean, ok: mean != null && mean >= rpeHigh - EPS, label: spanTxt(bStart, bEnd) });
+  }
   const rpeMean = rpeSessions.length ? rpeSessions.reduce((t, s) => t + s.rpe, 0) / rpeSessions.length : null;
-  const b = rpeSessions.length >= MIN_RPE_SESSIONS && rpeMean >= rpeHigh - EPS;
-  const cks = toArr(ctx.d.checkins)
-    .filter((c) => c && isDateStr(c.date) && c.date >= from && c.date <= ctx.ref && (c.sleep || c.energy || c.soreness))
-    .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : (x.timing === 'pre' ? -1 : 1)));
+  const emptyBlock = blocks.find((bk) => !bk.list.length);
+  const lowBlock = blocks.find((bk) => bk.list.length && !bk.ok);
+  const enoughRpe = rpeSessions.length >= MIN_RPE_SESSIONS;
+  const b = enoughRpe && !emptyBlock && !lowBlock;
+  // (c) Check-ins del periodo (si los hay): al menos la mitad bajos.
+  const cks = checkinsBetween(ctx.d.checkins, from, ctx.ref);
   const lows = cks.filter(isLowCheckin);
   const cApplies = cks.length > 0;
   const c = !cApplies || lows.length * 2 >= cks.length;
-  const period = `${day(from)}–${day(ctx.ref)}`;
-  const rule = `Se sugiere una semana de descarga solo si coinciden: (a) al menos ${num(minStalled, 0)} ejercicios estancados (ver «Ejercicios estancados»); (b) esfuerzo percibido (RPE) medio de las sesiones de fuerza de las últimas ${W} semanas de ${n1(rpeHigh)} o más, con al menos ${MIN_RPE_SESSIONS} sesiones con esfuerzo registrado; y (c) si registraste check-ins en ese periodo, que al menos la mitad sean bajos (sueño o energía bajos, o agujetas altas). Umbrales en Ajustes › Umbrales › Sugerencia de descarga.`;
+  const period = spanTxt(from, ctx.ref);
+  const perWeek = W === 1 ? 'en la última semana' : `en cada una de ${lastWeeksTxt(W)}`;
+  const rule = `Se sugiere una semana de descarga solo si coinciden: (a) al menos ${num(minStalled, 0)} ejercicios estancados (ver «Ejercicios estancados»; los archivados no cuentan); (b) esfuerzo percibido alto sostenido: RPE medio de las sesiones de fuerza de ${n1(rpeHigh)} o más ${perWeek} (bloques de 7 días hasta ${ctx.inProgress ? 'hoy' : 'el domingo'}; una semana sin sesiones rompe la racha), con al menos ${MIN_RPE_SESSIONS} sesiones con esfuerzo registrado; y (c) si registraste check-ins en ese periodo, que al menos la mitad sean bajos. ${CK_RULE} Umbrales en Ajustes › Umbrales › Sugerencia de descarga.`;
+  const meansTxt = blocks.map((bk) => (bk.mean != null ? n1(bk.mean) : '—')).join(' · ');
+  let bValue;
+  if (!rpeSessions.length) bValue = `sin sesiones con esfuerzo registrado · ${cumple(false)}`;
+  else if (emptyBlock) bValue = `${cumple(false)}: semana ${emptyBlock.label} sin sesiones de fuerza con esfuerzo registrado`;
+  else if (lowBlock) bValue = `${cumple(false)}: semana ${lowBlock.label} con RPE medio ${n1(lowBlock.mean)} (umbral ${n1(rpeHigh)})`;
+  else if (!enoughRpe) bValue = `${n1(rpeMean)} en ${plural(rpeSessions.length, 'sesión', 'sesiones')} (hacen falta al menos ${MIN_RPE_SESSIONS}) · ${cumple(false)}`;
+  else if (W === 1) bValue = `${n1(blocks[0].mean)} en ${plural(rpeSessions.length, 'sesión', 'sesiones')} (umbral ${n1(rpeHigh)}) · ${cumple(true)}`;
+  else bValue = `medias por semana: ${meansTxt} (umbral ${n1(rpeHigh)}; ${plural(rpeSessions.length, 'sesión', 'sesiones')}) · ${cumple(true)}`;
   const data = [
     { label: '(a) Ejercicios estancados', value: `${num(stalled.length, 0)} (mínimo ${num(minStalled, 0)}) · ${cumple(a)}` },
-    ...stalled.map((x) => ({ label: x.name, value: `mejor ${kg1((x.priorBest || x.best).e1rm)} · última ${kg1(x.last.e1rm)}`, sub: true })),
-    {
-      label: `(b) RPE medio de fuerza (${period})`,
-      value: rpeSessions.length
-        ? `${n1(rpeMean)} en ${plural(rpeSessions.length, 'sesión', 'sesiones')} (umbral ${n1(rpeHigh)}) · ${cumple(b)}`
-        : `sin sesiones con esfuerzo registrado · ${cumple(false)}`,
-    },
-    ...rpeSessions.map((s) => ({ label: `${day(s.date)} · ${s.templateName || 'Sesión libre'}`, value: `RPE ${num(s.rpe, 1)}`, sub: true })),
+    ...stalled.map((x) => ({ label: x.name, value: `mejor previo ${kg1(x.refBest.e1rm)} · última ${kg1(x.last.e1rm)}`, sub: true })),
+    { label: `(b) RPE medio de fuerza (${period})`, value: bValue },
+  ];
+  for (const bk of blocks) {
+    if (W > 1) data.push({ label: `Semana ${bk.label}`, value: bk.list.length ? `RPE medio ${n1(bk.mean)} en ${plural(bk.list.length, 'sesión', 'sesiones')}` : 'sin sesiones de fuerza con esfuerzo registrado', sub: true });
+    for (const s of bk.list) data.push({ label: `${day(s.date)} · ${s.templateName || 'Sesión libre'}`, value: `RPE ${num(s.rpe, 1)}`, sub: true });
+  }
+  data.push(
     {
       label: `(c) Check-ins (${period})`,
       value: cApplies ? `${lows.length} de ${cks.length} bajos (hace falta la mitad) · ${cumple(c)}` : 'sin check-ins en el periodo · no se tiene en cuenta',
     },
-    ...cks.map((k) => ({ label: `${day(k.date)} · ${k.timing === 'post' ? 'después' : 'antes'}`, value: `${checkinText(k)}${isLowCheckin(k) ? ' · bajo' : ''}`, sub: true })),
-  ];
-  const extra = { rule, data, conditions: { stalled: a, rpe: b, checkins: c, checkinsApply: cApplies }, stalledCount: stalled.length, rpeMean };
+    ...cks.map(checkinRow),
+  );
+  const extra = { rule, data, conditions: { stalled: a, rpe: b, checkins: c, checkinsApply: cApplies }, stalledCount: stalled.length, rpeMean, rpeWeeks: blocks.map((bk) => bk.mean) };
   if (a && b && c) {
+    const rpeTxt = W === 1 ? `un RPE medio de ${n1(blocks[0].mean)} en las sesiones de fuerza de la última semana` : `un RPE medio de ${n1(rpeHigh)} o más en cada una de ${lastWeeksTxt(W)} (${meansTxt})`;
     return sugg('deload', 'warn', {
       ...extra,
       tag: 'Descarga',
       title: 'Valora una semana de descarga',
-      text: `Coinciden ${plural(stalled.length, 'ejercicio estancado', 'ejercicios estancados')}${cApplies ? ', ' : ' y '}un RPE medio de ${n1(rpeMean)} en las sesiones de fuerza de las últimas ${W} semanas${cApplies ? ` y check-ins bajos (${lows.length} de ${cks.length})` : ''}. Una semana con menos series y menos esfuerzo puede ayudarte a recuperar y retomar la progresión.`,
+      text: `Coinciden ${plural(stalled.length, 'ejercicio estancado', 'ejercicios estancados')}${cApplies ? ', ' : ' y '}${rpeTxt}${cApplies ? ` y check-ins bajos (${lows.length} de ${cks.length})` : ''}. Una semana con menos series y menos esfuerzo puede ayudarte a recuperar y retomar la progresión.`,
     });
   }
   const yes = (ok) => (ok ? 'sí' : 'no');
+  let bStatus;
+  if (!rpeSessions.length) bStatus = 'RPE medio de fuerza: sin sesiones con esfuerzo registrado';
+  else if (emptyBlock) bStatus = `RPE medio de fuerza: semana ${emptyBlock.label} sin sesiones`;
+  else if (W === 1) bStatus = `RPE medio de fuerza ${n1(rpeMean)}${enoughRpe ? '' : ` en ${plural(rpeSessions.length, 'sesión', 'sesiones')}`} (umbral ${n1(rpeHigh)})`;
+  else bStatus = `RPE medio de fuerza por semana ${meansTxt} (umbral ${n1(rpeHigh)})`;
   const status = [
     `estancados ${num(stalled.length, 0)} (mínimo ${num(minStalled, 0)}): ${yes(a)}`,
-    `RPE medio de fuerza ${rpeMean != null ? n1(rpeMean) : '—'} (umbral ${n1(rpeHigh)}): ${yes(b)}`,
+    `${bStatus}: ${yes(b)}`,
     cApplies ? `check-ins bajos ${lows.length} de ${cks.length}: ${yes(c)}` : 'sin check-ins (no cuentan)',
   ];
   return sugg('deload-none', 'neutral', {
@@ -971,7 +1169,9 @@ function deloadMessage(ctx) {
  * 2–3 mensajes clave de un resultado de weeklyInsights, por prioridad: avisos de las sugerencias, avisos de
  * la información, subidas de peso (agrupadas en una si son varias), lo que falta en la semana (en curso, solo
  * cuando quedan 3 días o menos), lo que progresa, empuje/tirón… y, si no hay nada más, la carga y las series
- * por músculo. Los mensajes neutros de «sin avisos» no se muestran. Cada uno conserva su why.
+ * por músculo. Los mensajes neutros de «sin avisos» y el de check-ins (contexto) no se muestran. Cada uno
+ * conserva su why. Orden de salida: primero los de información y después las sugerencias (cada grupo por
+ * prioridad); la puntuación solo elige cuáles entran.
  * @returns {object[]}
  */
 export function keyMessages(result, max = 3) {
@@ -1004,7 +1204,8 @@ export function keyMessages(result, max = 3) {
       m: {
         id: 'dp-up-summary', section: 'suggestion', level: 'good', tag: 'Subir peso',
         title: `Puedes subir peso en ${ups.length} ejercicios`,
-        text: shortList(ups.map((m) => m.items[0].label), 3),
+        // Nombres y cifras: «Press banca (de 80 a 82,5 kg), Sentadilla (de 100 a 105 kg) y 2 más».
+        text: `${shortList(ups.map((m) => `${m.items[0].label} (${m.items[0].value})`), 3)}.`,
         why: {
           rule: ups[0].why.rule,
           data: ups.map((m) => ({ label: m.items[0].label, value: m.items[0].value })),
@@ -1013,6 +1214,9 @@ export function keyMessages(result, max = 3) {
       },
     });
   }
+  // La puntuación solo decide QUÉ mensajes entran; se devuelven con la información primero y las sugerencias
+  // después (el principio del panel), cada grupo por prioridad.
   scored.sort((a, b) => b.s - a.s);
-  return scored.slice(0, max).map((x) => x.m);
+  const SEC = { info: 0, suggestion: 1 };
+  return scored.slice(0, max).sort((a, b) => (SEC[a.m.section] - SEC[b.m.section]) || (b.s - a.s)).map((x) => x.m);
 }

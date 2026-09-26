@@ -94,6 +94,9 @@ function assertShape(r, label) {
         assert.ok(typeof d.value === 'string' && d.value.trim(), `${where}: why.data.value (${d.label})`);
       }
       assert.ok(!/undefined|NaN|null|\[object/.test(`${m.title} ${m.text} ${whyText(m)}`), `${where}: sin textos rotos\n${m.text}\n${whyText(m)}`);
+      // Redacción: sin paréntesis dentro de paréntesis, sin «las últimas 1 semanas» ni «1 serie efectivas» ni «0 semanas»
+      for (const t of [m.title, m.text, m.why.rule]) assert.ok(!/\([^()]*\(/.test(t), `${where}: paréntesis anidados: ${t}`);
+      assert.ok(!/últimas 1 |\b1 series|\b1 serie efectivas|las 0 semanas/.test(`${m.title} ${m.text} ${whyText(m)}`), `${where}: plural roto\n${m.text}\n${whyText(m)}`);
       if (m.items) assert.ok(Array.isArray(m.items) && m.items.every((it) => typeof it.label === 'string' && typeof it.value === 'string'), `${where}: items`);
     }
   }
@@ -417,6 +420,101 @@ test('kilómetros: por deporte frente a la semana anterior y a la media de 4 sem
   assert.equal(byId(weeklyInsights(mk({ sessions: [ses('p', W.w4, [['press_banca', [set(80, 5)]]])] }), W.w4), 'km'), undefined, 'sin km no hay mensaje');
 });
 
+test('carga por tipo: con menos de 2 semanas previas con carga de ese tipo, sin media ni % (aunque el total sí tenga)', () => {
+  const sessions = [
+    ...['w0', 'w1', 'w2', 'w3'].map((wk) => act(`o_${wk}`, 'other', W[wk], { min: 60, rpe: 5 })),
+    act('b3', 'bike', W.w3, { km: 20, min: 60, rpe: 5 }), // bici solo en 1 de las 4 semanas previas
+    act('b4', 'bike', W.w4, { km: 40, min: 80, rpe: 5 }), act('o4', 'other', W.w4, { min: 60, rpe: 5 }),
+  ];
+  const m = byId(weeklyInsights(mk({ sessions }), W.w4), 'load');
+  assert.equal(m.enough, true);
+  const bike = m.items.find((x) => x.kind === 'bike');
+  assert.equal(bike.pct, null);
+  assert.equal(bike.mean, null);
+  assert.equal(bike.value, '400 · media sin ref.');
+  const other = m.items.find((x) => x.kind === 'other');
+  assert.equal(other.value, '300 · media 300 (=0 %)'.replace('=0 %', '0 %'));
+});
+
+test('avisos: el % mostrado nunca parece igual al umbral (1 decimal cerca de él) y solo avisa por encima', () => {
+  // Media 300; esta semana 361 → +20,3 % → aviso suave «+20,3 %» (no «+20 %» junto a «aviso desde +20 %»)
+  const base = ['w0', 'w1', 'w2', 'w3'].map((wk) => act(`o_${wk}`, 'other', W[wk], { min: 60, rpe: 5 }));
+  const soft = byId(weeklyInsights(mk({ sessions: [...base, act('c', 'other', W.w4, { min: 72.2, rpe: 5 })] }), W.w4), 'load-warn');
+  assert.equal(soft.title, 'Aviso suave: la carga sube un 20,3 %');
+  assert.ok(soft.why.data.some((x) => x.label === 'Variación' && x.value === '+20,3 %'));
+  // +20,0 % (361 → no; 360 exacto) no avisa: la regla es «más de un 20 %»
+  const exact = weeklyInsights(mk({ sessions: [...base, act('c', 'other', W.w4, { min: 72, rpe: 5 })] }), W.w4);
+  assert.equal(byId(exact, 'load-warn'), undefined);
+  assert.match(byId(exact, 'load-ok').text, /un 20 % por encima de tu media \(aviso desde \+20 %\)/);
+  // Lejos de los umbrales, sin decimales
+  const big = byId(weeklyInsights(mk({ sessions: [...base, act('c', 'other', W.w4, { min: 90, rpe: 5 })] }), W.w4), 'load-warn');
+  assert.equal(big.title, 'Aviso: la carga sube un 50 %');
+  // Km de carrera: 10 → 11,04 km (+10,4 %) → «+10,4 %»
+  const runs = mk({ sessions: [act('r3', 'run', W.w3, { km: 10 }), act('r4', 'run', W.w4, { km: 11.04 })] });
+  const rk = byId(weeklyInsights(runs, W.w4), 'runkm-warn');
+  assert.equal(rk.title, 'Aviso suave: km de carrera +10,4 %');
+  assert.match(rk.text, /\(\+10,4 %\)/);
+  assert.match(byId(weeklyInsights(runs, W.w4), 'km').text, /\+10,4 % frente a la semana anterior/, 'la información usa el mismo %');
+});
+
+test('redacción: «1 serie efectiva», sin «las 0 semanas previas», sin Δ de media semana y el face pull explicado', () => {
+  const one = weeklyInsights(mk({ sessions: [ses('x', W.cur, [['press_banca', [set(80, 5)]]]), act('r', 'run', W.cur, { km: 5 })] }));
+  assert.match(byId(one, 'muscles').text, /Llevas 1 serie efectiva \(primera semana con registros\)/);
+  const km = byId(one, 'km');
+  assert.ok(km.why.data.some((x) => x.label === 'Media de semanas previas' && x.value === 'aún no hay semanas previas'), JSON.stringify(km.why.data));
+  assert.ok(byId(one, 'load-ok').why.data.some((x) => x.label === 'Media de semanas previas' && x.value === 'aún no hay semanas previas'));
+  // Por encima a mitad de semana: sin «(−2)» frente a una semana entera
+  const lat = (n) => Array.from({ length: n }, () => set(50, 10));
+  const above = weeklyInsights(mk({ sessions: [ses('a', W.w4, [['jalon_pecho', lat(25)]]), ses('b', W.cur, [['jalon_pecho', lat(23)]])] }));
+  const ma = byId(above, 'muscles-above');
+  assert.match(ma.text, /Semana anterior: 25\.$/);
+  assert.ok(!/\(−/.test(ma.text));
+  // Semana terminada: con Δ
+  const done = weeklyInsights(mk({ sessions: [ses('a', W.w3, [['jalon_pecho', lat(25)]]), ses('b', W.w4, [['jalon_pecho', lat(23)]])] }), W.w4);
+  assert.match(byId(done, 'muscles-above').text, /Semana anterior: 25 \(−2\)\.$/);
+  // Empuje/tirón: el face pull (aislamiento con patrón de tirón) cuenta y la regla lo dice
+  const fp = byId(weeklyInsights(mk({ sessions: [ses('f', W.w4, [['face_pull', [set(20, 15), set(20, 15)]], ['press_banca', [set(80, 5)]]])] }), W.w4), 'push-pull');
+  assert.ok(fp.why.data.some((x) => x.label === 'Face pull · Tirón horizontal' && x.value === '2 series'));
+  assert.match(fp.why.rule, /el face pull, tirón horizontal\), sí cuenta/);
+  assert.ok(!/los ejercicios de aislamiento \(curl, tríceps, elevaciones…\) no cuentan/.test(fp.why.rule));
+  // Semana en curso: sin paréntesis anidados («quedan 4 días, hoy incluido»)
+  const pp = byId(weeklyInsights(mk({ sessions: [ses('p', W.w4, [['press_banca', [set(80, 5)]]]), ses('c', W.cur, [['curl_barra', [set(20, 10)]]])] })), 'push-pull');
+  assert.match(pp.text, /^Aún no hay series de empuje ni de tirón \(quedan 4 días, hoy incluido\); /);
+  // stall.weeks = 1: «la última semana», nunca «las últimas 1 semanas»
+  const s1 = weeklyInsights(mk({ sessions: series('press_banca', ['w2', 'w3', 'w4'], (i) => [set(80 + i, 5)]), settings: settingsWith({ stall: { sessions: 1, weeks: 1 } }) }), W.w4);
+  const pr = byId(s1, 'ex-progress');
+  assert.match(pr.why.rule, /su última sesión con la sesión anterior, y la última semana con la semana anterior/);
+  assert.ok(!/últimas 1 /.test(pr.why.rule));
+});
+
+test('check-ins: mensaje de contexto en la información de la semana (solo si los hay), con cada check-in en el porqué', () => {
+  const sessions = [ses('q', W.w4, [['remo_pecho_apoyado', [set(60, 10)]]]), ses('p', W.cur, [['remo_pecho_apoyado', [set(60, 10)]]])];
+  const checkins = [
+    { id: 'c1', date: '2026-09-21', timing: 'pre', sleep: 1, energy: 2, soreness: 3 },
+    { id: 'c2', date: '2026-09-21', timing: 'post', sleep: 1, energy: 1, soreness: 2 },
+    { id: 'c3', date: '2026-09-22', timing: 'pre', sleep: 2, energy: 2, soreness: 2 },
+    { id: 'c4', date: '2026-09-23', timing: 'pre', sleep: 1, energy: 2, soreness: 3 },
+    { id: 'old', date: '2026-09-14', timing: 'pre', sleep: 1, energy: 1, soreness: 3 }, // otra semana: no cuenta
+  ];
+  const r = weeklyInsights(mk({ sessions, checkins }));
+  const m = byId(r, 'checkins');
+  assert.equal(m.section, 'info');
+  assert.equal(m.level, 'neutral');
+  assert.equal(m.tag, 'Contexto');
+  assert.equal(m.title, 'Check-ins de la semana');
+  assert.match(m.text, /^De momento, 4 check-ins · 3 bajos \(sueño bajo ×3, energía baja ×1, agujetas altas ×2\)\. Es contexto: solo lo tiene en cuenta la sugerencia de descarga/);
+  assert.equal(ids(r.info).at(-1), 'checkins', 'al final de la información');
+  assert.ok(m.why.data.some((x) => x.label === 'Check-ins' && x.value === '4 check-ins en 3 días · 3 bajos'));
+  assert.ok(m.why.data.some((x) => x.sub && x.label === '21 sep · después' && x.value === 'sueño bajo · energía baja · agujetas normales → cuenta como bajo'));
+  assert.ok(m.why.data.some((x) => x.sub && x.label === '22 sep · antes' && x.value === 'sueño normal · energía normal · agujetas normales'));
+  assert.match(m.why.rule, /Ninguna regla del panel depende de ellos salvo la sugerencia de descarga/);
+  assert.ok(!keyMessages(r, 5).some((x) => x.id === 'checkins'), 'no es un mensaje clave');
+  // Sin check-ins esa semana: no hay mensaje
+  assert.equal(byId(weeklyInsights(mk({ sessions, checkins: checkins.slice(-1) })), 'checkins'), undefined);
+  // Semana terminada: sin «de momento»
+  assert.match(byId(weeklyInsights(mk({ sessions, checkins }), W.w4), 'checkins').text, /^1 check-in · 1 bajo/);
+});
+
 // ===========================================================================
 // INFORMACIÓN 6 · Progresan / se mantienen / se estancan
 // ===========================================================================
@@ -426,21 +524,22 @@ function series(exId, weeks, sets, target) {
   return weeks.map((wk, i) => ses(`${exId}_${i}`, typeof wk === 'string' && W[wk] ? W[wk] : wk, [[exId, sets(i), target]]));
 }
 
-test('progresa: nuevo mejor 1RM estimado en las últimas sesiones; why con las cifras por sesión', () => {
+test('progresa: mejora del 1RM estimado frente a las sesiones anteriores; why con las cifras por sesión', () => {
   const d = mk({ sessions: series('press_banca', ['w1', 'w2', 'w3', 'w4'], (i) => [set(80 + 2.5 * i, 5, 1)]) });
   const m = byId(weeklyInsights(d, W.w4), 'ex-progress');
   assert.equal(m.level, 'good');
   assert.equal(m.title, 'Press banca progresa');
-  assert.equal(m.text, `Nuevo mejor 1RM estimado: ${kg1(e1(87.5, 5, 1))} (14 sep, 87,5 kg × 5 @1).`);
+  assert.equal(m.text, `Mejora su 1RM estimado: ${kg1(e1(87.5, 5, 1))} (14 sep, 87,5 kg × 5 @1), por encima de ${kg1(e1(85, 5, 1))} (7 sep).`);
   const rows = m.why.data;
   assert.equal(rows[0].label, 'Press banca');
-  assert.match(rows[0].value, new RegExp(`mejor anterior ${kg1(e1(80, 5, 1))}`));
+  assert.equal(rows[0].value, `mejor de la sesión anterior: ${kg1(e1(80, 5, 1))} (24 ago)`);
   assert.deepEqual(rows.filter((x) => x.sub).map((x) => x.value), [
-    `${kg1(e1(82.5, 5, 1))} · 82,5 kg × 5 @1 · nuevo mejor`,
-    `${kg1(e1(85, 5, 1))} · 85 kg × 5 @1 · nuevo mejor`,
-    `${kg1(e1(87.5, 5, 1))} · 87,5 kg × 5 @1 · nuevo mejor`,
+    `${kg1(e1(82.5, 5, 1))} · 82,5 kg × 5 @1 · mejora`,
+    `${kg1(e1(85, 5, 1))} · 85 kg × 5 @1 · mejora`,
+    `${kg1(e1(87.5, 5, 1))} · 87,5 kg × 5 @1 · mejora`,
   ]);
   assert.match(m.why.rule, /al menos 3 sesiones/);
+  assert.match(m.why.rule, /sus últimas 3 sesiones con las 3 sesiones anteriores, y las últimas 3 semanas con las 3 semanas anteriores/);
 });
 
 test('estancado por sesiones: sin superar el mejor previo en las últimas stall.sessions sesiones', () => {
@@ -452,12 +551,12 @@ test('estancado por sesiones: sin superar el mejor previo en las últimas stall.
   const m = byId(r, 'ex-stalled');
   assert.equal(m.level, 'warn');
   assert.equal(m.title, 'Remo con pecho apoyado estancado');
-  assert.match(m.text, /en las últimas 3 sesiones\.$/);
-  assert.ok(!/semanas\.$/.test(m.text));
+  assert.equal(m.text, 'Sus últimas 3 sesiones no superan el mejor 1RM estimado de las 2 sesiones anteriores (105 kg, 24 ago).');
   const rows = m.why.data;
-  assert.match(rows[0].value, /mejor anterior 105 kg \(24 ago\)/);
+  assert.equal(rows[0].value, 'mejor de las 2 sesiones anteriores: 105 kg (24 ago)');
   assert.equal(rows.filter((x) => x.sub).length, 3, 'las 3 sesiones del tramo');
-  assert.ok(!rows.some((x) => /nuevo mejor/.test(x.value)));
+  assert.ok(!rows.some((x) => /mejora/.test(x.value)));
+  assert.equal(m.items[0].value, 'mejor previo 105 kg · última 103 kg');
   // Con stall.sessions = 4 el tramo incluye el mejor (105) → progresa
   const r4 = weeklyInsights({ ...d, settings: settingsWith({ stall: { sessions: 4, weeks: 10 } }) }, W.w4);
   assert.equal(byId(r4, 'ex-stalled'), undefined);
@@ -473,11 +572,12 @@ test('estancado por semanas: sin superar el mejor previo en las últimas stall.w
   const s = settingsWith({ stall: { sessions: 10, weeks: 2 } });
   const m = byId(weeklyInsights({ ...d, settings: s }, W.w4), 'ex-stalled');
   assert.ok(m, 'estancado por semanas');
-  assert.match(m.text, /en las últimas 2 semanas\.$/);
+  assert.equal(m.text, 'En las últimas 2 semanas no supera el mejor 1RM estimado de las 2 semanas anteriores (105 kg, 31 ago).');
   assert.match(m.why.rule, /últimas 10 sesiones o en las últimas 2 semanas/);
+  assert.equal(m.why.data[0].value, 'mejor de las 2 semanas anteriores (24 ago – 6 sep): 105 kg (31 ago)');
   assert.equal(m.why.data.filter((x) => x.sub).length, 4, 'las 4 sesiones de las 2 últimas semanas');
-  // Con 1 sola sesión en el tramo de semanas no basta para hablar de estancamiento por semanas (y el mejor, del
-  // 31 ago, está entre sus últimas 10 sesiones → progresa)
+  // Con 1 sola sesión en el tramo de semanas no basta para hablar de estancamiento por semanas (y entre sus
+  // últimas 10 sesiones la del 31 ago mejora a la del 24 ago → progresa)
   const s1 = settingsWith({ stall: { sessions: 10, weeks: 1 } });
   const d1 = mk({ sessions: series('remo_pecho_apoyado', dates.slice(0, 5), (i) => [set(w[i], 8, 2)]) }); // última: 15 sep
   const r1 = weeklyInsights({ ...d1, settings: s1 }, W.w4);
@@ -523,12 +623,80 @@ test('varios ejercicios por estado: un mensaje por estado con la lista (items) y
   assert.equal(byId(r, 'ex-progress').title, 'Press banca progresa');
 });
 
+test('peso corporal: si solo cambia la báscula no hay mejora ni estancamiento distinto (mismo peso corporal para todas)', () => {
+  // 4 sesiones idénticas de dominadas (+5 kg × 8 @1) con pesajes 75,0 / 75,4 / 75,2 / 75,6
+  const dates = ['2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21'];
+  const sessions = dates.map((dd, i) => ses(`d${i}`, dd, [['dominadas', [set(5, 8), set(5, 8), set(5, 8)], { repMin: 5, repMax: 8 }]]));
+  const cls = (kgs) => {
+    const r = weeklyInsights(mk({ sessions, today: '2026-09-22', bodyweight: dates.map((id, i) => ({ id, kg: kgs[i] })) }), W.cur);
+    return r.info.filter((m) => /^ex-(progress|maintain|stalled)$/.test(m.id));
+  };
+  const up = cls([75.0, 75.4, 75.2, 75.6]);
+  const down = cls([75.6, 75.2, 75.4, 75.0]);
+  assert.deepEqual(up.map((m) => m.id), ['ex-stalled'], 'mismas series: estancado, no «progresa» por la báscula');
+  assert.deepEqual(down.map((m) => m.id), ['ex-stalled'], 'con los pesajes al revés, el mismo estado');
+  const m = up[0];
+  assert.equal(m.title, 'Dominadas estancado');
+  // Todas las cifras con el mismo peso corporal (el de la última sesión): comparables entre sí
+  const e = kg1((75.6 + 5) * (1 + 9 / 30));
+  assert.ok(m.why.data.some((x) => x.sub && x.label === 'Peso corporal usado' && x.value === '75,6 kg en todas las sesiones (el del 21 sep)'), JSON.stringify(m.why.data));
+  assert.deepEqual(m.why.data.filter((x) => x.sub && /sep|ago/.test(x.label) && x.label !== 'Peso corporal usado').map((x) => x.value), [`${e} · +5 kg × 8 @1`, `${e} · +5 kg × 8 @1`, `${e} · +5 kg × 8 @1`]);
+  assert.match(m.why.rule, /el 1RM de todas las sesiones se calcula con el mismo peso corporal/);
+  // Nordic curl sin lastre, 3 sesiones iguales: se mantiene (antes salía «progresa» por la báscula)
+  const nordic = ['2026-09-07', '2026-09-14', '2026-09-21'].map((dd, i) => ses(`n${i}`, dd, [['nordic', [set(null, 10)], { repMin: 8, repMax: 10, sets: 1 }]]));
+  const rn = weeklyInsights(mk({ sessions: nordic, today: '2026-09-22', bodyweight: [{ id: '2026-09-07', kg: 75 }, { id: '2026-09-14', kg: 75.4 }, { id: '2026-09-21', kg: 75.8 }] }), W.cur);
+  assert.equal(byId(rn, 'ex-progress'), undefined);
+  assert.equal(byId(rn, 'ex-maintain').title, 'Nordic curl se mantiene');
+  // Más lastre con el mismo peso corporal sí es mejora
+  const more = [...sessions.slice(0, 3), ses('d3', dates[3], [['dominadas', [set(7.5, 8), set(7.5, 8), set(7.5, 8)], { repMin: 5, repMax: 8 }]])];
+  const rm = weeklyInsights(mk({ sessions: more, today: '2026-09-22', bodyweight: dates.map((id, i) => ({ id, kg: [75.6, 75.4, 75.2, 75.0][i] })) }), W.cur);
+  const pm = byId(rm, 'ex-progress');
+  assert.equal(pm.title, 'Dominadas progresa');
+  assert.match(pm.text, /\(21 sep, \+7,5 kg × 8 @1\), por encima de .* \(31 ago\), con tu peso corporal de 75 kg en todas\.$/);
+});
+
+test('vuelta tras un parón: si mejora sesión a sesión progresa, aunque siga por debajo de su nivel de antes (y no sugiere descarga)', () => {
+  const S = [];
+  // Antes: 8 semanas (1 jun – 20 jul) a su mejor nivel
+  for (let i = 0; i < 8; i++) {
+    S.push(ses(`o${i}`, addDays('2026-06-01', 7 * i), [['press_banca', [set(90, 5)]], ['sentadilla', [set(120, 5)]], ['remo_barra', [set(85, 8)]]], { rpe: 7 }));
+  }
+  // Parón del 21 jul al 6 sep; vuelta con 2 sesiones por semana, subiendo cada sesión (siempre por debajo de antes)
+  ['2026-09-07', '2026-09-10', '2026-09-14', '2026-09-17', '2026-09-21', '2026-09-24'].forEach((dd, i) => {
+    S.push(ses(`n${i}`, dd, [['press_banca', [set(70 + 2.5 * i, 5)]], ['sentadilla', [set(95 + 5 * i, 5)]], ['remo_barra', [set(65 + 2.5 * i, 8)]]], { rpe: 8.5 }));
+  });
+  const r = weeklyInsights(mk({ sessions: S, today: '2026-09-26' }));
+  assert.equal(byId(r, 'ex-stalled'), undefined, 'no está estancado quien mejora cada sesión');
+  const p = byId(r, 'ex-progress');
+  assert.equal(p.title, '3 ejercicios progresan');
+  assert.equal(p.text, 'Mejoran su 1RM estimado en sus últimas 3 sesiones o en las últimas 3 semanas: Press banca, Remo con barra y Sentadilla.');
+  const bench = p.why.data.find((x) => x.label === 'Press banca');
+  assert.equal(bench.value, 'sin sesiones anteriores desde el parón (último registro previo: 20 jul)');
+  assert.match(p.why.rule, /Tras un parón de 4 semanas o más sin el ejercicio, la comparación empieza de cero/);
+  const dl = byId(r, 'deload-none');
+  assert.equal(dl.conditions.stalled, false);
+  assert.equal(byId(r, 'deload'), undefined);
+  // Con solo 2 sesiones tras el parón aún no se valora (como un ejercicio nuevo): se mantiene, con el parón explicado
+  const few = [...S.slice(0, 8), ...['2026-09-07', '2026-09-10'].map((dd, i) => ses(`f${i}`, dd, [['press_banca', [set(70 + 2.5 * i, 5)]]]))];
+  const r2 = weeklyInsights(mk({ sessions: few, today: '2026-09-11' }));
+  const keep = byId(r2, 'ex-maintain');
+  assert.ok(keep, JSON.stringify(ids(r2.info)));
+  assert.equal(keep.title, 'Press banca se mantiene');
+  assert.equal(keep.text, 'Vuelve tras un parón (último registro previo: 20 jul): la comparación empieza de cero y, con 2 sesiones desde entonces, aún no se valora (hacen falta 3).');
+  assert.ok(!keep.why.data.some((x) => /mejora/.test(x.value)), 'sin «mejora» en un mensaje de «se mantiene»');
+  // Un descenso sostenido sin parón (8 semanas a 90, luego 3 sesiones a 85): sí es estancamiento
+  const drop = [...S.slice(0, 8), ...['2026-07-27', '2026-08-03', '2026-08-10'].map((dd, i) => ses(`x${i}`, dd, [['press_banca', [set(85, 5)]]]))];
+  assert.ok(byId(weeklyInsights(mk({ sessions: drop, today: '2026-08-12' })), 'ex-stalled').items.some((x) => x.exerciseId === 'press_banca'));
+});
+
 // ===========================================================================
 // SUGERENCIA 1 · Doble progresión
 // ===========================================================================
 
+/** Una sesión con un ejercicio; el objetivo pide, salvo que se diga otra cosa, tantas series como las hechas. */
 function dpData(exId, sets, target, { date = W.w4, settings = defaultSettings() } = {}) {
-  return mk({ settings, sessions: [ses('dp', date, [[exId, sets, target]], { templateName: 'Día 1 — Upper pesado' })] });
+  const done = sets.filter((x) => x.done && x.type !== 'warmup').length;
+  return mk({ settings, sessions: [ses('dp', date, [[exId, sets, { sets: done, ...target }]], { templateName: 'Día 1 — Upper pesado' })] });
 }
 const dp = (data, week = W.w4) => weeklyInsights(data, week).suggestions;
 
@@ -537,14 +705,16 @@ test('doble progresión · compuesto de tren superior: todas las series al tope 
   const m = sg.find((x) => x.id === 'dp-up-press_banca');
   assert.equal(m.level, 'good');
   assert.equal(m.title, 'Press banca: sube 2,5 kg');
-  assert.equal(m.text, 'En la última sesión (14 sep) todas las series efectivas llegaron al tope del rango (6 reps) con RIR ≥ 1. Próxima vez: de 80 a 82,5 kg.');
+  assert.equal(m.text, 'En la última sesión (14 sep) hiciste las 3 series del objetivo y todas las series efectivas llegaron al tope del rango (6 reps) con RIR ≥ 1. Próxima vez: de 80 a 82,5 kg.');
   const rows = m.why.data.map((x) => `${x.label}=${x.value}`);
   assert.ok(rows.includes('Última sesión=lun 14 sep · Día 1 — Upper pesado'));
   assert.ok(rows.includes('Objetivo=3×4–6 (tope 6 reps)'));
   assert.ok(rows.includes('Serie 1=80 kg × 6 @2 · ✓ tope y RIR'));
   assert.equal(m.why.data.filter((x) => /^Serie \d/.test(x.label)).length, 3, 'sin calentamiento ni pendiente');
   assert.ok(rows.includes('Incremento=compuesto de tren superior: 2,5 kg'));
+  assert.ok(rows.includes('Series efectivas=3 de 3 en el tope con RIR ≥ 1 (objetivo: 3 series)'));
   assert.match(m.why.rule, /RIR ≥ 1/);
+  assert.match(m.why.rule, /si hiciste al menos las series del objetivo/);
   assert.equal(m.items[0].weight, 80);
   assert.equal(sg.find((x) => x.id === 'dp-hold'), undefined);
 });
@@ -577,6 +747,9 @@ test('doble progresión · peso corporal: añade lastre o reduce asistencia', ()
   assert.match(asist.text, /asistencia de 15 a 12,5 kg\.$/);
   const last = dp(dpData('dominadas', [set(-2, 8)], t)).find((x) => x.id === 'dp-up-dominadas');
   assert.match(last.text, /quita la asistencia/);
+  // Con menos asistencia que el incremento, el título tampoco dice «reduce 2,5 kg» (no se puede)
+  assert.equal(last.title, 'Dominadas: quita la asistencia');
+  assert.equal(dp(dpData('remo_invertido', [set(-1, 10)], { repMin: 8, repMax: 10 })).find((x) => x.id === 'dp-up-remo_invertido').title, 'Remo invertido: quita la asistencia');
   assert.match(none.why.rule, /peso corporal: añade lastre o reduce asistencia/);
   // Aislamiento de peso corporal (nordic): 1–2 kg de lastre
   assert.equal(dp(dpData('nordic', [set(null, 10)], { repMin: 8, repMax: 10 })).find((x) => x.id === 'dp-up-nordic').title, 'Nordic curl: añade 1–2 kg de lastre');
@@ -602,7 +775,10 @@ test('doble progresión · RIR: por debajo del mínimo, al fallo o sin registrar
   const low = dp(dpData('press_banca', [set(80, 6, 1), set(80, 6, 0)], t));
   assert.equal(low.find((x) => x.id === 'dp-up-press_banca'), undefined);
   const hold = low.find((x) => x.id === 'dp-hold');
-  assert.equal(hold.text, 'Press banca: todas en el tope, pero 1 con RIR por debajo de 1 o sin registrar en la última sesión (14 sep). Con el mismo peso, intenta sumar repeticiones hasta el tope.');
+  // Ya en el tope: lo que falta es terminar con RIR ≥ 1, no más repeticiones
+  assert.equal(hold.title, 'Mantén el peso y termina con RIR ≥ 1');
+  assert.equal(hold.text, 'Press banca: todas en el tope, pero 1 con RIR por debajo de 1 o sin registrar en la última sesión (14 sep). Con el mismo peso, busca completar el tope con RIR ≥ 1.');
+  assert.ok(!/sumar repeticiones/.test(hold.text));
   assert.ok(hold.why.data.some((x) => x.value === '80 kg × 6 @0 · RIR 0 < 1'));
   const fail = dp(dpData('press_banca', [set(80, 6, 1), set(80, 6, 'F', { type: 'failure' })], t)).find((x) => x.id === 'dp-hold');
   assert.ok(fail.why.data.some((x) => x.label === 'Serie 2 (al fallo)' && /@F · RIR 0 < 1$/.test(x.value)));
@@ -627,11 +803,60 @@ test('doble progresión · el drop set también tiene que llegar al tope; los ca
   assert.equal(hold.why.data.filter((x) => /^Serie \d/.test(x.label)).length, 2);
 });
 
+test('doble progresión · con menos series que las del objetivo no se sube, aunque las hechas lleguen al tope', () => {
+  // Objetivo 3×8–10: 14 sep 60 × 10/9/8 y 21 sep solo una serie de 60 × 10 @1 (se cortó el ejercicio)
+  const t = { sets: 3, repMin: 8, repMax: 10 };
+  const d = mk({ sessions: [
+    ses('a', W.w4, [['remo_pecho_apoyado', [set(60, 10), set(60, 9), set(60, 8)], t]], { templateName: 'Día 1 — Upper pesado' }),
+    ses('b', W.cur, [['remo_pecho_apoyado', [set(60, 10)], t]], { templateName: 'Día 1 — Upper pesado' }),
+  ] });
+  const sg = weeklyInsights(d).suggestions;
+  assert.equal(sg.find((x) => x.id === 'dp-up-remo_pecho_apoyado'), undefined, 'no sugiere subir con 1 de 3 series');
+  const hold = sg.find((x) => x.id === 'dp-hold');
+  assert.equal(hold.title, 'Mantén el peso y completa las series');
+  assert.equal(hold.text, 'Remo con pecho apoyado: 1 de 3 series del objetivo registradas (en el tope) en la última sesión (21 sep). Con el mismo peso, completa todas las series del objetivo en el tope.');
+  assert.ok(hold.why.data.some((x) => x.label === 'Remo con pecho apoyado · 3×8–10' && x.value === '21 sep · 1 de 3 series del objetivo registradas (en el tope)'));
+  assert.ok(hold.why.data.some((x) => x.sub && x.value === '60 kg × 10 @1 · ✓ tope y RIR'));
+  assert.match(hold.why.rule, /si hiciste al menos las series del objetivo/);
+  // Con las 3 series en el tope, sí
+  const full = mk({ sessions: [ses('b', W.cur, [['remo_pecho_apoyado', [set(60, 10), set(60, 10), set(60, 10)], t]])] });
+  assert.ok(weeklyInsights(full).suggestions.find((x) => x.id === 'dp-up-remo_pecho_apoyado'));
+  // Sin número de series en el objetivo no se exige nada
+  const noSets = mk({ sessions: [ses('b', W.cur, [['remo_pecho_apoyado', [set(60, 10)], { sets: null, repMin: 8, repMax: 10 }]])] });
+  assert.ok(weeklyInsights(noSets).suggestions.find((x) => x.id === 'dp-up-remo_pecho_apoyado'));
+  // Motivos distintos en el mismo mensaje: título neutro y cada consejo con sus ejercicios
+  const mixed = mk({ sessions: [ses('m', W.cur, [
+    ['remo_pecho_apoyado', [set(60, 10)], t],
+    ['press_banca', [set(80, 6, 0), set(80, 6, 0), set(80, 6, 0)], { sets: 3, repMin: 4, repMax: 6 }],
+    ['jalon_pecho', [set(55, 10), set(55, 9), set(55, 8)], t],
+  ])] });
+  const mh = weeklyInsights(mixed).suggestions.find((x) => x.id === 'dp-hold');
+  assert.equal(mh.title, 'Mantén el peso');
+  assert.equal(mh.text, 'En 3 ejercicios aún no toca subir. Con el mismo peso, intenta sumar repeticiones hasta el tope: Jalón al pecho; busca completar el tope con RIR ≥ 1: Press banca; completa todas las series del objetivo en el tope: Remo con pecho apoyado.');
+  assert.deepEqual(mh.items.map((x) => [x.label, x.hold]).sort(), [['Jalón al pecho', 'reps'], ['Press banca', 'rir'], ['Remo con pecho apoyado', 'sets']]);
+});
+
+test('ejercicios archivados: sin sugerencia de subir peso y sin contar para la descarga', () => {
+  const archived = new Map(EXMAP);
+  archived.set('remo_barra', { ...EXMAP.get('remo_barra'), archived: true });
+  const sessions = ['w1', 'w2', 'w3', 'w4'].map((wk) => ses(`r_${wk}`, W[wk], [['remo_barra', [set(70, 10), set(70, 10), set(70, 10)]]], { rpe: 9 }));
+  const base = mk({ sessions, settings: settingsWith({ deload: { minStalled: 1 } }) });
+  const live = weeklyInsights(base, W.w4);
+  assert.ok(live.suggestions.find((x) => x.id === 'dp-up-remo_barra'), 'sin archivar: sube');
+  assert.equal(byId(live, 'deload').stalledCount, 1);
+  const arch = weeklyInsights({ ...base, exercises: archived }, W.w4);
+  assert.equal(arch.suggestions.find((x) => x.id === 'dp-up-remo_barra'), undefined, 'archivado: nada que sugerir');
+  assert.ok(byId(arch, 'ex-stalled').items.some((x) => x.exerciseId === 'remo_barra'), 'en la información sigue apareciendo');
+  const dl = byId(arch, 'deload-none');
+  assert.equal(dl.stalledCount, 0);
+  assert.match(dl.why.rule, /los archivados no cuentan/);
+});
+
 test('doble progresión · mantener: un único mensaje agrupado con la lista, las series concretas y el rango', () => {
   const data = mk({ sessions: [ses('x', W.w4, [
     ['press_banca', [set(80, 6), set(80, 5), set(80, 5)], { repMin: 4, repMax: 6 }],
     ['remo_pecho_apoyado', [set(60, 10), set(60, 9), set(60, 8)]],
-    ['sentadilla', [set(100, 6), set(100, 6)], { repMin: 4, repMax: 6 }],
+    ['sentadilla', [set(100, 6), set(100, 6)], { repMin: 4, repMax: 6, sets: 2 }],
   ])] });
   const sg = dp(data);
   const holds = sg.filter((x) => x.title === 'Mantén el peso y busca más repeticiones');
@@ -643,7 +868,7 @@ test('doble progresión · mantener: un único mensaje agrupado con la lista, la
     ['Press banca', '1 de 3 series en el tope (6 reps)'],
     ['Remo con pecho apoyado', '1 de 3 series en el tope (10 reps)'],
   ]);
-  assert.match(hold.text, /^En 2 ejercicios no todas las series efectivas llegaron al tope del rango con RIR ≥ 1/);
+  assert.equal(hold.text, 'En 2 ejercicios aún no toca subir (Press banca y Remo con pecho apoyado); con el mismo peso, intenta sumar repeticiones hasta el tope.');
   const rows = hold.why.data.map((x) => `${x.label}=${x.value}`);
   assert.ok(rows.includes('Remo con pecho apoyado · 3×8–10=14 sep · 1 de 3 series en el tope (10 reps)'));
   assert.ok(rows.includes('Serie 3=60 kg × 8 @1 · faltan 2 reps'));
@@ -651,7 +876,7 @@ test('doble progresión · mantener: un único mensaje agrupado con la lista, la
 });
 
 test('doble progresión · solo la última sesión de cada ejercicio, de esta semana o la anterior, y con rango de reps', () => {
-  const t = { repMin: 4, repMax: 6 };
+  const t = { repMin: 4, repMax: 6, sets: 1 };
   // La última (14 sep) no llega al tope aunque la anterior sí
   const d = mk({ sessions: [ses('a', W.w3, [['press_banca', [set(80, 6)], t]]), ses('b', W.w4, [['press_banca', [set(82.5, 5)], t]])] });
   const sg = dp(d);
@@ -763,7 +988,7 @@ test('sin avisos: mensaje neutral «Sin avisos de carga» con las cifras frente 
 test('avisos en la semana en curso: lo ya superado avisa («de momento»); lo que va por debajo no se da por malo', () => {
   const sessions = ['w1', 'w2', 'w3', 'w4'].map((wk) => act(`o_${wk}`, 'other', W[wk], { min: 80, rpe: 5 }));
   const over = byId(weeklyInsights(mk({ sessions: [...sessions, act('c', 'other', W.cur, { min: 120, rpe: 5 })] })), 'load-warn');
-  assert.match(over.text, /^De momento \(quedan 4 días \(hoy incluido\)\), la carga de esta semana \(600\) supera en un 50 %/);
+  assert.match(over.text, /^De momento \(quedan 4 días, hoy incluido\), la carga de esta semana \(600\) supera en un 50 %/);
   const under = byId(weeklyInsights(mk({ sessions: [...sessions, act('c', 'other', W.cur, { min: 20, rpe: 5 })] })), 'load-ok');
   assert.match(under.text, /^De momento, la carga \(100\) no supera la media de las 4 semanas previas \(400\) en más de un 20 %/);
 });
@@ -789,13 +1014,18 @@ test('descarga: se sugiere si coinciden estancamiento, RPE alto sostenido y (sin
   const m = byId(r, 'deload');
   assert.equal(m.level, 'warn');
   assert.equal(m.title, 'Valora una semana de descarga');
-  assert.equal(m.text, 'Coinciden 3 ejercicios estancados y un RPE medio de 9 en las sesiones de fuerza de las últimas 2 semanas. Una semana con menos series y menos esfuerzo puede ayudarte a recuperar y retomar la progresión.');
+  assert.equal(m.text, 'Coinciden 3 ejercicios estancados y un RPE medio de 8 o más en cada una de las últimas 2 semanas (9 · 9). Una semana con menos series y menos esfuerzo puede ayudarte a recuperar y retomar la progresión.');
   assert.deepEqual(m.conditions, { stalled: true, rpe: true, checkins: true, checkinsApply: false });
+  assert.deepEqual(m.rpeWeeks, [9, 9]);
   const rows = m.why.data.map((x) => `${x.label}=${x.value}`);
   assert.ok(rows.includes('(a) Ejercicios estancados=3 (mínimo 3) · se cumple'));
-  assert.ok(rows.includes('(b) RPE medio de fuerza (11 sep–24 sep)=9 en 2 sesiones (umbral 8) · se cumple'), rows.join('\n'));
-  assert.ok(rows.includes('(c) Check-ins (11 sep–24 sep)=sin check-ins en el periodo · no se tiene en cuenta'));
+  assert.ok(rows.includes('Remo con pecho apoyado=mejor previo 82 kg · última 82 kg'));
+  assert.ok(rows.includes('(b) RPE medio de fuerza (11–24 sep)=medias por semana: 9 · 9 (umbral 8; 2 sesiones) · se cumple'), rows.join('\n'));
+  assert.ok(rows.includes('Semana 11–17 sep=RPE medio 9 en 1 sesión'));
+  assert.ok(rows.includes('Semana 18–24 sep=RPE medio 9 en 1 sesión'));
+  assert.ok(rows.includes('(c) Check-ins (11–24 sep)=sin check-ins en el periodo · no se tiene en cuenta'));
   assert.ok(m.why.data.some((x) => x.sub && x.label.startsWith('21 sep') && x.value === 'RPE 9'));
+  assert.match(m.why.rule, /en cada una de las últimas 2 semanas \(bloques de 7 días hasta hoy; una semana sin sesiones rompe la racha\)/);
   assert.equal(byId(r, 'deload-none'), undefined);
 });
 
@@ -804,9 +1034,10 @@ test('descarga: con check-ins en el periodo, hace falta que al menos la mitad se
   const none = byId(mostlyOk, 'deload-none');
   assert.equal(none.level, 'neutral');
   assert.equal(none.title, 'Sin señales de necesitar descarga');
-  assert.equal(none.text, 'No coinciden las condiciones. Estancados 3 (mínimo 3): sí · RPE medio de fuerza 9 (umbral 8): sí · check-ins bajos 1 de 3: no.');
+  assert.equal(none.text, 'No coinciden las condiciones. Estancados 3 (mínimo 3): sí · RPE medio de fuerza por semana 9 · 9 (umbral 8): sí · check-ins bajos 1 de 3: no.');
   assert.ok(none.why.data.some((x) => x.label.startsWith('(c)') && x.value === '1 de 3 bajos (hace falta la mitad) · no se cumple'));
-  assert.ok(none.why.data.some((x) => x.sub && x.label === '22 sep · antes' && x.value === 'sueño bajo · energía normal · agujetas normales · bajo'));
+  assert.ok(none.why.data.some((x) => x.sub && x.label === '22 sep · antes' && x.value === 'sueño bajo · energía normal · agujetas normales → cuenta como bajo'));
+  assert.ok(none.why.data.some((x) => x.sub && x.label === '21 sep · antes' && x.value === 'sueño normal · energía normal · agujetas normales'));
   // Exactamente la mitad (agujetas altas cuentan como bajo) → sí
   const half = byId(weeklyInsights(deloadData({ checkins: [ck('2026-09-21', 2, 2, 3, 'post'), ck('2026-09-22', 2, 2, 2)] })), 'deload');
   assert.ok(half);
@@ -821,7 +1052,7 @@ test('descarga: con check-ins en el periodo, hace falta que al menos la mitad se
 
 test('descarga: sin estancamiento suficiente o con RPE bajo → neutral con el estado de cada condición', () => {
   const lowRpe = byId(weeklyInsights(deloadData({ rpe: 7 })), 'deload-none');
-  assert.ok(lowRpe.why.data.some((x) => x.label.startsWith('(b)') && x.value === '7 en 2 sesiones (umbral 8) · no se cumple'));
+  assert.ok(lowRpe.why.data.some((x) => x.label.startsWith('(b)') && x.value === 'no se cumple: semana 11–17 sep con RPE medio 7 (umbral 8)'));
   assert.ok(lowRpe.why.data.some((x) => x.label.startsWith('(a)') && /se cumple$/.test(x.value)));
   // Umbrales editados: rpeHigh 7 → sí; minStalled 4 → no
   assert.ok(byId(weeklyInsights(deloadData({ rpe: 7, settings: settingsWith({ deload: { rpeHigh: 7 } }) })), 'deload'));
@@ -830,9 +1061,30 @@ test('descarga: sin estancamiento suficiente o con RPE bajo → neutral con el e
   // deload.weeks = 1: del 18 al 24 sep solo hay 1 sesión de fuerza (lunes 21) → no basta para «sostenido»
   const oneWeek = byId(weeklyInsights(deloadData({ settings: settingsWith({ deload: { weeks: 1 } }) })), 'deload-none');
   assert.ok(oneWeek.why.data.some((x) => x.label.startsWith('(b)') && /en 1 sesión/.test(x.value) && /no se cumple$/.test(x.value)), 'con una sola sesión no hay «esfuerzo alto sostenido»');
+  // … y el texto no dice «las últimas 1 semanas»
+  assert.ok(!/últimas 1 semanas/.test(`${oneWeek.text} ${oneWeek.why.rule}`));
+  assert.match(oneWeek.why.rule, /de 8 o más en la última semana/);
   // Sin fuerza en el historial: no hay mensaje de descarga
   assert.equal(byId(weeklyInsights(mk({ sessions: [act('r', 'run', W.w4, { km: 5 })] }), W.w4), 'deload'), undefined);
   assert.equal(byId(weeklyInsights(mk({ sessions: [act('r', 'run', W.w4, { km: 5 })] }), W.w4), 'deload-none'), undefined);
+});
+
+test('descarga: una semana sin entrenar rompe el «esfuerzo alto sostenido», aunque la de vuelta sea muy dura', () => {
+  // Semanas w0–w2 normales, w3 (7–13 sep) de vacaciones y w4 (14–20 sep) con 3 sesiones a RPE 9
+  const items = [['remo_pecho_apoyado', [set(60, 10)]], ['jalon_pecho', [set(55, 10)]], ['sentadilla', [set(100, 5)], { repMin: 4, repMax: 6 }]];
+  const sessions = ['w0', 'w1', 'w2'].map((wk) => ses(`s_${wk}`, W[wk], items, { rpe: 8 }));
+  for (const dd of [0, 2, 4]) sessions.push(ses(`v_${dd}`, addDays(W.w4, dd), items, { rpe: 9 }));
+  const d = mk({ sessions, settings: settingsWith({ deload: { minStalled: 1 } }) });
+  const r = weeklyInsights(d, W.w4);
+  assert.equal(byId(r, 'deload'), undefined, 'no sugiere descarga tras una semana sin entrenar');
+  const none = byId(r, 'deload-none');
+  assert.equal(none.conditions.rpe, false);
+  assert.ok(none.why.data.some((x) => x.label === '(b) RPE medio de fuerza (7–20 sep)' && x.value === 'no se cumple: semana 7–13 sep sin sesiones de fuerza con esfuerzo registrado'), JSON.stringify(none.why.data));
+  assert.ok(none.why.data.some((x) => x.sub && x.label === 'Semana 7–13 sep' && x.value === 'sin sesiones de fuerza con esfuerzo registrado'));
+  assert.match(none.text, /RPE medio de fuerza: semana 7–13 sep sin sesiones: no/);
+  // Con esa semana también dura, sí
+  const hard = mk({ sessions: [...sessions, ses('v_w3', W.w3, items, { rpe: 9 })], settings: settingsWith({ deload: { minStalled: 1 } }) });
+  assert.ok(byId(weeklyInsights(hard, W.w4), 'deload'));
 });
 
 test('isLowCheckin: sueño o energía bajos, o agujetas altas', () => {
@@ -848,22 +1100,31 @@ test('isLowCheckin: sueño o energía bajos, o agujetas altas', () => {
 // Mensajes clave (tarjeta resumen)
 // ===========================================================================
 
-test('keyMessages: 2–3 mensajes por prioridad (avisos primero), subidas agrupadas y sin los neutros de «sin avisos»', () => {
+test('keyMessages: 2–3 mensajes elegidos por prioridad (avisos antes que lo demás), información primero y después sugerencias', () => {
   const r = weeklyInsights(richData(), W.w4);
   const key = keyMessages(r, 3);
   assert.ok(key.length >= 2 && key.length <= 3);
-  assert.ok(!key.some((m) => ['load-ok', 'deload-none', 'km'].includes(m.id)));
-  const levels = key.map((m) => m.level);
-  const firstNonWarn = levels.indexOf('good') === -1 ? levels.length : levels.indexOf('good');
-  assert.ok(levels.slice(firstNonWarn).every((l) => l !== 'warn'), `avisos primero: ${ids(key)}`);
+  assert.ok(!key.some((m) => ['load-ok', 'deload-none', 'km', 'checkins'].includes(m.id)));
+  // Salida agrupada: primero los de información y después las sugerencias (nunca mezclados)
+  const secs = key.map((m) => m.section);
+  assert.deepEqual(secs, [...secs].sort((a, b) => (a === b ? 0 : a === 'info' ? -1 : 1)), `información primero: ${ids(key)}`);
+  // La prioridad decide cuáles entran: si hay avisos, no se quedan fuera por mensajes «good»
+  const warns = all(r).filter((m) => m.level === 'warn');
+  assert.ok(warns.length >= 1);
+  assert.ok(key.filter((m) => m.level === 'warn').length === Math.min(3, warns.length), `avisos elegidos: ${ids(key)}`);
   for (const m of key) assert.ok(m.why && m.why.rule && m.why.data.length, `${m.id}: why`);
+  // Aviso de sugerencia (descarga) e información (estancado) a la vez → estancado (info) primero en la lista
+  const dl = keyMessages(weeklyInsights(deloadData()), 3);
+  assert.ok(ids(dl).includes('deload') && ids(dl).includes('ex-stalled'), ids(dl).join());
+  assert.ok(ids(dl).indexOf('ex-stalled') < ids(dl).indexOf('deload'));
   // Varias subidas → un único mensaje agrupado
   const data = mk({ sessions: [ses('x', W.w4, [
-    ['press_banca', [set(80, 6)], { repMin: 4, repMax: 6 }], ['sentadilla', [set(100, 6)], { repMin: 4, repMax: 6 }], ['curl_supinador', [set(12, 15)], { repMin: 10, repMax: 15 }],
+    ['press_banca', [set(80, 6)], { repMin: 4, repMax: 6, sets: 1 }], ['sentadilla', [set(100, 6)], { repMin: 4, repMax: 6, sets: 1 }], ['curl_supinador', [set(12, 15)], { repMin: 10, repMax: 15, sets: 1 }],
   ])] });
   const k2 = keyMessages(weeklyInsights(data, W.w4), 3);
   const sum = k2.find((m) => m.id === 'dp-up-summary');
   assert.equal(sum.title, 'Puedes subir peso en 3 ejercicios');
+  assert.equal(sum.text, 'Curl supinador (de 12 a 13–14 kg), Press banca (de 80 a 82,5 kg) y Sentadilla (de 100 a 105 kg).');
   assert.equal(sum.level, 'good');
   assert.equal(sum.why.data.length, 3);
   assert.ok(!k2.some((m) => m.id.startsWith('dp-up-') && m.id !== 'dp-up-summary'));

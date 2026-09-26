@@ -1,6 +1,7 @@
 // E2E del check-in opcional (js/checkin.js) en la sesión de fuerza: «¿Cómo llegas hoy?» arriba (plegado, 3 toques
 // una vez abierto, guardado al instante en IndexedDB), editar, «Omitir» (sin guardar nada), «¿Cómo ha ido?» en la
-// hoja de terminar, el check-in en el resumen y que registrar una serie prellenada sigue costando 1 toque.
+// hoja de terminar, el check-in en el resumen y que registrar una serie prellenada sigue costando 1 toque. En una
+// sesión a posteriori (sin cronómetro) el «antes» no va arriba sino en la hoja de terminar, junto al «después».
 // La fecha se fija con el reloj de Playwright (jueves 24 sep 2026, 18:00 en Madrid; el tiempo sigue corriendo).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/checkin.test.cjs
 const test = require('node:test');
@@ -87,6 +88,20 @@ function registerVisible(page) {
   });
 }
 
+/**
+ * ¿Se ve entera la franja plegada? Compara su captura tal cual con otra en la que nada recorta (overflow visible):
+ * si algo corta la tilde de «ENERGÍA» o la virgulilla de «SUEÑO» (o cualquier texto), las dos capturas difieren.
+ */
+async function stripUnclipped(page, ci) {
+  const b = await ci.boundingBox();
+  const clip = { x: Math.floor(b.x), y: Math.floor(b.y) - 4, width: Math.ceil(b.width), height: Math.ceil(b.height) + 8 };
+  const asIs = await page.screenshot({ clip });
+  const tag = await page.addStyleTag({ content: '.ci-card, .ci-card * { overflow: visible !important; }' });
+  const free = await page.screenshot({ clip });
+  await tag.evaluate((n) => n.remove());
+  return asIs.equals(free);
+}
+
 test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante, editar; «después» en Terminar y en el resumen', async () => {
   const app = await launch();
   const { page } = app;
@@ -140,6 +155,8 @@ test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante,
     // Al contestar las tres, se pliega sola con el resumen
     await ci.locator('.ci-body').waitFor({ state: 'hidden' });
     assert.deepStrictEqual(await ci.locator('.ci-mini-v').allInnerTexts(), ['Normal', 'Alta', 'Bajas']);
+    assert.deepStrictEqual(await ci.locator('.ci-mini-k').allInnerTexts(), ['SUEÑO', 'ENERGÍA', 'AGUJETAS']);
+    assert.ok(await stripUnclipped(page, ci), 'la franja plegada no recorta las tildes («SUEÑO», «ENERGÍA»)');
     assert.strictEqual(await ci.locator('.ci-skip').isHidden(), true, 'ya no hay nada que omitir');
     assert.match(await ci.locator('.ci-toggle').getAttribute('aria-label'), /Sueño normal · Energía alta · Agujetas bajas/);
     assert.ok((await ci.boundingBox()).height <= 46);
@@ -308,39 +325,62 @@ test('«Omitir»: oculta el check-in de esa sesión y día sin guardar nada (con
   }
 });
 
-test('sesión a posteriori: «¿Cómo llegaste?» con la fecha de la sesión; al cambiar la fecha, el check-in va con ella', async () => {
-  const app = await launch();
+test('sesión a posteriori (iPhone SE): sin franja arriba, «Registrar serie 1» a la vista; «¿Cómo llegaste?» en Terminar y se mueve con la fecha', async () => {
+  const app = await launch({ width: 375, height: 667, sat: 20 });
   const { page } = app;
   try {
-    const id = await openSession(page, { templateId: 'tpl_d2', date: YESTERDAY, past: true });
-    const ci = page.locator('.ci-card[data-checkin="pre"]');
-    await ci.waitFor();
-    assert.strictEqual(await ci.locator('.ci-title').innerText(), '¿Cómo llegaste?');
+    // D2 empieza por Saltos verticales (editor de dos filas) y ya lleva el aviso «registrada a posteriori».
+    const id = await openSession(page, { templateId: 'tpl_d2', date: '2026-09-22', past: true });
+    await page.locator('.ses-past-banner').waitFor();
+    assert.strictEqual(await page.locator('.ses-content .ci-card').count(), 0, 'sin cronómetro, el «antes» no va arriba');
+    const v = await registerVisible(page);
+    assert.ok(v.ok, `«Registrar serie 1» a la vista sin desplazar (${JSON.stringify(v)})`);
     await shot(page, 'checkin-past-session');
-    await ci.locator('.ci-toggle').click();
-    await pick(ci, 'sleep', 'Bajo').click();
-    await pick(ci, 'energy', 'Normal').click();
-    let disk = await diskCheckins(page);
-    assert.deepStrictEqual(values(disk[0]), [YESTERDAY, 'pre', 1, 2, null]);
-    assert.strictEqual(await ci.locator('.ci-body').isVisible(), true, 'a medias no se pliega');
-    await ci.locator('.ci-toggle').click();
-    assert.deepStrictEqual(await ci.locator('.ci-mini-v').allInnerTexts(), ['Bajo', 'Normal', '—']);
 
-    // Cambiar la fecha de la sesión (menú ⋯ › Cambiar fecha)
+    // Terminar: «¿Cómo llegaste?» y «¿Cómo fue?», los dos opcionales (nada guardado solo por mostrarse)
+    await page.locator('.ses-finish-top').click();
+    let fin = page.locator('.sheet-panel.ses-finish-sheet');
+    await fin.waitFor();
+    assert.deepStrictEqual(await fin.locator('.ci-compact').evaluateAll((els) => els.map((e) => e.dataset.checkin)), ['pre', 'post']);
+    assert.deepStrictEqual(await fin.locator('.ci-ctitle').allInnerTexts(), ['¿Cómo llegaste?', '¿Cómo fue?']);
+    assert.deepStrictEqual(await storeAll(page, 'checkins'), []);
+    const pre = fin.locator('.ci-compact[data-checkin="pre"]');
+    await pre.scrollIntoViewIfNeeded();
+    await pick(pre, 'sleep', 'Bajo').click();
+    await pick(pre, 'energy', 'Normal').click();
+    let disk = await diskCheckins(page);
+    assert.strictEqual(disk.length, 1);
+    assert.deepStrictEqual(values(disk[0]), ['2026-09-22', 'pre', 1, 2, null], 'con la fecha de la sesión, guardado al instante');
+    assert.strictEqual(disk[0].sessionId, id);
+    await page.waitForTimeout(250);
+    await shot(page, 'checkin-past-finish');
+    await fin.locator('.sheet-head button[aria-label="Cerrar"]').click();
+    await page.waitForSelector('.sheet-overlay', { state: 'detached' });
+
+    // Cambiar la fecha de la sesión (menú ⋯ › Cambiar fecha): el check-in va con ella
     await page.locator('.ses-menu-btn').click();
     await page.locator('.action-item', { hasText: 'Cambiar fecha' }).click();
     const inp = page.locator('.ses-date-input');
     await inp.waitFor();
-    await inp.fill('2026-09-22');
+    await inp.fill(YESTERDAY);
     await inp.dispatchEvent('change');
     await page.locator('.sheet-actions button', { hasText: 'Listo' }).click();
-    await page.waitForTimeout(300);
+    await page.waitForSelector('.sheet-overlay', { state: 'detached' });
     disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 1);
-    assert.deepStrictEqual(values(disk[0]), ['2026-09-22', 'pre', 1, 2, null], 'el check-in se mueve con la sesión');
-    assert.deepStrictEqual(await page.locator('.ci-card .ci-mini-v').allInnerTexts(), ['Bajo', 'Normal', '—']);
-    const s = await getSession(page, id);
-    assert.strictEqual(s.date, '2026-09-22');
+    assert.deepStrictEqual(values(disk[0]), [YESTERDAY, 'pre', 1, 2, null], 'el check-in se mueve con la sesión');
+    assert.strictEqual((await getSession(page, id)).date, YESTERDAY);
+    assert.strictEqual(await page.locator('.ses-content .ci-card').count(), 0, 'tras rehacer la vista, sigue sin franja');
+    assert.ok((await registerVisible(page)).ok);
+
+    // Al volver a Terminar sale lo contestado
+    await page.locator('.ses-finish-top').click();
+    fin = page.locator('.sheet-panel.ses-finish-sheet');
+    await fin.waitFor();
+    const pre2 = fin.locator('.ci-compact[data-checkin="pre"]');
+    assert.deepStrictEqual(await pre2.locator('.seg-btn.active').allInnerTexts(), ['Bajo', 'Normal']);
+    assert.strictEqual(await pre2.locator('.ci-skip').isHidden(), true, 'contestado: nada que omitir');
+    assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'sin desplazamiento horizontal');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -367,6 +407,7 @@ test('una mano en iPhone SE: con el check-in arriba, «Registrar serie 1» sigue
     assert.deepStrictEqual(values((await diskCheckins(page))[0]), [TODAY, 'pre', 3, 2, 3]);
     v = await registerVisible(page);
     assert.ok(v.ok, `sigue a la vista con el resumen (${JSON.stringify(v)})`);
+    assert.ok(await stripUnclipped(page, ci), 'resumen plegado sin recortes en 375 px');
     assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'sin desplazamiento horizontal');
     await shot(page, 'checkin-se-done');
     const taps = await countTaps(page);

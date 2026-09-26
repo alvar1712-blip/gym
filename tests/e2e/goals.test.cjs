@@ -150,8 +150,9 @@ function buildSeed() {
 }
 
 /** Siembra los datos en la app abierta (memoria + IndexedDB). */
-async function seed(page, { goals = [] } = {}) {
+async function seed(page, { goals = [], extra = [] } = {}) {
   const s = buildSeed();
+  s.sessions.push(...extra);
   await page.evaluate(async ({ sessions, bodyweight, goals: gl, createdAt }) => {
     const { store } = window.__app;
     const meta = store.get('meta', 'app');
@@ -633,5 +634,86 @@ test('375×667: #/goals y los formularios de cada tipo sin desbordamiento horizo
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
+  }
+});
+
+test('estancado, empate de marca, sin inicio y vista previa sin «null» (390×844 y 375×667)', async () => {
+  // Sentadilla: sube 4 semanas (90 → 105 kg × 5 @1) y se queda en 105 kg 7 sesiones (martes). Peso muerto rumano:
+  // solo en junio (el objetivo se crea el 20 sep, sin nada en los 28 días previos).
+  const extra = [];
+  [90, 95, 100, 105, 105, 105, 105, 105, 105, 105, 105].forEach((w, i) => {
+    extra.push(strength(`sq${i}`, addDays(START, 7 * i + 1), [['sentadilla', 'Sentadilla', [{ weight: w, reps: 5 }, { weight: w, reps: 5 }]]]));
+  });
+  for (let i = 0; i < 4; i++) extra.push(strength(`rdl${i}`, addDays('2026-06-02', 7 * i), [['peso_muerto_rumano', 'Peso muerto rumano', [{ weight: 90 + 2.5 * i, reps: 8 }]]]));
+  // Press militar: domingo 13, lunes 14, domingo 20 y lunes 21 sep → 4 sesiones en 3 semanas, pero solo 8 días
+  ['2026-09-13', '2026-09-14', '2026-09-20', '2026-09-21'].forEach((d, i) => extra.push(strength(`ohp${i}`, d, [['press_militar', 'Press militar con barra', [{ weight: 40 + 2.5 * i, reps: 6 }]]])));
+  const goals = [
+    goalRow({ id: 'g_sq', kind: 'strength', title: 'Sentadilla 120 kg × 5', exerciseId: 'sentadilla', weight: 120, reps: 5, createdAt: madrid(START, 10) }),
+    goalRow({ id: 'g_rdl', kind: 'strength', title: 'Peso muerto rumano 110 kg × 8', exerciseId: 'peso_muerto_rumano', weight: 110, reps: 8, createdAt: madrid('2026-09-20', 10) }),
+    goalRow({ id: 'g_ohp', kind: 'strength', title: 'Press militar 60 kg × 5', exerciseId: 'press_militar', weight: 60, reps: 5, createdAt: madrid('2026-09-01', 10) }),
+    goalRow({ id: 'g_run', kind: 'endurance', title: '10 km en menos de 50 min', sport: 'run', distanceKm: 10, timeSec: 3000, createdAt: madrid(START, 11) }),
+    goalRow({ id: 'g_bw', kind: 'bodyweight', title: 'Subir a 77 kg', targetKg: 77, direction: 'up', createdAt: madrid(START, 12) }),
+  ];
+  /** Textos sueltos «null» / «undefined» dentro de un elemento (replaceChildren convierte null en texto). */
+  const junkText = (page, sel) => page.evaluate((q) => {
+    const root = document.querySelector(q);
+    if (!root) return ['(sin elemento)'];
+    const out = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/^\s*(null|undefined)\s*$/.test(n.nodeValue) || /\b(null|undefined|NaN)\b/.test(n.nodeValue)) out.push(n.nodeValue);
+    return out;
+  }, sel);
+  for (const [width, height, tag] of [[390, 844, '390'], [375, 667, '375']]) {
+    const app = await launch({ width, height });
+    const { page } = app;
+    try {
+      await seed(page, { goals, extra });
+      await open(page, '#/goals');
+      // Estancado: sin rango de fechas aunque la pendiente de 12 semanas sea positiva
+      const sq = card(page, 'Sentadilla 120 kg × 5');
+      assert.strictEqual(await sq.getAttribute('data-status'), 'no_trend');
+      assert.strictEqual(await sq.locator('.goal-badge').innerText(), 'Sin tendencia');
+      assert.strictEqual(await sq.locator('.goal-eta').innerText(), 'Sin tendencia: estancado desde el 4 ago (126 kg)');
+      // Empate de marca (105 kg × 5 las 8 últimas sesiones): «Actual» con la más reciente
+      assert.match(await sq.locator('.goal-val').first().innerText(), /126\s?kg[\s\S]*105 kg × 5 @1 · 22 sep/);
+      const why = await openWhy(sq);
+      const whyTxt = await why.innerText();
+      assert.match(whyTxt, /no supera 126 kg \(4 ago\) en las 7 sesiones siguientes/);
+      assert.match(whyTxt, /umbral de estancamiento \(3 sesiones o 3 semanas sin superar tu mejor marca\)/);
+      // Sin inicio: progreso «—» (no 102 kg / 139 kg = 73 %)
+      const rdl = card(page, 'Peso muerto rumano 110 kg × 8');
+      assert.strictEqual(await rdl.locator('.goal-pct').innerText(), '—');
+      assert.strictEqual(await rdl.locator('.goal-bar').getAttribute('aria-valuenow'), '0');
+      await rdl.scrollIntoViewIfNeeded();
+      await shot(page, `goals-nostart-${tag}`);
+      // 4 sesiones que tocan 3 semanas en 8 días: datos insuficientes, con lo que falta
+      const ohp = card(page, 'Press militar 60 kg × 5');
+      assert.strictEqual(await ohp.getAttribute('data-status'), 'insufficient');
+      assert.strictEqual(await ohp.locator('.goal-eta').innerText(), 'Datos insuficientes: solo 8 de 14 días entre el primero y el último');
+      assert.match(await (await openWhy(ohp)).innerText(), /4 sesiones con Press militar con barra en 3 semanas, pero entre el primero y el último solo hay 8 días/);
+      await ohp.scrollIntoViewIfNeeded();
+      await shot(page, `goals-span-${tag}`);
+      assert.deepStrictEqual(await junkText(page, '#view'), []);
+      assert.ok(await noHScroll(page), `sin desbordamiento: ${await overflowing(page)}`);
+      await sq.scrollIntoViewIfNeeded();
+      await shot(page, `goals-stall-${tag}`);
+      // Vista previa «Con tus datos» de cada tipo (editar y nuevo) sin «null»
+      for (const hash of ['#/goal/g_sq', '#/goal/g_run', '#/goal/g_bw', '#/goal/g_rdl', '#/goal/new?kind=bodyweight', '#/goal/new?kind=endurance']) {
+        await open(page, hash);
+        await page.waitForTimeout(250);
+        const prev = page.locator('.goal-preview');
+        assert.ok(await prev.locator('.goal-values').count() === 1, `${hash}: vista previa con valores`);
+        assert.deepStrictEqual(await junkText(page, '.goal-preview'), [], hash);
+        assert.ok(await noHScroll(page), `${hash}: ${await overflowing(page)}`);
+      }
+      await open(page, '#/goal/g_sq');
+      await page.waitForTimeout(250);
+      await page.locator('.goal-preview').scrollIntoViewIfNeeded();
+      assert.match(await page.locator('.goal-preview .goal-eta').innerText(), /^Sin tendencia: estancado desde el 4 ago/);
+      await shot(page, `goals-preview-stall-${tag}`);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
   }
 });

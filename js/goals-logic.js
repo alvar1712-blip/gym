@@ -27,11 +27,18 @@
 //    días del último pesaje hasta ese día); sin datos previos, el primer registro posterior. El progreso (%) va de
 //    inicio a objetivo; en «solo distancia», distancia más larga reciente / distancia objetivo.
 //  - Datos suficientes: ≥ settings.goals.minRecords registros en ≥ settings.goals.minWeeks semanas distintas
-//    (lunes a domingo) dentro de la ventana de la tendencia (12 semanas; peso corporal, 28 días como #/bodyweight;
-//    si minWeeks es mayor, la ventana se alarga a minWeeks semanas).
+//    (lunes a domingo) y con ≥ (minWeeks − 1) × 7 días entre el primero y el último (4 registros en dos fines de
+//    semana seguidos tocan 3 semanas pero abarcan 8 días: no bastan) dentro de la ventana de la tendencia (12
+//    semanas; peso corporal, 28 días como #/bodyweight; si minWeeks es mayor, la ventana se alarga a minWeeks
+//    semanas). Peso corporal: además, la tendencia de #/bodyweight (bwTrend con sus mínimos) tiene que existir.
+//  - Pausas: si en la ventana hay un hueco de ≥ 28 días sin registros, la tendencia solo usa lo registrado desde la
+//    vuelta (el nivel de antes de la pausa no marca la tendencia actual).
 //  - Tendencia = regresión lineal (calc.linearRegression) de los puntos de la ventana. Pendiente nula o en contra
-//    → 'no_trend'. Si no, tiempo restante = lo que falta desde «actual» / pendiente, y el RANGO sale de la
-//    pendiente ± 1 error típico, con un margen mínimo de ±20 % del tiempo restante. Nunca una fecha exacta.
+//    → 'no_trend'. Fuerza: si el ejercicio está estancado (regla de settings.stall, la del panel semanal: sin
+//    superar su mejor marca en las últimas N sesiones o N semanas), también 'no_trend', aunque la pendiente de 12
+//    semanas salga positiva por subidas anteriores. Si no, tiempo restante = lo que falta desde «actual» /
+//    pendiente, y el RANGO sale de la pendiente ± 1 error típico, con un margen mínimo de ±20 % del tiempo
+//    restante. Nunca una fecha exacta.
 //  - Conseguido: fuerza, una serie de trabajo con peso ≥ y reps ≥ desde el día en que se creó; resistencia, una
 //    sesión de distancia ≥ objetivo (y, con tiempo, por debajo del tiempo a ritmo medio de esa sesión); peso
 //    corporal, la media de 7 días llega al objetivo desde que se creó.
@@ -42,6 +49,7 @@ import { e1rm, setMetrics, riegel, linearRegression, dayIndex, movingAverage, ma
 import { exerciseHistory, runPaceSeries, bikeSpeedSeries, swimPaceSeries } from './stats.js';
 import { bwPoints, bwTrend, BW_TREND } from './activity-logic.js';
 import { formatSet, fmtLastre } from './session-logic.js';
+import { defaultSettings } from './seed.js';
 
 // ===========================================================================
 // Constantes
@@ -161,6 +169,8 @@ function missingText(c, noun) {
   const parts = [];
   if (c.missingRecords) parts.push(plural(c.missingRecords, noun[0], noun[1]));
   if (c.missingWeeks) parts.push(`${plural(c.missingWeeks, 'semana', 'semanas')} más con registros`);
+  // Registros más separados: solo si no faltan semanas (al añadir semanas ya se separan).
+  else if (c.missingSpan) parts.push('registros más separados en el tiempo');
   const verb = (c.missingRecords || c.missingWeeks) === 1 && parts.length === 1 ? 'falta' : 'faltan';
   return parts.length ? `${verb} ${parts.join(' y ')}` : '';
 }
@@ -178,15 +188,72 @@ export function goalRules(settings) {
 }
 
 /**
- * ¿Hay datos suficientes? `dates` = fecha de cada registro de la ventana.
- * @returns {{records, weeks, minRecords, minWeeks, missingRecords, missingWeeks, ok}}
+ * ¿Hay datos suficientes? `dates` = fecha de cada registro de la ventana. Además de los registros y las semanas
+ * distintas, pide que entre el primero y el último haya ≥ (minWeeks − 1) × 7 días (14 con 3 semanas, como
+ * #/bodyweight): domingo, lunes, domingo y lunes tocan 3 semanas pero solo abarcan 8 días.
+ * @returns {{records, weeks, spanDays, minRecords, minWeeks, minSpanDays, missingRecords, missingWeeks, missingSpan, ok}}
+ *  missingSpan = días que faltan entre el primer y el último registro.
  */
 export function sufficiency(dates, rules = DEFAULT_RULES) {
   const records = dates.length;
   const weeks = new Set(dates.map((d) => weekStart(d))).size;
+  const sorted = [...dates].sort();
+  const spanDays = records ? diffDays(sorted[0], sorted[records - 1]) : 0;
+  const minSpanDays = Math.max(0, (rules.minWeeks - 1) * 7);
   const missingRecords = Math.max(0, rules.minRecords - records);
   const missingWeeks = Math.max(0, rules.minWeeks - weeks);
-  return { records, weeks, minRecords: rules.minRecords, minWeeks: rules.minWeeks, missingRecords, missingWeeks, ok: !missingRecords && !missingWeeks };
+  const missingSpan = Math.max(0, minSpanDays - spanDays);
+  return {
+    records, weeks, spanDays, minRecords: rules.minRecords, minWeeks: rules.minWeeks, minSpanDays,
+    missingRecords, missingWeeks, missingSpan, ok: !missingRecords && !missingWeeks && !missingSpan,
+  };
+}
+
+/** Umbrales de estancamiento (settings.stall, los del panel semanal), con los valores por defecto si faltan. */
+export function stallRules(settings) {
+  const d = defaultSettings().stall;
+  const st = (settings && settings.stall) || {};
+  return { sessions: posInt(st.sessions, d.sessions), weeks: posInt(st.weeks, d.weeks) };
+}
+
+/**
+ * Estancamiento de una serie de registros de fuerza (mismo criterio que el panel semanal): sin superar su mejor
+ * marca previa en las últimas `sessions` sesiones (con al menos sessions + 1) o en las últimas `weeks` semanas
+ * (con ≥ 2 sesiones en ese tramo y alguna anterior). `recs` en orden de fecha, con `value` (más es mejor).
+ * @returns {{since, best, after, bySessions, byWeeks}|null} since/best = fecha y valor del mejor registro (el
+ *  primero que lo alcanzó); after = registros posteriores que no lo superan. null si no está estancado.
+ */
+export function stallOf(recs, today, stall) {
+  const S = stall.sessions;
+  const from = addDays(today, -7 * stall.weeks + 1);
+  let best = -Infinity;
+  let bestIdx = -1;
+  const isRec = recs.map((r, i) => {
+    const up = r.value > best + EPS;
+    if (up) { best = r.value; bestIdx = i; }
+    return i > 0 && up;
+  });
+  const n = recs.length;
+  const lastS = isRec.slice(-S);
+  const winIdx = recs.map((r, i) => (r.date >= from ? i : -1)).filter((i) => i >= 0);
+  const bySessions = n >= S + 1 && !lastS.some(Boolean);
+  const byWeeks = winIdx.length >= 2 && winIdx[0] > 0 && !winIdx.some((i) => isRec[i]);
+  if (!bySessions && !byWeeks) return null;
+  return { since: recs[bestIdx].date, best, after: n - 1 - bestIdx, bySessions, byWeeks };
+}
+
+/**
+ * Pausa: el último hueco de ≥ RECENT_DAYS días entre dos registros seguidos. Devuelve la fecha del primer registro
+ * tras la pausa (desde donde cuenta la tendencia) o null si no hay pausa.
+ * @returns {{from, to, days}|null} from = último registro antes de la pausa; to = primero después.
+ */
+export function lastPause(dates) {
+  const ds = [...new Set(dates)].sort();
+  for (let i = ds.length - 1; i > 0; i--) {
+    const days = diffDays(ds[i - 1], ds[i]);
+    if (days >= RECENT_DAYS) return { from: ds[i - 1], to: ds[i], days };
+  }
+  return null;
 }
 
 /**
@@ -240,9 +307,12 @@ export function etaText(eta, today = todayStr()) {
 // ===========================================================================
 
 const better = (a, b, dir) => (dir > 0 ? a > b + EPS : a < b - EPS);
+/** Mejor registro; a igualdad de valor, el más reciente (si se repite la marca, que no parezca antigua). */
 function bestOf(list, dir) {
   let best = null;
-  for (const r of list) if (!best || better(r.value, best.value, dir)) best = r;
+  for (const r of list) {
+    if (!best || better(r.value, best.value, dir) || (!better(best.value, r.value, dir) && r.date >= best.date)) best = r;
+  }
   return best;
 }
 const inWin = (d, from, to) => d >= from && d <= to;
@@ -278,17 +348,23 @@ function weeklyBest(records, dir) {
   return [...byWeek.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-/** Progreso (0–100) de inicio a objetivo; `ratio` = actual / objetivo (solo distancia). */
+/**
+ * Progreso (0–100) de inicio a objetivo; `ratio` = actual / objetivo (solo distancia). Sin inicio y sin llegar al
+ * objetivo → null (la vista enseña «—»; actual / objetivo daría, p. ej., un 91 % el día en que se crea).
+ */
 export function progressPercent({ start, current, target, dir, achieved = false, ratio = false }) {
   if (achieved) return 100;
   if (!isNum(current) || !isNum(target)) return null;
   const clamp = (v) => Math.max(0, Math.min(100, v));
   const byRatio = () => (dir > 0 ? (target > 0 ? clamp((current / target) * 100) : null) : current > 0 ? clamp((target / current) * 100) : null);
   if (ratio) return byRatio();
-  const total = isNum(start) ? (target - start) * dir : 0;
+  const reached = (current - target) * dir >= -EPS;
+  // Sin inicio (nada registrado desde 28 días antes de crearlo): no hay de dónde medir el avance → '—'.
+  if (!isNum(start)) return reached ? 100 : null;
+  const total = (target - start) * dir;
   if (!(total > EPS)) {
-    // Sin inicio o ya estaba al nivel del objetivo al crearlo.
-    if ((current - target) * dir >= -EPS) return 100;
+    // Ya estaba al nivel del objetivo al crearlo.
+    if (reached) return 100;
     return byRatio();
   }
   return clamp((((current - start) * dir) / total) * 100);
@@ -365,7 +441,7 @@ function strengthModel(data, goal, today) {
     currentNoun: metric === 'e1rm' ? '1RM estimado' : 'máximo de repeticiones',
     fmt, fmtGap, records, achieved, method,
     noun: ['sesión', 'sesiones'], subject: metric === 'e1rm' ? `con ${ex.name}` : `con ${ex.name}${wTxt ? ` y ${wTxt} o más` : ''}`,
-    windowDays: 0, exercise: ex, goalTxt,
+    windowDays: 0, exercise: ex, goalTxt, stall: true,
     achievedText: (a) => `Conseguido el ${fmtDay(a.date, today)}: ${a.label} (objetivo ${goalTxt}).`,
     nowText: (cur) => (metric === 'e1rm' ? `Tu 1RM estimado actual es ${kgTxt(cur.value)}` : `Tu máximo reciente es de ${fmtNum(cur.value, 0)} reps ${wTxt ? `con ${wTxt} o más` : 'sin lastre'}`),
     readyText: (cur) => metric === 'e1rm'
@@ -494,10 +570,13 @@ export function createdDateOf(goal) {
  *   metric:'e1rm'|'reps'|'time'|'distance'|'bodyweight', dir:1|-1,
  *   currentLabel, currentNote, targetLabel, targetNote, startLabel,
  *   achievedOn:'YYYY-MM-DD'|null, trend:{slopePerWeek, sePerWeek, n, r2, label}|null,
- *   counts:{records, weeks, minRecords, minWeeks, missingRecords, missingWeeks, ok, windowFrom, windowTo, windowWeeks}|null }}
+ *   stall:{since, best, bestLabel, after, bySessions, byWeeks, sessions, weeks}|null,
+ *   counts:{records, weeks, spanDays, minRecords, minWeeks, minSpanDays, missingRecords, missingWeeks, missingSpan, ok,
+ *           windowFrom, windowTo, windowWeeks, trendFrom, pause:{from, to, days}|null}|null }}
  *  current/target/start en la unidad de la métrica: kg (1RM estimado o peso corporal), reps, segundos (predicción
  *  de tiempo) o km (distancia). ready: el valor actual ya llega al objetivo sin un registro que lo consiga desde que
- *  se creó (status 'estimate', eta null).
+ *  se creó (status 'estimate', eta null). stall: fuerza estancada (status 'no_trend' aunque la pendiente sea
+ *  favorable). counts.pause: pausa de ≥ 28 días dentro de la ventana; la tendencia usa lo posterior (trendFrom).
  */
 export function goalProgress(data, goal) {
   const d = data || {};
@@ -523,8 +602,14 @@ export function goalProgress(data, goal) {
   const createdDate = createdDateOf(goal);
   const windowDays = m.windowDays || Math.max(TREND_WEEKS, rules.minWeeks) * 7;
   const wFrom = addDays(today, -(windowDays - 1));
-  const winRecs = m.records.filter((r) => inWin(r.date, wFrom, today));
-  const counts = { ...sufficiency(winRecs.map((r) => r.date), rules), windowFrom: wFrom, windowTo: today, windowWeeks: Math.round(windowDays / 7) };
+  const inWindow = m.records.filter((r) => inWin(r.date, wFrom, today));
+  // Tras una pausa de ≥ 28 días sin registros, la tendencia empieza de nuevo: el nivel de antes no cuenta.
+  const pause = lastPause(inWindow.map((r) => r.date));
+  const winRecs = pause ? inWindow.filter((r) => r.date >= pause.to) : inWindow;
+  const counts = {
+    ...sufficiency(winRecs.map((r) => r.date), rules),
+    windowFrom: wFrom, windowTo: today, windowWeeks: Math.round(windowDays / 7), trendFrom: pause ? pause.to : wFrom, pause,
+  };
   const current = m.current !== undefined ? m.current : recentBest(m.records, today, dir);
   const startRec = m.start !== undefined ? m.start : baselineBest(m.records, createdDate, dir);
   const achieved = m.achieved;
@@ -542,23 +627,31 @@ export function goalProgress(data, goal) {
   let ready = false;
   let eta = null;
   let trend = null;
+  let stall = null;
   let explanation;
   // Peso corporal: con el mismo redondeo (0,1 kg) que «conseguido».
   const curCmp = current ? (m.metric === 'bodyweight' ? round(current.value, 0.1) : current.value) : null;
   const reaches = !!current && (m.strict ? (curCmp - target) * dir > EPS : (curCmp - target) * dir >= -EPS);
-  const rangeTxt = `${plural(counts.records, m.noun[0], m.noun[1])}${m.subject ? ` ${m.subject}` : ''} en ${plural(counts.weeks, 'semana', 'semanas')}`;
+  const spanTxt = counts.missingSpan && !counts.missingWeeks ? `, pero entre el primero y el último solo hay ${plural(counts.spanDays, 'día', 'días')}` : '';
+  const rangeTxt = `${plural(counts.records, m.noun[0], m.noun[1])}${m.subject ? ` ${m.subject}` : ''} en ${plural(counts.weeks, 'semana', 'semanas')}${spanTxt}`;
   const windowTxt = m.metric === 'bodyweight' ? `los últimos ${windowDays} días` : `las últimas ${counts.windowWeeks} semanas`;
+  const pauseTxt = pause ? `desde el ${fmtDay(pause.to, today)}, tras una pausa sin registros desde el ${fmtDay(pause.from, today)}` : '';
+  /** «en las últimas 12 semanas» o «desde el 7 sep, tras una pausa sin registros desde el 20 jul». */
+  const whereTxt = pause ? pauseTxt : `en ${windowTxt}`;
+  const stallCfg = stallRules(d.settings);
 
   // Regresión (si hay datos suficientes y al menos dos fechas distintas).
   let reg = null;
+  let bwReason = '';
   if (counts.ok) {
     const xs = trendRecs.map((r) => dayIndex(r.date));
     const ys = trendRecs.map((r) => r.value);
     reg = linearRegression(xs, ys);
     if (reg && m.metric === 'bodyweight') {
-      // La pendiente es la de #/bodyweight (bwTrend sobre la misma ventana); el error típico, de la misma regresión.
-      const t = bwTrend(m.maPoints, today, { windowDays, minPoints: 2, minSpanDays: 0 });
-      if (t.ok) reg = { ...reg, slope: t.kgPerWeek / 7 };
+      // La tendencia es la de #/bodyweight (bwTrend con sus mínimos de pesajes y días): si allí no hay tendencia,
+      // aquí tampoco. La pendiente, la suya; el error típico, de la misma regresión.
+      const t = bwTrend(m.maPoints, today, { windowDays });
+      if (!t.ok) { reg = null; bwReason = t.reason; } else if (!pause) reg = { ...reg, slope: t.kgPerWeek / 7 };
     }
     if (reg) {
       const se = isNum(reg.seSlope) ? reg.seSlope : null;
@@ -578,26 +671,41 @@ export function goalProgress(data, goal) {
     explanation = m.readyText(current);
   } else if (!counts.ok || !reg) {
     status = 'insufficient';
-    const need = `Hacen falta ${plural(counts.minRecords, 'registro', 'registros')} en al menos ${plural(counts.minWeeks, 'semana distinta', 'semanas distintas')}`;
-    explanation = counts.ok
-      ? `Datos insuficientes: hacen falta registros en al menos dos ${m.weekly ? 'semanas distintas' : 'días distintos'} de ${windowTxt} para ver una tendencia.`
-      : `Datos insuficientes para estimar: ${rangeTxt} (${windowTxt}). ${need}: ${missingText(counts, m.noun)}.`;
+    const span = counts.minSpanDays > 0 ? `, con ${plural(counts.minSpanDays, 'día', 'días')} o más entre el primero y el último` : '';
+    const need = `Hacen falta ${plural(counts.minRecords, 'registro', 'registros')} en al menos ${plural(counts.minWeeks, 'semana distinta', 'semanas distintas')}${span}`;
+    const restart = pause ? ' Tras una pausa de 4 semanas o más, la tendencia empieza de nuevo con lo registrado desde la vuelta.' : '';
+    if (!counts.ok) explanation = `Datos insuficientes para estimar: ${rangeTxt} (${pause ? pauseTxt : windowTxt}). ${need}: ${missingText(counts, m.noun)}.${restart}`;
+    else if (bwReason) explanation = `Datos insuficientes para ver la tendencia (la misma que en Peso corporal): ${bwReason}`;
+    else explanation = `Datos insuficientes: hacen falta registros en al menos dos ${m.weekly ? 'semanas distintas' : 'días distintos'} ${whereTxt} para ver una tendencia.`;
   } else {
     const fav = reg.slope * dir;
+    // Fuerza: una meseta larga tras unas subidas deja la pendiente positiva; si el ejercicio está estancado
+    // (regla del panel semanal), no se extrapola.
+    const st = fav > EPS && m.stall ? stallOf(winRecs, today, stallCfg) : null;
     if (!(fav > EPS)) {
       status = 'no_trend';
       const flat = Math.abs(trend.slopePerWeek) < 1e-6;
-      explanation = `Con la tendencia actual no se acerca: ${m.metric === 'bodyweight' ? 'la media de 7 días' : `tu ${m.currentNoun}`} ${flat ? 'se mantiene' : `va en contra del objetivo (${trend.label})`} en ${windowTxt} (${plural(counts.records, m.noun[0], m.noun[1])}).`;
+      explanation = `Con la tendencia actual no se acerca: ${m.metric === 'bodyweight' ? 'la media de 7 días' : `tu ${m.currentNoun}`} ${flat ? 'se mantiene' : `va en contra del objetivo (${trend.label})`} ${whereTxt} (${plural(counts.records, m.noun[0], m.noun[1])}).`;
+    } else if (st) {
+      status = 'no_trend';
+      stall = { ...st, bestLabel: fmt(st.best), sessions: stallCfg.sessions, weeks: stallCfg.weeks };
+      const after = st.after === 1 ? `la ${m.noun[0]} siguiente` : `las ${st.after} ${m.noun[1]} siguientes`;
+      explanation = `Con la tendencia actual no se acerca: tu ${m.currentNoun} no supera ${fmt(st.best)} (${fmtDay(st.since, today)}) en ${after}. Con tu umbral de estancamiento (${plural(stallCfg.sessions, 'sesión', 'sesiones')} o ${plural(stallCfg.weeks, 'semana', 'semanas')} sin superar tu mejor marca) no se estima una fecha: la pendiente de ${trend.label} ${whereTxt} viene de las subidas anteriores.`;
     } else {
       status = 'estimate';
       const gap = (target - current.value) * dir;
       eta = etaRange(gap, fav, reg.seSlope, today);
-      explanation = `${m.nowText(current)}: faltan ${m.fmtGap(gap)}. Al ritmo de ${trend.label} (${plural(counts.records, m.noun[0], m.noun[1])} en ${windowTxt}), llegarías ${etaText(eta, today)}.`;
+      explanation = `${m.nowText(current)}: faltan ${m.fmtGap(gap)}. Al ritmo de ${trend.label} (${plural(counts.records, m.noun[0], m.noun[1])} ${whereTxt}), llegarías ${etaText(eta, today)}.`;
     }
   }
 
   const statusKey = ready ? 'ready' : status;
-  const rule = `Solo se estima con ${plural(rules.minRecords, 'registro', 'registros')} o más en al menos ${plural(rules.minWeeks, 'semana distinta', 'semanas distintas')} (Ajustes › Umbrales). El rango sale de la pendiente ± 1 error típico, con un margen mínimo de ±20 % del tiempo restante; nunca es una fecha exacta.`;
+  const spanRule = counts.minSpanDays > 0 ? ` y con ${plural(counts.minSpanDays, 'día', 'días')} o más entre el primero y el último` : '';
+  const stallRule = m.stall ? ` Si el ejercicio está estancado (${plural(stallCfg.sessions, 'sesión', 'sesiones')} o ${plural(stallCfg.weeks, 'semana', 'semanas')} sin superar su mejor marca, Ajustes › Umbrales › Estancamiento), no se estima una fecha.` : '';
+  const rule = `Solo se estima con ${plural(rules.minRecords, 'registro', 'registros')} o más en al menos ${plural(rules.minWeeks, 'semana distinta', 'semanas distintas')}${spanRule} (Ajustes › Umbrales). Tras una pausa de 4 semanas o más sin registros, la tendencia empieza de nuevo.${stallRule} El rango sale de la pendiente ± 1 error típico, con un margen mínimo de ±20 % del tiempo restante; nunca es una fecha exacta.`;
+  const method = pause
+    ? `${m.method} Hubo una pausa sin registros entre el ${fmtDay(pause.from, today)} y el ${fmtDay(pause.to, today)} (${plural(pause.days, 'día', 'días')}): la tendencia solo usa lo registrado desde el ${fmtDay(pause.to, today)}.`
+    : m.method;
   return {
     status,
     ready,
@@ -608,7 +716,7 @@ export function goalProgress(data, goal) {
     progressPct,
     eta,
     etaText: eta ? etaText(eta, today) : '',
-    method: m.method,
+    method,
     rule,
     dataUsed,
     explanation,
@@ -622,6 +730,7 @@ export function goalProgress(data, goal) {
     startLabel: startRec ? fmt(startRec.value) : '—',
     achievedOn: achieved ? achieved.date : null,
     trend,
+    stall,
     counts,
   };
 }

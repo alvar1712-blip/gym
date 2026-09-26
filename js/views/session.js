@@ -329,7 +329,10 @@ export function mountSession(root, params = {}) {
         h('div.banner-text', `Sesión del ${fmtDate(session.date, 'long')} registrada a posteriori: sin cronómetro; la duración se indica al terminar.`)))
       : null;
     // Check-in opcional «¿Cómo llegas hoy?»: plegado (una franja), no añade ningún toque para registrar series.
-    const checkin = session.status === 'active' ? checkinCard({ date: session.date, timing: 'pre', sessionId: session.id }) : null;
+    // Solo con cronómetro: en una sesión a posteriori ya está el aviso de arriba y la franja empujaría «Registrar
+    // serie 1» bajo las pestañas en un iPhone SE; ahí «¿Cómo llegaste?» va en la hoja de terminar, con el «después».
+    const checkin = session.status === 'active' && session.startedAt
+      ? checkinCard({ date: session.date, timing: 'pre', sessionId: session.id }) : null;
     content.replaceChildren(...[intro, checkin, listEl, orphansEl, renderFooter()].filter(Boolean));
     renderList();
     startTimer();
@@ -647,6 +650,9 @@ export function mountSession(root, params = {}) {
         field('Duración de la fuerza (min)', durInp, explain),
         durErr,
         h('div.field', h('span.field-label', 'Esfuerzo percibido de la sesión (1–10)'), rpePicker({ value: rpe, onChange: (v) => { rpe = v; session.rpe = v; ctx.save(); } })),
+        // A posteriori (sin cronómetro), también «¿Cómo llegaste?» (el «antes» no se ofrece arriba de la sesión).
+        session.startedAt ? null
+          : checkinCard({ date: session.date, timing: 'pre', sessionId: session.id, compact: true, title: '¿Cómo llegaste?' }),
         checkinCard({ date: session.date, timing: 'post', sessionId: session.id, compact: true }), // «¿Cómo ha ido?», opcional
         field('Nota de la sesión', notesInp),
         pending ? h('div.banner.banner-warn.ses-pending-warn', h('div.banner-main',

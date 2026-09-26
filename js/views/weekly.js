@@ -20,6 +20,8 @@ const daysTxt = (n) => (n === 1 ? '1 día (hoy)' : `${n} días (hoy incluido)`);
 const ITEMS_VISIBLE = 6;
 /** Fila larga (etiqueta + valor): se apila (etiqueta arriba, valor debajo) en vez de partir dos columnas. */
 const isLong = (label, value) => String(label).length + String(value).length > 36;
+/** Secciones de la tarjeta resumen, en el orden del panel: información primero, sugerencias después. */
+const SUMMARY_GROUPS = [['info', 'Información'], ['suggestion', 'Sugerencias']];
 
 /** Entrada de insights.js con los datos actuales del store (stats + check-ins). Una vez por render. */
 export function weeklyData(today = todayStr()) {
@@ -76,7 +78,7 @@ export function mountWeekly(root, params = {}) {
     icon('sliders', 22),
     h('span.list-item-main',
       h('span.list-item-title', 'Rangos y umbrales'),
-      h('span.list-item-sub', 'Series por músculo, incrementos, avisos, descarga')),
+      h('span.list-item-sub', 'Series, incrementos, avisos y descarga')),
     icon('chevron-right', 20, 'chev')));
 }
 
@@ -119,11 +121,19 @@ function messageCard(m) {
     whyBox(whyContent(m.why)));
 }
 
-function whyContent(why) {
+/**
+ * Contenido del «¿Por qué?» de un mensaje: la regla con los umbrales y la lista de datos concretos.
+ * Toda la lista va igual: en dos columnas o, si alguna fila es larga, todas apiladas (etiqueta arriba y valor
+ * debajo), para no ir en zigzag ni partir un valor a media frase. La usan #/weekly y la tarjeta resumen.
+ * @param {{rule:string, data:{label:string, value:string, sub?:boolean}[]}} why
+ * @returns {HTMLElement}
+ */
+export function whyContent(why) {
+  const stack = why.data.some((d) => isLong(d.label, d.value));
   return h('div.wk-why',
     h('p.wk-why-rule', h('b', 'Regla. '), why.rule),
     h('p.wk-why-head', 'Datos'),
-    h('ul.wk-why-data', why.data.map((d) => h('li.wk-why-row', { class: `${d.sub ? 'wk-why-sub' : ''}${isLong(d.label, d.value) ? ' wk-why-stack' : ''}`.trim() || null },
+    h(`ul.wk-why-data${stack ? '.wk-why-stacked' : ''}`, why.data.map((d) => h('li.wk-why-row', { class: d.sub ? 'wk-why-sub' : null },
       h('span.wk-why-label', d.label),
       h('span.wk-why-value', d.value)))));
 }
@@ -190,7 +200,9 @@ function muscleTable(rows, inProgress) {
 
 /**
  * CONTRATO (lo usan Hoy y Progreso): tarjeta breve con 2–3 mensajes clave de la semana actual y el botón
- * «Ver panel semanal». Devuelve null si aún no hay ninguna sesión registrada.
+ * «Ver panel semanal». Los mensajes van agrupados como en el panel (primero «Información», después
+ * «Sugerencias»), con su texto completo (las cifras que lo justifican) y su «¿Por qué?».
+ * Devuelve null si aún no hay ninguna sesión registrada.
  * @param {{data?: object, max?: number}} [opts] data: entrada de insights (por defecto weeklyData()); puede
  *   ser el dataFromStore() de la pantalla: si no trae `checkins`, se le añaden al MISMO objeto (así se conserva
  *   la caché de stats.js, que va por objeto).
@@ -211,11 +223,22 @@ export function weeklySummaryCard({ data = null, max = 3 } = {}) {
         h('h2.wk-summary-title', 'Panel semanal'),
         h('p.wk-summary-sub', sub))),
     msgs.length
-      ? h('ul.wk-summary-list', msgs.map((m) => h('li.wk-summary-item', { dataset: { id: m.id, level: m.level } },
-          levelBadge(m, '.wk-level-sm'),
-          h('span.wk-summary-mtitle', m.title),
-          h('span.wk-summary-mtext', m.text))))
+      ? SUMMARY_GROUPS.map(([sec, label]) => {
+        const list = msgs.filter((m) => m.section === sec);
+        if (!list.length) return null;
+        return h(`section.wk-summary-group.wk-summary-group-${sec}`, { dataset: { section: sec }, 'aria-label': label },
+          h('h3.wk-summary-ghead', label),
+          h('ul.wk-summary-list', list.map(summaryItem)));
+      })
       : h('p.wk-summary-empty', 'Sin avisos ni sugerencias destacadas esta semana.'),
     h('button.btn.btn-secondary.btn-block.wk-summary-btn', { type: 'button', onClick: () => navigate(`#/weekly?week=${r.week}`) },
       'Ver panel semanal', icon('chevron-right', 18)));
+}
+
+function summaryItem(m) {
+  return h('li.wk-summary-item', { dataset: { id: m.id, level: m.level, section: m.section } },
+    levelBadge(m, '.wk-level-sm'),
+    h('span.wk-summary-mtitle', m.title),
+    h('p.wk-summary-mtext', m.text),
+    whyBox(whyContent(m.why)));
 }

@@ -29,7 +29,9 @@ Este documento es el **contrato**. Los requisitos completos del usuario están e
 | `js/views/templates.js`, `js/views/exercises.js`, `css/library.css` | Plantillas y biblioteca | biblioteca |
 | `js/views/settings.js`, `js/backup.js`, `css/settings.css` | Ajustes, copias JSON, CSV, borrado | ajustes |
 | `js/charts.js`, `js/stats.js`, `js/views/progress.js`, `css/progress.css` | Fase 2: gráficas y récords | progreso |
-| `js/insights.js`, `js/goals-logic.js`, `js/views/weekly.js`, `js/views/goals.js`, `css/weekly.css` | Fase 3: panel semanal, check-in, objetivos | panel |
+| `js/insights.js`, `js/views/weekly.js`, `css/weekly.css` (sección weekly) | Fase 3: panel semanal | panel |
+| `js/goals-logic.js`, `js/views/goals.js`, `css/weekly.css` (sección goals) | Fase 3: objetivos | objetivos |
+| `js/checkin-logic.js`, `js/checkin.js` (estilos `.ci-*` en `css/session.css`) | Fase 3: check-in | check-in |
 
 **Regla de propiedad:** cada módulo solo edita SUS archivos. Los archivos del núcleo son de solo lectura para
 los módulos; si necesitas un cambio en el núcleo, impleméntalo localmente en tu módulo y descríbelo en tu
@@ -56,7 +58,7 @@ función de limpieza (se llama al salir). Puede ser `async`.
 
 | Hash | Módulo · export | Qué muestra |
 |---|---|---|
-| `#/today` | today · `mountToday` | Lo que toca hoy (1 toque para empezar), sesión en curso, aviso de copia, accesos rápidos (cardio, peso), mini semana |
+| `#/today` | today · `mountToday` | Lo que toca hoy (1 toque para empezar), sesión en curso, aviso de copia, accesos rápidos (cardio, peso), mini semana; al final (Fase 3) check-in de hoy, resumen del panel semanal y objetivos |
 | `#/calendar?week=YYYY-MM-DD` | calendar · `mountCalendar` | Semana (lunes–domingo) con plan y estado de cada día; navegar semanas |
 | `#/day/:date` | calendar · `mountDay` | Detalle de un día: plan, sesiones, cambiar/mover/sustituir/marcar, registrar sesión pasada |
 | `#/history` | history · `mountHistory` | Lista de todas las sesiones (fuerza + actividades), filtrable |
@@ -74,11 +76,12 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/settings/week` | settings · `mountWeekPattern` | Editor de la semana tipo |
 | `#/settings/thresholds` | settings · `mountThresholds` | Umbrales de reglas |
 | `#/settings/data` | settings · `mountData` | Copias, CSV, almacenamiento, borrar todo |
-| `#/progress` | progress · `mountProgress` | Fase 2 |
+| `#/progress` | progress · `mountProgress` | Accesos (Panel semanal, Objetivos, Récords, Peso, Ejercicios), resúmenes del panel y de objetivos (Fase 3), gráficas por periodo |
 | `#/progress/exercise/:id` | progress · `mountExerciseProgress` | Fase 2 |
 | `#/records` | progress · `mountRecords` | Fase 2 |
-| `#/weekly?week=` | weekly · `mountWeekly` | Fase 3 |
-| `#/goals`, `#/goal/new`, `#/goal/:id` | goals · `mountGoals` / `mountGoalEdit` | Fase 3 |
+| `#/weekly?week=YYYY-MM-DD` | weekly · `mountWeekly` | Panel semanal (cualquier día de la semana; por defecto la actual): INFORMACIÓN y después SUGERENCIAS, cada mensaje con «¿Por qué?» (back `#/progress`) |
+| `#/goals` | goals · `mountGoals` | Objetivos activos (barra, rango de fechas, «¿Por qué?»); conseguidos y archivados plegados |
+| `#/goal/new?kind=&exercise=`, `#/goal/:id` | goals · `mountGoalEdit` | Crear (con borrador) / editar al instante, archivar, borrar con confirmación + deshacer |
 
 Pestaña resaltada: la de la ruta; las rutas de sesión y actividad (`inherit` en la tabla) mantienen la pestaña
 desde la que se abrieron (p. ej. Calendario › Historial › sesión), salvo una sesión de fuerza en curso, que es de «Hoy».
@@ -179,8 +182,16 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 `kind` ausente → se usa el de la semana tipo (el registro solo guarda un estado manual).
 
 ### bodyweight (`id` = fecha): `{ id:'YYYY-MM-DD', kg, createdAt, updatedAt }` (un valor por día; el último manda)
-### checkins: `{ id, date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, soreness:1|2|3|null, createdAt }` (1 bajo, 2 normal, 3 alto)
-### goals: `{ id, kind:'strength'|'endurance'|'bodyweight', title, exerciseId?, weight?, reps?, sport?, distanceKm?, timeSec?, targetKg?, createdAt, achievedAt|null, archived }`
+### checkins: `{ id:'ci_…', date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, soreness:1|2|3|null, createdAt, updatedAt }` (1 bajo, 2 normal, 3 alto)
+Uno por día y momento (si hay duplicados manda el editado más reciente). Sin ningún valor se elimina. «Omitir» no
+guarda check-in: marca `session.checkinDismissed = {pre?, post?}` y la clave de `localStorage`
+`entreno:checkin-omitido:<fecha>:<momento>` (así tampoco se ofrece en Hoy ese día). Al cambiar la fecha de una
+sesión, sus check-ins van con ella (`moveSessionCheckins`).
+### goals: `{ id:'goal_…', kind:'strength'|'endurance'|'bodyweight', title, titleAuto, createdAt, updatedAt, achievedAt:'YYYY-MM-DD'|null, archived, …campos del tipo }`
+Campos por tipo (solo se guardan los del suyo): fuerza `exerciseId, weight, reps`; resistencia `sport:'run'|'bike'|'swim',
+distanceKm` (km también en natación), `timeSec|null` (null = solo distancia); peso corporal `targetKg, direction:'up'|'down'`.
+`titleAuto:true` → el título sigue a los datos. `achievedAt` = fecha del registro que lo consiguió; la lista y la tarjeta
+resumen lo resincronizan con el cálculo (editar el objetivo o borrar esa sesión puede devolverlo a activo).
 
 ---
 
@@ -273,6 +284,63 @@ repetidos como Sprint 20 m / 30 m), `syncLinkedDuration(sessionId)` → `{from, 
 automática de la fuerza de una sesión terminada; lo llama el formulario de actividad al guardar o borrar una enlazada),
 `formatSet(set, logType, {kg, rir})` (formato de una serie, también en la ficha del ejercicio) y
 `targetText` = `library-logic.targetText` (mismo texto de objetivo en plantilla, sesión, Hoy y actividad).
+
+### Fase 3 (contrato detallado en `docs/FASE3.md`)
+Entrada común de la lógica pura: `data` = `progress-ui.dataFromStore(today)` + `checkins` (`weekly.weeklyData(today)` lo
+construye). Umbrales, siempre de `data.settings` (`#/settings/thresholds`).
+
+**`insights.js` (puro)** — `weeklyInsights(data, weekStart?)` → `{ week, weekEnd, today, ref, inProgress, future,
+daysLeft (hoy incluido), hasHistory, beforeHistory, firstDate, info: Message[], suggestions: Message[] }` (semana
+futura, anterior al primer registro o sin datos → listas vacías).
+`Message = { id, section:'info'|'suggestion', level:'neutral'|'good'|'warn', tag?, title, text, why:{ rule, data:[{label,
+value, sub?}] }, items?:[{label, value, …}], …extras }`; `why.rule` y `why.data` nunca vacíos.
+- Info, en orden: `muscles` (fila por músculo: series, rango, estado, Δ), `muscles-below`, `muscles-above`, `push-pull`
+  (series por patrón, 1 por serie, sin aislamientos), `load` (total y por tipo frente a la media de las 4 previas;
+  < 2 semanas previas → «sin referencia suficiente»), `km` (por deporte, frente a la anterior y a la media de 4),
+  `ex-progress` / `ex-maintain` / `ex-stalled` (≥ `MIN_SESSIONS` = 3 sesiones con 1RM estimado) o `ex-none`.
+- Sugerencias, en orden: `dp-up-<exerciseId>` (doble progresión: sube X kg / lastre / asistencia, «por lado» en
+  unilaterales) y un único `dp-hold` agrupado; `load-warn` y/o `runkm-warn` (`severity:'soft'|'high'`; nunca predicción
+  de lesión) o `load-ok`; `deload` (coinciden estancados ≥ `deload.minStalled`, RPE medio de fuerza ≥ `deload.rpeHigh`
+  con ≥ `MIN_RPE_SESSIONS` = 2 sesiones, y check-ins bajos ≥ la mitad si los hay) o `deload-none` con el estado de cada
+  condición.
+- Semana en curso: «a falta de N días», sin Δ negativos de media semana y avisos solo con un umbral ya superado.
+- `keyMessages(result, max = 3)` (tarjeta resumen: avisos primero, varios «sube» agrupados en `dp-up-summary`),
+  `incrementFor(exercise, increments)`, `isLowCheckin(c)`, `LEVEL_LABEL` (Info / Bien / Atención).
+
+**`views/weekly.js`** — `mountWeekly`, `weeklyData(today?)`, `weeklySummaryCard({ data?, max = 3 })` →
+`section.card.wk-summary` (2–3 mensajes clave + «Ver panel semanal») | **null** sin sesiones. Si `data` no trae
+`checkins` se le añaden al mismo objeto (conserva la caché de `stats.js`, que va por objeto).
+
+**`goals-logic.js` (puro)** — `goalProgress(data, goal)` → `{ status:'achieved'|'insufficient'|'no_trend'|'estimate',
+ready (ya al alcance: `eta` null), statusLabel, current, target, progressPct 0–100|null, eta:{from, to|null, beyond,
+…}|null, etaText, method, rule, dataUsed:[{date,label,value}], explanation, warning|null, metric, counts, trend, … }`.
+Fuerza: 1RM estimado (Epley) equivalente, tendencia del mejor 1RM por sesión en `TREND_WEEKS` = 12 semanas,
+conseguido con una serie ≥ peso y ≥ reps desde su creación. Resistencia: Riegel (1,06) desde sesiones ≥ `MIN_KM`,
+la mejor predicción por semana (bici y natación, con aviso); solo distancia → la más larga reciente. Peso corporal:
+media móvil de 7 días (misma que `#/bodyweight`). Suficiencia: ≥ `goals.minRecords` registros en ≥ `goals.minWeeks`
+semanas distintas (lunes–domingo). ETA siempre rango: pendiente ± 1 error típico con margen mínimo ±20 %; más de 2 años
+→ «más de 2 años al ritmo actual». Otras: `goalRules`, `sufficiency`, `etaRange`, `etaText`, `progressPercent`,
+`autoTitle`, `validateGoal`, `goalRecord`, `splitGoals` → `{active, achieved, archived}`, `NONLINEAR_NOTE`.
+
+**`views/goals.js`** — `mountGoals`, `mountGoalEdit`, `goalsSummaryCard({ data?, max = 3 })` → `section.card.goal-sum`
+(hasta 3 activos y los conseguidos en los últimos 7 días; filas y «Ver todos» → `#/goals`) | **null** sin objetivos.
+
+**`checkin-logic.js` (puro) / `checkin.js` (DOM; reexporta la lógica)** — `checkinCard({ date = hoy, timing:'pre'|'post',
+sessionId, compact, open, title, ignoreDismissed, skippable, onChange })` → HTMLElement | **null** (omitido y sin datos).
+`compact:false` = franja plegable de 44 px (sesión de fuerza, arriba: no añade toques para registrar); `compact:true` =
+las tres filas a la vista, 3 toques (hoja «Terminar» y Hoy). Guardado al instante; tocar el valor elegido lo quita.
+`checkinSummary({ date, sessionId })` (resumen antes/después con «Editar check-in»), `isDismissed` / `setDismissed`,
+`moveSessionCheckins`, `CHECKIN_HINT`. Lógica: `checkinFor(checkins, date, timing?)`, `hasValues`, `isComplete`,
+`isLowCheckin` (sueño 1, energía 1 o agujetas 3; igual que en `insights.js`), `summary(checkins, from, to)`,
+`applyValue`, `checkinText`, `FIELDS`, `TIMINGS`.
+
+**Integración.** Hoy (`views/today.js`): tras pintar lo principal («Te toca hoy» y «Empezar» siguen arriba), importa los
+módulos de la Fase 3 y rellena `.today-extra` (al final) con: check-in de hoy (`compact`, `pre`; solo si hoy no hay
+ninguno ni se ha omitido y no hay ya una fuerza terminada hoy; enlazado a la sesión de hoy en curso), resumen del panel
+y de objetivos (cada tarjeta aislada con try/catch; `data-ready="1"` al terminar). Progreso (`views/progress.js`):
+accesos «Panel semanal» y «Objetivos» junto a Récords / Peso / Ejercicios y, debajo, `.progress-extra` con las dos
+tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿Cómo llegas hoy?» arriba (solo activa), filas
+«¿Cómo ha ido?» en la hoja «Terminar» y resumen del check-in en `#/session/:id/summary`.
 
 ---
 
