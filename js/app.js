@@ -34,6 +34,9 @@ export const ROUTES = [
   { pattern: '/goals', tab: 'progress', load: v('goals'), fn: 'mountGoals' },
   { pattern: '/goal/new', tab: 'progress', load: v('goals'), fn: 'mountGoalEdit' },
   { pattern: '/goal/:id', tab: 'progress', load: v('goals'), fn: 'mountGoalEdit' },
+  { pattern: '/import', tab: 'today', load: v('import'), fn: 'mountImport' },
+  { pattern: '/predictions', tab: 'progress', load: v('predictions'), fn: 'mountPredictions' },
+  { pattern: '/summary', tab: 'progress', load: v('summary'), fn: 'mountSummary' },
 ];
 
 const TABS = [
