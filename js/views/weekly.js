@@ -15,7 +15,8 @@ const ALWAYS_ITEMS = new Set(['load', 'km']);
 /** Mensajes cuyas filas ya están en la tabla de músculos (no se repiten). */
 const NO_ITEMS = new Set(['muscles-below', 'muscles-above']);
 
-const daysTxt = (n) => (n === 1 ? '1 día (hoy)' : `${n} días (hoy incluido)`);
+/** «quedan 4 días (hoy incluido)» / «queda 1 día (hoy)» (el domingo, concordado). */
+const leftTxt = (n) => (n === 1 ? 'queda 1 día (hoy)' : `quedan ${n} días (hoy incluido)`);
 /** Filas visibles de una lista antes de «Ver N más». */
 const ITEMS_VISIBLE = 6;
 /** Fila larga (etiqueta + valor): se apila (etiqueta arriba, valor debajo) en vez de partir dos columnas. */
@@ -38,7 +39,7 @@ export function mountWeekly(root, params = {}) {
   const ws = isDateStr(params.week) ? weekStart(params.week) : cur;
   const r = weeklyInsights(weeklyData(today), ws);
   const otherYear = ws.slice(0, 4) !== today.slice(0, 4) ? `${ws.slice(0, 4)} · ` : '';
-  const subtitle = r.future ? 'Semana futura' : r.inProgress ? `En curso · quedan ${daysTxt(r.daysLeft)}` : `${otherYear}Semana terminada`;
+  const subtitle = r.future ? 'Semana futura' : r.inProgress ? `En curso · ${leftTxt(r.daysLeft)}` : `${otherYear}Semana terminada`;
   const c = screen(root, { title: `Semana ${fmtWeekRange(ws)}`, subtitle, back: '#/progress' });
   c.classList.add('wk');
   c.dataset.week = ws;
@@ -70,7 +71,7 @@ export function mountWeekly(root, params = {}) {
 
   if (r.inProgress) {
     c.appendChild(h('p.wk-provisional', icon('clock', 16),
-      h('span', `Semana en curso, quedan ${daysTxt(r.daysLeft)}: los recuentos son provisionales y lo que aún no llega al mínimo se puede completar.`)));
+      h('span', `Semana en curso, ${leftTxt(r.daysLeft)}: los recuentos son provisionales y lo que aún no llega al mínimo se puede completar.`)));
   }
   c.appendChild(block('info', 'Información', 'Lo que ha pasado esta semana, con los datos de tus registros.', r.info));
   c.appendChild(block('suggestion', 'Sugerencias', 'Qué podrías hacer según tus reglas (Ajustes › Umbrales). Son orientativas.', r.suggestions));
@@ -214,7 +215,7 @@ export function weeklySummaryCard({ data = null, max = 3 } = {}) {
   const r = weeklyInsights(d, d.today);
   if (!r.hasHistory) return null;
   const msgs = keyMessages(r, max);
-  const sub = `${fmtWeekRange(r.week)}${r.inProgress ? ` · quedan ${daysTxt(r.daysLeft)}` : ''}`;
+  const sub = `${fmtWeekRange(r.week)}${r.inProgress ? ` · ${leftTxt(r.daysLeft)}` : ''}`;
   return h('section.card.wk-summary', { dataset: { card: 'weekly' } },
     h('div.wk-summary-head',
       h('span.wk-block-icon', { 'aria-hidden': 'true' }, icon('chart', 20)),

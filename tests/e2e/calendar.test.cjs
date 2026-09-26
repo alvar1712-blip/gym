@@ -21,6 +21,15 @@ async function waitHash(page, re) {
 }
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 const settle = (page, ms = 250) => page.waitForTimeout(ms);
+/** Nodos de texto «null»/«undefined» dentro de `sel` (un Element.append(null) los mete como texto). */
+const strayText = (page, sel) => page.evaluate((s) => {
+  const out = [];
+  for (const root of document.querySelectorAll(s)) {
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) if (/^\s*(null|undefined)\s*$/.test(n.nodeValue)) out.push(n.nodeValue.trim());
+  }
+  return out;
+}, sel);
 
 /** Abre la app con la fecha fijada y un inicio de registro antiguo (para que haya días «saltados»). */
 async function setup(date = WED) {
@@ -365,6 +374,14 @@ test('día pasado: registrar la sesión de fuerza de ese día (pasada) y hoy «h
     assert.deepStrictEqual([s.date, s.planDate, s.templateId, s.startedAt], [MON, MON, 'tpl_d1', null]);
     await page.evaluate((id) => window.__app.store.remove('sessions', id), s.id);
 
+    // Hoy (D3) a medias con su propia rutina: motivo + resumen, sin «Empezar la rutina» (ni «null» suelto).
+    await seedStrength(page, { id: 's_wed', tpl: 'tpl_d3', date: WED, skip: [0] });
+    await go(page, '#/today');
+    assert.strictEqual(await page.locator('.today-plan').getAttribute('data-status'), 'partial');
+    assert.match(await page.locator('.today-plan').innerText(), /2 de 3 ejercicios registrados/);
+    assert.strictEqual(await page.getByRole('button', { name: 'Empezar la rutina' }).count(), 0);
+    assert.deepStrictEqual(await strayText(page, '.today-plan'), [], 'sin «null» sueltos en la tarjeta (parcial)');
+
     // Hoy (D3) ya hecho: estado + resumen + «Otra sesión».
     await seedStrength(page, { id: 's_wed', tpl: 'tpl_d3', date: WED });
     await go(page, '#/today');
@@ -372,6 +389,8 @@ test('día pasado: registrar la sesión de fuerza de ese día (pasada) y hoy «h
     assert.strictEqual(await page.locator('.today-plan .cal-ses-row').count(), 1);
     assert.match(await page.locator('.today-plan .cal-ses-row').innerText(), /Día 3 — Cardio[\s\S]*1 h 00 min · carga 420/);
     assert.ok(await page.getByRole('button', { name: 'Otra sesión' }).isVisible());
+    assert.deepStrictEqual(await strayText(page, '.today-plan'), [], 'sin «null» sueltos en la tarjeta');
+    assert.doesNotMatch(await page.locator('.today-plan').innerText(), /\bnull\b/);
     // Aviso de copia (hay datos y nunca se ha hecho copia) → Ajustes › Datos.
     assert.match(await page.locator('.today-backup').innerText(), /Sin copia de seguridad/);
     await shot(page, 'calendar-today-done');
@@ -528,6 +547,7 @@ test('Día 3: la carrera registrada con el acceso rápido de Hoy cuenta para la 
     await go(page, '#/today');
     assert.strictEqual(await page.locator('.today-plan').getAttribute('data-status'), 'partial');
     assert.match(await page.locator('.today-plan').innerText(), /1 de 3 ejercicios registrados\. Sin registrar: Bici, Plancha/);
+    assert.deepStrictEqual(await strayText(page, '.today-plan'), [], 'sin «null» sueltos en la tarjeta');
     await shot(page, 'calendar-today-d3-run');
     // También en la vista Día, y sin «sustituido».
     await go(page, `#/day/${WED}`);

@@ -16,6 +16,12 @@ con copias de seguridad en JSON y exportación CSV.
 - Carrera, bici, natación y otras actividades (campos tipo Strava), carga = minutos × esfuerzo percibido.
 - Peso corporal con media móvil de 7 días y tendencia.
 - Biblioteca de ejercicios con músculos principales/secundarios y patrón de movimiento.
+- Progreso: gráficas SVG propias (sin librerías) con selector de periodo y valor exacto al tocar: peso máximo, 1RM
+  estimado (Epley con reps + RIR), mejor serie y volumen por ejercicio; series por músculo frente a su rango; volumen y
+  carga semanales; km, ritmo y velocidad; peso corporal; adherencia; récords de fuerza y de resistencia.
+- Panel semanal: primero información y después sugerencias (doble progresión, avisos prudentes de carga y km, semana de
+  descarga), cada una con su «¿Por qué?» y los datos concretos que la generan; umbrales editables en Ajustes.
+- Check-in opcional (sueño, energía, agujetas) y objetivos de fuerza, resistencia y peso con estimación en rango de fechas.
 
 ## Desarrollo
 Sin dependencias ni compilación. Para probar en local:

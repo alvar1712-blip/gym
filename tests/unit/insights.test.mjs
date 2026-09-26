@@ -472,6 +472,11 @@ test('redacción: «1 serie efectiva», sin «las 0 semanas previas», sin Δ de
   // Semana terminada: con Δ
   const done = weeklyInsights(mk({ sessions: [ses('a', W.w3, [['jalon_pecho', lat(25)]]), ses('b', W.w4, [['jalon_pecho', lat(23)]])] }), W.w4);
   assert.match(byId(done, 'muscles-above').text, /Semana anterior: 25 \(−2\)\.$/);
+  // Varios por encima / por debajo: «Espalda (25, máximo 22)», no el confuso «25 de 22»
+  const many = weeklyInsights(mk({ sessions: [ses('m', W.w4, [['jalon_pecho', lat(25)], ['curl_barra', lat(20)]])] }), W.w4);
+  const T = defaultSettings().muscleTargets;
+  assert.equal(byId(many, 'muscles-above').text, `Superan el máximo de su rango: Espalda (25, máximo ${T.back[1]}) y Bíceps (32,5, máximo ${T.biceps[1]}).`);
+  assert.match(byId(many, 'muscles-below').text, /^No llegaron al mínimo: Core \/ abdomen \(0, mínimo 12\), /);
   // Empuje/tirón: el face pull (aislamiento con patrón de tirón) cuenta y la regla lo dice
   const fp = byId(weeklyInsights(mk({ sessions: [ses('f', W.w4, [['face_pull', [set(20, 15), set(20, 15)]], ['press_banca', [set(80, 5)]]])] }), W.w4), 'push-pull');
   assert.ok(fp.why.data.some((x) => x.label === 'Face pull · Tirón horizontal' && x.value === '2 series'));
@@ -480,6 +485,11 @@ test('redacción: «1 serie efectiva», sin «las 0 semanas previas», sin Δ de
   // Semana en curso: sin paréntesis anidados («quedan 4 días, hoy incluido»)
   const pp = byId(weeklyInsights(mk({ sessions: [ses('p', W.w4, [['press_banca', [set(80, 5)]]]), ses('c', W.cur, [['curl_barra', [set(20, 10)]]])] })), 'push-pull');
   assert.match(pp.text, /^Aún no hay series de empuje ni de tirón \(quedan 4 días, hoy incluido\); /);
+  // El domingo (queda solo hoy): «queda 1 día», nunca «quedan 1 día»
+  const sun = weeklyInsights(mk({ sessions: [ses('p', W.w4, [['press_banca', [set(80, 5)]]]), ses('c', W.cur, [['curl_barra', [set(20, 10)]]])], today: '2026-09-27' }));
+  assert.match(byId(sun, 'push-pull').text, /\(queda 1 día, hoy\); /);
+  assert.match(byId(sun, 'muscles').why.rule, /La semana está en curso \(queda 1 día, hoy\)/);
+  for (const m of all(sun)) assert.ok(!/quedan 1 día|Quedan 1 día/.test(`${m.title} ${m.text} ${whyText(m)}`), `${m.id}: ${m.text}`);
   // stall.weeks = 1: «la última semana», nunca «las últimas 1 semanas»
   const s1 = weeklyInsights(mk({ sessions: series('press_banca', ['w2', 'w3', 'w4'], (i) => [set(80 + i, 5)]), settings: settingsWith({ stall: { sessions: 1, weeks: 1 } }) }), W.w4);
   const pr = byId(s1, 'ex-progress');
@@ -1128,6 +1138,16 @@ test('keyMessages: 2–3 mensajes elegidos por prioridad (avisos antes que lo de
   assert.equal(sum.level, 'good');
   assert.equal(sum.why.data.length, 3);
   assert.ok(!k2.some((m) => m.id.startsWith('dp-up-') && m.id !== 'dp-up-summary'));
+  // Con un solo nombre de más que el máximo de la lista (3) se nombra, nunca «y 1 más»; con dos de más, «y 2 más»
+  const upItems = (n) => [
+    ['press_banca', [set(80, 6)], { repMin: 4, repMax: 6, sets: 1 }], ['sentadilla', [set(100, 6)], { repMin: 4, repMax: 6, sets: 1 }],
+    ['curl_supinador', [set(12, 15)], { repMin: 10, repMax: 15, sets: 1 }], ['jalon_pecho', [set(55, 12)], { repMin: 8, repMax: 12, sets: 1 }],
+    ['remo_pecho_apoyado', [set(60, 10)], { sets: 1 }],
+  ].slice(0, n);
+  const sum4 = keyMessages(weeklyInsights(mk({ sessions: [ses('x', W.w4, upItems(4))] }), W.w4), 3).find((m) => m.id === 'dp-up-summary');
+  assert.equal(sum4.text, 'Curl supinador (de 12 a 13–14 kg), Jalón al pecho (de 55 a 57,5 kg), Press banca (de 80 a 82,5 kg) y Sentadilla (de 100 a 105 kg).');
+  const sum5 = keyMessages(weeklyInsights(mk({ sessions: [ses('x', W.w4, upItems(5))] }), W.w4), 3).find((m) => m.id === 'dp-up-summary');
+  assert.match(sum5.text, / y 2 más\.$/);
   assert.equal(keyMessages(weeklyInsights(mk(), W.cur)).length, 0);
   // Con cualquier dato hay al menos 2 (la carga y las series por músculo como último recurso)
   const quiet = keyMessages(weeklyInsights(mk({ sessions: [ses('p', W.w4, [['remo_pecho_apoyado', [set(60, 10)]]])] }), W.w4), 3);

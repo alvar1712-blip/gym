@@ -50,7 +50,21 @@ Si el trabajo sigue en la rama `claude/personal-training-mobile-app-e82j38`, pue
 
 ---
 
-## 3. Copias de seguridad (muy recomendable cada semana)
+## 3. Primeros pasos en la app
+
+- **Hoy**: te muestra lo que toca según tu semana tipo (L D1 · M D2 · X D3 · J D4 · V descanso · S D6 · D descanso).
+  Pulsa **Empezar** y cada serie aparece ya rellenada con lo que hiciste la última vez: un toque en **Registrar serie**
+  y listo (ajusta antes con ±2,5 kg / ±1 rep si hace falta).
+- **Calendario**: toca un día para cambiarlo solo esa semana (p. ej. el sábado por una ruta en bici), moverlo o marcarlo.
+  Tu semana tipo no cambia (se edita en **Ajustes → Semana tipo**).
+- **Registrar**: carrera, bici, natación u otra actividad desde **Hoy**; el peso corporal también se apunta en **Hoy**.
+- **Progreso**: gráficas, récords, **Panel semanal** (información y sugerencias con su «¿Por qué?») y **Objetivos**.
+- **Ejercicios**: tus rutinas (editar, duplicar, reordenar, superseries) y la biblioteca de ejercicios.
+- **Ajustes**: semana tipo, umbrales de las sugerencias, copias de seguridad y exportación CSV.
+
+---
+
+## 4. Copias de seguridad (muy recomendable cada semana)
 
 Como no hay servidor, la copia la guardas tú:
 
@@ -68,7 +82,7 @@ El formato «Excel en español» abre directamente en Excel con comas decimales;
 
 ---
 
-## 4. Actualizaciones
+## 5. Actualizaciones
 
 Cuando se publique una versión nueva en GitHub, abre la app **con conexión**: aparecerá el aviso
 **«Hay una versión nueva de la app» → Actualizar**, fijo encima de la barra de pestañas en las pantallas principales
@@ -78,7 +92,7 @@ Si no aparece, cierra la app desde el selector de apps y vuelve a abrirla.
 
 ---
 
-## 5. Problemas frecuentes
+## 6. Problemas frecuentes
 
 | Problema | Solución |
 |---|---|
@@ -91,7 +105,7 @@ Si no aparece, cierra la app desde el selector de apps y vuelve a abrirla.
 
 ---
 
-## 6. Para curiosos: qué hay en el repositorio
+## 7. Para curiosos: qué hay en el repositorio
 
 - `index.html`, `manifest.json`, `sw.js` (hace que funcione sin conexión), `icons/` (icono de la app)
 - `css/` (aspecto), `js/` (funcionamiento), `docs/` (esta guía, requisitos y arquitectura)

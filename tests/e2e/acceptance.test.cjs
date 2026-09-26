@@ -1,4 +1,4 @@
-// PRUEBAS DE ACEPTACIÓN de la Fase 1 (docs/REQUISITOS.md §15), de punta a punta y por la interfaz real.
+// PRUEBAS DE ACEPTACIÓN (docs/REQUISITOS.md §15), de punta a punta y por la interfaz real.
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/acceptance.test.cjs
 //
 //  1. «Cierro Safari o la app a mitad de sesión, vuelvo y no se ha perdido nada.»
@@ -6,7 +6,7 @@
 //  3. «Registrar una serie con los valores prellenados me cuesta 1–2 toques.»
 //  4. «Sustituir el Día 6 de esta semana por una ruta en bici no modifica mi semana tipo.»
 //  5. «Funciona sin conexión una vez instalada en la pantalla de inicio.»
-// (El criterio del «¿Por qué?» del panel semanal es de la Fase 3.)
+//  6. «Cada sugerencia del panel muestra su "¿Por qué?" con los datos concretos que la generan.» (Fase 3)
 //
 // La fecha se fija con el reloj de Playwright (context.clock.install, el tiempo sigue corriendo) ANTES de
 // abrir la app por primera vez, para que la instalación, la semana tipo y el «Hoy» sean deterministas:
@@ -779,10 +779,11 @@ test('CRITERIO 5: instalada (service worker activo), funciona sin conexión: pes
       await assertOk(`pestaña ${id}`);
       assert.match(await page.locator('#view .topbar h1').innerText(), re, `pestaña ${id}`);
     }
-    // Pantallas secundarias (todas las de la Fase 1).
+    // Pantallas secundarias (todas las de la Fase 1 y las de las fases 2 y 3).
     for (const r of ['#/history', `#/day/${MON}`, '#/calendar?view=month', '#/exercises?seg=library', '#/exercises?seg=templates', '#/template/tpl_d1',
       '#/exercise/press_banca', '#/exercise/new', '#/bodyweight', '#/activity/new?kind=run', '#/activity/new?kind=swim',
-      '#/settings/week', '#/settings/thresholds', '#/settings/data']) {
+      '#/settings/week', '#/settings/thresholds', '#/settings/data',
+      '#/records', '#/progress/exercise/press_banca', '#/weekly', `#/weekly?week=${PREV_MON}`, '#/goals', '#/goal/new']) {
       await freshView(page, () => page.evaluate((h) => window.__app.navigate(h), r));
       await assertOk(r);
     }
@@ -840,6 +841,353 @@ test('CRITERIO 5: instalada (service worker activo), funciona sin conexión: pes
     assert.deepStrictEqual(failed, [], 'ninguna petición fallida (todo sale de la caché)');
     assert.deepStrictEqual(network, [], 'ninguna respuesta de la red');
     assert.ok(fromCache >= 20, `la app sale de la caché del service worker (${fromCache} respuestas)`);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+// ===========================================================================
+// 6. «Cada sugerencia del panel muestra su "¿Por qué?" con los datos concretos que la generan»
+// ===========================================================================
+// Datos sembrados (5 semanas, del 17 ago al 20 sep, + la semana en curso) para que salgan TODAS las sugerencias
+// que puede dar el panel (js/insights.js):
+//  - semana terminada 14–20 sep: doble progresión «sube» en sus seis variantes (compuesto de tren superior e
+//    inferior, aislamiento, lastre, asistencia y unilateral por lado), «mantén» agrupado con sus tres motivos
+//    (faltan reps, RIR por debajo, faltan series), aviso de carga (alto), aviso de km de carrera (suave) y descarga;
+//  - semana en curso 21–27 sep: «Sin avisos de carga» y «Sin señales de necesitar descarga» (sus alternativas).
+// Cada «¿Por qué?» se abre en pantalla y se comprueba la regla (con los umbrales actuales de Ajustes) y las cifras
+// concretas que la disparan, calculadas aquí a partir de lo sembrado (no del código de la app).
+const WHY_WEEKS = ['2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', PREV_MON];
+const WHY_PLAN = {
+  // [ejercicio, objetivo [series, repMin, repMax], semana i → [peso, reps[], rir[]]]
+  A: [
+    ['press_banca', [3, 4, 6], (i) => [75 + 2.5 * i, i === 4 ? [6, 6, 6] : [6, 5, 5], i === 4 ? [2, 1, 1] : [1, 1, 1]]],
+    ['sentadilla', [3, 6, 8], (i) => [90 + 2.5 * i, i === 4 ? [8, 8, 8] : [8, 7, 7], [2, 2, 2]]],
+    ['curl_barra', [3, 10, 12], (i) => [26 + i, i === 4 ? [12, 12, 12] : [12, 11, 10], [1, 1, 1]]],
+    ['remo_pecho_apoyado', [3, 8, 10], () => [60, [10, 9, 8], [1, 1, 1]]], // no llega al tope → estancado
+  ],
+  B: [
+    ['dominadas', [3, 6, 8], (i) => [1.25 * i, i === 4 ? [8, 8, 8] : [8, 7, 7], [1, 1, 1]]], // lastre
+    ['fondos', [3, 8, 10], (i) => [-30 + 2.5 * i, i === 4 ? [10, 10, 10] : [10, 9, 9], [1, 1, 1]]], // asistencia
+    ['bulgara', [3, 8, 10], (i) => [12 + i, i === 4 ? [10, 10, 10] : [10, 9, 9], [1, 1, 1]]], // unilateral
+    ['jalon_pecho', [3, 10, 12], () => [55, [12, 12, 12], [0, 0, 0]]], // tope con RIR 0 → estancado
+    ['peso_muerto_rumano', [3, 8, 10], () => [90, [10, 10], [2, 2]]], // 2 de 3 series → estancado
+  ],
+};
+
+/** Sesiones, actividades y check-ins del criterio 6. `exById`: {id: {name, logType}} de la biblioteca. */
+function whySeed(exById) {
+  const sessions = [];
+  const strength = (id, date, name, items, { dur = 60, rpe }) => {
+    const at = madrid(date, '18:00').getTime();
+    sessions.push({
+      id, kind: 'strength', date, planDate: date, templateId: null, templateName: name, status: 'done',
+      startedAt: at, endedAt: at + dur * 60000, durationMin: dur, rpe, notes: '', parentId: null, templateItemId: null, cursor: 0,
+      createdAt: at, updatedAt: at,
+      exercises: items.map(([exId, [sets, repMin, repMax], weight, reps, rir], k) => {
+        const ex = exById[exId];
+        const mk = (n, o) => ({
+          id: `${id}_${k}_${n}`, type: 'effective', weight, reps: null, repsR: null, rir: null, timeSec: null, distanceM: null,
+          heightCm: null, note: '', done: true, doneAt: at + (k * 6 + n) * 60000, ...o,
+        });
+        // Un calentamiento en el press banca: no cuenta (no puede aparecer entre las series del porqué).
+        const list = exId === 'press_banca' ? [mk(9, { type: 'warmup', weight: 40, reps: 8 })] : [];
+        reps.forEach((r, j) => list.push(mk(j, { reps: r, repsR: ex.logType === 'unilateral' ? r : null, rir: rir[j] })));
+        return {
+          id: `${id}_se${k}`, exerciseId: exId, exName: ex.name, templateItemId: null, alternatives: [],
+          target: { sets, setsMax: null, repMin, repMax, timeMin: null, timeMax: null, distance: null },
+          notes: '', section: '', groupId: null, groupType: null, sets: list,
+        };
+      }),
+    });
+  };
+  const activity = (id, kind, date, km, sec, rpe, subtype) => {
+    const at = madrid(date, '09:00').getTime();
+    sessions.push({
+      id, kind, date, planDate: date, templateId: null, templateName: null, status: 'done', startedAt: null, endedAt: null,
+      movingSec: sec, elapsedSec: sec, durationMin: sec / 60, rpe, distanceKm: km, subtype, notes: '', parentId: null,
+      parentItemId: null, templateItemId: null, createdAt: at, updatedAt: at,
+    });
+  };
+  const items = (plan, i) => plan.map(([exId, target, f]) => [exId, target, ...f(i)]);
+  WHY_WEEKS.forEach((mon, i) => {
+    // Esfuerzo alto sostenido en las dos últimas semanas (RPE 8 y 9 → media 8,5); antes, RPE 7.
+    strength(`why_a${i}`, mon, 'Torso A', items(WHY_PLAN.A, i), { rpe: i < 3 ? 7 : i === 3 ? 8 : 9 });
+    strength(`why_b${i}`, addDays(mon, 3), 'Torso B y pierna', items(WHY_PLAN.B, i), { rpe: i < 3 ? 7 : i === 3 ? 9 : 8 });
+    // Carrera los sábados: 10 km (60 min); la última semana 11,2 km (+12 % → aviso suave).
+    activity(`why_r${i}`, 'run', addDays(mon, 5), i === 4 ? 11.2 : 10, i === 4 ? 4032 : 3600, 5, 'long');
+  });
+  // Ruta en bici de 2 h el último domingo: la carga de esa semana sube más de un 30 %.
+  activity('why_bike', 'bike', addDays(PREV_MON, 6), 60, 7200, 5, 'route');
+  // Semana en curso: una sesión suave (RPE 6) y un rodaje corto.
+  strength('why_cur', MON, 'Torso A', [
+    ['press_banca', [3, 4, 6], 87.5, [6, 5, 5], [1, 1, 1]],
+    ['sentadilla', [3, 6, 8], 105, [8, 7, 7], [2, 2, 2]],
+    ['curl_barra', [3, 10, 12], 31, [12, 11, 10], [1, 1, 1]],
+    ['remo_pecho_apoyado', [3, 8, 10], 60, [10, 9, 8], [1, 1, 1]],
+  ], { dur: 45, rpe: 6 });
+  activity('why_rcur', 'run', WED, 5, 1800, 5, 'z2');
+  // Check-ins: 2 de 3 bajos entre el 7 y el 20 sep; 1 de 2 entre el 13 y el 26.
+  const checkins = [
+    { id: 'why_ck1', date: '2026-09-10', timing: 'pre', sessionId: null, sleep: 1, energy: 2, soreness: 2 },
+    { id: 'why_ck2', date: PREV_MON, timing: 'pre', sessionId: 'why_a4', sleep: 2, energy: 1, soreness: 2 },
+    { id: 'why_ck3', date: '2026-09-17', timing: 'post', sessionId: 'why_b4', sleep: 2, energy: 2, soreness: 2 },
+  ].map((c) => ({ ...c, createdAt: madrid(c.date, '17:00').getTime(), updatedAt: madrid(c.date, '17:00').getTime() }));
+  return { sessions, checkins };
+}
+
+/** 'YYYY-MM-DD' + n días (UTC, sin horas). */
+function addDays(s, n) {
+  const d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10) + n));
+  return d.toISOString().slice(0, 10);
+}
+const nf = (v, max = 0) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: max, useGrouping: true }).format(v);
+/** Carga semanal (min × RPE de cada sesión, redondeada) de las sesiones de la semana que empieza en `ws`. */
+const weekLoad = (sessions, ws) => sessions.filter((s) => s.date >= ws && s.date <= addDays(ws, 6))
+  .reduce((t, s) => t + Math.round(s.durationMin * s.rpe), 0);
+
+/** Tarjetas de un bloque del panel (en orden de pantalla). */
+const blockCards = (page, section) => page.locator(`.wk-block[data-section="${section}"] .wk-msg`).evaluateAll((els) => els.map((el) => ({
+  id: el.dataset.id, level: el.dataset.level,
+  badge: el.querySelector('.wk-level')?.textContent.trim(),
+  title: el.querySelector('.wk-msg-title')?.textContent,
+  text: el.querySelector('.wk-msg-text')?.textContent,
+  whyLabel: el.querySelector('.why-btn')?.textContent.trim() ?? null,
+  whyClosed: el.querySelector('.why-btn')?.getAttribute('aria-expanded') === 'false' && !!el.querySelector('.why-body')?.hidden,
+})));
+
+/** Toca «¿Por qué?» de una tarjeta y devuelve lo que se ve: { rule, rows:[{label, value, sub}] }. */
+async function tapWhy(page, root, id) {
+  const cardEl = page.locator(`${root}[data-id="${id}"]`);
+  const btn = cardEl.locator('.why-btn');
+  await btn.scrollIntoViewIfNeeded();
+  await btn.click();
+  assert.strictEqual(await btn.getAttribute('aria-expanded'), 'true', `${id}: «¿Por qué?» abierto`);
+  const body = cardEl.locator('.why-body');
+  assert.ok(await body.isVisible(), `${id}: el porqué se ve`);
+  return body.evaluate((b) => ({
+    rule: b.querySelector('.wk-why-rule').textContent,
+    rows: [...b.querySelectorAll('.wk-why-row')].map((r) => ({
+      label: r.querySelector('.wk-why-label').textContent, value: r.querySelector('.wk-why-value').textContent, sub: r.classList.contains('wk-why-sub'),
+    })),
+  }));
+}
+
+/** Dos capturas del porqué abierto de un mensaje: la tarjeta desde arriba y la lista «Datos». */
+async function shotWhy(page, id, name) {
+  for (const [sel, suffix] of [['', ''], [' .wk-why-head', '-data']]) {
+    await page.locator(`.wk-msg[data-id="${id}"]${sel}`).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -80));
+    await shot(page, `${name}${suffix}`);
+  }
+}
+
+/** Sugerencias del modelo (js/insights.js con los datos del store), para comprobar que la vista enseña TODO su porqué. */
+const modelSuggestions = (page, week) => page.evaluate(async (wk) => {
+  const [{ weeklyInsights }, { weeklyData }] = await Promise.all([import('./js/insights.js'), import('./js/views/weekly.js')]);
+  return weeklyInsights(weeklyData(), wk).suggestions.map((m) => ({
+    id: m.id, rule: m.why.rule, rows: m.why.data.map((d) => ({ label: d.label, value: d.value, sub: !!d.sub })),
+  }));
+}, week);
+
+test('CRITERIO 6: cada sugerencia del panel semanal abre su «¿Por qué?» con la regla y los datos concretos que la generan', async () => {
+  const app = await launch({ time: madrid(SAT, '20:00') });
+  const { page } = app;
+  try {
+    // Sembrar por el store de la app (como si se hubiera registrado a lo largo de 6 semanas).
+    const exById = await page.evaluate(() => Object.fromEntries(window.__app.store.all('exercises').map((e) => [e.id, { name: e.name, logType: e.logType }])));
+    const seed = whySeed(exById);
+    await page.evaluate(async ({ sessions, checkins, createdAt }) => {
+      const { store } = window.__app;
+      const meta = store.get('meta', 'app');
+      meta.createdAt = createdAt;
+      await store.save('meta', meta);
+      for (const s of sessions) await store.save('sessions', s);
+      for (const c of checkins) await store.save('checkins', c);
+    }, { ...seed, createdAt: madrid(WHY_WEEKS[0], '09:00').getTime() });
+    await reload(page);
+
+    // Lo sembrado, calculado aquí: carga de cada semana (min × RPE) y su media de 4 semanas.
+    const loads = WHY_WEEKS.map((w) => weekLoad(seed.sessions, w));
+    assert.deepStrictEqual(loads, [1140, 1140, 1140, 1320, 1956]);
+    const mean4 = (loads[0] + loads[1] + loads[2] + loads[3]) / 4; // 1185
+    const loadPct = Math.round(((loads[4] - mean4) / mean4) * 100); // 65
+    const curLoad = weekLoad(seed.sessions, MON); // 45×6 + 30×5 = 420
+    const curMean = (loads[1] + loads[2] + loads[3] + loads[4]) / 4; // 1389
+    const e1rm = (w, reps, rir) => Math.round(w * (1 + (reps + rir) / 30)); // Epley con reps + RIR
+
+    // Revisa TODAS las sugerencias de la semana abierta: cada una con su botón «¿Por qué?» (cerrado al entrar); al
+    // tocarlo muestra la regla y los datos, exactamente los del modelo, con cifras. Devuelve {id: porqué visto}.
+    const checkAll = async (week, expectedIds) => {
+      const list = await blockCards(page, 'suggestion');
+      assert.deepStrictEqual(list.map((c) => c.id), expectedIds, `sugerencias de la semana ${week}`);
+      const model = await modelSuggestions(page, week);
+      assert.deepStrictEqual(model.map((m) => m.id), expectedIds);
+      const seen = {};
+      for (const c of list) {
+        assert.strictEqual(c.whyLabel, '¿Por qué?', `${c.id}: botón «¿Por qué?»`);
+        assert.ok(c.whyClosed, `${c.id}: el porqué empieza plegado`);
+        assert.ok(c.badge && c.title && /\d/.test(`${c.title} ${c.text}`), `${c.id}: título y texto con cifras`);
+        const w = await tapWhy(page, '.wk-msg', c.id);
+        const m = model.find((x) => x.id === c.id);
+        assert.strictEqual(w.rule, `Regla. ${m.rule}`, `${c.id}: la regla completa`);
+        assert.deepStrictEqual(w.rows, m.rows, `${c.id}: todos los datos del porqué, en orden`);
+        assert.ok(w.rule.length > 120, `${c.id}: la regla se explica`);
+        assert.ok(w.rows.length >= 3 && w.rows.every((r) => r.label.trim() && r.value.trim()), `${c.id}: filas de datos`);
+        assert.ok(w.rows.filter((r) => /\d/.test(r.value)).length >= 3, `${c.id}: cifras concretas`);
+        seen[c.id] = { ...c, ...w };
+      }
+      return seen;
+    };
+    const row = (w, label) => {
+      const r = w.rows.find((x) => x.label === label);
+      assert.ok(r, `falta la fila «${label}»: ${JSON.stringify(w.rows.map((x) => x.label))}`);
+      return r.value;
+    };
+    const setRows = (w) => w.rows.filter((r) => /^Serie \d/.test(r.label)).map((r) => r.value);
+
+    // --- Semana terminada 14–20 sep: todas las sugerencias que avisan o proponen algo ------------------------------
+    await freshView(page, () => go(page, `#/weekly?week=${PREV_MON}`));
+    assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Semana 14–20 sep');
+    const blocks = await page.locator('.wk-block').evaluateAll((els) => els.map((e) => e.dataset.section));
+    assert.deepStrictEqual(blocks, ['info', 'suggestion'], 'información primero, sugerencias después');
+    const DP_UP = [
+      // id, título, «próxima vez», objetivo, serie, incremento, última sesión
+      ['dominadas', 'Dominadas: añade 2,5 kg de lastre', 'lastre de +5 a +7,5 kg', '3×6–8 (tope 8 reps)', '+5 kg × 8 @1', 'compuesto de tren superior: 2,5 kg', 'jue 17 sep · Torso B y pierna'],
+      ['fondos', 'Fondos en paralelas: reduce 2,5 kg la asistencia', 'asistencia de 20 a 17,5 kg', '3×8–10 (tope 10 reps)', '−20 kg asist. × 10 @1', 'compuesto de tren superior: 2,5 kg', 'jue 17 sep · Torso B y pierna'],
+      ['bulgara', 'Sentadilla búlgara: sube 5 kg por lado', 'de 16 a 21 kg por lado', '3×8–10/lado (tope 10 reps)', '16 kg × 10/10 @1', 'compuesto de tren inferior: 5 kg por lado', 'jue 17 sep · Torso B y pierna'],
+      ['curl_barra', 'Curl con barra: sube 1–2 kg', 'de 30 a 31–32 kg', '3×10–12 (tope 12 reps)', '30 kg × 12 @1', 'aislamiento o core: 1–2 kg', 'lun 14 sep · Torso A'],
+      ['press_banca', 'Press banca: sube 2,5 kg', 'de 85 a 87,5 kg', '3×4–6 (tope 6 reps)', '85 kg × 6 @1', 'compuesto de tren superior: 2,5 kg', 'lun 14 sep · Torso A'],
+      ['sentadilla', 'Sentadilla: sube 5 kg', 'de 100 a 105 kg', '3×6–8 (tope 8 reps)', '100 kg × 8 @2', 'compuesto de tren inferior: 5 kg', 'lun 14 sep · Torso A'],
+    ];
+    const prev = await checkAll(PREV_MON, [...DP_UP.map(([id]) => `dp-up-${id}`), 'dp-hold', 'load-warn', 'runkm-warn', 'deload']);
+    await shotWhy(page, 'dp-up-press_banca', 'acceptance-6-why-dp-up');
+    await shotWhy(page, 'dp-hold', 'acceptance-6-why-dp-hold');
+    await shotWhy(page, 'load-warn', 'acceptance-6-why-load');
+
+    // Doble progresión «sube»: las series efectivas concretas (sin el calentamiento), el objetivo y el incremento.
+    for (const [id, title, next, target, set, inc, last] of DP_UP) {
+      const w = prev[`dp-up-${id}`];
+      assert.strictEqual(w.title, title);
+      assert.match(w.text, new RegExp(`Próxima vez: ${next.replace(/[+]/g, '\\+')}\\.$`), `${id}: ${w.text}`);
+      assert.match(w.rule, /llegaron al tope del rango con RIR ≥ 1/);
+      assert.match(w.rule, /2,5 kg en compuestos de tren superior, 5 kg en compuestos de tren inferior y 1–2 kg en aislamiento y core/);
+      assert.strictEqual(row(w, 'Última sesión'), last);
+      assert.strictEqual(row(w, 'Objetivo'), target);
+      assert.strictEqual(row(w, 'Series efectivas'), '3 de 3 en el tope con RIR ≥ 1 (objetivo: 3 series)');
+      assert.strictEqual(setRows(w).length, 3, `${id}: solo las 3 series efectivas`);
+      assert.ok(setRows(w).every((v) => v.endsWith('· ✓ tope y RIR')), `${id}: ${setRows(w)}`);
+      assert.ok(setRows(w).includes(`${set} · ✓ tope y RIR`), `${id}: ${setRows(w)}`);
+      assert.strictEqual(row(w, 'Incremento'), inc);
+    }
+    assert.deepStrictEqual(setRows(prev['dp-up-press_banca']), ['85 kg × 6 @2 · ✓ tope y RIR', '85 kg × 6 @1 · ✓ tope y RIR', '85 kg × 6 @1 · ✓ tope y RIR']);
+
+    // «Mantén el peso» agrupado: cada ejercicio con su rango, el motivo y las series que lo explican.
+    const hold = prev['dp-hold'];
+    assert.strictEqual(hold.title, 'Mantén el peso');
+    assert.match(hold.text, /intenta sumar repeticiones hasta el tope: Remo con pecho apoyado; busca completar el tope con RIR ≥ 1: Jalón al pecho; completa todas las series del objetivo en el tope: Peso muerto rumano\.$/);
+    assert.deepStrictEqual(hold.rows.filter((r) => !r.sub), [
+      { label: 'Jalón al pecho · 3×10–12', value: '17 sep · todas en el tope, pero las 3 con RIR por debajo de 1 o sin registrar', sub: false },
+      { label: 'Peso muerto rumano · 3×8–10', value: '17 sep · 2 de 3 series del objetivo registradas (todas en el tope)', sub: false },
+      { label: 'Remo con pecho apoyado · 3×8–10', value: '14 sep · 1 de 3 series en el tope (10 reps)', sub: false },
+    ]);
+    const holdSets = hold.rows.filter((r) => r.sub).map((r) => r.value);
+    for (const v of ['55 kg × 12 @0 · RIR 0 < 1', '90 kg × 10 @2 · ✓ tope y RIR', '60 kg × 10 @1 · ✓ tope y RIR', '60 kg × 9 @1 · falta 1 rep', '60 kg × 8 @1 · faltan 2 reps']) {
+      assert.ok(holdSets.includes(v), `serie «${v}» en el porqué de «Mantén»: ${holdSets}`);
+    }
+    assert.strictEqual(holdSets.length, 3 + 2 + 3);
+
+    // Aviso de carga: la semana, la media de las 4 previas con cada semana, la variación y los umbrales.
+    const lw = prev['load-warn'];
+    assert.strictEqual(lw.badge, 'Aviso');
+    assert.strictEqual(lw.title, `Aviso: la carga sube un ${loadPct} %`);
+    assert.match(lw.text, new RegExp(`\\(${nf(loads[4])}\\) supera en un ${loadPct} % la media de las 4 semanas previas \\(${nf(mean4)}\\)`));
+    assert.match(lw.rule, /más de un 20 % \(aviso suave\) o de un 30 % \(aviso\)/);
+    assert.match(lw.rule, /no una predicción de lesión/);
+    assert.strictEqual(row(lw, 'Esta semana'), nf(loads[4]));
+    assert.strictEqual(row(lw, 'Media de las 4 semanas previas'), nf(mean4));
+    assert.deepStrictEqual(['Semana 17–23 ago', 'Semana 24–30 ago', 'Semana 31 ago – 6 sep', 'Semana 7–13 sep'].map((l) => row(lw, l)), loads.slice(0, 4).map((v) => nf(v)));
+    assert.strictEqual(row(lw, 'Variación'), `+${loadPct} %`);
+    assert.strictEqual(row(lw, 'Umbrales'), '+20 % aviso suave · +30 % aviso');
+
+    // Aviso de km de carrera (suave): 11,2 km frente a 10 km.
+    const rk = prev['runkm-warn'];
+    assert.strictEqual(rk.badge, 'Aviso suave');
+    assert.strictEqual(rk.title, 'Aviso suave: km de carrera +12 %');
+    assert.match(rk.rule, /más de un 10 % \(aviso suave\) o de un 15 % \(aviso\) frente a la semana anterior; solo se evalúa si la semana anterior tuvo al menos 5 km/);
+    assert.match(rk.rule, /no una predicción de lesión/);
+    assert.strictEqual(row(rk, 'Km de carrera esta semana'), '11,2 km');
+    assert.strictEqual(row(rk, 'Semana anterior'), '10 km');
+    assert.strictEqual(row(rk, 'Variación'), '+12 %');
+    assert.strictEqual(row(rk, 'Umbrales'), '+10 % aviso suave · +15 % aviso · mínimo 5 km la semana anterior');
+
+    // Descarga: las tres condiciones con sus cifras (estancados con su 1RM estimado, RPE de cada sesión y check-ins).
+    const dl = prev.deload;
+    assert.strictEqual(dl.title, 'Valora una semana de descarga');
+    assert.match(dl.rule, /\(a\) al menos 3 ejercicios estancados.*\(b\) esfuerzo percibido alto sostenido: RPE medio de las sesiones de fuerza de 8 o más en cada una de las últimas 2 semanas.*\(c\) si registraste check-ins en ese periodo, que al menos la mitad sean bajos/);
+    assert.strictEqual(row(dl, '(a) Ejercicios estancados'), '3 (mínimo 3) · se cumple');
+    assert.strictEqual(row(dl, 'Jalón al pecho'), `mejor previo ${e1rm(55, 12, 0)} kg · última ${e1rm(55, 12, 0)} kg`);
+    assert.strictEqual(row(dl, 'Peso muerto rumano'), `mejor previo ${e1rm(90, 10, 2)} kg · última ${e1rm(90, 10, 2)} kg`);
+    assert.strictEqual(row(dl, 'Remo con pecho apoyado'), `mejor previo ${e1rm(60, 10, 1)} kg · última ${e1rm(60, 10, 1)} kg`);
+    assert.strictEqual(row(dl, '(b) RPE medio de fuerza (7–20 sep)'), 'medias por semana: 8,5 · 8,5 (umbral 8; 4 sesiones) · se cumple');
+    assert.deepStrictEqual(['7 sep · Torso A', '10 sep · Torso B y pierna', '14 sep · Torso A', '17 sep · Torso B y pierna'].map((l) => row(dl, l)), ['RPE 8', 'RPE 9', 'RPE 9', 'RPE 8']);
+    assert.strictEqual(row(dl, '(c) Check-ins (7–20 sep)'), '2 de 3 bajos (hace falta la mitad) · se cumple');
+    assert.strictEqual(row(dl, '10 sep · antes'), 'sueño bajo · energía normal · agujetas normales → cuenta como bajo');
+    assert.strictEqual(row(dl, '14 sep · antes'), 'sueño normal · energía baja · agujetas normales → cuenta como bajo');
+    assert.strictEqual(row(dl, '17 sep · después'), 'sueño normal · energía normal · agujetas normales');
+    await shotWhy(page, 'deload', 'acceptance-6-why-deload');
+
+    // --- Semana en curso 21–27 sep: sin avisos de carga y sin señales de descarga (también con su porqué) ---------
+    await freshView(page, () => page.locator('[data-nav="current"]').click());
+    assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Semana 21–27 sep');
+    const cur = await checkAll(MON, ['dp-up-dominadas', 'dp-up-fondos', 'dp-up-bulgara', 'dp-hold', 'load-ok', 'deload-none']);
+    const ok = cur['load-ok'];
+    assert.strictEqual(ok.title, 'Sin avisos de carga');
+    assert.match(ok.text, new RegExp(`^De momento, la carga \\(${curLoad}\\) no supera la media de las 4 semanas previas \\(${nf(curMean)}\\) en más de un 20 %; km de carrera: de momento 5 km frente a 11,2 km \\(aviso desde \\+10 %\\)\\.$`));
+    assert.strictEqual(row(ok, 'Esta semana'), `${curLoad} (en curso)`);
+    assert.strictEqual(row(ok, 'Media de las 4 semanas previas'), nf(curMean));
+    assert.strictEqual(row(ok, 'Semana 14–20 sep'), nf(loads[4]));
+    assert.strictEqual(row(ok, 'Km de carrera esta semana'), '5 km (en curso)');
+    assert.match(ok.rule, /Aviso orientativo si la carga.*Aviso orientativo si los km de carrera/, 'las dos reglas');
+    const none = cur['deload-none'];
+    assert.strictEqual(none.title, 'Sin señales de necesitar descarga');
+    assert.strictEqual(none.text, 'No coinciden las condiciones. Estancados 3 (mínimo 3): sí · RPE medio de fuerza por semana 8,5 · 6 (umbral 8): no · check-ins bajos 1 de 2: sí.');
+    assert.strictEqual(row(none, '(b) RPE medio de fuerza (13–26 sep)'), 'no se cumple: semana 20–26 sep con RPE medio 6 (umbral 8)');
+    assert.strictEqual(row(none, '21 sep · Torso A'), 'RPE 6');
+    assert.strictEqual(row(none, '(c) Check-ins (13–26 sep)'), '1 de 2 bajos (hace falta la mitad) · se cumple');
+    assert.match(row(cur['dp-hold'], 'Press banca · 3×4–6'), /^21 sep · 1 de 3 series en el tope \(6 reps\)$/);
+    await shotWhy(page, 'deload-none', 'acceptance-6-why-none');
+
+    // Entre las dos semanas han salido todas las sugerencias que puede dar el panel.
+    const kinds = new Set([...Object.keys(prev), ...Object.keys(cur)].map((id) => id.replace(/^dp-up-.*/, 'dp-up')));
+    assert.deepStrictEqual([...kinds].sort(), ['deload', 'deload-none', 'dp-hold', 'dp-up', 'load-ok', 'load-warn', 'runkm-warn']);
+
+    // La regla usa los umbrales actuales de Ajustes: al cambiarlos, cambian la sugerencia y su porqué.
+    await page.evaluate(() => window.__app.store.saveSettings({
+      increments: { upperCompound: 5, lowerCompound: 10, isolation: 1 }, loadWarn: { low: 20, high: 70 },
+    }));
+    await freshView(page, () => go(page, `#/weekly?week=${PREV_MON}`));
+    const changed = await checkAll(PREV_MON, [...DP_UP.map(([id]) => `dp-up-${id}`), 'dp-hold', 'load-warn', 'runkm-warn', 'deload']);
+    assert.strictEqual(changed['dp-up-press_banca'].title, 'Press banca: sube 5 kg');
+    assert.strictEqual(row(changed['dp-up-press_banca'], 'Incremento'), 'compuesto de tren superior: 5 kg');
+    assert.match(changed['dp-up-press_banca'].rule, /5 kg en compuestos de tren superior, 10 kg en compuestos de tren inferior/);
+    assert.strictEqual(changed['dp-up-sentadilla'].title, 'Sentadilla: sube 10 kg');
+    assert.strictEqual(changed['load-warn'].badge, 'Aviso suave');
+    assert.match(changed['load-warn'].rule, /más de un 20 % \(aviso suave\) o de un 70 % \(aviso\)/);
+    assert.strictEqual(row(changed['load-warn'], 'Umbrales'), '+20 % aviso suave · +70 % aviso');
+
+    // Tarjeta resumen de Hoy: las sugerencias que destaca también llevan su «¿Por qué?» con datos.
+    await freshView(page, () => tab(page, 'today').click());
+    await page.waitForSelector('.today-extra[data-ready="1"] .wk-summary');
+    const summary = await page.locator('.wk-summary-item[data-section="suggestion"]').evaluateAll((els) => els.map((el) => el.dataset.id));
+    assert.ok(summary.length >= 1, `la tarjeta de Hoy destaca alguna sugerencia: ${summary}`);
+    for (const id of summary) {
+      const w = await tapWhy(page, '.wk-summary-item', id);
+      assert.ok(w.rule.startsWith('Regla. ') && w.rule.length > 120, `${id}: regla`);
+      assert.ok(w.rows.length >= 3 && w.rows.filter((r) => /\d/.test(r.value)).length >= 3, `${id}: datos con cifras`);
+    }
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'sin desbordamiento horizontal');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

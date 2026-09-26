@@ -64,6 +64,36 @@ async function clickAndWait(page, locator) {
 
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
+/** Textos recortados («…» o line-clamp) dentro de `sel`: devuelve los que no caben en su caja. */
+const clipped = (page, sel) => page.locator(sel).evaluateAll((els) => els
+  .filter((el) => el.offsetParent && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1))
+  .map((el) => el.textContent));
+
+/** Ancho (px) de la barra de cada fila de la tabla de músculos. */
+const barWidths = (page) => page.locator('.wk-mbar').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+
+/**
+ * Listas de datos de los «¿Por qué?» abiertos dentro de `root`: cada lista va entera en dos columnas o entera
+ * apilada (nunca en zigzag) y, en dos columnas, ningún valor se parte en dos líneas. Devuelve los fallos.
+ */
+const whyLayoutIssues = (page, root) => page.locator(`${root} .wk-why-data`).evaluateAll((lists) => {
+  const lines = (el) => {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size;
+  };
+  const out = [];
+  for (const ul of lists) {
+    if (!ul.offsetParent) continue;
+    const stacked = ul.classList.contains('wk-why-stacked');
+    const dirs = new Set([...ul.children].map((li) => getComputedStyle(li).flexDirection));
+    if (dirs.size !== 1) out.push(`zigzag: ${ul.textContent.slice(0, 60)}`);
+    if (stacked) continue;
+    for (const v of ul.querySelectorAll('.wk-why-value')) if (lines(v) > 1) out.push(`valor partido: ${v.textContent}`);
+  }
+  return out;
+});
+
 async function shot(page, name) {
   fs.mkdirSync(RESULTS, { recursive: true });
   const file = path.join(RESULTS, `${name}.png`);
@@ -392,10 +422,13 @@ test('#/weekly: navegación de semanas (‹ › y «Esta semana») y semana term
     assert.match(byId['runkm-warn'].title, /km de carrera \+22 %/);
     const whyKm = await openWhy(page, 'runkm-warn');
     assert.ok(whyKm.rows.some((r) => r.label === 'Semana anterior' && r.value === '18 km'));
-    // Descarga: esa semana el RPE medio no llega (7,9 < 8) → mensaje neutral con el estado de cada condición
+    // Descarga: el esfuerzo alto tiene que sostenerse CADA semana del periodo; la del 7–13 sep se queda en 7,6
+    // (< 8) aunque la del 14–20 llegue a 8,2 → mensaje neutral con el estado de cada condición y la media por semana
     assert.strictEqual(byId['deload-none'].level, 'neutral');
     const whyDl = await openWhy(page, 'deload-none');
-    assert.ok(whyDl.rows.some((r) => /^\(b\)/.test(r.label) && /7,9 en 10 sesiones \(umbral 8\) · no se cumple/.test(r.value)), JSON.stringify(whyDl.rows.filter((r) => !r.sub)));
+    assert.ok(whyDl.rows.some((r) => /^\(b\)/.test(r.label) && /no se cumple: semana 7–13 sep con RPE medio 7,6 \(umbral 8\)/.test(r.value)), JSON.stringify(whyDl.rows.filter((r) => !r.sub)));
+    assert.ok(whyDl.rows.some((r) => r.sub && r.label === 'Semana 7–13 sep' && r.value === 'RPE medio 7,6 en 5 sesiones'));
+    assert.ok(whyDl.rows.some((r) => r.sub && r.label === 'Semana 14–20 sep' && r.value === 'RPE medio 8,2 en 5 sesiones'));
     assert.ok(whyDl.rows.some((r) => /^\(c\)/.test(r.label) && /sin check-ins/.test(r.value)));
     // Semana terminada: lo que no llegó al mínimo ya es «por debajo» (warn)
     if (byId['muscles-below']) assert.strictEqual(byId['muscles-below'].level, 'warn');
@@ -433,13 +466,36 @@ test('#/weekly a 375×667 y tarjeta resumen weeklySummaryCard() (2–3 mensajes 
     // Objetivos táctiles ≥ 44 px
     const small = await page.locator('.wk-nav button, .why-btn, .wk-settings-link').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height < 44 || r.width < 44).length);
     assert.strictEqual(small, 0, 'botones de al menos 44 px');
+    // Los «¿Por qué?» abiertos: cada lista de datos igual de principio a fin, sin valores partidos a media frase
+    assert.deepStrictEqual(await whyLayoutIssues(page, '.wk'), []);
+    // Nada recortado con «…»: nombres de músculo, textos y el subtítulo del enlace a Ajustes
+    assert.deepStrictEqual(await clipped(page, '.wk-mrow-name, .wk-msg-title, .wk-msg-text, .wk-settings-link .list-item-sub'), []);
+    // En curso, la columna «ant. N» cambia de ancho según la cifra: las barras miden igual en todas las filas
+    assert.strictEqual(new Set(await barWidths(page)).size, 1, `barras de distinta longitud: ${await barWidths(page)}`);
     await scrollShots(page, 'weekly-375');
     for (let i = 0; i < n; i++) await page.locator('.wk-msg .why-btn').nth(i).click();
+
+    // Semana terminada a 375 px (estados «Por debajo»/«Por encima» y cifras con decimales): nombres enteros y
+    // barras de la misma longitud en todas las filas (el mismo rango cae en el mismo sitio)
+    await open(page, '#/weekly?week=2026-09-14');
+    assert.deepStrictEqual(await clipped(page, '.wk-mrow-name, .wk-mstatus, .wk-mrow-delta'), []);
+    const bars = await barWidths(page);
+    assert.strictEqual(bars.length, 16);
+    assert.strictEqual(new Set(bars).size, 1, `barras de distinta longitud: ${bars}`);
+    const band = (m) => page.locator(`.wk-mrow[data-muscle="${m}"] .wk-mbar-band`).evaluate((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.width)]; });
+    assert.deepStrictEqual(await band('hamstrings'), await band('calves'), 'Isquiotibiales y Gemelos (10–20) en el mismo sitio');
+    await page.locator('.wk-msg[data-id="muscles"]').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -70));
+    await shot(page, 'weekly-375-prev-muscles');
+    for (const id of ['dp-hold', 'ex-stalled', 'deload-none']) await openWhy(page, id);
+    assert.deepStrictEqual(await whyLayoutIssues(page, '.wk'), []);
+    assert.ok(await noHScroll(page));
 
     // Tarjeta resumen: Hoy la pinta en su hueco (.today-extra) al terminar de cargar lo principal
     await open(page, '#/today');
     await page.waitForFunction(() => document.querySelector('.today-extra')?.dataset.ready === '1', null, { timeout: 5000 });
-    await page.locator('.today-extra .wk-summary').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await page.locator('.today-extra .wk-summary').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -70));
     await page.waitForTimeout(150);
     const card = page.locator('.wk-summary');
     assert.strictEqual(await card.count(), 1);
@@ -447,8 +503,37 @@ test('#/weekly a 375×667 y tarjeta resumen weeklySummaryCard() (2–3 mensajes 
     assert.ok(items >= 2 && items <= 3, `2–3 mensajes clave (${items})`);
     assert.match(await card.locator('.wk-summary-sub').innerText(), /21–27 sep · quedan 4 días/);
     assert.ok(await card.locator('.wk-summary-item .wk-level').first().innerText());
-    assert.ok(await noHScroll(page));
+    // Información primero y después sugerencias, cada grupo con su rótulo (como en #/weekly)
+    const groups = await card.locator('.wk-summary-group').evaluateAll((els) => els.map((g) => ({
+      sec: g.dataset.section, head: g.querySelector('.wk-summary-ghead').textContent,
+      ids: [...g.querySelectorAll('.wk-summary-item')].map((li) => li.dataset.section),
+    })));
+    assert.ok(groups.length >= 1 && groups.length <= 2);
+    assert.deepStrictEqual(groups.map((g) => g.sec), ['info', 'suggestion'].filter((x) => groups.some((g) => g.sec === x)), 'información antes que sugerencias');
+    for (const g of groups) {
+      assert.strictEqual(g.head, g.sec === 'info' ? 'Información' : 'Sugerencias');
+      assert.ok(g.ids.every((x) => x === g.sec), `cada mensaje en su grupo: ${JSON.stringify(g)}`);
+    }
+    // Cada mensaje con su texto completo (sin recortar) y su «¿Por qué?» con la regla y datos concretos
+    assert.deepStrictEqual(await clipped(page, '.wk-summary-mtext, .wk-summary-mtitle'), []);
+    assert.strictEqual(await card.locator('.wk-summary-item .why-btn').count(), items, 'un «¿Por qué?» por mensaje');
     await shot(page, 'weekly-375-summary-card');
+    for (let i = 0; i < items; i++) {
+      const it = card.locator('.wk-summary-item').nth(i);
+      await it.locator('.why-btn').click();
+      assert.ok(await it.locator('.why-body').isVisible(), 'porqué abierto');
+      assert.ok((await it.locator('.wk-why-rule').innerText()).length > 40, 'regla');
+      const vals = await it.locator('.wk-why-value').allInnerTexts();
+      assert.ok(vals.length > 0 && vals.some((v) => /\d/.test(v)), `datos con cifras: ${vals}`);
+    }
+    assert.deepStrictEqual(await whyLayoutIssues(page, '.wk-summary'), []);
+    // La descarga (si está entre los clave) enseña sus cifras en el texto, no solo en el porqué
+    const dl = card.locator('.wk-summary-item[data-id="deload"] .wk-summary-mtext');
+    if (await dl.count()) assert.match(await dl.innerText(), /check-ins bajos \(2 de 3\)/);
+    assert.ok(await noHScroll(page));
+    await card.locator('.wk-summary-item').first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -70));
+    await shot(page, 'weekly-375-summary-why');
     await clickAndWait(page, card.locator('.wk-summary-btn'));
     assert.match(page.url(), /#\/weekly\?week=2026-09-21$/);
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Semana 21–27 sep');

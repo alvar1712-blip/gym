@@ -337,7 +337,7 @@ test('#/progress con datos: se pinta cada gráfica, periodo global, globo con el
     await page.locator('[data-chart="muscle"] .chip', { hasText: 'Pecho' }).click();
     await page.waitForTimeout(100);
     assert.match(await muscleAria(), /Pecho/);
-    assert.match(await page.locator('[data-chart="muscle"] .prg-caption').innerText(), /Pecho · objetivo 12–20/);
+    assert.match(await page.locator('[data-chart="muscle"] .prg-caption').innerText(), /Pecho · objetivo 12–22/);
     assert.ok(await page.locator('[data-chart="muscle"] .chart-band').count() >= 1, 'franja del rango objetivo');
     assert.strictEqual(await page.locator('[data-chart="load"] .chart-svg').evaluate((el) => el.innerHTML.length), loadSvgBefore, 'la carga no se redibuja');
     // Tocar un músculo de la tabla lo elige en la gráfica

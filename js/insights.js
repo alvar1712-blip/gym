@@ -70,8 +70,11 @@ function spanTxt(a, b) {
 }
 /** «4 días (hoy incluido)» / «1 día (hoy)». */
 const daysTxt = (n) => (n === 1 ? '1 día (hoy)' : `${n} días (hoy incluido)`);
-/** Lo mismo sin paréntesis, para ir dentro de otro paréntesis: «4 días, hoy incluido» / «1 día, hoy». */
-const daysIn = (n) => (n === 1 ? '1 día, hoy' : `${n} días, hoy incluido`);
+/** «quedan 4 días (hoy incluido)» / «queda 1 día (hoy)» (concordado; el domingo no dice «quedan 1 día»). */
+const leftTxt = (n) => `${n === 1 ? 'queda' : 'quedan'} ${daysTxt(n)}`;
+/** Lo mismo sin paréntesis, para ir dentro de otro paréntesis: «quedan 4 días, hoy incluido» / «queda 1 día, hoy». */
+const leftIn = (n) => (n === 1 ? 'queda 1 día, hoy' : `quedan ${n} días, hoy incluido`);
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 /** «la última semana» / «las últimas 3 semanas» (W = 1 no dice «las últimas 1 semanas»). */
 const lastWeeksTxt = (w) => (w === 1 ? 'la última semana' : `las últimas ${num(w, 0)} semanas`);
 /** «la semana anterior» / «las 3 semanas anteriores». */
@@ -89,9 +92,9 @@ const toMap = (x) => {
   if (Array.isArray(x)) return new Map(x.filter(Boolean).map((o) => [o.id, o]));
   return new Map(Object.entries(x || {}));
 };
-/** Lista corta de nombres: «A, B y C» o «A, B, C y 3 más». */
+/** Lista corta de nombres: «A, B y C» o «A, B, C y 3 más» (nunca «y 1 más»: con uno de más, se nombra). */
 function shortList(names, max = 4) {
-  if (names.length <= max) return joinList(names);
+  if (names.length <= max + 1) return joinList(names);
   return `${names.slice(0, max).join(', ')} y ${names.length - max} más`;
 }
 
@@ -286,7 +289,7 @@ function muscleMessages(ctx) {
   const nIn = withT.length - below.length - above.length;
   const total = ctx.cur.workSets;
   const prevTotalTxt = ctx.hasPrev ? `semana anterior: ${num(ctx.prev.workSets, 0)}` : 'primera semana con registros';
-  const pending = ctx.inProgress ? ` La semana está en curso (quedan ${daysIn(ctx.daysLeft)}): lo que aún no llega al mínimo se puede completar.` : '';
+  const pending = ctx.inProgress ? ` La semana está en curso (${leftIn(ctx.daysLeft)}): lo que aún no llega al mínimo se puede completar.` : '';
   const effTxt = `${num(total, 1)} ${total === 1 ? 'serie efectiva' : 'series efectivas'}`;
   const out = [];
 
@@ -313,7 +316,7 @@ function muscleMessages(ctx) {
       ? (below.length === 1 ? ' También estaba por debajo la semana anterior.' : ' Todos estaban también por debajo la semana anterior.')
       : alsoPrev.length ? ` ${alsoPrev.length === 1 ? `${alsoPrev[0].name} ya estaba` : `${alsoPrev.length} ya estaban`} por debajo la semana anterior.` : '';
     const base = {
-      rule: `Un músculo está por debajo si sus series efectivas de la semana no llegan al mínimo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}${ctx.inProgress ? ` La semana no ha terminado (quedan ${daysIn(ctx.daysLeft)}): es un recuento provisional, no un resultado.` : ''}`,
+      rule: `Un músculo está por debajo si sus series efectivas de la semana no llegan al mínimo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}${ctx.inProgress ? ` La semana no ha terminado (${leftIn(ctx.daysLeft)}): es un recuento provisional, no un resultado.` : ''}`,
       data: muscleWhyRows(ctx, below, breakdown),
       items: below.map((r) => ({ ...r, value: `${n1(r.sets)} / ${r.range} · faltan ${n1(r.missing)}${ctx.hasPrev ? ` · sem. ant. ${n1(r.prevSets)}` : ''}` })),
     };
@@ -323,7 +326,7 @@ function muscleMessages(ctx) {
         tag: 'En curso',
         title: one ? `${one.name}: aún por debajo del mínimo` : `${below.length} músculos aún por debajo del mínimo`,
         text: one
-          ? `Llevas ${setsTxt(one.sets)} de un mínimo de ${n1(one.min)} (faltan ${n1(one.missing)}); quedan ${daysTxt(ctx.daysLeft)}.`
+          ? `Llevas ${setsTxt(one.sets)} de un mínimo de ${n1(one.min)} (faltan ${n1(one.missing)}); ${leftTxt(ctx.daysLeft)}.`
           : `A falta de ${daysTxt(ctx.daysLeft)}, aún no llegan al mínimo: ${shortList(below.map((r) => `${r.name} (faltan ${n1(r.missing)})`))}. Se puede completar en lo que queda de semana.`,
       }));
     } else {
@@ -333,7 +336,7 @@ function muscleMessages(ctx) {
         title: one ? `${one.name} por debajo del rango` : `${below.length} músculos por debajo del rango`,
         text: one
           ? `${setsTxt(one.sets)} esta semana; tu rango es ${one.range}. ${ctx.hasPrev ? `Semana anterior: ${n1(one.prevSets)} (${one.deltaLabel}).` : 'Es la primera semana con registros.'}`
-          : `No llegaron al mínimo: ${shortList(below.map((r) => `${r.name} (${n1(r.sets)} de ${n1(r.min)})`))}.${prevNote}`,
+          : `No llegaron al mínimo: ${shortList(below.map((r) => `${r.name} (${n1(r.sets)}, mínimo ${n1(r.min)})`))}.${prevNote}`,
       }));
     }
   }
@@ -346,7 +349,7 @@ function muscleMessages(ctx) {
       title: one ? `${one.name} por encima del rango` : `${above.length} músculos por encima del rango`,
       text: one
         ? `${setsTxt(one.sets)} esta semana; tu máximo es ${n1(one.max)}. ${ctx.hasPrev ? `Semana anterior: ${n1(one.prevSets)}${ctx.inProgress ? '' : ` (${one.deltaLabel})`}.` : 'Es la primera semana con registros.'}`
-        : `Superan el máximo de su rango: ${shortList(above.map((r) => `${r.name} (${n1(r.sets)} de ${n1(r.max)})`))}.${ctx.inProgress ? ` Quedan ${daysTxt(ctx.daysLeft)}.` : ''}`,
+        : `Superan el máximo de su rango: ${shortList(above.map((r) => `${r.name} (${n1(r.sets)}, máximo ${n1(r.max)})`))}.${ctx.inProgress ? ` ${cap(leftTxt(ctx.daysLeft))}.` : ''}`,
       rule: `Un músculo está por encima si sus series efectivas de la semana superan el máximo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}`,
       data: muscleWhyRows(ctx, above, breakdown),
       items: above.map((r) => ({ ...r, value: `${n1(r.sets)} / ${r.range} · sobran ${n1(r.excess)}${ctx.hasPrev ? ` · sem. ant. ${n1(r.prevSets)}` : ''}` })),
@@ -403,7 +406,7 @@ function pushPullMessage(ctx) {
       ...extra,
       title: 'Empuje/tirón: sin series esta semana',
       text: ctx.inProgress
-        ? `Aún no hay series de empuje ni de tirón (quedan ${daysIn(ctx.daysLeft)}); ${prevTxt}.`
+        ? `Aún no hay series de empuje ni de tirón (${leftIn(ctx.daysLeft)}); ${prevTxt}.`
         : `No hubo series de empuje ni de tirón; ${prevTxt}.`,
     });
   }
@@ -973,7 +976,7 @@ function loadWarningMessages(ctx) {
   const L = loadStats(ctx);
   const R = runKmStats(ctx);
   const { low, high } = ctx.cfg.loadWarn;
-  const now = ctx.inProgress ? `De momento (quedan ${daysIn(ctx.daysLeft)}), la` : 'La';
+  const now = ctx.inProgress ? `De momento (${leftIn(ctx.daysLeft)}), la` : 'La';
   const loadPct = (p, signed = true) => warnPct(p, [low, high], signed);
   const runPct = (p, signed = true) => warnPct(p, [R.low, R.high], signed);
   const loadRuleTxt = `Aviso orientativo si la carga de la semana (minutos × esfuerzo) supera la media de las 4 semanas previas en más de un ${num(low, 0)} % (aviso suave) o de un ${num(high, 0)} % (aviso). Umbrales en Ajustes › Umbrales › Aviso de carga semanal. Es una referencia prudente para que las subidas sean graduales, no una predicción de lesión.`;

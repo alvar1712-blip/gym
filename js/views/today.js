@@ -184,11 +184,13 @@ function planCard(today, ctx, active) {
     // Parcial solo con actividades sueltas (la carrera del Día 3): la rutina aún se puede empezar.
     const ownDone = st.sessions.some((s) => s.kind === 'strength' && s.templateId === eff.templateId);
     const offerStart = canStartPlan && st.status === 'partial' && !st.manual && !ownDone && !liveToday;
-    card.append(
+    // Element.append(null) escribiría el texto «null»: se filtran los huecos vacíos.
+    card.append(...[
       st.status === 'done' && !st.extra ? null : h('p.small.text-2', st.reason),
       h('div.list.today-sessions', st.sessions.map((s) => sessionRow(s, opts))),
       offerStart ? (active ? busy() : startBtn('Empezar la rutina', startPlan)) : null,
-      h('button.btn.btn-secondary.btn-lg.btn-block', { type: 'button', onClick: () => otherSessionMenu({ date: today }) }, icon('plus', 20), 'Otra sesión'));
+      h('button.btn.btn-secondary.btn-lg.btn-block', { type: 'button', onClick: () => otherSessionMenu({ date: today }) }, icon('plus', 20), 'Otra sesión'),
+    ].filter(Boolean));
     card.append(dayLink(today));
     return card;
   }

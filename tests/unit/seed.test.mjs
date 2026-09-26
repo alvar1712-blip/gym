@@ -41,3 +41,21 @@ test('plantillas: todos los ejercicios existen y la semana tipo apunta a plantil
   for (const d of days) if (d.kind === 'template') assert.ok(tpls.has(d.templateId));
   assert.deepEqual(days.map((d) => d.kind), ['template', 'template', 'template', 'template', 'rest', 'template', 'rest']);
 });
+
+test('series por músculo por defecto (REQUISITOS §10): 10–20; más alto en espalda, core y pecho; 0–X en los indirectos', () => {
+  const t = defaultSettings().muscleTargets;
+  for (const m of MUSCLES) {
+    const r = t[m.id];
+    assert.ok(Array.isArray(r) && r.length === 2 && r[0] >= 0 && r[0] <= r[1], `${m.id}: ${JSON.stringify(r)}`);
+  }
+  assert.deepEqual(Object.keys(t).sort(), [...M].sort(), 'un rango por cada músculo, ninguno de más');
+  for (const id of ['sidedelt', 'reardelt', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves']) {
+    assert.deepEqual(t[id], [10, 20], `${id}: por defecto 10–20`);
+  }
+  for (const id of ['back', 'core', 'chest']) {
+    assert.ok(t[id][0] > 10 && t[id][1] > 20, `${id}: más alto que 10–20 en los dos extremos (${t[id].join('–')})`);
+  }
+  for (const id of ['frontdelt', 'forearms', 'adductors', 'tibialis', 'lowerback']) {
+    assert.equal(t[id][0], 0, `${id}: trabajo indirecto, sin mínimo`);
+  }
+});
