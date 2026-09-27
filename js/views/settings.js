@@ -694,3 +694,11 @@ export function mountData(root) {
 
   return () => offPersist();
 }
+
+// ---------------------------------------------------------------------------
+// #/settings/profile (ronda 5, docs/MEJORAS5.md §2). Provisional.
+// ---------------------------------------------------------------------------
+export function mountProfile(root) {
+  const c = screen(root, { title: 'Perfil', back: '#/settings' });
+  c.append(h('p.muted', 'Pantalla en construcción.'));
+}

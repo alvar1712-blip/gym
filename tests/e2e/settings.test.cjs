@@ -8,7 +8,7 @@ const { openApp, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs')
 
 const NOW = new Date('2026-09-23T10:00:00Z'); // 12:00 en Madrid
 const WS = '2026-09-21';
-const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals'];
+const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle'];
 
 const settle = (page, ms = 250) => page.waitForTimeout(ms);
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);

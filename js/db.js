@@ -2,8 +2,9 @@
 // Las escrituras se resuelven cuando la transacción se COMPLETA (dato en disco).
 
 export const DB_NAME = 'entreno';
-export const DB_VERSION = 1;
-export const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals'];
+export const DB_VERSION = 2;
+// v2 (ronda 5): 'cycle' = días del ciclo menstrual (id = fecha). onupgradeneeded crea solo las que falten.
+export const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle'];
 
 let dbPromise = null;
 

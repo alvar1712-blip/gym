@@ -37,6 +37,9 @@ export const ROUTES = [
   { pattern: '/import', tab: 'today', load: v('import'), fn: 'mountImport' },
   { pattern: '/predictions', tab: 'progress', load: v('predictions'), fn: 'mountPredictions' },
   { pattern: '/summary', tab: 'progress', load: v('summary'), fn: 'mountSummary' },
+  { pattern: '/analysis', tab: 'progress', load: v('analysis'), fn: 'mountAnalysis' },
+  { pattern: '/cycle', tab: 'today', load: v('cycle'), fn: 'mountCycle' },
+  { pattern: '/settings/profile', tab: 'settings', load: v('settings'), fn: 'mountProfile' },
 ];
 
 const TABS = [

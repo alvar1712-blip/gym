@@ -163,6 +163,19 @@ export function defaultSettings() {
     lastBackupAt: null,
     backupReminderDays: 7,
     bodyweightDefault: 75,
+    // Perfil (ronda 5, docs/MEJORAS5.md): personaliza los análisis. null = sin contestar.
+    profile: {
+      sex: null, // 'male' | 'female'
+      goal: null, // 'gain' | 'lose' | 'maintain' | 'performance'
+      experience: null, // 'beginner' | 'intermediate' | 'advanced'
+      // Solo modo mujer:
+      cycleTracking: true, // seguimiento del ciclo (si sex === 'female')
+      contraception: null, // 'none' | 'combined_pill' | 'progestin_pill' | 'hormonal_iud' | 'implant' | 'ring_patch' | 'injection' | 'copper_iud' | 'other'
+      cycleLengthGuess: 28, // estimación inicial hasta tener ciclos registrados
+      periodLengthGuess: 5,
+      cycleInReport: false, // incluir el ciclo en «Copiar informe para tu IA»
+      promptDismissed: false, // tarjeta «Completa tu perfil» en Hoy
+    },
   };
 }
 
