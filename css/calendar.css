@@ -140,7 +140,7 @@
   background: var(--surface);
   color: var(--text);
 }
-.today-quick-btn:active { background: var(--surface-2); transform: scale(0.98); }
+.today-quick-btn.is-pressed { background: var(--surface-2); transform: scale(0.98); }
 .today-quick-emoji { font-size: 26px; line-height: 1; }
 .today-quick-label { font-size: 13px; font-weight: 700; line-height: 1.15; text-align: center; color: var(--text-2); }
 
@@ -206,7 +206,7 @@
   text-align: left;
 }
 .cal-row:last-child { border-bottom: 0; }
-.cal-row:active { background: var(--surface-2); }
+.cal-row.is-pressed { background: var(--surface-2); }
 .cal-row.is-today { border-left-color: var(--accent); background: rgba(184, 243, 74, 0.05); }
 .cal-row .chev { color: var(--muted); flex: none; }
 .cal-row-date {
@@ -262,7 +262,7 @@
   color: var(--text);
   padding: 4px 0;
 }
-.cal-month-cell:active { background: var(--surface-2); }
+.cal-month-cell.is-pressed { background: var(--surface-2); }
 .cal-month-cell.is-out { opacity: 0.35; }
 .cal-month-cell.is-today { border-color: var(--accent); }
 .cal-month-cell.is-today .cal-month-num { color: var(--accent); }
@@ -294,6 +294,14 @@
 .hist-month-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px; }
 .hist-month-head .section-title { margin: 0 2px; }
 .hist-more { margin-top: 4px; }
+
+/* ---------- Marcas del ciclo (modo mujer; estilos base .cyc-mark en css/cycle.css) ---------- */
+.cal-month-cell { position: relative; }
+.cal-month-cell .cal-cyc-mark { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); }
+.cal-row-date .cal-cyc-mark { margin-top: 3px; }
+.cal-cyc-legend { align-items: center; border-top: 1px solid var(--border); margin: 0 6px; padding: 8px 0 0; }
+.cal-cyc-legend .cyc-mark { width: 14px; }
+.cal-cyc-link { min-height: 36px; margin-left: auto; font-size: 14px; }
 
 @media (max-width: 350px) {
   .today-quick { grid-template-columns: repeat(3, minmax(0, 1fr)); }

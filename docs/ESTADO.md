@@ -34,6 +34,11 @@
       corporal (panel semanal y Progreso), transiciones tipo iOS y efecto cristal. Integración de accesos (Hoy,
       actividad nueva, Copias y datos, Progreso, Récords), `stamp-sw` + `check-assets` OK, 363 unitarias y 128 E2E en
       verde. Fuera por decisión del usuario: notas fijas por ejercicio, medidas corporales, km por zapatillas.
+- [x] **Ronda 5** (contrato `docs/MEJORAS5.md`): gesto de «atrás» sin doble animación ni saltos, hojas con su entrada
+      de historial y arrastre para cerrar, `.is-pressed`, títulos compactos, efecto tarjeta, píldora líquida y cristal
+      más marcado; perfil (sexo, objetivo, experiencia); «tu analista» (peso, fuerza, resistencia, recuperación,
+      previsiones, informe para IA) basado en estudios; modo mujer con ciclo menstrual completo. IndexedDB v2 (store
+      `cycle`). `stamp-sw` + `check-assets` OK, 444 unitarias y 151 E2E en verde.
 
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
@@ -48,3 +53,7 @@
   registrar; en los pasos ≥ 75 % las reps no superan las de la serie de trabajo.
 - Ronda 4 · Efecto cristal: barras y hojas con opacidad alta (nunca se lee el texto de debajo) y avisos opacos; en el
   iPhone real el desenfoque puede verse algo distinto que en las pruebas.
+- Ronda 5 · Análisis: umbrales de progreso de fuerza por experiencia orientativos (no hay una cifra única en la
+  literatura); en mujer, rangos de ganancia de peso algo más prudentes (0,2–0,4 %/sem).
+- Ronda 5 · Doble toque en «Registrar serie»: se ignora un segundo toque en 400 ms (antes 300).
+- Ronda 5 · El gesto real de «atrás» del iPhone solo se puede comprobar en el propio iPhone (en las pruebas se simula).

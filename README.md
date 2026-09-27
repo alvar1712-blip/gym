@@ -28,7 +28,12 @@ con copias de seguridad en JSON y exportación CSV.
 - Check-in opcional (sueño, energía, agujetas) y objetivos de fuerza, resistencia y peso con estimación en rango de fechas.
 - Resúmenes semanal, mensual y anual con comparación con el periodo anterior; mapa corporal con las series de la semana
   por músculo; tiempos previstos de 5 km a maratón (rangos) y comprobador «¿Puedo hacerlo?».
-- Transiciones tipo iOS y efecto cristal en barras, hojas y avisos (respeta «Reducir movimiento»).
+- Transiciones tipo iOS y efecto cristal en barras, hojas y avisos (respeta «Reducir movimiento»); el gesto de
+  «atrás» del iPhone vuelve a la pantalla anterior donde estaba, y cierra las hojas abiertas.
+- «Tu analista» sin IA en la nube: análisis del peso, de la fuerza (con previsión), de la resistencia y de la
+  recuperación basados en estudios, con «¿Por qué?» y fuentes; «Copiar informe para tu IA».
+- Perfil hombre/mujer; en modo mujer, seguimiento del ciclo menstrual (fases estimadas, próxima regla, síntomas,
+  «Cómo te afecta» con sus datos y avisos basados en evidencia).
 
 ## Desarrollo
 Sin dependencias ni compilación. Para probar en local:

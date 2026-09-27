@@ -1,7 +1,7 @@
 // E2E de la integración de la Fase 3 en Hoy y Progreso: check-in de hoy (3 toques, saltable, solo si no se ha
 // hecho ni omitido), tarjeta resumen del panel semanal y de objetivos, accesos a #/weekly y #/goals, y que
 // #/weekly, #/goals, #/goal/new y #/goal/:id se abren desde la app y vuelven atrás. «Te toca hoy» y «Empezar»
-// siguen arriba. Siembra 6 semanas + la actual (rutina precargada, carreras, bici, pesajes, check-ins y dos
+// siguen arriba. Ronda 5: con datos, «Tu análisis» va la última del hueco y «Análisis» encabeza los accesos. Siembra 6 semanas + la actual (rutina precargada, carreras, bici, pesajes, check-ins y dos
 // objetivos) con la fecha fijada (jueves 24 sep 2026). Capturas en test-results/fase3-*.png (390×844 y 375×667).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/fase3.test.cjs
 const test = require('node:test');
@@ -221,9 +221,10 @@ async function seed(page, { goals = true } = {}) {
   return s;
 }
 
-/** Hijos del hueco de la Fase 3 en Hoy, en orden. */
+/** Hijos del hueco de la Fase 3 en Hoy, en orden (ronda 5: «Tu análisis» al final → 'analysis'). */
 const extraKinds = (page) => page.locator('.today-extra > *').evaluateAll((els) => els.filter((e) => !e.hidden).map((e) => (
-  e.classList.contains('today-checkin') ? `checkin:${e.dataset.checkin}` : e.classList.contains('wk-summary') ? 'weekly' : e.classList.contains('goal-sum') ? 'goals' : e.className)));
+  e.classList.contains('today-checkin') ? `checkin:${e.dataset.checkin}` : e.classList.contains('wk-summary') ? 'weekly' : e.classList.contains('goal-sum') ? 'goals'
+    : e.classList.contains('an-sum') ? 'analysis' : e.className)));
 const pick = (root, field, label) => root.locator(`.ci-row[data-field="${field}"] .seg-btn`, { hasText: new RegExp(`^${label}$`) });
 /** «Empezar» (y todo «Te toca hoy») a la vista sin hacer scroll, por encima de la barra de pestañas. */
 const startVisible = (page) => page.evaluate(() => {
@@ -244,8 +245,8 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     await open(page, '#/today');
     assert.strictEqual(await page.locator('.today-plan .today-plan-name').innerText(), 'Día 4 — Upper hipertrofia');
     assert.ok(await startVisible(page), '«Empezar» a la vista sin scroll');
-    // El hueco va después de la mini semana, con el check-in, el panel y los objetivos (en ese orden)
-    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'goals']);
+    // El hueco va después de la mini semana, con el check-in, el panel, los objetivos y «Tu análisis» (en ese orden)
+    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'goals', 'analysis']);
     const order = await page.evaluate(() => {
       const y = (s) => document.querySelector(s).getBoundingClientRect().top;
       return [y('.today-plan'), y('.today-quick'), y('.today-weekcard'), y('.today-extra')];
@@ -287,7 +288,7 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     // Ya hecho hoy: al volver a Hoy ya no se ofrece
     await open(page, '#/calendar');
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals']);
+    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals', 'analysis']);
 
     // «Ver panel semanal» → #/weekly de esta semana; atrás vuelve a Hoy
     await page.locator('.wk-summary-btn').scrollIntoViewIfNeeded();
@@ -332,7 +333,7 @@ test('Hoy y Progreso a 375×667: «Empezar» a la vista, «Omitir» el check-in 
     assert.strictEqual((await idbAll(page, 'checkins')).filter((c) => c.date === TODAY).length, 0, 'omitir no guarda nada');
     await open(page, '#/calendar');
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals']);
+    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals', 'analysis']);
 
     // Progreso: accesos (panel semanal y objetivos junto a Récords/Peso/Ejercicios) y las dos tarjetas resumen
     await open(page, '#/progress');
@@ -340,7 +341,7 @@ test('Hoy y Progreso a 375×667: «Empezar» a la vista, «Omitir» el check-in 
     const small = await page.locator('.prg-links button, .wk-summary-btn, .goal-sum-link, .goal-sum-row').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height < 44).length);
     assert.strictEqual(small, 0, 'botones de al menos 44 px');
     const labels = await page.locator('.prg-link-label').evaluateAll((els) => els.map((e) => ({ t: e.textContent, cut: e.scrollWidth > e.clientWidth + 1 })));
-    assert.deepStrictEqual(labels.map((l) => l.t), ['Panel semanal', 'Objetivos', 'Resúmenes', 'Predicciones', 'Récords', 'Peso', 'Ejercicios']);
+    assert.deepStrictEqual(labels.map((l) => l.t), ['Análisis', 'Panel semanal', 'Objetivos', 'Resúmenes', 'Predicciones', 'Récords', 'Peso', 'Ejercicios']);
     assert.ok(labels.every((l) => !l.cut), `etiquetas sin recortar: ${JSON.stringify(labels)}`);
     await scrollShots(page, 'fase3-progress-375', 3);
     assert.deepStrictEqual(app.errors, []);
@@ -437,7 +438,7 @@ test('Sin datos: Hoy solo ofrece el check-in; Progreso sin tarjetas pero con acc
     assert.strictEqual(await page.locator('.progress-extra .wk-summary').count(), 1);
     assert.strictEqual(await page.locator('.progress-extra .goal-sum').count(), 0);
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly']);
+    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'analysis']);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -455,7 +456,7 @@ test('Hoy: con la sesión de hoy en curso el check-in se enlaza a ella; tras ter
     assert.match(await hashOf(page), /^#\/session\//);
     const sid = (await hashOf(page)).split('/')[2];
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'goals']);
+    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'goals', 'analysis']);
     await pick(page.locator('.today-checkin'), 'energy', 'Normal').click();
     await page.waitForTimeout(250);
     const rec = (await idbAll(page, 'checkins')).find((c) => c.date === TODAY);
@@ -476,7 +477,7 @@ test('Hoy: con la sesión de hoy en curso el check-in se enlaza a ella; tras ter
       await store.save('sessions', s);
     }, sid);
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals']);
+    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals', 'analysis']);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

@@ -179,3 +179,31 @@
 .cfg-danger .card-title { color: var(--danger); }
 .cfg-wipe { min-height: var(--tap); }
 .cfg-usage { white-space: nowrap; }
+
+/* ---------- Perfil (ronda 5) ---------- */
+.cfg-profile-list .cfg-profile-row { min-height: 64px; }
+.cfg-ico-profile { background: var(--info-soft); color: var(--info); }
+.cfg-prof { gap: 10px; }
+.cfg-prof .seg-btn { min-height: 44px; font-size: 16px; }
+.cfg-choices { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-2); }
+.cfg-choice { min-height: 56px; gap: 12px; }
+.cfg-choice .list-item-sub { font-size: 13px; }
+.cfg-choice.is-on .list-item-title { color: var(--accent); }
+.cfg-radio {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--border-strong);
+  color: var(--accent-ink);
+}
+.cfg-choice.is-on .cfg-radio { background: var(--accent); border-color: var(--accent); }
+.cfg-switch { padding: 6px 0; border-top: 1px solid var(--border); }
+.cfg-switch-texts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cfg-switch-title { font-weight: 650; line-height: 1.25; }
+.cfg-switch-sub { font-size: 13px; line-height: 1.35; color: var(--muted); }
+.cfg-contra { min-height: 56px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.cfg-contra .list-item-title { white-space: normal; }
+.cfg-cycle-link { margin-top: 2px; }

@@ -18,7 +18,7 @@
   background: var(--surface-3);
   color: var(--text);
 }
-.wk-nav-btn:active { background: var(--border-strong); }
+.wk-nav-btn.is-pressed { background: var(--border-strong); }
 .wk-nav-btn:disabled { opacity: 0.35; }
 .wk-nav-cur {
   flex: 1;
@@ -338,7 +338,7 @@
   color: var(--text);
   text-align: left;
 }
-.goal-head:active { opacity: 0.75; }
+.goal-head.is-pressed { opacity: 0.75; }
 .goal-emoji { flex: none; width: 34px; font-size: 26px; line-height: 1; text-align: center; }
 .goal-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .goal-title { font-size: 17px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
@@ -420,7 +420,7 @@
   color: var(--text);
   text-align: left;
 }
-.goal-pick:active { background: var(--surface-3); }
+.goal-pick.is-pressed { background: var(--surface-3); }
 .goal-pick .icon { flex: none; color: var(--muted); }
 .goal-pick-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .goal-pick-label { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
@@ -468,7 +468,7 @@
   text-align: left;
 }
 .goal-sum-row:first-child { border-top: 0; padding-top: 2px; }
-.goal-sum-row:active { opacity: 0.75; }
+.goal-sum-row.is-pressed { opacity: 0.75; }
 .goal-sum-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .goal-sum-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
 .goal-sum-pct { flex: none; font-size: 14px; font-weight: 750; color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -484,3 +484,6 @@
 
 /* Mapa corporal encima de la tabla de músculos (integración ronda 4) */
 .wk-muscles { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- «Tu análisis» en el panel (ronda 5; la tarjeta es de css/analysis.css) ---------- */
+.wk-analysis { border-left: 4px solid var(--accent); }

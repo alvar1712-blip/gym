@@ -1,6 +1,7 @@
 // today.js — pantalla «Hoy»: aviso de copia, sesión en curso, lo que toca hoy (1 toque para
 // empezar), accesos rápidos, peso corporal y mini semana; al final (Fase 3) el check-in de hoy, el resumen del
-// panel semanal y los objetivos.
+// panel semanal y los objetivos. Ronda 5: tras «Te toca hoy», la tarjeta del ciclo (modo mujer, views/cycle.js) y
+// «Completa tu perfil (30 s)»; al final, «Tu análisis» (views/analysis.js).
 // PROPIETARIO: módulo de calendario (el hueco .today-extra lo rellena la integración de la Fase 3).
 import * as store from '../store.js';
 import { navigate, refresh } from '../router.js';
@@ -14,6 +15,7 @@ import {
   activityMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 import { bodyweightQuickEntry } from './bodyweight.js';
+import { getProfile, profileIncomplete, cycleEnabled } from '../profile.js';
 
 const QUICK = [
   { kind: 'run', emoji: '🏃', label: 'Carrera' },
@@ -35,6 +37,11 @@ export async function mountToday(root) {
   const active = store.activeSession();
   if (active) content.appendChild(activeCard(active, timers));
   content.appendChild(planCard(today, ctx, active));
+  // Ronda 5, tras «Te toca hoy» (no lo empujan): el ciclo (se carga aparte) y la invitación a completar el perfil.
+  const profile = getProfile(store.settings());
+  const cycleSlot = cycleEnabled(profile) ? h('div.today-cycle-slot') : null;
+  if (cycleSlot) content.appendChild(cycleSlot);
+  if (profileIncomplete(profile) && !profile.promptDismissed) content.appendChild(profilePrompt());
 
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
@@ -55,7 +62,7 @@ export async function mountToday(root) {
   };
   // Lo principal ya está pintado; los módulos de la Fase 3 se cargan después (el router espera a que termine
   // para restaurar el scroll).
-  await fillExtra(extra, today, active);
+  await Promise.all([fillExtra(extra, today, active), cycleSlot ? fillCycle(cycleSlot, today) : null]);
   return cleanup;
 }
 
@@ -63,6 +70,30 @@ export async function mountToday(root) {
 // Fase 3: check-in de hoy, resumen del panel semanal y objetivos
 // ---------------------------------------------------------------------------
 let extraModules = null;
+let analysisModule = null;
+let cycleModule = null;
+/** «Tu análisis» se carga aparte: si falla, las tarjetas de la Fase 3 siguen. */
+function loadAnalysisModule() {
+  if (!analysisModule) analysisModule = import('./analysis.js').catch((err) => { analysisModule = null; throw err; });
+  return analysisModule;
+}
+/** Tarjeta del ciclo (views/cycle.js), solo en modo mujer con seguimiento. Aislada: Hoy nunca se rompe por ella. */
+function loadCycleModule() {
+  if (!cycleModule) cycleModule = import('./cycle.js').catch((err) => { cycleModule = null; throw err; });
+  return cycleModule;
+}
+async function fillCycle(slot, today) {
+  try {
+    const mod = await loadCycleModule();
+    if (!slot.isConnected || typeof mod.cycleTodayCard !== 'function') return;
+    const el = mod.cycleTodayCard({ today });
+    if (el) slot.replaceWith(el);
+    else slot.remove();
+  } catch (err) {
+    console.error('[hoy] ciclo', err);
+    slot.remove();
+  }
+}
 /** Se importan al usarse (no retrasan la primera pintura de Hoy) y una sola vez. */
 function loadExtraModules() {
   if (!extraModules) {
@@ -90,13 +121,20 @@ async function fillExtra(slot, today, active) {
   } catch (err) {
     console.error('[hoy] módulos de la Fase 3', err);
   }
+  let an = null;
+  try {
+    an = await loadAnalysisModule();
+  } catch (err) {
+    console.error('[hoy] módulo del análisis', err);
+  }
   if (mods && slot.isConnected) { // si se cambió de pantalla mientras cargaban, no se calcula nada
     const [ci, weekly, goals] = mods;
-    const data = safely('datos', () => weekly.weeklyData(today)); // un único `data` para las dos tarjetas
+    const data = safely('datos', () => weekly.weeklyData(today)); // un único `data` para todas las tarjetas
     slot.append(...[
       safely('check-in', () => todayCheckin(ci, today, active)),
       data ? safely('panel semanal', () => weekly.weeklySummaryCard({ data })) : null,
       data ? safely('objetivos', () => goals.goalsSummaryCard({ data })) : null,
+      data && an ? safely('análisis', () => an.analysisSummaryCard({ data, today })) : null,
     ].filter(Boolean));
   }
   slot.dataset.ready = '1';
@@ -117,6 +155,28 @@ function todayCheckin(ci, today, active) {
   const el = ci.checkinCard({ date: today, timing: 'pre', sessionId, compact: true });
   if (el) el.classList.add('card', 'today-checkin');
   return el;
+}
+
+/** «Completa tu perfil (30 s)» → #/settings/profile; «Ahora no» la descarta para siempre (profile.promptDismissed). */
+function profilePrompt() {
+  const card = h('section.card.today-profile.an-prompt', { dataset: { card: 'profile' } },
+    h('div.an-prompt-top',
+      h('span.an-card-icon', { 'aria-hidden': 'true' }, icon('sliders', 20)),
+      h('div.an-prompt-texts',
+        h('h2.an-prompt-title', 'Completa tu perfil (30 s)'),
+        h('p.an-prompt-text', 'Sexo, objetivo y experiencia: tu análisis usará tus rangos y te hablará a tu medida.'))),
+    h('div.an-prompt-actions',
+      h('button.btn.btn-secondary.an-prompt-go', { type: 'button', onClick: () => navigate('#/settings/profile') }, 'Completar'),
+      h('button.btn.btn-ghost.an-prompt-later', {
+        type: 'button',
+        onClick: () => {
+          const s = store.settings();
+          s.profile = { ...getProfile(s), promptDismissed: true };
+          store.save('meta', s);
+          card.remove();
+        },
+      }, 'Ahora no')));
+  return card;
 }
 
 /** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */

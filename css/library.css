@@ -8,7 +8,7 @@
   color: var(--accent);
   border: 1px dashed var(--border-strong);
 }
-.lib-add:active { background: var(--accent-soft); }
+.lib-add.is-pressed { background: var(--accent-soft); }
 .lib-badge-inline { margin-left: 8px; vertical-align: 2px; }
 
 /* ---------- Lista de rutinas ---------- */
@@ -31,7 +31,7 @@
   color: var(--text);
   text-align: left;
 }
-.lib-tpl-main:active { background: var(--surface-2); }
+.lib-tpl-main.is-pressed { background: var(--surface-2); }
 .lib-tpl-name { font-size: 17px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
 .lib-tpl-meta { font-size: 13px; font-weight: 650; color: var(--accent); }
 .lib-tpl-ex {
@@ -185,7 +185,7 @@
   text-align: left;
   border-radius: var(--radius);
 }
-.lib-item-head:active { background: var(--surface-2); }
+.lib-item-head.is-pressed { background: var(--surface-2); }
 .lib-item-label {
   flex: none;
   min-width: 36px;
@@ -225,7 +225,7 @@
   color: var(--text);
   text-align: left;
 }
-.lib-ex-btn:active { background: var(--surface-3); }
+.lib-ex-btn.is-pressed { background: var(--surface-3); }
 .lib-ex-btn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .lib-ex-btn-k { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .lib-ex-btn-v { font-weight: 700; overflow-wrap: anywhere; }
@@ -257,6 +257,6 @@
   font-size: 13px;
   font-weight: 700;
 }
-.lib-act:active { background: var(--surface-3); }
+.lib-act.is-pressed { background: var(--surface-3); }
 .lib-act:disabled { opacity: 0.35; }
 .lib-act.danger { color: var(--danger); border-color: rgba(248, 113, 113, 0.45); }

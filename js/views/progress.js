@@ -214,8 +214,8 @@ function progressExtra(data) {
   return slot;
 }
 
-/** Accesos: Panel semanal y Objetivos (Fase 3), Resúmenes y Tiempos previstos (ronda 4), Récords, Peso corporal y
- * salto a la lista de ejercicios. */
+/** Accesos: Análisis (ronda 5, a lo ancho), Panel semanal y Objetivos (Fase 3), Resúmenes y Tiempos previstos
+ * (ronda 4), Récords, Peso corporal y salto a la lista de ejercicios. */
 function linksRow(ctx, exSection) {
   const tile = (emoji, label, aria, onClick, key) => h('button.prg-link', { type: 'button', dataset: { link: key }, 'aria-label': aria, onClick },
     h('span.prg-link-emoji', { 'aria-hidden': 'true' }, emoji),
@@ -223,7 +223,15 @@ function linksRow(ctx, exSection) {
   const wide = (emoji, label, aria, onClick, key) => h('button.prg-link.prg-link-wide', { type: 'button', dataset: { link: key }, 'aria-label': aria, onClick },
     h('span.prg-link-emoji', { 'aria-hidden': 'true' }, emoji),
     h('span.prg-link-label', label));
+  // Ronda 5: «Análisis» a lo ancho, arriba (el resto de accesos, igual que antes).
+  const analysis = h('button.prg-link.prg-link-full', { type: 'button', dataset: { link: 'analysis' }, 'aria-label': 'Análisis: peso, fuerza, resistencia, recuperación y previsiones', onClick: () => goChild('#/analysis') },
+    h('span.prg-link-emoji', { 'aria-hidden': 'true' }, '🧠'),
+    h('span.prg-link-texts',
+      h('span.prg-link-label', 'Análisis'),
+      h('span.prg-link-sub', 'Peso, fuerza, resistencia y recuperación')),
+    icon('chevron-right', 20, 'prg-link-chev'));
   return h('nav.prg-links', { 'aria-label': 'Accesos de progreso' },
+    analysis,
     wide('📋', 'Panel semanal', 'Panel semanal: información y sugerencias de la semana', () => goChild('#/weekly'), 'weekly'),
     wide('🎯', 'Objetivos', 'Objetivos: progreso y fecha estimada', () => goChild('#/goals'), 'goals'),
     wide('🗓️', 'Resúmenes', 'Resumen mensual y anual', () => goChild('#/summary'), 'summary'),

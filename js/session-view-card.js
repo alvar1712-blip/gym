@@ -419,7 +419,8 @@ function registerSet(ctx, se, set, ex, logType) {
     delete set.origWeight;
   }
   ctx.editing.delete(se.id);
-  ctx.guardUntil.set(se.id, performance.now() + 300);
+  // 400 ms: cubre un doble toque accidental también en un móvil lento, sin estorbar al registrar la siguiente.
+  ctx.guardUntil.set(se.id, performance.now() + 400);
   ctx.touch(se);
   ctx.save();
   haptic(15);

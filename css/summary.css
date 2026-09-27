@@ -18,7 +18,7 @@
   background: var(--surface-3);
   color: var(--text);
 }
-.sum-nav-btn:active { background: var(--border-strong); }
+.sum-nav-btn.is-pressed { background: var(--border-strong); }
 .sum-nav-btn:disabled { opacity: 0.35; }
 .sum-nav-cur {
   flex: 1;
@@ -154,7 +154,7 @@
 }
 .sum-cal-pad { visibility: hidden; }
 .sum-cal-on { background: var(--surface-3); border-color: var(--border-strong); color: var(--text); font-weight: 750; }
-button.sum-cal-on:active { background: var(--border-strong); }
+button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-cal-today { box-shadow: inset 0 0 0 2px var(--accent); }
 .sum-cal-future { opacity: 0.4; }
 .sum-cal-num { line-height: 1; }
@@ -179,7 +179,7 @@ button.sum-cal-on:active { background: var(--border-strong); }
   background: none;
   color: var(--text-2);
 }
-.sum-mbar:active { background: var(--surface-2); }
+.sum-mbar.is-pressed { background: var(--surface-2); }
 .sum-mbar:disabled { opacity: 0.35; }
 .sum-mbar-val { min-height: 16px; font-size: 12px; font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums; }
 .sum-mbar-track { position: relative; display: flex; align-items: flex-end; width: 100%; max-width: 20px; height: 96px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
@@ -219,8 +219,8 @@ button.sum-cal-on:active { background: var(--border-strong); }
 }
 .sum-rec:last-child .sum-rec-btn,
 .sum-prog:last-child .sum-prog-btn { border-bottom: 0; }
-.sum-rec-btn:active,
-.sum-prog-btn:active { background: var(--surface-2); }
+.sum-rec-btn.is-pressed,
+.sum-prog-btn.is-pressed { background: var(--surface-2); }
 .sum-rec-btn .chev,
 .sum-prog-btn .chev { flex: none; color: var(--muted); }
 .sum-rec-icon {

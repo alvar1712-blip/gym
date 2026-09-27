@@ -1,5 +1,5 @@
 // ui.js — utilidades DOM y componentes comunes (tema oscuro, pensado para una mano).
-import { back as routerBack, routeEpoch } from './router.js';
+import { back as routerBack, routeEpoch, pushOverlay, onMount } from './router.js';
 import { numToInput, parseNum, clamp, round } from './util.js';
 
 // ---------------------------------------------------------------------------
@@ -138,7 +138,19 @@ export const ICON_NAMES = Object.keys(ICONS);
 // ---------------------------------------------------------------------------
 // Cabecera de pantalla
 //   header({ title, subtitle, back: '#/fallback' | true, actions: [{icon, label, onClick}] | Node })
+//
+// Título grande → pequeño (como Ajustes de iOS): arriba del todo el título va grande y alineado a la izquierda;
+// al desplazar la pantalla (IntersectionObserver sobre un testigo al principio de la página) la cabecera pasa a
+// .is-compact y el título (y el subtítulo) se encogen y se centran en la barra con transform (no cambia la
+// altura de la cabecera ni se mueve el contenido; ningún texto se corta más que antes). El <h1> sigue siendo
+// el único título (.topbar h1).
 // ---------------------------------------------------------------------------
+const COMPACT_AT = 12; // px de scroll a partir de los cuales la cabecera es compacta
+const COMPACT_TITLE_PX = 17;
+const COMPACT_SUB_PX = 12;
+let compact = false;
+let titleIO = null;
+
 export function header({ title, subtitle = null, back = null, actions = [] } = {}) {
   const left = back
     ? h('button.icon-btn.back-btn', {
@@ -153,13 +165,119 @@ export function header({ title, subtitle = null, back = null, actions = [] } = {
       : h('button.icon-btn', { type: 'button', 'aria-label': a.label, title: a.label, onClick: a.onClick, class: a.className || '' },
           a.icon ? icon(a.icon, 24) : null, a.text ? h('span.icon-btn-text', a.text) : null),
   );
-  return h('header.topbar',
+  const titles = h('div.topbar-titles',
+    h('h1', title),
+    subtitle ? h('div.topbar-sub', subtitle) : null);
+  const bar = h(`header.topbar${back ? '' : '.topbar-root'}`,
     left,
-    h('div.topbar-titles',
-      h('h1', title),
-      subtitle ? h('div.topbar-sub', subtitle) : null),
+    titles,
     acts.length ? h('div.topbar-actions', acts) : null,
   );
+  watchTitles();
+  // Las vistas cambian el título o el subtítulo (actividad, rutina, reloj de la sesión): se recoloca.
+  if (typeof MutationObserver === 'function') {
+    let queued = false;
+    new MutationObserver(() => {
+      if (queued || !bar.classList.contains('is-compact')) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; if (bar.classList.contains('is-compact')) layoutCompact(bar); });
+    }).observe(titles, { subtree: true, childList: true, characterData: true });
+  }
+  // Una cabecera nueva en una pantalla ya desplazada (p. ej. la sesión la rehace) nace compacta, sin animar.
+  if (compact) {
+    bar.classList.add('is-compact', 'tb-instant');
+    requestAnimationFrame(() => {
+      if (bar.isConnected) layoutCompact(bar);
+      requestAnimationFrame(() => bar.classList.remove('tb-instant'));
+    });
+  }
+  return bar;
+}
+
+/** Testigo de COMPACT_AT px al principio de la página: cuando sale de la vista, las cabeceras se compactan. */
+function watchTitles() {
+  if (titleIO || typeof document === 'undefined' || typeof IntersectionObserver !== 'function') return;
+  const probe = document.createElement('div');
+  probe.className = 'topbar-probe';
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.height = `${COMPACT_AT}px`;
+  document.body.prepend(probe);
+  titleIO = new IntersectionObserver((entries) => {
+    const e = entries[entries.length - 1];
+    setCompact(!e.isIntersecting, false);
+  });
+  titleIO.observe(probe);
+  // Si el contenido o el ancho cambian (giro, título nuevo), se recoloca el título compacto.
+  window.addEventListener('resize', () => { if (compact) document.querySelectorAll('.topbar.is-compact').forEach(layoutCompact); });
+}
+
+function setCompact(on, instant) {
+  compact = on;
+  for (const bar of document.querySelectorAll('#view .topbar')) {
+    if (instant) bar.classList.add('tb-instant');
+    if (on) layoutCompact(bar);
+    bar.classList.toggle('is-compact', on);
+    if (instant) requestAnimationFrame(() => requestAnimationFrame(() => bar.classList.remove('tb-instant')));
+  }
+}
+
+/** Posición del hijo dentro de la cabecera sin transform (offsetLeft/Top acumulados hasta la barra). */
+function boxIn(el, bar) {
+  let x = 0;
+  let y = 0;
+  for (let n = el; n && n !== bar; n = n.offsetParent) {
+    x += n.offsetLeft;
+    y += n.offsetTop;
+    if (!n.offsetParent || !bar.contains(n.offsetParent)) break;
+  }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+}
+
+/**
+ * Calcula dónde van el título y el subtítulo en la barra compacta (centrados entre el botón atrás y las
+ * acciones, a la altura del botón) y lo deja en variables CSS (--tb-x, --tb-y, --tb-s).
+ */
+function layoutCompact(bar) {
+  const titles = bar.querySelector('.topbar-titles');
+  const h1 = titles && titles.querySelector('h1');
+  if (!h1 || !bar.isConnected) return;
+  const sub = titles.querySelector('.topbar-sub');
+  const W = bar.clientWidth;
+  const csBar = getComputedStyle(bar);
+  const top = parseFloat(csBar.paddingTop) || 0;
+  const bottom = bar.clientHeight - (parseFloat(csBar.paddingBottom) || 0);
+  const backBtn = bar.querySelector(':scope > .back-btn');
+  // Hueco del título (entre el botón atrás y las acciones): el compacto nunca sale de él.
+  const left = titles.offsetLeft;
+  const right = titles.offsetLeft + titles.offsetWidth;
+  const items = [[h1, COMPACT_TITLE_PX]];
+  if (sub && sub.offsetHeight) items.push([sub, COMPACT_SUB_PX]);
+  const boxes = items.map(([el, px]) => {
+    const b = boxIn(el, bar);
+    const fs = parseFloat(getComputedStyle(el).fontSize) || px;
+    const s = Math.min(1, px / fs);
+    // Más pequeño cabe más texto: el ancho crece hasta el texto entero o hasta llenar el hueco.
+    el.style.width = 'max-content';
+    el.style.maxWidth = 'none';
+    const textW = el.offsetWidth + 2; // + margen: offsetWidth redondea y un subpíxel de menos ya pone «…»
+    el.style.width = '';
+    el.style.maxWidth = '';
+    const w = Math.max(1, Math.min(textW, Math.floor((right - left) / s)));
+    return { el, b: { ...b, w }, s };
+  });
+  const total = boxes.reduce((t, o) => t + o.b.h * o.s, 0);
+  const midY = backBtn ? backBtn.offsetTop + backBtn.offsetHeight / 2 : (top + bottom) / 2;
+  let y = midY - total / 2;
+  for (const { el, b, s } of boxes) {
+    const half = (b.w * s) / 2;
+    const cx = left + half > right - half ? (left + right) / 2 : Math.min(Math.max(W / 2, left + half), right - half);
+    const cy = y + (b.h * s) / 2;
+    y += b.h * s;
+    el.style.setProperty('--tb-w', `${b.w}px`);
+    el.style.setProperty('--tb-x', `${Math.round(cx - (b.x + b.w / 2))}px`);
+    el.style.setProperty('--tb-y', `${Math.round(cy - (b.y + b.h / 2))}px`);
+    el.style.setProperty('--tb-s', s.toFixed(3));
+  }
 }
 
 /** Estructura estándar de pantalla: cabecera + <div.content>. Devuelve el contenedor de contenido. */
@@ -177,6 +295,8 @@ let lockedY = 0;
 function lockScroll() {
   if (lockCount++ > 0) return;
   lockedY = window.scrollY;
+  // Centro de la parte visible de la vista (efecto tarjeta de las hojas, css/app.css).
+  document.documentElement.style.setProperty('--lock-y', `${lockedY}px`);
   const b = document.body.style;
   b.position = 'fixed';
   b.top = `-${lockedY}px`;
@@ -196,8 +316,72 @@ function unlockScroll() {
   window.scrollTo(0, lockedY);
 }
 
-// Respuesta al toque: Safari de iOS solo aplica :active si hay algún oyente de touchstart (css/app.css).
-if (typeof document !== 'undefined') document.addEventListener('touchstart', () => {}, { passive: true });
+// ---------------------------------------------------------------------------
+// Respuesta al toque sin falsos positivos: .is-pressed (css/app.css) en vez de :active. Se pone tras
+// PRESS_DELAY ms sin moverse más de PRESS_SLOP px y se quita al mover, soltar, cancelar o desplazar; un toque
+// rápido deja un destello breve. Así, empezar a desplazar la página o deslizar desde el borde no «pulsa» nada.
+// (El oyente de touchstart también hace que Safari aplique :active en los estilos de módulo que aún lo usan.)
+// ---------------------------------------------------------------------------
+const PRESSABLE = 'button, a[href], [role="button"], .list-item, label.chip';
+const PRESS_DELAY = 50;
+const PRESS_SLOP = 8;
+const PRESS_FLASH_MS = 110;
+let press = null; // { el, id, x, y, on, timer }
+let lastScrollAt = -1e9;
+
+function clearPress() {
+  const p = press;
+  press = null;
+  if (!p) return;
+  clearTimeout(p.timer);
+  p.el.classList.remove('is-pressed');
+}
+
+export function clearPressed() {
+  clearPress();
+  if (typeof document !== 'undefined') document.querySelectorAll('.is-pressed').forEach((el) => el.classList.remove('is-pressed'));
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('touchstart', () => {}, { passive: true });
+  const opts = { passive: true, capture: true };
+  document.addEventListener('pointerdown', (e) => {
+    clearPress();
+    if (!e.isPrimary || e.button > 0) return;
+    // Un toque para frenar el desplazamiento no es una pulsación.
+    if (e.timeStamp - lastScrollAt < 120 && e.pointerType !== 'mouse') return;
+    const el = e.target instanceof Element ? e.target.closest(PRESSABLE) : null;
+    if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true' || el.closest('.closing, [inert]')) return;
+    const p = { el, id: e.pointerId, x: e.clientX, y: e.clientY, on: false, timer: 0, mouse: e.pointerType === 'mouse' };
+    p.timer = setTimeout(() => { if (press === p) { p.on = true; el.classList.add('is-pressed'); } }, PRESS_DELAY);
+    press = p;
+  }, opts);
+  document.addEventListener('pointermove', (e) => {
+    if (press && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > PRESS_SLOP) clearPress();
+  }, opts);
+  document.addEventListener('pointerup', (e) => {
+    const p = press;
+    if (!p || e.pointerId !== p.id) return;
+    press = null;
+    clearTimeout(p.timer);
+    if (p.on) { p.el.classList.remove('is-pressed'); return; }
+    if (p.mouse) return; // con ratón el clic ya se nota; el destello es para el dedo
+    p.el.classList.add('is-pressed');
+    setTimeout(() => p.el.classList.remove('is-pressed'), PRESS_FLASH_MS);
+  }, opts);
+  document.addEventListener('pointercancel', clearPress, opts);
+  document.addEventListener('scroll', () => { lastScrollAt = performance.now(); clearPress(); }, opts);
+  document.addEventListener('dragstart', clearPress, opts);
+  document.addEventListener('contextmenu', clearPress, opts);
+  document.addEventListener('visibilitychange', clearPressed);
+  window.addEventListener('pagehide', clearPressed);
+  window.addEventListener('blur', clearPressed);
+  // Pantalla nueva: sin pulsaciones pegadas y con la cabecera en su estado (sin animar).
+  onMount(({ y }) => {
+    clearPressed();
+    setCompact(y >= COMPACT_AT, true);
+  });
+}
 
 // Altura del teclado de iOS → variable CSS --kb (las hojas se colocan encima).
 if (typeof window !== 'undefined' && window.visualViewport) {
@@ -258,14 +442,19 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
   );
   const overlay = h('div.sheet-overlay', { onClick: (e) => { if (e.target === overlay && dismissible) close(); } }, panel);
   const opener = typeof document !== 'undefined' ? document.activeElement : null;
+  let releaseEntry = null; // quita la entrada de historial de la hoja (router.pushOverlay)
 
   /**
    * Cierre animado: la hoja baja con la curva de iOS y el fondo se aclara; mientras, ya no recibe toques
    * (.closing) y la página vuelve a desplazarse. Se quita del DOM al terminar la animación.
+   * how.fromHistory: la cerró «atrás» (su entrada ya no está); how.instant: sin animación (el gesto del
+   * sistema ya la ha animado).
    */
-  function close(result) {
+  function close(result, how = {}) {
     if (closed) return;
     closed = true;
+    const fromHistory = !!(how && how.fromHistory);
+    const instant = !!(how && how.instant);
     const focusInside = panel.contains(document.activeElement);
     if (focusInside) document.activeElement.blur(); // cierra el teclado de iOS ya, no al final
     overlay.classList.remove('open');
@@ -273,11 +462,19 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
     overlay.classList.add('closing');
     overlay.setAttribute('aria-hidden', 'true');
     overlay.inert = true;
-    closingSheets.add(overlay);
     const i = openSheets.indexOf(api);
     if (i >= 0) openSheets.splice(i, 1);
     unlockScroll();
-    afterTransition(panel, SHEET_MS, () => { closingSheets.delete(overlay); overlay.remove(); });
+    if (releaseEntry && !fromHistory) releaseEntry();
+    releaseEntry = null;
+    if (instant) {
+      overlay.remove();
+      cardEffect(false, true);
+    } else {
+      closingSheets.add(overlay);
+      cardEffect(false, false);
+      afterTransition(panel, SHEET_MS, () => { closingSheets.delete(overlay); overlay.remove(); });
+    }
     // El foco vuelve al botón que abrió la hoja (teclado y lectores de pantalla); a un campo de texto no,
     // para no volver a abrir el teclado.
     if (focusInside && opener && opener.isConnected && opener !== document.body && !isTextField(opener)) {
@@ -285,7 +482,7 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
     }
     if (onClose) onClose(result);
   }
-  const api = { el: panel, body: bodyEl, close, overlay, dismissible };
+  const api = { el: panel, body: bodyEl, close, overlay, dismissible, epoch: routeEpoch() };
 
   const content = typeof body === 'function' ? body(close) : body;
   if (content) append(bodyEl, [content]);
@@ -301,12 +498,145 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
   document.body.appendChild(overlay);
   lockScroll();
   openSheets.push(api);
+  cardEffect(true, false);
+  dragToDismiss(panel, overlay, bodyEl, () => dismissible, (v) => close(undefined, { velocity: v }));
+  // «Atrás» (gesto del borde o botón) con la hoja abierta la cierra sin cambiar de pantalla.
+  // (También las no descartables: el «atrás» del sistema no se puede impedir y la pantalla ya ha cambiado.)
+  releaseEntry = pushOverlay(({ ua } = {}) => close(undefined, { fromHistory: true, instant: !!ua }));
   requestAnimationFrame(() => { if (!closed) overlay.classList.add('open'); });
   return api;
 }
 
+/**
+ * Efecto tarjeta: con una hoja abierta la pantalla de detrás se encoge un poco y redondea las esquinas
+ * (css/app.css: html.sheet-card #view). Al cerrarse la última hoja vuelve con la misma curva.
+ */
+let cardTimer = null;
+function cardEffect(open, instant) {
+  const root = document.documentElement;
+  clearTimeout(cardTimer);
+  if (open) {
+    root.classList.remove('sheet-card-out');
+    root.classList.add('sheet-card');
+    return;
+  }
+  if (openSheets.length) return;
+  root.classList.remove('sheet-card', 'sheet-dragging');
+  root.style.removeProperty('--sheet-drag');
+  if (instant) {
+    root.classList.remove('sheet-card-out');
+    root.classList.add('sheet-instant');
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('sheet-instant')));
+    return;
+  }
+  root.classList.add('sheet-card-out');
+  cardTimer = setTimeout(() => root.classList.remove('sheet-card-out'), SHEET_MS + 40);
+}
+
+/**
+ * Arrastrar hacia abajo para cerrar: sigue al dedo desde el asa y la cabecera (touch-action:none) o desde el
+ * contenido si está arriba del todo (el primer touchmove se cancela para que no empiece el desplazamiento).
+ * Al soltar: se cierra si baja más de ~30 % de la hoja o con un gesto rápido; si no, vuelve con un rebote.
+ */
+const DRAG_CLOSE_FRACTION = 0.3;
+const DRAG_CLOSE_VELOCITY = 0.5; // px/ms
+function dragToDismiss(panel, overlay, bodyEl, canClose, doClose) {
+  const root = document.documentElement;
+  let st = null; // { id, x0, y0, mode:'pending'|'drag'|'off', fromBody, off, samples, h }
+  let suppressClick = false;
+  const NO_DRAG = 'input, textarea, select, [contenteditable="true"], .no-sheet-drag, .chips-scroll, .seg';
+
+  const decide = (x, y) => {
+    const dx = x - st.x0;
+    const dy = y - st.y0;
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    if (Math.abs(dx) > Math.abs(dy)) { st.mode = 'off'; return; }
+    if (st.fromBody && (dy < 0 || bodyEl.scrollTop > 0)) { st.mode = 'off'; return; }
+    st.mode = 'drag';
+    st.h = panel.getBoundingClientRect().height || 1;
+    st.y0 = y; // sin salto: empieza a seguir al dedo desde aquí
+    panel.style.transition = 'none';
+    root.classList.add('sheet-dragging');
+  };
+  const follow = (y, t) => {
+    const dy = y - st.y0;
+    const closable = canClose();
+    // Hacia arriba (o si no se puede cerrar) cuesta: resistencia tipo goma.
+    const off = dy >= 0 ? (closable ? dy : dy * 0.35) : -Math.min(28, (-dy) * 0.22);
+    st.off = off;
+    st.samples.push([t, y]);
+    while (st.samples.length > 2 && t - st.samples[0][0] > 90) st.samples.shift();
+    panel.style.transform = `translateY(${off.toFixed(1)}px)`;
+    root.style.setProperty('--sheet-drag', Math.max(0, Math.min(1, off / st.h)).toFixed(3));
+  };
+  const end = (cancelled, tEnd) => {
+    const s = st;
+    st = null;
+    if (!s || s.mode !== 'drag') return;
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 60);
+    root.classList.remove('sheet-dragging');
+    const [t0, y0] = s.samples[0] || [0, 0];
+    const [t1, y1] = s.samples[s.samples.length - 1] || [0, 0];
+    // Si el dedo se quedó quieto antes de soltar, no hay «lanzamiento».
+    const v = t1 > t0 && !(tEnd - t1 > 80) ? (y1 - y0) / (t1 - t0) : 0;
+    const off = s.off || 0;
+    if (canClose() && !overlay.classList.contains('closing') && (off > s.h * DRAG_CLOSE_FRACTION || (!cancelled && v > DRAG_CLOSE_VELOCITY && off > 12))) {
+      // Sigue bajando desde donde está, más rápido cuanto más rápido iba el dedo.
+      const ms = Math.round(Math.max(160, Math.min(SHEET_MS, (s.h - off) / Math.max(v, 0.9))));
+      panel.style.transition = `transform ${ms}ms cubic-bezier(0.2, 0.75, 0.3, 1)`;
+      panel.style.transform = '';
+      root.style.removeProperty('--sheet-drag');
+      doClose(v);
+      return;
+    }
+    // Vuelve arriba con un pequeño rebote.
+    panel.style.transition = 'transform 460ms var(--spring-bounce)';
+    panel.style.transform = '';
+    root.style.removeProperty('--sheet-drag');
+    afterTransition(panel, 460, () => { if (!st) panel.style.transition = ''; });
+  };
+
+  panel.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary || e.button > 0 || overlay.classList.contains('closing')) return;
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t) return;
+    const fromBody = bodyEl.contains(t) || !!t.closest('.sheet-actions');
+    if (fromBody && (t.closest(NO_DRAG) || bodyEl.scrollTop > 0)) return;
+    st = { id: e.pointerId, x0: e.clientX, y0: e.clientY, mode: 'pending', fromBody, off: 0, samples: [[e.timeStamp, e.clientY]], h: 1 };
+  });
+  panel.addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    if (st.mode === 'pending') {
+      decide(e.clientX, e.clientY);
+      if (st.mode === 'drag') { try { panel.setPointerCapture(e.pointerId); } catch { /* sin captura */ } }
+    }
+    if (st && st.mode === 'drag') follow(e.clientY, e.timeStamp);
+  });
+  panel.addEventListener('pointerup', (e) => { if (st && e.pointerId === st.id) end(false, e.timeStamp); });
+  panel.addEventListener('pointercancel', (e) => { if (st && e.pointerId === st.id) end(true, e.timeStamp); });
+  // (Al capturar en el panel, el elemento tocado pierde la captura implícita: solo cuenta perder la del panel.)
+  panel.addEventListener('lostpointercapture', (e) => { if (e.target === panel && st && e.pointerId === st.id && st.mode === 'drag') end(true, e.timeStamp); });
+  // Tocar y arrastrar el contenido que ya está arriba: se cancela el desplazamiento nativo (si no, el
+  // navegador se queda el gesto y cancela los eventos de puntero).
+  panel.addEventListener('touchmove', (e) => {
+    if (!st || e.touches.length !== 1) return;
+    if (st.mode === 'pending') decide(e.touches[0].clientX, e.touches[0].clientY);
+    if (st && st.mode === 'drag' && e.cancelable) e.preventDefault();
+  }, { passive: false });
+  panel.addEventListener('click', (e) => {
+    if (suppressClick) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+}
+
 export function closeAllSheets() {
-  for (const s of [...openSheets]) s.close();
+  for (const s of [...openSheets].reverse()) s.close();
+}
+
+/** Cierra las hojas de una pantalla anterior (app.js lo llama en cada cambio de ruta). */
+export function closeStaleSheets() {
+  const now = routeEpoch();
+  for (const s of [...openSheets].reverse()) if (s.epoch < now) s.close();
 }
 
 if (typeof document !== 'undefined') {

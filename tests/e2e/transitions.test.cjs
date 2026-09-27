@@ -125,8 +125,8 @@ test('pantallas: push desde la derecha, atrás hacia la derecha, pestaña con fu
     res = await page.evaluate(async () => {
       const r = await import('./js/router.js');
       r.navigate('#/history', { replace: true });
-      for (let i = 0; i < 100 && r.parseHash().path !== '/history'; i++) await new Promise((res) => setTimeout(res, 5));
-      await new Promise((res) => setTimeout(res, 50));
+      // (la primera carga del módulo de la vista puede tardar con la batería en paralelo)
+      for (let i = 0; i < 400 && r.navInfo().path !== '/history'; i++) await new Promise((res) => setTimeout(res, 5));
       const a = r.navInfo();
       await r.refresh();
       const b = r.navInfo();
@@ -232,7 +232,14 @@ test('hojas: curva de iOS al abrir y cerrar, cierre animado antes de quitarse, s
       return { dur: p.transitionDuration, ease: p.transitionTimingFunction, prop: p.transitionProperty, bgProp: bg.transitionProperty, bf: p.backdropFilter };
     });
     assert.strictEqual(css.dur, '0.35s');
-    assert.strictEqual(css.ease, 'cubic-bezier(0.32, 0.72, 0, 1)');
+    // Muelle amortiguado con linear() (o la curva de iOS donde no hay linear()): sin rebote al abrir.
+    if (css.ease.startsWith('linear(')) {
+      const stops = [...css.ease.matchAll(/(-?[\d.]+) [\d.]+%/g)].map((m) => Number(m[1]));
+      assert.ok(stops.length >= 10 && stops[0] === 0 && stops[stops.length - 1] === 1, css.ease);
+      assert.ok(stops.every((v, i) => v <= 1 && (i === 0 || v >= stops[i - 1])), 'monótono, sin pasarse');
+    } else {
+      assert.strictEqual(css.ease, 'cubic-bezier(0.32, 0.72, 0, 1)');
+    }
     assert.strictEqual(css.prop, 'transform');
     assert.strictEqual(css.bgProp, 'opacity', 'el fondo se oscurece con un fundido');
     assert.match(css.bf, /blur\(/, 'hoja de cristal');
@@ -333,8 +340,15 @@ test('cristal: barras, hojas y avisos con el mismo color y alternativa; captura 
     assert.match(s.topBf, /blur\(/);
     assert.strictEqual(s.tbRadius, '999px', 'barra de pestañas en cápsula flotante');
     assert.ok(s.tbBottom >= 6, `la cápsula flota sobre el borde (${s.tbBottom}px)`);
+    // Cristal más marcado (ronda 5): translúcido 65–78 % con desenfoque fuerte (el texto de debajo no se lee
+    // porque el desenfoque lo impide; el Chromium de las pruebas no pinta backdrop-filter en páginas largas).
     const alpha = Number((s.topBg.match(/rgba\([^)]*,\s*([\d.]+)\)/) || [])[1] ?? 1);
-    assert.ok(alpha >= 0.8, `la barra superior no deja competir el texto de debajo (${alpha})`);
+    assert.ok(alpha >= 0.65 && alpha <= 0.78, `barra superior translúcida (${alpha})`);
+    for (const bf of [s.topBf, s.tbBf]) {
+      assert.ok(Number((bf.match(/blur\(([\d.]+)px\)/) || [])[1]) >= 24, `desenfoque fuerte (${bf})`);
+      const sat = bf.match(/saturate\(([\d.]+)(%?)\)/) || [];
+      assert.ok(Number(sat[1]) / (sat[2] ? 100 : 1) >= 1.8, `saturación (${bf})`);
+    }
     // El contenido no queda tapado: al final del desplazamiento, lo último está encima de la cápsula.
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     await wait(page, 100);

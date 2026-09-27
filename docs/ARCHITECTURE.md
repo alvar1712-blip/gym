@@ -85,6 +85,9 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/import` | import · `mountImport` | Ronda 4: importar actividades desde GPX, TCX, FIT (.gz, .zip), vista previa editable y duplicados |
 | `#/predictions` | predictions · `mountPredictions` | Ronda 4: tiempos previstos 5k/10k/media/maratón (rangos) y «¿Puedo hacerlo?» (back `#/progress`) |
 | `#/summary?p=month\|year&d=YYYY-MM-DD` | summary · `mountSummary` | Ronda 4: resumen mensual / anual con comparación con el periodo anterior |
+| `#/analysis` | analysis · `mountAnalysis` | Ronda 5: «tu analista» (peso, fuerza, resistencia, recuperación, ciclo, próximas semanas) + «Copiar informe para tu IA» |
+| `#/cycle` | cycle · `mountCycle` | Ronda 5 (modo mujer): anillo del ciclo, registro de días y síntomas, calendario, historial, «Cómo te afecta», alertas |
+| `#/settings/profile` | settings · `mountProfile` | Ronda 5: sexo, objetivo, experiencia y (mujer) ciclo y anticonceptivo |
 
 Pestaña resaltada: la de la ruta; las rutas de sesión y actividad (`inherit` en la tabla) mantienen la pestaña
 desde la que se abrieron (p. ej. Calendario › Historial › sesión), salvo una sesión de fuerza en curso, que es de «Hoy».
@@ -188,6 +191,7 @@ SetEntry = { id, type:'warmup'|'effective'|'failure'|'drop', weight|null, reps|n
 Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca toca `weekPatterns`.**
 `kind` ausente → se usa el de la semana tipo (el registro solo guarda un estado manual).
 
+### cycle (ronda 5, IndexedDB v2; `id` = fecha): `{ id:'YYYY-MM-DD', flow:'none'|'spotting'|'light'|'medium'|'heavy', symptoms:[ids], notes, ended?, auto?, createdAt, updatedAt }`
 ### bodyweight (`id` = fecha): `{ id:'YYYY-MM-DD', kg, createdAt, updatedAt }` (un valor por día; el último manda)
 ### checkins: `{ id:'ci_…', date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, soreness:1|2|3|null, createdAt, updatedAt }` (1 bajo, 2 normal, 3 alto)
 Uno por día y momento (si hay duplicados manda el editado más reciente). Sin ningún valor se elimina. «Omitir» no
@@ -384,6 +388,30 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   respuesta al toque (escala 0,97, 120 ms). Cristal: barra superior, cápsula flotante de pestañas y hojas translúcidas
   (`backdrop-filter: blur() saturate()`, opacidad alta para que nunca se lea el texto de debajo; alternativa opaca con
   `@supports not`); los avisos son opacos. `prefers-reduced-motion` → solo fundidos cortos.
+
+### Ronda 5 (contrato en `docs/MEJORAS5.md`)
+- **Perfil** (`settings.profile`, `js/profile.js`): `getProfile`, `isFemale`, `isHormonal`, `cycleEnabled`, `g(p, m, f)`
+  (textos en femenino), `profileIncomplete`. Hoy muestra «Completa tu perfil (30 s)» hasta contestar o descartar.
+- **Análisis** (puros; «hoy» inyectable; `Insight = { id, area, level, priority, title, text, why:{rule,data}, sources,
+  action? }`): `analysis-weight.analyzeWeight(input)` (tendencia EMA ≈ 10 días + Theil–Sen; rangos con signo por
+  objetivo/sexo/experiencia; kcal y proteína orientativas; REDs; retención del ciclo; `goalSuggestion`),
+  `analysis-training.analyzeStrength / analyzeEndurance / analyzeRecovery`, `analysis.buildAnalysis(data, today)`
+  (orquestador: `keyPoints` = 3 de áreas distintas, `forecast`, `errors`), `analysis-report.reportText(a, { includeCycle })`.
+  Vista `views/analysis.js` (`analysisData`, `analysisSummaryCard` para Hoy y el panel semanal).
+- **Ciclo** (`cycle-logic.js`, puro): `periodsFromDays`, `cycleInfo(days, profile, today)`, `phaseForDate`, `phaseStats`,
+  `calendarMarks`, `todayTip`; alertas FIGO (24–38 días, variación), retraso > 7 días, ≥ 90 días sin regla (REDs),
+  reglas abundantes (hierro). Con anticonceptivo hormonal no se estiman fases. Vista `views/cycle.js` (`mountCycle`,
+  `cycleTodayCard`, `openDaySheet`, `periodStartedToday`, `periodEndedSheet`); marcas en el calendario y bandas en la
+  gráfica de peso (`charts.lineChart({ bands, bandsLegend })`).
+- **Gestos y fluidez** (`router.js`, `ui.js`, `app.css`): el «atrás» del sistema (borde izquierdo; `hasUAVisualTransition`
+  o toque desde ≤ 24 px, o cualquier recorrido del historial no pedido en la app instalada) no anima otra vez; scroll por
+  entrada del historial (`__idx → scrollY`, `sessionStorage` `entreno:scroll`, `scrollRestoration = 'manual'`); cada
+  hoja tiene su entrada de historial (`router.pushOverlay(onPop) → release`, `overlayDepth()`): «atrás» la cierra;
+  `ui.closeStaleSheets()` al cambiar de ruta; arrastrar hacia abajo cierra hojas (`html.sheet-dragging`); efecto
+  tarjeta (`html.sheet-card`); `.is-pressed` (JS, sin falsos positivos al hacer scroll) en vez de `:active`
+  (`ui.clearPressed()`); títulos grandes que se compactan (`.topbar-root.is-compact`); aparición escalonada
+  (`.view-stagger`, solo push); `router.onMount(fn)`; cristal con opacidad 66–78 % y `blur(28px) saturate(190%)`
+  (alternativas opacas con `@supports not` y `prefers-reduced-transparency`).
 
 ## 6. Convenciones de UI (obligatorias)
 

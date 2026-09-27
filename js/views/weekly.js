@@ -3,7 +3,8 @@
 // bloque INFORMACIÓN y después bloque SUGERENCIAS, cada mensaje con su nivel (color + texto), su texto, sus
 // filas (tabla de músculos, carga por tipo…) y su «¿Por qué?» (ui.whyBox) con la regla y los datos concretos.
 // Encima de los dos bloques, el «Resumen de la semana» (totales frente a la semana anterior y enlaces a #/summary),
-// del módulo de resúmenes (weekRecap; números de js/summary-logic.js).
+// del módulo de resúmenes (weekRecap; números de js/summary-logic.js). Ronda 5: en la semana actual, debajo del
+// resumen, el bloque compacto «Tu análisis» (views/analysis.js · analysisSummaryCard).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, emptyState, whyBox } from '../ui.js';
@@ -13,6 +14,7 @@ import { weeklyInsights, keyMessages, LEVEL_LABEL } from '../insights.js';
 import { periodSummary, kindInfo, fmtValue, fmtKm, summaryHref } from '../summary-logic.js';
 import { deltaChip, kindColorStyle } from './summary.js';
 import { bodyMap, bodyMapData } from '../bodymap.js';
+import { analysisSummaryCard } from './analysis.js';
 
 const LEVEL_ICON = { neutral: 'info', good: 'check', warn: 'alert' };
 /** Mensajes cuyas filas se enseñan siempre en la tarjeta (aunque haya una sola). */
@@ -80,6 +82,11 @@ export function mountWeekly(root, params = {}) {
       h('span', `Semana en curso, ${leftTxt(r.daysLeft)}: los recuentos son provisionales y lo que aún no llega al mínimo se puede completar.`)));
   }
   c.appendChild(weekRecap(data, ws, today));
+  // Ronda 5: «Tu análisis» (tendencias de ahora, no de una semana pasada): solo en la semana actual.
+  if (ws === cur) {
+    const an = analysisBlock(data, today);
+    if (an) c.appendChild(an);
+  }
   c.appendChild(block('info', 'Información', 'Lo que ha pasado esta semana, con los datos de tus registros.', r.info));
   c.appendChild(block('suggestion', 'Sugerencias', 'Qué podrías hacer según tus reglas (Ajustes › Umbrales). Son orientativas.', r.suggestions));
   c.appendChild(h('button.list-item.wk-settings-link', { type: 'button', onClick: () => navigate('#/settings/thresholds') },
@@ -91,6 +98,18 @@ export function mountWeekly(root, params = {}) {
 }
 
 const goWeek = (w) => navigate(`#/weekly?week=${w}`, { replace: true });
+
+/** Bloque compacto «Tu análisis» (views/analysis.js) con 2–3 puntos y «Ver análisis»; aislado: un fallo no deja sin panel. */
+function analysisBlock(data, today) {
+  try {
+    const el = analysisSummaryCard({ data, today, max: 3, compact: true });
+    if (el) el.classList.add('wk-analysis');
+    return el;
+  } catch (err) {
+    console.error('[panel] análisis', err);
+    return null;
+  }
+}
 
 function weekNav(ws, cur) {
   return h('nav.wk-nav', { 'aria-label': 'Cambiar de semana' },

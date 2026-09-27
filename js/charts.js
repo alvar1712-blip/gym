@@ -737,6 +737,9 @@ export function legend(items = []) {
  *   xDomain?: [from|null, to|null], yMin?, yMax?, zeroBased?: false, invertY?: false,
  *   yTicks?: 'auto' | 'time' (segundos redondos) | number[],
  *   band?: { min, max, label?, color? }, legend?: true | false | items (defecto: automática con ≥ 2 series),
+ *   bands?: [{ from:'YYYY-MM-DD', to:'YYYY-MM-DD', color?, opacity?: 0.16, note?: string }] (franjas verticales de
+ *            fechas detrás de las series, p. ej. días de regla; `note` sale en el globo de los días que cubre),
+ *   bandsLegend?: { label, color? } (se añade a la leyenda automática o a la de `legend: true`),
  *   empty: 'Sin datos en este periodo', ariaLabel }
  * y:null corta la línea. Con alguna serie emphasis, las demás se atenúan. Varios puntos el mismo día (dos
  * carreras): el globo da una fila por punto. point.note: línea de nota bajo las filas (texto que parte línea).
@@ -750,10 +753,46 @@ function lineLegendItems(o) {
   if (Array.isArray(o.legend)) return o.legend;
   const series = (o.series || []).filter((s) => s && !s.hidden && s.label);
   if (o.legend !== true && series.length < 2) return null;
-  return series.map((s, i) => ({
+  const items = series.map((s, i) => ({
     key: s.id, label: s.label, color: s.color || SERIES_ORDER[i % SERIES_ORDER.length],
     kind: s.line === false ? 'dot' : s.dashed ? 'dashed' : 'line',
   }));
+  const bl = o.bandsLegend;
+  if (bl && bl.label && validVBands(o.bands).length) items.push({ key: '__bands', label: bl.label, color: bl.color || COLORS.muted, kind: 'band' });
+  return items;
+}
+
+/** Franjas verticales válidas (fechas ordenadas), como días: [{ d0, d1, color, opacity, note }]. */
+function validVBands(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const b of list) {
+    if (!b || !isDateStr(b.from)) continue;
+    const to = isDateStr(b.to) ? b.to : b.from;
+    let d0 = dayNum(b.from);
+    let d1 = dayNum(to);
+    if (d0 > d1) [d0, d1] = [d1, d0];
+    out.push({ d0, d1, color: b.color || COLORS.muted, opacity: Number.isFinite(b.opacity) ? b.opacity : 0.16, note: b.note ?? null });
+  }
+  return out;
+}
+
+/** Pinta las franjas verticales (cada una cubre sus días enteros), recortadas al área de dibujo. */
+function drawVBands(svg, bands, f, xPx, d0, d1, pxPerDay) {
+  if (!bands.length) return;
+  const g = sv('g', { class: 'chart-vbands' }, svg);
+  const half = Math.max(1, pxPerDay / 2);
+  for (const b of bands) {
+    const a = Math.max(b.d0, d0);
+    const z = Math.min(b.d1, d1);
+    if (a > z) continue;
+    const xa = Math.max(f.L, xPx(a) - half);
+    const xz = Math.min(f.L + f.pw, xPx(z) + half);
+    if (xz - xa < 0.5) continue;
+    const r = sv('rect', { class: 'chart-vband', x: r1(xa), y: f.T, width: r1(Math.max(2, xz - xa)), height: f.ph }, g);
+    r.style.fill = b.color;
+    r.style.fillOpacity = String(b.opacity);
+  }
 }
 
 function prepSeries(series) {
@@ -836,6 +875,8 @@ function drawLine(svg, o, W, H) {
   svg.dataset.x0 = r1(x0); svg.dataset.x1 = r1(x1); svg.dataset.from = dayStr(d0); svg.dataset.to = dayStr(d1);
 
   drawYAxis(svg, scale, tickLabels, f, yPx);
+  const vbands = validVBands(o.bands);
+  drawVBands(svg, vbands, f, xPx, d0, d1, (x1 - x0) / Math.max(1, d1 - d0));
   const bandLabel = band ? drawBandH(svg, band, f, yPx, fmtY) : null;
   const xt = singleDay != null ? [{ d: singleDay, label: fmtDate(dayStr(singleDay), 'day') }] : timeTicks(d0, d1, x1 - x0, { measure: measureText });
   drawXLabels(svg, xt.map((t) => ({ x: xPx(t.d), label: t.label })), f, true);
@@ -909,6 +950,7 @@ function drawLine(svg, o, W, H) {
         for (const t of [].concat(q.p.note ?? [])) if (t != null && t !== '' && !notes.includes(String(t))) notes.push(String(t));
       }
     }
+    for (const b of vbands) if (b.note && d >= b.d0 && d <= b.d1 && !notes.includes(String(b.note))) notes.push(String(b.note));
     return {
       key: d, gx, title: title(d), rows, notes, marksY: marks.map((m) => m[0]), plotBottom: f.bottom,
       draw(g) {

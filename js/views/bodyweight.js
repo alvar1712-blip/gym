@@ -5,7 +5,10 @@ import { navigate } from '../router.js';
 import { h, icon, screen, stepper, toast, undoToast, sheet, confirmDialog, whyBox, field } from '../ui.js';
 import { todayStr, fmtDate, fmtNum, fmtKg, fmtSigned, relDay, parseDate, isDateStr } from '../util.js';
 import { bwStats, bwWithDeltas, roundKg, trendWord, BW_TREND } from '../activity-logic.js';
-import { bodyweightChartCard } from '../progress-ui.js';
+import { bodyweightChartCard, bodyweightChartOpts, cardHead } from '../progress-ui.js';
+import { lineChart, periodSelector, getPeriod } from '../charts.js';
+import { getProfile, cycleEnabled, isHormonal } from '../profile.js';
+import { periodsFromDays } from '../cycle-logic.js';
 
 const KG_MIN = 20;
 const KG_MAX = 300;
@@ -163,7 +166,7 @@ export function mountBodyweight(root) {
   // ---------- resumen, hueco de gráfica y lista ----------
   const statsBox = h('div.bw-stats');
   const chartSlot = h('div.bw-chart-slot'); // la Fase 2 dibuja aquí la gráfica
-  const bwChart = bodyweightChartCard({ key: 'bodyweight' }); // se redibuja sola al cambiar un pesaje
+  const bwChart = weightChartCard(); // se redibuja sola al cambiar un pesaje (y, en modo mujer, los días de regla)
   chartSlot.appendChild(bwChart.el);
   const listTitle = h('div.section-title', 'Pesajes');
   const listBox = h('div.bw-list-box');
@@ -305,4 +308,66 @@ export function mountBodyweight(root) {
   paintList();
 
   return () => { off(); if (raf) cancelAnimationFrame(raf); bwChart.destroy(); };
+}
+
+// ---------------------------------------------------------------------------
+// Gráfica de peso con los días de regla (modo mujer con seguimiento del ciclo)
+// ---------------------------------------------------------------------------
+const PERIOD_COLOR = '#d9506f'; // --cyc-menstrual (css/cycle.css)
+const RETENTION_NOTE = 'Días de regla: es normal pesar algo más (retención de líquidos).';
+const BLEED_NOTE = 'Días de sangrado.';
+
+/** Franjas de los días de regla anotados (null si el seguimiento del ciclo no está activo o no hay reglas). */
+function periodBands() {
+  const profile = getProfile(store.settings());
+  if (!cycleEnabled(profile)) return null;
+  const periods = periodsFromDays(store.all('cycle'));
+  if (!periods.length) return null;
+  const note = isHormonal(profile) ? BLEED_NOTE : RETENTION_NOTE;
+  const bands = periods.map((p) => ({ from: p.start, to: p.end, color: PERIOD_COLOR, opacity: 0.18, note }));
+  bands.label = isHormonal(profile) ? 'Sangrado' : 'Regla';
+  return bands;
+}
+
+/**
+ * Tarjeta de la gráfica de peso de #/bodyweight. Sin ciclo, la de progreso tal cual (bodyweightChartCard). En modo
+ * mujer con reglas anotadas, la misma gráfica con franjas rosas en los días de regla (para ver los picos de
+ * retención de líquidos) y su leyenda; se redibuja al cambiar un pesaje o un día del ciclo.
+ * @returns {{ el: HTMLElement, destroy: () => void }}
+ */
+function weightChartCard() {
+  if (!periodBands()) return bodyweightChartCard({ key: 'bodyweight' });
+  const key = 'bodyweight';
+  let period = getPeriod(key);
+  const slot = h('div.prg-chart');
+  const sel = periodSelector({ key, value: period, ariaLabel: 'Periodo de la gráfica de peso', onChange: (id) => { period = id; paint(); } });
+  const el = h('section.card.prg-card.prg-bw-chart', { dataset: { chart: 'bodyweight', cycle: '1' } },
+    cardHead('Evolución', 'kg · pesajes diarios y media móvil de 7 días'),
+    sel,
+    slot,
+    h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Las franjas rosas son tus días de regla: es normal que el peso suba un poco antes y al empezar la regla por retención de líquidos. Toca o arrastra para ver el valor exacto.'));
+  let chart = null;
+  function paint() {
+    const data = { bodyweight: store.bodyweightList(), settings: store.settings(), sessions: [], today: todayStr() };
+    const bands = periodBands() || [];
+    const o = { ...bodyweightChartOpts(data, period), bands, bandsLegend: bands.length ? { label: bands.label, color: PERIOD_COLOR } : null };
+    if (chart) chart.update(o);
+    else chart = lineChart(slot, o);
+  }
+  paint();
+  let raf = 0;
+  const off = store.on('change', (d) => {
+    if ((d.store !== 'bodyweight' && d.store !== 'cycle') || raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; paint(); });
+  });
+  return {
+    el,
+    destroy() {
+      off();
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (chart) chart.destroy();
+      chart = null;
+    },
+  };
 }

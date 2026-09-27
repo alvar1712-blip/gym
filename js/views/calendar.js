@@ -14,12 +14,37 @@ import {
   overrideDay, swapDays, setManualStatus, resetDay, planSnapshot, STATUS_LABEL, MANUAL_STATUSES,
 } from '../plan.js';
 import { sessionSummary } from '../history-logic.js';
+import { getProfile, cycleEnabled } from '../profile.js';
+import { cycleInfo, calendarMarks } from '../cycle-logic.js';
 import {
   cap, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart,
   otherSessionMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 
 const SCOPE_NOTE = 'Los cambios afectan solo a este día; tu semana tipo no cambia.';
+
+/**
+ * Marcas discretas del ciclo (ronda 5): días de regla anotados y previstos, solo en modo mujer con seguimiento.
+ * → Map(fecha → marcas de cycle-logic.calendarMarks) o null. Un fallo aquí nunca rompe el calendario.
+ */
+function cycleMarksFor(from, to, today) {
+  try {
+    const profile = getProfile(store.settings());
+    if (!cycleEnabled(profile)) return null;
+    const info = cycleInfo(store.all('cycle'), profile, today);
+    return info.periods.length ? calendarMarks(info, from, to) : null;
+  } catch (err) {
+    console.error('[calendario] ciclo', err);
+    return null;
+  }
+}
+/** Rayita rosa (regla) o discontinua (regla prevista); null si ese día no tiene. */
+function cycleMark(m) {
+  if (m?.period) return h('span.cyc-mark.cyc-mark-period.cal-cyc-mark', { 'aria-hidden': 'true', title: 'Regla' });
+  if (m?.predicted) return h('span.cyc-mark.cyc-mark-predicted.cal-cyc-mark', { 'aria-hidden': 'true', title: 'Regla prevista' });
+  return null;
+}
+const cycleAria = (m) => (m?.period ? ' · regla' : m?.predicted ? ' · regla prevista' : '');
 
 // ===========================================================================
 // Calendario: #/calendar?week=YYYY-MM-DD  ·  #/calendar?view=month&month=YYYY-MM
@@ -110,11 +135,12 @@ function renderWeek(content, ws, ctx, today) {
 
   const opts = summaryOpts();
   const days = weekPlan(ws, ctx);
-  content.appendChild(h('div.list.cal-week', days.map((d, i) => dayRow(d, i, today, opts))));
+  const marks = cycleMarksFor(ws, addDays(ws, 6), today);
+  content.appendChild(h('div.list.cal-week', days.map((d, i) => dayRow(d, i, today, opts, marks?.get(d.date)))));
   content.appendChild(h('p.small.muted.cal-hint', 'Toca un día para cambiarlo, moverlo, marcarlo o registrar una sesión.'));
 }
 
-function dayRow(d, i, today, opts) {
+function dayRow(d, i, today, opts, cyc = null) {
   const num = parseDate(d.date).getDate();
   const sessions = d.sessions.map((s) => {
     const sum = sessionSummary(s, opts);
@@ -125,10 +151,10 @@ function dayRow(d, i, today, opts) {
   return h('button.cal-row', {
     type: 'button',
     class: `${d.date === today ? 'is-today' : ''} ${d.date < today ? 'is-past' : ''}`,
-    dataset: { date: d.date, status: d.status },
+    dataset: cyc?.period || cyc?.predicted ? { date: d.date, status: d.status, cycle: cyc.period ? 'period' : 'predicted' } : { date: d.date, status: d.status },
     onClick: () => navigate(`#/day/${d.date}`),
   },
-  h('span.cal-row-date', h('span.cal-row-dow', DAY_SHORT[i]), h('span.cal-row-num.tnum', String(num))),
+  h('span.cal-row-date', h('span.cal-row-dow', DAY_SHORT[i]), h('span.cal-row-num.tnum', String(num)), cycleMark(cyc)),
   h('span.cal-row-main',
     h('span.cal-row-plan',
       h('span.cal-row-plan-name', `${planEmoji(d.plan)} ${d.plan.label}`),
@@ -160,6 +186,9 @@ function renderMonth(content, first, ctx, today) {
   }));
 
   const weeks = monthWeeks(first);
+  const marks = cycleMarksFor(weeks[0], addDays(weeks[weeks.length - 1], 6), today);
+  let anyPeriod = false;
+  let anyPredicted = false;
   const grid = h('div.cal-month', { role: 'grid', 'aria-label': 'Mes' },
     h('div.cal-month-row.cal-month-head', { role: 'row' }, DAY_LETTER.map((l) => h('span.cal-month-dow', { role: 'columnheader' }, l))));
   const summary = h('div.list.cal-month-weeks');
@@ -169,14 +198,17 @@ function renderMonth(content, first, ctx, today) {
     grid.appendChild(h('div.cal-month-row', { role: 'row', class: ws === weekStart(today) ? 'is-current' : '' },
       days.map((day) => {
         const out = day.date.slice(0, 7) !== ym;
+        const cyc = marks?.get(day.date);
+        if (!out && cyc?.period) anyPeriod = true;
+        if (!out && cyc?.predicted) anyPredicted = true;
         return h('button.cal-month-cell', {
           type: 'button',
           role: 'gridcell',
           class: `${out ? 'is-out' : ''} ${day.date === today ? 'is-today' : ''}`,
-          dataset: { date: day.date, status: day.status },
-          'aria-label': `${fmtDate(day.date, 'long')}: ${day.plan.label}, ${STATUS_LABEL[day.status]}`,
+          dataset: cyc?.period || cyc?.predicted ? { date: day.date, status: day.status, cycle: cyc.period ? 'period' : 'predicted' } : { date: day.date, status: day.status },
+          'aria-label': `${fmtDate(day.date, 'long')}: ${day.plan.label}, ${STATUS_LABEL[day.status]}${cycleAria(cyc)}`,
           onClick: openWeek,
-        }, h('span.cal-month-num.tnum', String(parseDate(day.date).getDate())), h(`span.cal-dot.st-${day.status}`));
+        }, cycleMark(cyc), h('span.cal-month-num.tnum', String(parseDate(day.date).getDate())), h(`span.cal-dot.st-${day.status}`));
       })));
     const a = adherence(ws, ctx);
     summary.appendChild(h('button.list-item.cal-month-week', { type: 'button', dataset: { week: ws }, onClick: openWeek },
@@ -186,9 +218,18 @@ function renderMonth(content, first, ctx, today) {
       a.pct != null ? h('span.cal-adh-pct.small.tnum', `${a.pct}\u00a0%`) : null,
       icon('chevron-right', 20, 'chev')));
   }
-  content.appendChild(h('section.card.cal-month-card', grid, legend()));
+  content.appendChild(h('section.card.cal-month-card', grid, legend(), marks ? cycleLegend(anyPeriod, anyPredicted) : null));
   content.appendChild(h('h2.section-title', 'Semanas'));
   content.appendChild(summary);
+}
+
+/** Leyenda de las marcas del ciclo (solo las que hay este mes) con acceso a #/cycle. */
+function cycleLegend(period, predicted) {
+  if (!period && !predicted) return null;
+  return h('div.cal-legend.cal-cyc-legend',
+    period ? h('span.cal-legend-item', h('span.cyc-mark.cyc-mark-period'), 'Regla') : null,
+    predicted ? h('span.cal-legend-item', h('span.cyc-mark.cyc-mark-predicted'), 'Regla prevista') : null,
+    h('button.cal-link-btn.cal-cyc-link', { type: 'button', onClick: () => navigate('#/cycle') }, 'Ciclo', icon('chevron-right', 16)));
 }
 
 function legend() {

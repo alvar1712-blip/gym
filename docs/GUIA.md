@@ -70,6 +70,15 @@ Si el trabajo sigue en la rama `claude/personal-training-mobile-app-e82j38`, pue
 - **Progreso**: gráficas, récords, **Panel semanal** (resumen de la semana, mapa corporal, información y sugerencias
   con su «¿Por qué?»), **Objetivos**, **Resúmenes** mensuales y anuales, y **Predicciones** (tiempos previstos de 5 km a
   maratón y «¿Puedo hacerlo?»: estimaciones prudentes a partir de tus carreras, no promesas).
+- **Análisis** (Progreso → Análisis): tu peso (ritmo frente al rango de tu objetivo, calorías y proteína orientativas),
+  cómo mejoras en cada ejercicio y lo previsto en 4–8 semanas, tu resistencia y tu recuperación. Cada frase tiene su
+  «¿Por qué?» y sus fuentes. **Copiar informe para tu IA** genera un texto para pegar en ChatGPT o Claude si quieres
+  hablarlo. Rellena antes tu **Perfil** (Ajustes → Perfil: sexo, objetivo y experiencia).
+- **Modo mujer y ciclo**: en Ajustes → Perfil elige «Mujer». Aparece **Ciclo** (desde la tarjeta de Hoy): «Me ha venido
+  hoy», registrar días y síntomas, previsión de la próxima regla, calendario y «Cómo te afecta» con tus propios datos.
+  Si usas un anticonceptivo hormonal, indícalo en el perfil. Los datos del ciclo solo están en ese iPhone.
+- **Para otra persona** (p. ej. tu pareja): que abra el mismo enlace en su iPhone y la añada a su pantalla de inicio.
+  Cada iPhone guarda sus propios datos; no se comparte nada entre móviles.
 - **Ejercicios**: tus rutinas (editar, duplicar, reordenar, superseries) y la biblioteca de ejercicios.
 - **Ajustes**: semana tipo, umbrales de las sugerencias, copias de seguridad y exportación CSV.
 

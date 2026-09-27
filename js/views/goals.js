@@ -9,7 +9,7 @@ import { dataFromStore } from '../progress-ui.js';
 import { exerciseHistory } from '../stats.js';
 import { bwStats } from '../activity-logic.js';
 import { e1rm } from '../calc.js';
-import { uid, todayStr, fmtNum, numToInput, fmtPace, fmtSigned, round, diffDays } from '../util.js';
+import { uid, todayStr, fmtNum, numToInput, fmtPace, fmtSigned, round, diffDays, parseNum } from '../util.js';
 import * as G from '../goals-logic.js';
 
 const DRAFT_KEY = 'entreno.goalDraft';
@@ -226,7 +226,19 @@ export function mountGoals(root) {
 // #/goal/new y #/goal/:id
 // ===========================================================================
 
+/**
+ * Objetivo de peso propuesto por el análisis (ronda 5): `#/goal/new?kind=bodyweight&target=78.5&direction=up|down`.
+ * @returns {{ targetKg:number, direction:'up'|'down'|null }|null}
+ */
+function suggestedBodyweight(params = {}) {
+  if (params.kind !== 'bodyweight') return null;
+  const kgv = parseNum(params.target);
+  if (!(kgv >= 20 && kgv <= 300)) return null;
+  return { targetKg: round(kgv, 0.1), direction: params.direction === 'up' || params.direction === 'down' ? params.direction : null };
+}
+
 function blankDraft(params = {}) {
+  const bw = suggestedBodyweight(params);
   return {
     kind: KINDS.includes(params.kind) ? params.kind : 'strength',
     exerciseId: params.exercise && store.exercise(params.exercise) ? params.exercise : null,
@@ -235,8 +247,8 @@ function blankDraft(params = {}) {
     sport: 'run',
     distanceKm: DEFAULT_DIST.run,
     timeSec: null,
-    targetKg: null,
-    direction: null,
+    targetKg: bw ? bw.targetKg : null,
+    direction: bw ? bw.direction : null,
     title: '',
     titleAuto: true,
   };
@@ -280,8 +292,10 @@ export function mountGoalEdit(root, params = {}) {
   const data = dataFromStore(today); // los registros no cambian mientras se edita el objetivo
   let restored = false;
   let form;
+  // Desde una recomendación del análisis se abre con esos datos (un borrador anterior no los pisa).
+  const suggested = isNew && !!suggestedBodyweight(params);
   if (isNew) {
-    const d = loadDraft();
+    const d = suggested ? null : loadDraft();
     restored = !!d;
     form = d || blankDraft(params);
   } else {
@@ -289,7 +303,7 @@ export function mountGoalEdit(root, params = {}) {
     if (form.titleAuto === undefined) form.titleAuto = !form.title || form.title === G.autoTitle(form, store.exercise(form.exerciseId));
   }
   const createdAt = isNew ? Date.now() : saved.createdAt;
-  let dirManual = !!form.direction && !isNew;
+  let dirManual = !!form.direction && (!isNew || suggested);
 
   const content = screen(root, {
     title: isNew ? 'Nuevo objetivo' : 'Editar objetivo',

@@ -81,7 +81,7 @@
   font-weight: 650;
   white-space: nowrap;
 }
-.ses-warm-toggle:active { background: var(--surface-2); }
+.ses-warm-toggle.is-pressed { background: var(--surface-2); }
 .ses-warm-chev { display: inline-block; font-size: 13px; transition: transform 0.2s ease; }
 .ses-warm-toggle[aria-expanded="true"] { color: var(--text-2); }
 .ses-warm-toggle[aria-expanded="true"] .ses-warm-chev { transform: rotate(90deg); }
@@ -124,7 +124,7 @@
   color: var(--text);
   text-align: left;
 }
-.ses-row:active { background: var(--surface-3); }
+.ses-row.is-pressed { background: var(--surface-3); }
 .ses-row-num {
   flex: none;
   width: 28px;
@@ -316,7 +316,7 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
   color: var(--text);
   text-align: left;
 }
-.ci-toggle:active { background: var(--surface-2); }
+.ci-toggle.is-pressed { background: var(--surface-2); }
 .ci-title { flex: none; font-size: 15px; font-weight: 750; }
 .ci-state { flex: 1; min-width: 0; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ci-ok { display: none; flex: none; color: var(--ok); }
@@ -346,7 +346,7 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
   font-size: 15px;
   font-weight: 700;
 }
-.ci-skip:active { background: var(--surface-2); }
+.ci-skip.is-pressed { background: var(--surface-2); }
 .ci-body { display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 12px; }
 .ci-rows { display: flex; flex-direction: column; gap: 8px; }
 .ci-row { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); align-items: center; gap: 8px; }

@@ -1,12 +1,15 @@
-// settings.js — Ajustes: índice, semana tipo, umbrales y reglas, copias y datos.
+// settings.js — Ajustes: índice, perfil (ronda 5), semana tipo, umbrales y reglas, copias y datos.
 // PROPIETARIO: módulo de ajustes. La lógica pura vive en ../backup.js (copias JSON, CSV)
 // y ../settings-logic.js (umbrales, textos de la semana tipo). Todo se guarda al instante.
 import * as store from '../store.js';
 import { estimate } from '../db.js';
 import { navigate, refresh } from '../router.js';
-import { h, icon, screen, stepper, segmented, toast, undoToast, confirmDialog, sheet, shareFile, pickFile, isStandalone } from '../ui.js';
+import { h, icon, screen, stepper, segmented, toast, undoToast, confirmDialog, sheet, shareFile, pickFile, isStandalone, actionSheet } from '../ui.js';
 import { todayStr, fmtDate, dateFromTs, hhmm, relDay, plural, DAY_LONG, DAY_LETTER, dow, deepClone, round, clamp } from '../util.js';
 import { defaultSettings, MUSCLES } from '../seed.js';
+import {
+  getProfile, isFemale, isHormonal, g, profileIncomplete, label as plabel, SEXES, GOALS, EXPERIENCES, CONTRACEPTION,
+} from '../profile.js';
 import { currentPattern, setWeekPattern } from '../plan.js';
 import { pickTemplate } from '../pickers.js';
 import {
@@ -124,6 +127,7 @@ export function mountSettings(root) {
   }
 
   c.append(
+    h('div.list.cfg-profile-list', profileRow()),
     h('div.section-title', 'Plan'),
     h('div.list',
       navRow({ ico: 'calendar', title: 'Semana tipo', href: '#/settings/week', extra: weekMini(days, tpls), aria: `Semana tipo: ${weekSummaryText(days, tpls)}`, className: 'cfg-week-row' }),
@@ -695,10 +699,176 @@ export function mountData(root) {
   return () => offPersist();
 }
 
-// ---------------------------------------------------------------------------
-// #/settings/profile (ronda 5, docs/MEJORAS5.md §2). Provisional.
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// #/settings/profile — perfil (ronda 5, docs/MEJORAS5.md §2). Guardado inmediato.
+// ===========================================================================
+const GOAL_SUB = {
+  gain: 'Subir de peso despacio, con poca grasa',
+  lose: 'Bajar grasa conservando el músculo',
+  maintain: 'Peso estable',
+  performance: 'Rendir en tu deporte con el peso estable',
+};
+const PERSON_ICON = 'M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9ZM3.5 21a8.5 8.5 0 0 1 17 0';
+
+/** Icono de persona (no está en ui.js): mismo estilo lineal que los demás. */
+function personIcon(size = 20) {
+  const el = icon('info', size);
+  el.querySelector('path').setAttribute('d', PERSON_ICON);
+  return el;
+}
+
+/** Experiencia en el género del perfil: «Intermedio» / «Intermedia». */
+function expName(p, id) {
+  if (id === 'intermediate') return g(p, 'Intermedio', 'Intermedia');
+  if (id === 'advanced') return g(p, 'Avanzado', 'Avanzada');
+  return plabel(EXPERIENCES, id);
+}
+
+/** «Hombre · Ganar músculo · Intermedio» (lo que haya contestado). */
+export function profileSummary(p) {
+  return [p.sex && plabel(SEXES, p.sex), p.goal && plabel(GOALS, p.goal), p.experience && expName(p, p.experience)].filter(Boolean).join(' · ');
+}
+
+/** Guarda un cambio del perfil (con los valores por defecto de los campos que falten). */
+function saveProfile(patch, { soon = false } = {}) {
+  const s = store.settings();
+  s.profile = { ...getProfile(s), ...patch };
+  return soon ? store.saveSoon('meta', s) : store.save('meta', s);
+}
+
+function profileRow() {
+  const p = getProfile(store.settings());
+  const incomplete = profileIncomplete(p);
+  const sum = profileSummary(p);
+  const titleEl = h('span.list-item-title', 'Perfil');
+  return h('button.list-item.cfg-item.cfg-profile-row', {
+    type: 'button',
+    'aria-label': `Perfil: ${sum || 'sin completar'}`,
+    onClick: () => navigate('#/settings/profile'),
+  },
+  h('span.cfg-ico.cfg-ico-profile', personIcon(20)),
+  h('span.list-item-main',
+    incomplete ? h('span.cfg-title-line', titleEl, h('span.badge.badge-info.cfg-badge', 'Completar')) : titleEl,
+    h('span.list-item-sub.wrap', sum || 'Sexo, objetivo y experiencia: afinan tu análisis')),
+  icon('chevron-right', 20, 'chev'));
+}
+
+/** Lista de opciones con una elegida (radio). */
+function choiceList({ options, value, onPick, ariaLabel, name }) {
+  return h('div.list.cfg-choices', { role: 'radiogroup', 'aria-label': ariaLabel, dataset: { choice: name } },
+    options.map((o) => h('button.list-item.cfg-choice', {
+      type: 'button',
+      role: 'radio',
+      'aria-checked': String(o.id === value),
+      class: o.id === value ? 'is-on' : null,
+      dataset: { value: o.id },
+      onClick: () => onPick(o.id),
+    },
+    h('span.list-item-main',
+      h('span.list-item-title', o.label),
+      o.sub ? h('span.list-item-sub.wrap', o.sub) : null),
+    h('span.cfg-radio', { 'aria-hidden': 'true' }, o.id === value ? icon('check', 16) : null))));
+}
+
+function switchRow({ title, sub, checked, onChange, key }) {
+  const inp = h('input', { type: 'checkbox', checked, 'aria-label': title, onChange: () => onChange(inp.checked) });
+  return h('label.switch-row.cfg-switch', { dataset: { switch: key } },
+    h('span.cfg-switch-texts', h('span.cfg-switch-title', title), sub ? h('span.cfg-switch-sub', sub) : null),
+    h('span.switch', inp, h('span')));
+}
+
 export function mountProfile(root) {
   const c = screen(root, { title: 'Perfil', back: '#/settings' });
-  c.append(h('p.muted', 'Pantalla en construcción.'));
+  c.classList.add('cfg-profile');
+  const body = h('div.cfg-prof-body');
+  c.append(
+    h('p.cfg-hint.cfg-top-hint', 'Personaliza los rangos, las comparaciones y los textos de tu análisis. Se guarda al instante y solo está en este iPhone.'),
+    body);
+
+  const pick = (patch) => { saveProfile(patch); paint(); };
+
+  function paint() {
+    const p = getProfile(store.settings());
+    const female = isFemale(p);
+    const blocks = [
+      h('section.card.cfg-block.cfg-prof', { dataset: { block: 'sex' } },
+        h('h2.card-title', 'Sexo'),
+        segmented({
+          options: SEXES.map((x) => ({ value: x.id, label: x.label })), value: p.sex, ariaLabel: 'Sexo',
+          onChange: (v) => { if (v !== p.sex) pick({ sex: v }); },
+        }),
+        h('p.cfg-why', female
+          ? 'Modo mujer: rangos de ganancia de peso algo más prudentes, avisos de energía más sensibles, referencias de mujeres, textos en femenino y seguimiento del ciclo.'
+          : 'Ajusta los rangos de ganancia de peso, los avisos de energía y los textos. Con «Mujer» se activa el seguimiento del ciclo. La proteína, las series por músculo y los tiempos de carrera se calculan igual.')),
+      h('section.card.cfg-block.cfg-prof', { dataset: { block: 'goal' } },
+        h('h2.card-title', 'Objetivo'),
+        choiceList({ name: 'goal', ariaLabel: 'Objetivo', value: p.goal, options: GOALS.map((x) => ({ ...x, sub: GOAL_SUB[x.id] })), onPick: (v) => pick({ goal: v }) })),
+      h('section.card.cfg-block.cfg-prof', { dataset: { block: 'experience' } },
+        h('h2.card-title', 'Experiencia en fuerza'),
+        choiceList({
+          name: 'experience', ariaLabel: 'Experiencia', value: p.experience,
+          options: EXPERIENCES.map((x) => ({ id: x.id, label: expName(p, x.id), sub: cap(x.sub) })),
+          onPick: (v) => pick({ experience: v }),
+        }),
+        h('p.cfg-why', 'Cambia lo que se considera un buen ritmo de mejora: cuanto más tiempo llevas, más despacio se progresa.')),
+    ];
+    if (female) blocks.push(cycleBlock(p));
+    body.replaceChildren(...blocks);
+  }
+
+  function cycleBlock(p) {
+    const on = p.cycleTracking !== false;
+    const block = h('section.card.cfg-block.cfg-prof', { dataset: { block: 'cycle' } },
+      h('h2.card-title', 'Ciclo menstrual'),
+      switchRow({
+        key: 'tracking', title: 'Seguimiento del ciclo', checked: on,
+        sub: 'Registra tu regla y tus síntomas; la app estima tus fases y lo tiene en cuenta en el peso y la recuperación.',
+        onChange: (v) => pick({ cycleTracking: v }),
+      }));
+    if (!on) return block;
+    const contra = h('button.list-item.cfg-contra', {
+      type: 'button',
+      dataset: { value: p.contraception || '' },
+      onClick: () => actionSheet({
+        title: 'Anticonceptivo',
+        actions: CONTRACEPTION.map((x) => ({ label: x.label, hint: x.id === p.contraception ? '✓' : null, onClick: () => pick({ contraception: x.id }) })),
+      }),
+    },
+    h('span.list-item-main',
+      h('span.list-item-sub', 'Anticonceptivo'),
+      h('span.list-item-title', p.contraception ? plabel(CONTRACEPTION, p.contraception) : 'Sin indicar')),
+    icon('chevron-right', 20, 'chev'));
+    const num = (key, label, hint, min, max) => {
+      const st = stepper({
+        value: p[key], step: 1, min, max, decimals: 0, inputmode: 'numeric', suffix: 'días', size: 'sm', ariaLabel: label,
+        onChange: (v, { final }) => {
+          if (v == null) { if (final) st.setValue(getProfile(store.settings())[key]); return; }
+          if (!final && (v < min || v > max)) return;
+          const val = clamp(Math.round(v), min, max);
+          if (final) st.setValue(val);
+          saveProfile({ [key]: val }, { soon: !final });
+        },
+      });
+      st.classList.add('cfg-stepper');
+      st.dataset.field = key;
+      return h('div.cfg-num', h('div.cfg-num-text', h('span.cfg-num-label', label), h('span.cfg-num-hint', hint)), st);
+    };
+    block.append(
+      contra,
+      h('p.cfg-why', isHormonal(p)
+        ? 'Con un anticonceptivo hormonal no hay fases naturales: se registran sangrados y síntomas, y el peso no se corrige por fases.'
+        : 'Sin anticonceptivo hormonal se estiman tus fases (regla, folicular, ovulación aproximada, lútea y premenstrual).'),
+      num('cycleLengthGuess', 'Duración del ciclo', 'la típica, hasta registrar 2 ciclos', 21, 45),
+      num('periodLengthGuess', 'Duración de la regla', 'la típica, hasta tener datos', 2, 10),
+      switchRow({
+        key: 'report', title: 'Incluir el ciclo en el informe para tu IA', checked: !!p.cycleInReport,
+        sub: 'Si no, «Copiar informe para tu IA» no dice nada de tu ciclo.',
+        onChange: (v) => saveProfile({ cycleInReport: v }),
+      }),
+      h('button.btn.btn-secondary.btn-block.cfg-cycle-link', { type: 'button', onClick: () => navigate('#/cycle') }, icon('calendar', 20), 'Ver ciclo'));
+    return block;
+  }
+
+  paint();
+  return () => store.flush();
 }

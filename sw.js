@@ -1,7 +1,7 @@
 // sw.js — service worker: la app funciona sin conexión (caché primero).
 // IMPORTANTE: VERSION sale del contenido de la app. Antes de publicar ejecuta `node scripts/stamp-sw.mjs`
 // (lo comprueba `node scripts/check-assets.mjs`): si no cambia, los iPhone no descargan la versión nueva.
-const VERSION = 'v1-45c2716b59';
+const VERSION = 'v1-1b83a9611a';
 const CACHE = `entreno-${VERSION}`;
 // Entrada que marca la caché que está sirviendo la versión activa (se escribe al activar).
 const ACTIVE_MARK = 'entreno-cache-activa';
@@ -78,6 +78,11 @@ const ASSETS = [
   './js/race-predict.js',
   './js/summary-logic.js',
   './js/profile.js',
+  './js/cycle-logic.js',
+  './js/analysis-weight.js',
+  './js/analysis-training.js',
+  './js/analysis.js',
+  './js/analysis-report.js',
   './js/views/analysis.js',
   './js/views/cycle.js',
 ];

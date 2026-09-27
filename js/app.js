@@ -1,7 +1,7 @@
 // app.js — arranque, rutas, barra de pestañas, service worker y avisos globales.
 import * as store from './store.js';
 import { defineRoutes, start, navigate, currentRoute, refresh } from './router.js';
-import { h, icon, toast, closeAllSheets, closeStaleToasts } from './ui.js';
+import { h, icon, toast, closeAllSheets, closeStaleToasts, closeStaleSheets } from './ui.js';
 
 const v = (name) => () => import(`./views/${name}.js`);
 
@@ -90,12 +90,31 @@ function tabFor(route) {
 function onRouteChange(route) {
   activeTab = tabFor(route);
   for (const [id, b] of Object.entries(tabButtons)) b.classList.toggle('active', id === activeTab);
-  // Posición de la cápsula de la pestaña activa (se desliza entre pestañas, css/app.css).
-  const i = TABS.findIndex((t) => t.id === activeTab);
-  if (i >= 0) document.getElementById('tabbar')?.style.setProperty('--tab-i', i);
+  moveTabPill(TABS.findIndex((t) => t.id === activeTab));
   document.body.dataset.route = route.route.pattern;
+  // Hojas y avisos con acción de la pantalla anterior no se quedan abiertos sobre la nueva.
+  closeStaleSheets();
   closeStaleToasts();
   paintUpdateBar();
+}
+
+/**
+ * Cápsula «líquida» de la pestaña activa (css/app.css .tabbar::before): se desliza hasta la pestaña con un
+ * muelle y, mientras va, se estira hacia donde se mueve (más cuanto más lejos) y se recoge. data-pill alterna
+ * entre dos animaciones iguales para que se repita en cada cambio.
+ */
+let pillIndex = null;
+function moveTabPill(i) {
+  const bar = document.getElementById('tabbar');
+  if (!bar || i < 0) return;
+  bar.style.setProperty('--tab-i', i);
+  const prev = pillIndex;
+  pillIndex = i;
+  if (prev == null || prev === i || !document.documentElement.classList.contains('ready')) return;
+  const dist = Math.abs(i - prev);
+  bar.style.setProperty('--pill-stretch', String(Math.min(1.55, 1.16 + 0.1 * dist)));
+  bar.style.setProperty('--pill-origin', i > prev ? '0% 50%' : '100% 50%');
+  bar.dataset.pill = bar.dataset.pill === 'a' ? 'b' : 'a';
 }
 
 function updateBadges() {
