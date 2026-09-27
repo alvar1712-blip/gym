@@ -5,8 +5,8 @@
 //
 // Reutiliza (no duplica cálculos):
 //  - stats.js: exerciseHistory (series de trabajo por sesión, 1RM estimado de cada sesión, peso corporal del día) y
-//    runPaceSeries / bikeSpeedSeries / swimPaceSeries (actividades terminadas con distancia y tiempo, incluidas las
-//    enlazadas a una sesión de fuerza). Su índice se cachea por objeto `data`.
+//    runPaceSeries / bikeSpeedSeries / swimPaceSeries / hikePaceSeries (actividades terminadas con distancia y
+//    tiempo, incluidas las enlazadas a una sesión de fuerza). Su índice se cachea por objeto `data`.
 //  - calc.js: e1rm (Epley con reps + RIR), setMetrics, riegel, linearRegression (con error típico de la pendiente),
 //    movingAverage, dayIndex, makeBodyweightFn.
 //  - activity-logic.js: bwPoints + bwTrend, la misma media móvil de 7 días y tendencia que #/bodyweight.
@@ -16,7 +16,7 @@
 //    achievedAt:'YYYY-MM-DD'|null (fecha del registro que lo consiguió; la vista la sincroniza con goalProgress),
 //    archived:boolean,
 //    fuerza:        exerciseId, weight (kg; peso corporal: lastre, 0 = sin lastre, negativo = asistencia), reps
-//    resistencia:   sport:'run'|'bike'|'swim', distanceKm (también natación, en km), timeSec|null (null = solo distancia)
+//    resistencia:   sport:'run'|'bike'|'swim'|'hike', distanceKm (también natación, en km), timeSec|null (null = solo distancia)
 //    peso corporal: targetKg, direction:'up'|'down' (se fija al crearlo según la media de 7 días de ese momento) }
 //
 // REGLAS COMUNES
@@ -46,7 +46,7 @@
 //    creó (p. ej. 1RM estimado de 90 × 3 frente a un objetivo de 80 × 5). status 'estimate', eta null.
 import { addDays, diffDays, weekStart, dateFromTs, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, fmtSigned, round, plural, MONTH_SHORT, parseDate } from './util.js';
 import { e1rm, setMetrics, riegel, linearRegression, dayIndex, movingAverage, makeBodyweightFn } from './calc.js';
-import { exerciseHistory, runPaceSeries, bikeSpeedSeries, swimPaceSeries } from './stats.js';
+import { exerciseHistory, runPaceSeries, bikeSpeedSeries, swimPaceSeries, hikePaceSeries } from './stats.js';
 import { bwPoints, bwTrend, BW_TREND } from './activity-logic.js';
 import { formatSet, fmtLastre } from './session-logic.js';
 import { defaultSettings } from './seed.js';
@@ -64,6 +64,7 @@ export const GOAL_SPORTS = [
   { value: 'run', label: 'Carrera' },
   { value: 'bike', label: 'Bici' },
   { value: 'swim', label: 'Natación' },
+  { value: 'hike', label: 'Senderismo' },
 ];
 const SPORT_IDS = GOAL_SPORTS.map((s) => s.value);
 /** Tipos de registro válidos para un objetivo de fuerza (peso × reps). */
@@ -79,18 +80,19 @@ export const LONG_DAYS = 730;
 /** Exponente de Riegel. */
 export const RIEGEL_K = 1.06;
 /** Distancia mínima de una sesión para predecir con Riegel (km). */
-export const MIN_KM = { run: 3, bike: 10, swim: 0.4 };
+export const MIN_KM = { run: 3, bike: 10, swim: 0.4, hike: 5 };
 /** Distancias habituales (km) para los atajos del formulario. */
 export const DISTANCE_PRESETS = {
   run: [5, 10, 21.0975, 42.195],
   bike: [20, 40, 90, 180],
   swim: [0.4, 0.75, 1.5, 1.9, 3.8],
+  hike: [10, 15, 20, 30],
 };
 export const DEFAULT_RULES = { minRecords: 4, minWeeks: 3 };
 
 const EPS = 1e-9;
 const MAX_DAYS = 36500;
-const EMOJI = { strength: '🏋️', run: '🏃', bike: '🚴', swim: '🏊', bodyweight: '⚖️' };
+const EMOJI = { strength: '🏋️', run: '🏃', bike: '🚴', swim: '🏊', hike: '🥾', bodyweight: '⚖️' };
 const STATUS_LABEL = {
   achieved: 'Conseguido', ready: 'Al alcance', estimate: 'Estimación', insufficient: 'Datos insuficientes', no_trend: 'Sin tendencia',
 };
@@ -115,7 +117,7 @@ export function fmtDay(date, today = todayStr()) {
   return fmtDate(date, sameYearAs(date, today) ? 'day' : 'full');
 }
 
-/** Distancia: carrera y bici en km, natación en metros; media maratón y maratón por su nombre si se pide. */
+/** Distancia: carrera, bici y senderismo en km, natación en metros; media maratón y maratón por su nombre si se pide. */
 export function fmtDistance(sport, km, { named = false } = {}) {
   if (!isNum(km)) return '—';
   if (named && sport === 'run') {
@@ -456,15 +458,20 @@ function enduranceModel(data, goal, today) {
   const D = goal.distanceKm;
   if (!(D > 0)) return { invalid: 'Falta la distancia del objetivo.' };
   const T = goal.timeSec > 0 ? goal.timeSec : null;
-  const series = sport === 'run' ? runPaceSeries(data) : sport === 'bike' ? bikeSpeedSeries(data) : swimPaceSeries(data);
+  const series = sport === 'run' ? runPaceSeries(data) : sport === 'bike' ? bikeSpeedSeries(data) : sport === 'hike' ? hikePaceSeries(data) : swimPaceSeries(data);
   const acts = series.filter((a) => a.x <= today && a.km > 0 && a.sec > 0);
   const dist = (km) => fmtDistance(sport, km);
   const Dtxt = fmtDistance(sport, D);
   const createdDate = createdDateOf(goal);
-  const sportWord = { run: 'carreras', bike: 'salidas en bici', swim: 'sesiones de natación' }[sport];
-  const sportOne = { run: 'carrera', bike: 'salida en bici', swim: 'sesión de natación' }[sport];
+  const sportWord = { run: 'carreras', bike: 'salidas en bici', swim: 'sesiones de natación', hike: 'rutas de senderismo' }[sport];
+  const sportOne = { run: 'carrera', bike: 'salida en bici', swim: 'sesión de natación', hike: 'ruta de senderismo' }[sport];
+  const why = {
+    bike: ['bici', 'el terreno, el viento y el drafting'],
+    swim: ['natación', 'la técnica, la piscina o el agua abierta'],
+    hike: ['senderismo', 'el desnivel, el terreno y las paradas'],
+  }[sport];
   const warning = sport === 'run' ? null
-    : `La fórmula de Riegel está pensada para carrera: en ${sport === 'bike' ? 'bici' : 'natación'} la predicción es menos fiable (influyen ${sport === 'bike' ? 'el terreno, el viento y el drafting' : 'la técnica, la piscina o el agua abierta'}), así que tómala como una referencia aproximada.`;
+    : `La fórmula de Riegel está pensada para carrera: en ${why[0]} la predicción es menos fiable (influyen ${why[1]}), así que tómala como una referencia aproximada.`;
 
   if (T) {
     const minKm = Math.min(MIN_KM[sport], D);
@@ -508,7 +515,7 @@ function enduranceModel(data, goal, today) {
   }
   return {
     metric: 'distance', dir: 1, ratio: true, target: D, targetLabel: Dtxt, targetNote: 'en una sesión',
-    currentNoun: `${sportOne === 'carrera' ? 'carrera' : 'sesión'} más larga`, fmt: dist, fmtGap: dist, records, achieved, warning: null,
+    currentNoun: `${sportOne === 'carrera' ? 'carrera' : sport === 'hike' ? 'ruta' : 'sesión'} más larga`, fmt: dist, fmtGap: dist, records, achieved, warning: null,
     weekly: true, noun: [sportOne, sportWord], subject: '', sport,
     nowText: (cur) => `Tu ${sportOne} más larga reciente es de ${dist(cur.value)}`,
     method: `Progreso: la ${sportOne} más larga de las últimas 4 semanas frente a ${Dtxt}. Tendencia: regresión lineal de la sesión más larga de cada semana en las últimas ${TREND_WEEKS} semanas.`,
@@ -795,10 +802,12 @@ export function autoTitle(goal, exercise = null) {
       const t = fmtTimeWords(goal.timeSec);
       if (sport === 'run') return `${isNamed ? cap(distTxt) : distTxt} en menos de ${t}`;
       if (sport === 'bike') return `${distTxt} en bici en menos de ${t}`;
+      if (sport === 'hike') return `Ruta de ${distTxt} en menos de ${t}`;
       return `${distTxt} nadando en menos de ${t}`;
     }
     if (sport === 'run') return isNamed ? `Correr ${named === 'maratón' ? 'un maratón' : 'una media maratón'}` : `Correr ${distTxt}`;
     if (sport === 'bike') return `${distTxt} en bici`;
+    if (sport === 'hike') return `Ruta de ${distTxt}`;
     return `Nadar ${distTxt}`;
   }
   if (goal.kind === 'bodyweight') {
@@ -827,7 +836,7 @@ export function validateGoal(goal, exercise = null) {
     if (!Number.isInteger(goal.reps) || goal.reps < 1 || goal.reps > 100) e.reps = 'Repeticiones entre 1 y 100.';
   } else if (goal.kind === 'endurance') {
     if (!SPORT_IDS.includes(goal.sport)) e.sport = 'Elige el deporte.';
-    const max = goal.sport === 'swim' ? 50 : goal.sport === 'bike' ? 2000 : 500;
+    const max = goal.sport === 'swim' ? 50 : goal.sport === 'bike' ? 2000 : goal.sport === 'hike' ? 300 : 500;
     if (!isNum(goal.distanceKm) || !(goal.distanceKm > 0)) e.distanceKm = 'Indica la distancia.';
     else if (goal.distanceKm > max) e.distanceKm = `Distancia demasiado larga (máximo ${fmtDistance(goal.sport, max)}).`;
     if (goal.timeSec != null && (!isNum(goal.timeSec) || !(goal.timeSec > 0) || goal.timeSec > 7 * 86400)) e.timeSec = 'Tiempo no válido.';

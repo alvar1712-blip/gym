@@ -42,9 +42,10 @@ export const MIN_SESSIONS = 3;
 export const MIN_RPE_SESSIONS = 2;
 
 const EPS = 1e-9;
-const KIND_LABEL = { strength: 'Fuerza', run: 'Carrera', bike: 'Bici', swim: 'Natación', other: 'Otras' };
-const SPORTS = ['run', 'bike', 'swim'];
-const SPORT_LABEL = { run: 'Carrera', bike: 'Bici', swim: 'Natación' };
+const KIND_LABEL = { strength: 'Fuerza', run: 'Carrera', bike: 'Bici', swim: 'Natación', hike: 'Senderismo', other: 'Otras' };
+/** Deportes con km propios (el senderismo va aparte de la carrera: no suma a sus km ni a su aviso). */
+const SPORTS = ['run', 'bike', 'swim', 'hike'];
+const SPORT_LABEL = { run: 'Carrera', bike: 'Bici', swim: 'Natación', hike: 'Senderismo' };
 const GROUP_OF = Object.fromEntries(PATTERNS.map((p) => [p.id, p.group]));
 const PUSH_PATTERNS = PATTERNS.filter((p) => p.group === 'push');
 const PULL_PATTERNS = PATTERNS.filter((p) => p.group === 'pull');

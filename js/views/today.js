@@ -19,6 +19,7 @@ const QUICK = [
   { kind: 'run', emoji: '🏃', label: 'Carrera' },
   { kind: 'bike', emoji: '🚴', label: 'Bici' },
   { kind: 'swim', emoji: '🏊', label: 'Natación' },
+  { kind: 'hike', emoji: '🥾', label: 'Senderismo' },
   { kind: 'other', emoji: '⚡', label: 'Otra' },
   { kind: 'strength', emoji: '🏋️', label: 'Fuerza libre' },
 ];
@@ -37,6 +38,8 @@ export async function mountToday(root) {
 
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
+  content.appendChild(h('button.cal-link-btn.today-import', { type: 'button', onClick: () => navigate('#/import') },
+    'Importar desde un archivo', icon('chevron-right', 18)));
   content.appendChild(bodyweightQuickEntry({}));
   content.appendChild(weekCard(today, ctx));
   // Fase 3: al final, para no empujar «Te toca hoy» ni «Empezar».
@@ -229,9 +232,12 @@ function dayLink(date) {
     'Cambiar, mover o marcar este día', icon('chevron-right', 18));
 }
 
-/** Accesos rápidos: actividades de hoy y fuerza libre. */
+/**
+ * Accesos rápidos: actividades de hoy y fuerza libre. Son seis: van en 3 × 2 (.act-quick-grid, en
+ * css/activity.css) para que cada botón sea ancho y «Senderismo» quepa entero.
+ */
 function quickGrid(today) {
-  return h('div.today-quick', QUICK.map((q) => h('button.today-quick-btn', {
+  return h('div.today-quick.act-quick-grid', QUICK.map((q) => h('button.today-quick-btn', {
     type: 'button',
     dataset: { kind: q.kind },
     onClick: () => (q.kind === 'strength'

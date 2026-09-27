@@ -251,8 +251,52 @@
 .wk-summary-empty { font-size: 14px; color: var(--muted); }
 .wk-summary-btn .icon { flex: none; }
 
+/* «Resumen de la semana» (arriba del panel; propietario: módulo de resúmenes). La diferencia con la semana
+   anterior usa .sum-delta de css/summary.css (flecha + texto). */
+.wk-recap { gap: 10px; }
+.wk-recap-head { display: flex; align-items: center; gap: 10px; }
+.wk-recap-titles { flex: 1; min-width: 0; }
+.wk-recap-title { font-size: 18px; font-weight: 750; }
+.wk-recap-sub { margin-top: 2px; font-size: 13px; line-height: 1.35; color: var(--muted); }
+.wk-recap-empty { font-size: 14px; color: var(--muted); }
+.wk-recap-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wk-recap-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.wk-recap-label { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.wk-recap-value { font-size: 20px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.wk-recap-kpi .sum-delta { margin-top: 3px; }
+.wk-recap-km { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.wk-recap-km-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 7px 0 7px 10px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--kc);
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.wk-recap-km-row:last-child { border-bottom: 0; }
+/* Nombre entero (con su emoji) a la izquierda; si no cabe todo, la cifra y la diferencia bajan a la derecha. */
+.wk-recap-km-name { flex: 1 0 auto; font-size: 15px; font-weight: 650; white-space: nowrap; }
+.wk-recap-km-right { flex: 0 1 auto; margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; }
+.wk-recap-km-val { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wk-recap-links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wk-recap-link { gap: 4px; }
+.wk-recap-link .icon { flex: none; }
+
 /* Pantallas muy estrechas (320 px) */
 @media (max-width: 359px) {
+  .wk-recap-value { font-size: 18px; }
   .wk-mrow-top { flex-wrap: wrap; row-gap: 2px; }
   .wk-mrow-name { flex: 1 0 100%; }
   .wk-mrow-val { margin-right: auto; }
@@ -437,3 +481,6 @@
   .goal-emoji { width: 28px; font-size: 22px; }
 }
 /* ---------- /goals ---------- */
+
+/* Mapa corporal encima de la tabla de músculos (integración ronda 4) */
+.wk-muscles { display: flex; flex-direction: column; gap: 12px; }

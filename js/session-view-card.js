@@ -2,13 +2,13 @@
 // PROPIETARIO: módulo de sesión. La vista (views/session.js) crea el contexto `ctx` y monta las tarjetas.
 // Cada tarjeta se vuelve a pintar sola (ctx.rerenderCard) al confirmar/editar series: nunca toda la vista.
 import { h, icon, stepper, chips, segmented, toast, undoToast, confirmDialog, haptic } from './ui.js';
-import { fmtDate, fmtKm, fmtDuration, fmtPace, fmtSpeed, uniq } from './util.js';
+import { fmtDate, fmtKm, fmtDuration, fmtPace, fmtSpeed, fmtNum, plural, uniq } from './util.js';
 import { pace, speed, pace100, sessionDurationMin } from './calc.js';
 import { ACTIVITY_EMOJI } from './seed.js';
 import { navigate } from './router.js';
 import {
   LOAD_REP_TYPES, formatSet, targetText, prMessage, inheritWeight, validateSet, missingField,
-  extraSet, warmupSet, switchExercise,
+  extraSet, warmupSet, switchExercise, suggestedWarmup, warmupSetsFromPlan,
 } from './session-logic.js';
 
 const TYPE_OPTS = [
@@ -102,12 +102,115 @@ export function renderCard(ctx, se) {
   });
   if (list.childNodes.length) card.appendChild(list);
 
+  // Calentamiento sugerido: línea discreta y plegada en la fila de «+ Serie» (no suma altura ni mueve el
+  // editor: «Registrar serie 1» sigue donde estaba); al abrirla, el panel va debajo, al final de la tarjeta.
+  // Solo en sesión activa, con carga y mientras el ejercicio no tiene calentamientos ni series hechas.
+  const warm = ctx.session.status === 'active' && LOAD_REP_TYPES.includes(logType)
+    ? suggestedWarmup(se, ex, ctx.settings?.(), last) : null;
+  const [warmToggle, warmPanel] = warm?.plan.length ? warmupBlock(ctx, se, logType, warm) : [];
+
   const hasPending = se.sets.some((s) => !s.done);
   const btnCls = hasPending ? 'btn.btn-ghost.btn-sm' : 'btn.btn-secondary';
   card.appendChild(h('div.btn-row.ses-card-actions',
     h(`button.${btnCls}.ses-add-set`, { type: 'button', onClick: () => addSet(ctx, se, logType) }, icon('plus', 18), 'Serie'),
-    warmInHead ? null : h(`button.${btnCls}.ses-add-warm`, { type: 'button', onClick: () => addWarmup(ctx, se, logType) }, icon('plus', 18), 'Calentamiento')));
+    warmInHead ? null : h(`button.${btnCls}.ses-add-warm`, { type: 'button', onClick: () => addWarmup(ctx, se, logType) }, icon('plus', 18), 'Calentamiento'),
+    warmToggle || null));
+  if (warmPanel) card.appendChild(warmPanel);
   return card;
+}
+
+// ---------------------------------------------------------------------------
+// Calentamiento sugerido (plegado; al abrirlo, los pasos y «Añadir estas series»)
+// ---------------------------------------------------------------------------
+
+// Plegado/desplegado por ejercicio de la sesión: sobrevive a volver a pintar la tarjeta o la vista y a
+// recargar la app a mitad de sesión. Una sola clave (la de la sesión en curso); si no hay almacenamiento, en memoria.
+const WARM_KEY = 'entreno:calentamiento-abierto';
+let warmState = null; // { sessionId, open:Set<seId> }
+function warmOpenIds(sessionId) {
+  if (warmState?.sessionId === sessionId) return warmState.open;
+  let ids = [];
+  try {
+    const o = JSON.parse(localStorage.getItem(WARM_KEY) || 'null');
+    if (o && o.sessionId === sessionId && Array.isArray(o.open)) ids = o.open;
+  } catch { /* sin almacenamiento (privado, bloqueado): solo en memoria */ }
+  warmState = { sessionId, open: new Set(ids) };
+  return warmState.open;
+}
+function setWarmOpen(sessionId, seId, open) {
+  const ids = warmOpenIds(sessionId);
+  if (open) ids.add(seId);
+  else ids.delete(seId);
+  try { localStorage.setItem(WARM_KEY, JSON.stringify({ sessionId, open: [...ids] })); } catch { /* en memoria */ }
+}
+
+const reducedMotion = () => {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+};
+
+/** Entrada del panel al desplegarlo: solo opacidad y desplazamiento (sin animar la altura). */
+function revealWarm(panel) {
+  if (reducedMotion() || typeof panel.animate !== 'function') return;
+  panel.animate(
+    [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }],
+    { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' },
+  );
+}
+
+const kgTxt = (w) => fmtNum(w, 2);
+
+/**
+ * Línea «Calentamiento sugerido ▸» y su panel (oculto mientras está plegado: no ocupa nada).
+ * → [toggle, panel], en ese orden en la tarjeta.
+ */
+function warmupBlock(ctx, se, logType, { plan, ref }) {
+  const sid = ctx.session.id;
+  const panelId = `ses-warm-${se.id}`;
+  let open = warmOpenIds(sid).has(se.id);
+  const per = logType === 'unilateral' ? '/lado' : '';
+  const toggle = h('button.ses-warm-toggle', {
+    type: 'button',
+    'aria-expanded': String(open),
+    'aria-controls': panelId,
+    onClick: () => setOpen(!open),
+  }, h('span', 'Calentamiento sugerido'), h('span.ses-warm-chev', { 'aria-hidden': 'true' }, '▸'));
+  const panel = h('div.ses-warmup', { id: panelId, role: 'group', 'aria-label': 'Calentamiento sugerido', hidden: !open },
+    h('p.ses-warm-for.tnum', `Antes de ${kgTxt(ref.weight)} kg${ref.reps ? ` × ${ref.reps}${per}` : ''}:`),
+    h('ol.ses-warm-steps', plan.map((p) => h('li.ses-warm-step.tnum',
+      h('span.ses-warm-pct', `${p.pct}\u00a0%`), ` · ${kgTxt(p.weight)} kg × ${p.reps}${per}`))),
+    h('button.btn.btn-secondary.btn-sm.btn-block.ses-warm-add', { type: 'button', onClick: () => addWarmupPlan(ctx, se, plan, logType) },
+      icon('plus', 18), 'Añadir estas series'));
+
+  function setOpen(v) {
+    open = v;
+    setWarmOpen(sid, se.id, v);
+    toggle.setAttribute('aria-expanded', String(v));
+    panel.hidden = !v;
+    if (v) revealWarm(panel);
+  }
+  return [toggle, panel];
+}
+
+/** «Añadir estas series»: calentamientos pendientes al principio del ejercicio (con deshacer). */
+function addWarmupPlan(ctx, se, plan, logType) {
+  const { sets, index } = warmupSetsFromPlan(plan, se, logType);
+  if (!sets.length) return;
+  se.sets.splice(index, 0, ...sets);
+  setWarmOpen(ctx.session.id, se.id, false);
+  ctx.editing.set(se.id, sets[0].id);
+  ctx.touch(se);
+  ctx.save();
+  ctx.rerenderCard(se);
+  // La línea ya no está (hay calentamientos): el foco pasa a «Registrar calentamiento».
+  ctx.cardEl?.(se)?.querySelector('.ses-editor .ses-register')?.focus({ preventScroll: true });
+  ctx.revealEditor?.(se);
+  const ids = new Set(sets.map((x) => x.id));
+  undoToast(plural(sets.length, 'serie de calentamiento añadida', 'series de calentamiento añadidas'), () => {
+    se.sets = se.sets.filter((x) => x.done || !ids.has(x.id));
+    ctx.editing.delete(se.id);
+    ctx.save();
+    ctx.rerenderCard(se);
+  });
 }
 
 /** Serie que se muestra en el editor grande: la elegida por el usuario o la primera pendiente. */

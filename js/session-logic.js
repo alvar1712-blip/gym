@@ -319,6 +319,124 @@ export function warmupSet(se, last = null, logType = null) {
   return { set, index };
 }
 
+// ---------------------------------------------------------------------------
+// Calentamiento sugerido (MEJORAS §3)
+// ---------------------------------------------------------------------------
+
+/** Tipos de registro con calentamiento sugerido (carga externa × reps). */
+const WARMUP_TYPES = ['weight_reps', 'unilateral'];
+/** Esquema por tramos del peso de trabajo: [% del peso de trabajo, reps]. */
+const WARMUP_SCHEMES = [
+  { min: 60, steps: [[40, 8], [60, 5], [80, 3]] },
+  { min: 30, steps: [[50, 8], [75, 4]] },
+  { min: 0, steps: [[50, 10]] },
+];
+/** Un paso por debajo de esta fracción del peso de trabajo no calienta nada útil. */
+const WARMUP_MIN_FRACTION = 0.2;
+
+/** Aislamiento o core (mismo criterio que insights.incrementFor). pura */
+function isIsolation(ex) {
+  return ex.category === 'isolation' || ex.region === 'core' || ex.pattern === 'core'
+    || (!ex.category && ex.pattern === 'isolation');
+}
+
+/** Número positivo o null. */
+const posNum = (v) => (Number(v) > 0 && Number.isFinite(Number(v)) ? Number(v) : null);
+
+/**
+ * Incremento cargable para redondear el calentamiento. pura
+ * El del ejercicio si lo tiene en sus datos (`increment` o `incrementKg`, kg); si no, 2,5 kg en compuestos
+ * y, en aislamiento o core, `settings.increments.isolation` (1 kg por defecto).
+ */
+export function warmupIncrement(exercise, settings = null) {
+  const own = posNum(exercise?.increment ?? exercise?.incrementKg);
+  if (own) return own;
+  if (!exercise || !isIsolation(exercise)) return 2.5;
+  return posNum(settings?.increments?.isolation) || 1;
+}
+
+/**
+ * Calentamiento sugerido para una serie de trabajo de `workWeight` kg × `reps`. pura
+ * Tramos: ≥ 60 kg → 40 %×8, 60 %×5, 80 %×3; 30–60 kg → 50 %×8, 75 %×4; < 30 kg → 50 %×10.
+ * Cada peso se redondea al incremento cargable (warmupIncrement). Se descartan los pasos que no sirven:
+ * sin carga, por debajo del ~20 % útil o de la barra vacía (si el ejercicio tiene `barKg` en sus datos),
+ * a menos de 2 incrementos del peso de trabajo (con pesos muy pequeños el redondeo los dejaría casi en el
+ * de trabajo) y los repetidos (mismo peso que el anterior). Los pasos de ≥ 75 % no llevan más reps que la
+ * serie de trabajo (antes de un triple o un doble no se hacen 4).
+ * Sin sugerencia ([]): sin ejercicio, peso corporal, tiempo, distancia, saltos, cardio o sin peso de trabajo.
+ * @returns {{pct:number, weight:number, reps:number}[]}
+ */
+export function warmupPlan({ workWeight, reps = null, exercise, settings = null } = {}) {
+  if (!exercise || !WARMUP_TYPES.includes(exercise.logType)) return [];
+  const w = posNum(workWeight);
+  if (!w) return [];
+  const inc = warmupIncrement(exercise, settings);
+  const floor = Math.max(w * WARMUP_MIN_FRACTION, posNum(exercise.barKg) || 0);
+  const scheme = WARMUP_SCHEMES.find((s) => w >= s.min) || WARMUP_SCHEMES[WARMUP_SCHEMES.length - 1];
+  const workReps = posNum(reps) ? Math.round(Number(reps)) : null;
+  const out = [];
+  for (const [pct, stepReps] of scheme.steps) {
+    const weight = round(round(w * pct / 100, inc), 0.01); // 0,01: sin restos binarios (32,499999…)
+    if (weight <= 0 || weight < floor - 1e-9 || weight > w - 2 * inc + 1e-9) continue;
+    if (out.length && sameNum(out[out.length - 1].weight, weight)) continue;
+    const r = pct >= 75 && workReps ? Math.max(1, Math.min(stepReps, workReps)) : stepReps;
+    out.push({ pct, weight, reps: r });
+  }
+  return out;
+}
+
+/**
+ * Serie de trabajo de referencia para el calentamiento. pura
+ * La primera serie de trabajo pendiente (prellenada/planificada) con peso; si no hay, la primera de
+ * trabajo con peso de la «última vez» (`last` = lastFor / lastPerformanceFor). → {weight, reps} | null.
+ */
+export function warmupReference(se, last = null) {
+  const hasLoad = (s) => s && s.type !== 'warmup' && s.weight > 0;
+  const ref = (se?.sets || []).find((s) => !s.done && hasLoad(s))
+    || (last?.sets || []).find((s) => s.done !== false && hasLoad(s))
+    || null;
+  return ref ? { weight: ref.weight, reps: ref.reps ?? null } : null;
+}
+
+/**
+ * Calentamiento sugerido para un ejercicio de sesión. pura → { plan, ref } (plan = [] si no toca).
+ * Solo mientras el ejercicio no tiene calentamientos (hechos o ya añadidos, pendientes) ni series de
+ * trabajo hechas: después ya no es un calentamiento (y metería series pendientes antes de las hechas).
+ * ref = serie de trabajo de referencia (warmupReference).
+ */
+export function suggestedWarmup(se, exercise, settings = null, last = null) {
+  const sets = se?.sets || [];
+  const none = { plan: [], ref: null };
+  if (sets.some((s) => s.type === 'warmup' || s.done)) return none;
+  const ref = warmupReference(se, last);
+  if (!ref) return none;
+  const plan = warmupPlan({ workWeight: ref.weight, reps: ref.reps, exercise, settings });
+  return plan.length ? { plan, ref } : none;
+}
+
+/**
+ * Series de calentamiento PENDIENTES (type 'warmup': no cuentan como trabajo, ni récords, ni volumen;
+ * calc.isWorkSet) a partir de un plan (warmupPlan) y posición donde insertarlas: al principio del
+ * ejercicio (antes de la primera serie que no sea de calentamiento). → { sets, index }. pura
+ */
+export function warmupSetsFromPlan(plan, se, logType = null) {
+  const uni = logType === 'unilateral';
+  const sets = (plan || []).map((p) => ({
+    ...newSet(null, se, logType),
+    type: 'warmup',
+    weight: p.weight,
+    reps: p.reps,
+    repsR: uni ? p.reps : null,
+    rir: null,
+    timeSec: null,
+    distanceM: null,
+  }));
+  const all = se?.sets || [];
+  let index = all.findIndex((s) => s.type !== 'warmup');
+  if (index < 0) index = all.length;
+  return { sets, index };
+}
+
 export function sameNum(a, b) {
   if (a == null || b == null) return a == null && b == null;
   return Math.abs(a - b) < 1e-9;

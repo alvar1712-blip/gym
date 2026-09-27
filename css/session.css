@@ -62,6 +62,47 @@
 .ses-tnote { color: var(--muted); }
 .ses-enote { font-size: 15px; color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 6px 10px; overflow-wrap: anywhere; }
 
+/* ---------- Calentamiento sugerido ----------
+   Plegado es un enlace discreto a la derecha de «+ Serie» (misma fila: no suma altura ni mueve «Registrar»;
+   si no cabe, pasa a su propia línea, también al final de la tarjeta). Abierto, un panel debajo. */
+.ses-warm-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0 -6px 0 auto;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.ses-warm-toggle:active { background: var(--surface-2); }
+.ses-warm-chev { display: inline-block; font-size: 13px; transition: transform 0.2s ease; }
+.ses-warm-toggle[aria-expanded="true"] { color: var(--text-2); }
+.ses-warm-toggle[aria-expanded="true"] .ses-warm-chev { transform: rotate(90deg); }
+.ses-warmup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 8px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.ses-warm-for { margin: 0; font-size: 13px; color: var(--muted); }
+.ses-warm-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ses-warm-step { font-size: 16px; font-weight: 650; color: var(--text); }
+.ses-warm-pct { display: inline-block; min-width: 3.1em; color: var(--warn); font-weight: 750; }
+.ses-warm-add { min-height: 44px; margin-top: 2px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .ses-warm-chev { transition: none; }
+}
+
 .ses-last { font-size: 15px; line-height: 1.45; color: var(--text-2); }
 .ses-last-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .ses-last-sets { color: var(--text); font-weight: 600; }
@@ -177,7 +218,7 @@
 .ses-editor-links { display: flex; align-items: center; gap: 8px; margin: -2px -2px 0; }
 .ses-editor-links .btn { min-height: 44px; border-color: transparent; }
 
-.ses-card-actions { gap: 8px; }
+.ses-card-actions { gap: 8px; flex-wrap: wrap; }
 .ses-card-actions .btn-sm { min-height: 44px; }
 .ses-card-actions .btn { flex: 1; }
 

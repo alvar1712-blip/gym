@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Banco del mapa corporal</title>
+  <link rel="stylesheet" href="../../css/app.css">
+  <link rel="stylesheet" href="../../css/bodymap.css">
+  <style>
+    /* Solo para el banco de pruebas */
+    .bench-head { padding: 18px 16px 0; }
+    .bench-head h1 { font-size: 22px; font-weight: 800; }
+    .bench-head p { color: var(--muted); font-size: 14px; margin-top: 2px; }
+    .bench-log { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="bench-head">
+    <h1>Mapa corporal</h1>
+    <p>js/bodymap.js · datos de ejemplo con rangos de seed</p>
+  </header>
+  <main class="content" id="bench"></main>
+
+  <script type="module">
+    import { bodyMap, bodyMapData, detailText, BODY_ZONES } from '../../js/bodymap.js';
+    import { defaultSettings, MUSCLES } from '../../js/seed.js';
+
+    const bench = document.getElementById('bench');
+    const settings = defaultSettings();
+
+    // Semana de ejemplo: hay músculos por debajo, en rango, por encima y sin series.
+    const weekSets = {
+      back: 16, core: 8, chest: 24, sidedelt: 12, reardelt: 6, frontdelt: 0, biceps: 10, triceps: 7.5,
+      forearms: 4, quads: 14, hamstrings: 9, glutes: 21, adductors: 0, calves: 0, tibialis: 0, lowerback: 3,
+    };
+    const data = bodyMapData(weekSets, settings.muscleTargets);
+    const selections = [];
+
+    function card(id, title, sub, content) {
+      const el = document.createElement('section');
+      el.className = 'card';
+      el.id = `card-${id}`;
+      const head = document.createElement('div');
+      const t = document.createElement('div'); t.className = 'card-title'; t.textContent = title;
+      head.appendChild(t);
+      if (sub) { const s = document.createElement('div'); s.className = 'card-sub'; s.textContent = sub; head.appendChild(s); }
+      el.append(head, content);
+      bench.appendChild(el);
+      return el;
+    }
+
+    const main = bodyMap({ muscles: data, onSelect: (id) => { selections.push(id); log.textContent = `onSelect: ${selections.join(', ')}`; } });
+    const log = document.createElement('p');
+    log.className = 'bench-log';
+    log.id = 'log';
+    log.textContent = 'onSelect: —';
+    card('main', 'Esta semana por músculo', 'Series efectivas frente a tu rango', main).appendChild(log);
+
+    // Semana vacía (todo sin series) y semana con una zona elegida de inicio.
+    const empty = bodyMap({ muscles: bodyMapData({}, settings), compact: true });
+    card('empty', 'Semana sin fuerza', 'Todas las zonas sin series · compact', empty);
+    const pre = bodyMap({ muscles: bodyMapData({ quads: 12, hamstrings: 25, glutes: 4, calves: 10 }, settings), selected: 'hamstrings' });
+    card('pre', 'Con zona elegida', 'selected: hamstrings', pre);
+
+    window.__bm = { main, empty, pre, data, selections, weekSets, settings, lib: { bodyMap, bodyMapData, detailText, BODY_ZONES, MUSCLES } };
+    requestAnimationFrame(() => document.documentElement.classList.add('ready'));
+  </script>
+</body>
+</html>

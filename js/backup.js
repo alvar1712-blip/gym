@@ -215,7 +215,9 @@ export const CARDIO_COLUMNS = [
   { h: 'Ritmo (min/km)' }, // h:mm:ss (0:05:00): ver hms()
   { h: 'Velocidad (km/h)', dec: 1 },
   { h: 'Ritmo (min/100 m)' },
-  { h: 'Desnivel (m)', dec: 0 },
+  { h: 'Desnivel (m)', dec: 0 }, // positivo
+  { h: 'Desnivel − (m)', dec: 0 },
+  { h: 'Altitud máx. (m)', dec: 0 },
   { h: 'FC media', dec: 0 },
   { h: 'FC máx', dec: 0 },
   { h: 'Cadencia', dec: 0 },
@@ -224,6 +226,7 @@ export const CARDIO_COLUMNS = [
   { h: 'Piscina / aguas abiertas' },
   { h: 'Largo piscina (m)', dec: 0 },
   { h: 'Estilo' },
+  { h: 'Mochila (kg)', dec: 1 },
   { h: 'RPE', dec: 1 },
   { h: 'Carga', dec: 0 },
   { h: 'Sensaciones' },
@@ -249,7 +252,11 @@ export function hms(sec) {
   return `${Math.floor(t / 3600)}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`;
 }
 
-/** Filas del CSV de cardio: una por actividad (carrera, bici, natación, otras), en orden cronológico. */
+/**
+ * Filas del CSV de cardio: una por actividad (carrera, bici, natación, senderismo, otras), en orden cronológico.
+ * Desnivel negativo y altitud máxima salen en cualquier deporte que los tenga (senderismo o actividades importadas
+ * de un archivo); la mochila, solo en senderismo.
+ */
 export function cardioRows(sessions) {
   const all = sessions || [];
   const byId = new Map(all.filter(Boolean).map((s) => [s.id, s]));
@@ -263,9 +270,11 @@ export function cardioRows(sessions) {
       s.date, ACTIVITY_LABEL[s.kind] || s.kind, s.subtype ? SUBTYPE_LABELS[s.kind]?.[s.subtype] || s.subtype : null,
       km, dur, hms(sec), hms(s.elapsedSec),
       hms(pace(sec, km)), speed(sec, km), s.kind === 'swim' ? hms(pace100(sec, km)) : null,
-      s.elevationM ?? null, s.hrAvg ?? null, s.hrMax ?? null, s.cadence ?? null, s.powerAvg ?? null, s.powerNp ?? null,
+      s.elevationM ?? null, s.elevationLossM ?? null, s.altMaxM ?? null,
+      s.hrAvg ?? null, s.hrMax ?? null, s.cadence ?? null, s.powerAvg ?? null, s.powerNp ?? null,
       POOL_LABEL[s.poolType] || s.poolType || null, s.poolType === 'pool' ? s.poolLengthM ?? null : null,
       s.stroke ? STROKE_LABEL[s.stroke] || s.stroke : null,
+      s.kind === 'hike' ? s.packKg ?? null : null,
       s.rpe ?? null, sessionLoad(s), s.feel || null, s.notes || null,
       parent ? parent.templateName || 'Sesión de fuerza' : null,
     ]);

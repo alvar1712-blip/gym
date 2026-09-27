@@ -1,1 +1,180 @@
-/* import.css — estilos del módulo. */
+/* import.css — #/import: importar actividades (GPX, TCX, FIT). Prefijo de clases: .imp- */
+
+.imp-screen { position: relative; }
+/* Selector de archivos propio (sin accept): oculto pero clicable desde los botones. */
+.imp-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  pointer-events: none;
+}
+.imp-body { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- Presentación ---------- */
+.imp-intro { align-items: flex-start; gap: 8px; padding: 18px 16px; }
+.imp-intro-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.imp-intro-title { font-size: 21px; font-weight: 800; }
+.imp-intro-text { margin: 0; color: var(--text-2); font-size: 16px; line-height: 1.45; }
+.imp-intro-note { margin: 0; color: var(--muted); font-size: 14px; }
+
+/* ---------- Cómo exportar (plegable) ---------- */
+.imp-howto { padding: 0; gap: 0; }
+.imp-howto-sum {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 14px;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-2);
+  list-style: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.imp-howto-sum::-webkit-details-marker { display: none; }
+.imp-howto-sum > .icon:first-child { color: var(--info); flex: none; }
+.imp-howto-sum > span { flex: 1; min-width: 0; }
+.imp-howto-chev { color: var(--muted); flex: none; transition: transform 0.2s var(--ease-ios, ease); }
+.imp-howto[open] .imp-howto-chev { transform: rotate(180deg); }
+.imp-howto-body { display: flex; flex-direction: column; gap: 12px; padding: 2px 14px 14px; }
+.imp-howto-item { display: flex; flex-direction: column; gap: 2px; }
+.imp-howto-name { font-weight: 750; font-size: 15px; }
+.imp-howto-text { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.imp-howto-tip { margin: 0; font-size: 14px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; }
+
+/* ---------- Lista ---------- */
+.imp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 2px -2px; }
+.imp-head-text { font-size: 14px; font-weight: 650; color: var(--muted); min-width: 0; }
+.imp-clear { flex: none; min-height: 40px; }
+
+.imp-item {
+  padding: 6px 4px 6px 0;
+  gap: 4px;
+  border-left: 4px solid var(--imp-c, var(--border-strong));
+  transition: opacity 0.15s;
+}
+.imp-item.imp-off { background: var(--bg); }
+.imp-item.imp-off .imp-item-main { opacity: 0.62; }
+.imp-item-row { display: flex; align-items: stretch; gap: 0; }
+.imp-check {
+  flex: none;
+  width: 52px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: transparent;
+}
+.imp-check .icon {
+  width: 28px;
+  height: 28px;
+  padding: 3px;
+  border-radius: 9px;
+  border: 2px solid var(--border-strong);
+  background: var(--surface-2);
+  box-sizing: border-box;
+  transition: background 0.12s, border-color 0.12s;
+}
+.imp-check[aria-checked="true"] { color: var(--accent-ink); }
+.imp-check[aria-checked="true"] .icon { background: var(--accent); border-color: var(--accent); }
+.imp-check:disabled { opacity: 0.35; }
+.imp-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--text);
+}
+.imp-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.imp-emoji { font-size: 18px; line-height: 1; flex: none; }
+.imp-item-title { font-weight: 750; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-badge { flex: none; }
+.imp-item-when { font-size: 14px; color: var(--text-2); font-weight: 600; }
+.imp-item-facts { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.imp-fact { white-space: nowrap; }
+.imp-item-extra { font-size: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.imp-item-file {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.imp-chev { flex: none; display: grid; place-items: center; width: 28px; color: var(--muted); }
+
+.imp-note { margin: 0; font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.imp-item > .imp-note,
+.imp-kind-pick { margin: 0 10px 6px 52px; }
+.imp-note-warn { color: var(--warn); }
+.imp-note-error { color: var(--danger); }
+.imp-kind-pick { display: flex; flex-direction: column; gap: 8px; }
+.imp-kind-chips { gap: 6px; }
+.imp-kind-chips .chip { padding: 0 12px; font-size: 15px; }
+
+/* ---------- Errores por archivo ---------- */
+.imp-error { flex-direction: row; align-items: flex-start; gap: 10px; padding: 12px 14px; border-color: rgba(248, 113, 113, 0.4); }
+.imp-error-icon { color: var(--danger); flex: none; padding-top: 1px; }
+.imp-error-main { min-width: 0; }
+.imp-error-name { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+.imp-error-text { font-size: 14px; color: var(--text-2); }
+
+/* ---------- Resultado ---------- */
+.imp-done { gap: 10px; }
+.imp-done-title { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 800; color: var(--accent); }
+.imp-done-text { margin: 0; color: var(--text-2); font-size: 15px; }
+
+/* ---------- Pie fijo (acciones a mano del pulgar) ---------- */
+.imp-footer {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) + var(--sab));
+  z-index: 10;
+  display: flex;
+  gap: 10px;
+  margin: 4px -16px 0;
+  padding: 10px 16px;
+  background: rgba(11, 13, 16, 0.94);
+  border-top: 1px solid var(--border);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .imp-footer {
+    background: var(--glass-bar, rgba(11, 13, 16, 0.8));
+    -webkit-backdrop-filter: var(--glass-blur, saturate(160%) blur(14px));
+    backdrop-filter: var(--glass-blur, saturate(160%) blur(14px));
+  }
+}
+.imp-add { flex: none; width: var(--tap-lg); padding: 0; }
+.imp-save { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Hoja «Revisar actividad» ---------- */
+.imp-edit { padding-bottom: 4px; }
+.imp-grid { gap: 12px 10px; }
+.imp-grid .input-suffix-wrap .input { padding-right: 46px; }
+.imp-grid .input-suffix { font-size: 14px; }
+.imp-date,
+.imp-time { font-size: 17px; }
+.imp-kinds .seg-btn { min-height: 44px; font-size: 16px; }
+.imp-source { margin: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* ---------- Botón en Ajustes › Copias y datos (js/views/settings.js) ---------- */
+.imp-settings-btn { padding-top: 8px; padding-bottom: 8px; }
+.imp-settings-label { text-align: center; line-height: 1.25; }
+.imp-nowrap { white-space: nowrap; }

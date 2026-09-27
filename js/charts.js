@@ -19,6 +19,7 @@ export const COLORS = {
   run: '#f97316', // --act-run
   bike: '#38bdf8', // --act-bike
   swim: '#818cf8', // --act-swim
+  hike: '#2dd4bf', // --act-hike
   other: '#e879f9', // --act-other
   accent: '#b8f34a', // --accent
   info: '#60a5fa', // --info

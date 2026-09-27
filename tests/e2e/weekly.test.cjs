@@ -487,6 +487,16 @@ test('#/weekly a 375×667 y tarjeta resumen weeklySummaryCard() (2–3 mensajes 
     await page.locator('.wk-msg[data-id="muscles"]').evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(() => window.scrollBy(0, -70));
     await shot(page, 'weekly-375-prev-muscles');
+    // Mapa corporal encima de la tabla (ronda 4): semana terminada → estados normales; tocar una zona da el detalle
+    const map = page.locator('.wk-msg[data-id="muscles"] .wk-muscles > .bm');
+    assert.strictEqual(await map.count(), 1);
+    assert.strictEqual(await map.evaluate((el) => el.classList.contains('bm-in-progress')), false);
+    assert.strictEqual(await map.locator('.bm-zone').count(), 16);
+    await map.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.evaluate(() => window.scrollBy(0, -70));
+    await map.locator('.bm-zone[data-muscle="chest"] .bm-shape').first().click();
+    assert.match(await map.locator('.bm-detail').innerText(), /^Pecho · /);
+    await shot(page, 'weekly-375-prev-bodymap');
     for (const id of ['dp-hold', 'ex-stalled', 'deload-none']) await openWhy(page, id);
     assert.deepStrictEqual(await whyLayoutIssues(page, '.wk'), []);
     assert.ok(await noHScroll(page));

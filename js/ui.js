@@ -196,6 +196,9 @@ function unlockScroll() {
   window.scrollTo(0, lockedY);
 }
 
+// Respuesta al toque: Safari de iOS solo aplica :active si hay algún oyente de touchstart (css/app.css).
+if (typeof document !== 'undefined') document.addEventListener('touchstart', () => {}, { passive: true });
+
 // Altura del teclado de iOS → variable CSS --kb (las hojas se colocan encima).
 if (typeof window !== 'undefined' && window.visualViewport) {
   const vv = window.visualViewport;
@@ -213,6 +216,31 @@ if (typeof window !== 'undefined' && window.visualViewport) {
 //   → { el, body, close }
 // ---------------------------------------------------------------------------
 const openSheets = [];
+const closingSheets = new Set(); // hojas que se están cerrando (animación de salida)
+/** Duración de abrir/cerrar hojas (igual que --dur-sheet en css/app.css). */
+const SHEET_MS = 350;
+
+/**
+ * Llama a fn cuando termina la transición de transform/opacity de `el` (o a los ms + margen si no llega
+ * transitionend: pestaña oculta, «reducir movimiento», elemento sin transición). Solo una vez.
+ */
+function afterTransition(el, ms, fn) {
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    el.removeEventListener('transitionend', onEnd);
+    clearTimeout(timer);
+    fn();
+  };
+  const onEnd = (e) => { if (e.target === el && (e.propertyName === 'transform' || e.propertyName === 'opacity')) finish(); };
+  el.addEventListener('transitionend', onEnd);
+  const timer = setTimeout(finish, ms + 60);
+}
+
+function isTextField(el) {
+  return el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/i.test(el.type));
+}
 
 export function sheet({ title = '', body = null, actions = [], onClose = null, dismissible = true, className = '', tall = false } = {}) {
   let closed = false;
@@ -229,15 +257,32 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
     footer,
   );
   const overlay = h('div.sheet-overlay', { onClick: (e) => { if (e.target === overlay && dismissible) close(); } }, panel);
+  const opener = typeof document !== 'undefined' ? document.activeElement : null;
 
+  /**
+   * Cierre animado: la hoja baja con la curva de iOS y el fondo se aclara; mientras, ya no recibe toques
+   * (.closing) y la página vuelve a desplazarse. Se quita del DOM al terminar la animación.
+   */
   function close(result) {
     if (closed) return;
     closed = true;
+    const focusInside = panel.contains(document.activeElement);
+    if (focusInside) document.activeElement.blur(); // cierra el teclado de iOS ya, no al final
     overlay.classList.remove('open');
+    // Mientras baja ya no cuenta: sin toques, fuera del árbol de accesibilidad y del foco.
+    overlay.classList.add('closing');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.inert = true;
+    closingSheets.add(overlay);
     const i = openSheets.indexOf(api);
     if (i >= 0) openSheets.splice(i, 1);
     unlockScroll();
-    setTimeout(() => overlay.remove(), 200);
+    afterTransition(panel, SHEET_MS, () => { closingSheets.delete(overlay); overlay.remove(); });
+    // El foco vuelve al botón que abrió la hoja (teclado y lectores de pantalla); a un campo de texto no,
+    // para no volver a abrir el teclado.
+    if (focusInside && opener && opener.isConnected && opener !== document.body && !isTextField(opener)) {
+      try { opener.focus({ preventScroll: true }); } catch { /* sin foco */ }
+    }
     if (onClose) onClose(result);
   }
   const api = { el: panel, body: bodyEl, close, overlay, dismissible };
@@ -250,10 +295,13 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
       onClick: () => (a.onClick ? a.onClick(close) : close()),
     }, a.label));
   }
+  // Una hoja que aún se está cerrando se quita ya: nunca hay dos menús iguales en la página.
+  for (const o of closingSheets) o.remove();
+  closingSheets.clear();
   document.body.appendChild(overlay);
   lockScroll();
   openSheets.push(api);
-  requestAnimationFrame(() => overlay.classList.add('open'));
+  requestAnimationFrame(() => { if (!closed) overlay.classList.add('open'); });
   return api;
 }
 
@@ -341,6 +389,7 @@ export function actionSheet({ title = '', actions = [] } = {}) {
 // ---------------------------------------------------------------------------
 let toastEl = null;
 let toastTimer = null;
+const TOAST_OUT_MS = 200; // salida del aviso (css/app.css .toast)
 let toastCur = null; // { close, closeOnNavigate, epoch }
 
 /**
@@ -350,6 +399,7 @@ let toastCur = null; // { close, closeOnNavigate, epoch }
  */
 export function toast(message, { actionLabel = null, onAction = null, duration = 3500, kind = 'info', closeOnNavigate = !!actionLabel } = {}) {
   if (toastEl) { toastEl.remove(); toastEl = null; }
+  for (const old of document.querySelectorAll('.toast')) old.remove(); // uno que se estaba ocultando
   clearTimeout(toastTimer);
   const el = h(`div.toast.toast-${kind}`, { role: 'status', 'aria-live': 'polite' },
     h('span.toast-msg', message),
@@ -358,9 +408,10 @@ export function toast(message, { actionLabel = null, onAction = null, duration =
       onClick: () => { close(); onAction && onAction(); },
     }, actionLabel) : null);
   function close() {
-    clearTimeout(toastTimer);
+    if (toastEl === el) clearTimeout(toastTimer);
     el.classList.remove('show');
-    setTimeout(() => el.remove(), 200);
+    el.setAttribute('aria-hidden', 'true');
+    afterTransition(el, TOAST_OUT_MS, () => el.remove());
     if (toastEl === el) { toastEl = null; toastCur = null; }
   }
   document.body.appendChild(el);

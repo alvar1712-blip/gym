@@ -61,6 +61,7 @@ export const ACTIVITY_KINDS = [
   { id: 'run', label: 'Carrera', emoji: '🏃' },
   { id: 'bike', label: 'Bici', emoji: '🚴' },
   { id: 'swim', label: 'Natación', emoji: '🏊' },
+  { id: 'hike', label: 'Senderismo', emoji: '🥾' },
   { id: 'other', label: 'Otra actividad', emoji: '⚡' },
 ];
 export const ACTIVITY_LABEL = Object.fromEntries(ACTIVITY_KINDS.map((a) => [a.id, a.label]));

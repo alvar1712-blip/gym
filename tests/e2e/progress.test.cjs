@@ -551,7 +551,8 @@ test('base de datos vacía: estados vacíos útiles; #/bodyweight: la gráfica s
     await open(page, '#/records');
     assert.match(await page.locator('#view').innerText(), /Aún no hay récords de fuerza/);
     await page.locator('.seg-btn', { hasText: 'Resistencia' }).click();
-    assert.strictEqual(await page.locator('.prg-rec-na', { hasText: 'sin datos' }).count(), 7);
+    // Carrera (distancia + 4 tiempos), bici, natación y senderismo (distancia y desnivel)
+    assert.strictEqual(await page.locator('.prg-rec-na', { hasText: 'sin datos' }).count(), 9);
     await shot(page, 'records-empty');
 
     await open(page, '#/progress/exercise/press_banca');
@@ -856,7 +857,10 @@ test('«Esta semana por músculo» sin alarmas a mitad de semana; adherencia de 
     assert.ok(await short.count() >= 1);
     assert.match(await short.first().locator('.prg-status').innerText(), /^Faltan \d+(,\d)?$/);
     assert.match(await short.first().getAttribute('aria-label'), /faltan [\d,]+ series? para el mínimo/);
-    assert.deepStrictEqual(await page.locator('.prg-mlegend-item').allInnerTexts(), ['Faltan series', 'Dentro', 'Por encima']);
+    // Mapa corporal de la tarjeta (ronda 4): semana en curso → «Faltan series» en vez de «Por debajo»
+    const card = page.locator('[data-chart="muscle-table"]');
+    assert.strictEqual(await card.locator('.bm.bm-in-progress .bm-zone').count(), 16);
+    assert.deepStrictEqual(await card.locator('.bm-legend-label').allInnerTexts(), ['Faltan series', 'En rango', 'Por encima', 'Sin series']);
     // Globo de la semana en curso en la gráfica por músculo
     const b = await svgBox(page, '[data-chart="muscle"]');
     const n = Number(b.ds.n);

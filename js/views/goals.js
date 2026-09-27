@@ -15,7 +15,7 @@ import * as G from '../goals-logic.js';
 const DRAFT_KEY = 'entreno.goalDraft';
 const KINDS = G.GOAL_KINDS.map((k) => k.value);
 const SPORT_LABEL = Object.fromEntries(G.GOAL_SPORTS.map((s) => [s.value, s.label]));
-const DEFAULT_DIST = { run: 10, bike: 40, swim: 1.5 };
+const DEFAULT_DIST = { run: 10, bike: 40, swim: 1.5, hike: 15 };
 const KIND_NAME = { strength: 'Fuerza', endurance: 'Resistencia', bodyweight: 'Peso corporal' };
 const BADGE = { achieved: 'badge-ok', ready: 'badge-accent', estimate: 'badge-info', insufficient: '', no_trend: 'badge-warn' };
 const WATCHED = new Set(['goals', 'sessions', 'bodyweight', 'exercises', 'meta']);
@@ -545,6 +545,8 @@ export function mountGoalEdit(root, params = {}) {
       options: G.GOAL_SPORTS, value: sport, ariaLabel: 'Deporte',
       onChange: (v) => { if (v === form.sport) return; form.sport = v; form.distanceKm = DEFAULT_DIST[v]; paintKind(); changed(); },
     });
+    // Cuatro deportes: 2 + 2 (css/activity.css) para que «Senderismo» no se corte en 375–430 px.
+    sportSeg.classList.add('act-seg-wrap');
     const dist = numInput({
       value: toInput(form.distanceKm), decimals: swim ? 0 : 3, inputmode: swim ? 'numeric' : 'decimal', suffix: swim ? 'm' : 'km',
       placeholder: swim ? '1500' : '10', ariaLabel: `Distancia (${swim ? 'm' : 'km'})`,
@@ -582,7 +584,7 @@ export function mountGoalEdit(root, params = {}) {
       how.textContent = T > 0
         ? sport === 'run'
           ? `Se estima con la fórmula de Riegel a partir de tus carreras de ${G.fmtDistance('run', Math.min(G.MIN_KM.run, D || G.MIN_KM.run))} o más.`
-          : `Se estima con la fórmula de Riegel, pensada para carrera: en ${sport === 'bike' ? 'bici' : 'natación'} es menos fiable.`
+          : `Se estima con la fórmula de Riegel, pensada para carrera: en ${{ bike: 'bici', swim: 'natación', hike: 'senderismo' }[sport]} es menos fiable.`
         : 'Sin tiempo, el objetivo es completar la distancia en una sesión.';
       how.classList.toggle('goal-how-warn', T > 0 && sport !== 'run');
     }

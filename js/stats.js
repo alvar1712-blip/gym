@@ -39,9 +39,9 @@ import { MUSCLES, MUSCLE_LABEL } from './seed.js';
 // ===========================================================================
 
 /** Tipos de sesión para la carga (las desconocidas cuentan como 'other'). */
-export const KINDS = ['strength', 'run', 'bike', 'swim', 'other'];
-/** Deportes con distancia. */
-export const DISTANCE_KINDS = ['run', 'bike', 'swim'];
+export const KINDS = ['strength', 'run', 'bike', 'swim', 'hike', 'other'];
+/** Deportes con distancia (cada uno con su columna de km: el senderismo va aparte de la carrera). */
+export const DISTANCE_KINDS = ['run', 'bike', 'swim', 'hike'];
 /** Distancias de los récords de carrera (km). */
 export const RACE_DISTANCES = [
   { id: '5k', km: 5, label: '5 km' },
@@ -54,7 +54,8 @@ export const ESTIMATE_FACTOR = 1.02;
 
 const EPS = 1e-9;
 const kindOf = (s) => (KINDS.includes(s.kind) ? s.kind : 'other');
-const zeroKinds = () => ({ strength: 0, run: 0, bike: 0, swim: 0, other: 0 });
+const zeroKinds = () => Object.fromEntries(KINDS.map((k) => [k, 0]));
+const zeroDist = () => Object.fromEntries(DISTANCE_KINDS.map((k) => [k, 0]));
 const inRange = (date, from, to) => (!from || date >= from) && (!to || date <= to);
 /** Segundos de una actividad: tiempo en movimiento o, en registros antiguos, la duración. */
 const actSec = (a) => (a.movingSec > 0 ? a.movingSec : a.durationMin > 0 ? a.durationMin * 60 : null);
@@ -89,16 +90,21 @@ export function weightLabel(logType, w) {
   return w == null ? '—' : `${num(w, 2)} kg`;
 }
 
-/** Texto de una distancia: carrera y bici en km, natación en metros. */
+/** Texto de una distancia: carrera, bici y senderismo en km, natación en metros. */
 export function distanceLabel(kind, km) {
   if (km == null || !Number.isFinite(km)) return '—';
   if (kind === 'swim') return `${num(km * 1000, 0)} m`;
   return `${num(km, kind === 'run' ? 2 : 1)} km`;
 }
 
+/** Desnivel: «+850 m». */
+export function elevationLabel(m) {
+  return m == null || !Number.isFinite(m) ? '—' : `+${num(m, 0)} m`;
+}
+
 /**
  * Formato de una métrica (etiquetas de gráficas y tablas):
- *  volume «12.500 kg» · kg «82,5 kg» · load «350» · km.run «25,3 km» · km.swim «1500 m» · runPace «5:12 /km»
+ *  volume «12.500 kg» · kg «82,5 kg» · load «350» · km.run|bike|hike «25,3 km» · km.swim «1500 m» · runPace «5:12 /km»
  *  bikeSpeed «28,3 km/h» · swimPace «2:00 /100 m» · sets «12,5 series» · minutes «1 h 05 min» · sessions «3 sesiones»
  */
 export function fmtMetric(metric, v) {
@@ -110,6 +116,7 @@ export function fmtMetric(metric, v) {
     case 'km.run': return `${num(v, 1)} km`;
     case 'km.bike': return `${num(v, 1)} km`;
     case 'km.swim': return `${num(v * 1000, 0)} m`;
+    case 'km.hike': return `${num(v, 1)} km`;
     case 'runPace': return fmtPace(v);
     case 'bikeSpeed': return `${num(v, 1)} km/h`;
     case 'swimPace': return fmtPace(v, '/100 m');
@@ -165,7 +172,7 @@ export function buildIndex(data) {
 
   // Series de trabajo por ejercicio: una entrada por sesión (un ejercicio repetido en la sesión se une).
   const byExercise = new Map();
-  const activities = { run: [], bike: [], swim: [], other: [] };
+  const activities = Object.fromEntries(KINDS.filter((k) => k !== 'strength').map((k) => [k, []]));
   for (const s of done) {
     if (s.kind === 'strength') {
       const local = new Map();
@@ -182,7 +189,7 @@ export function buildIndex(data) {
         byExercise.get(id).push(e);
       }
     } else {
-      activities[kindOf(s)].push(s); // carrera, bici, natación u otra (desconocida → otra)
+      activities[kindOf(s)].push(s); // carrera, bici, natación, senderismo u otra (desconocida → otra)
     }
   }
 
@@ -676,14 +683,16 @@ export function exerciseSummary(data, exerciseId) {
 // ===========================================================================
 
 /**
- * Récords de carrera, bici y natación (incluidas las actividades enlazadas a una sesión de fuerza).
+ * Récords de carrera, bici, natación y senderismo (incluidas las actividades enlazadas a una sesión de fuerza).
  * @returns {{
  *   run:  { count, longest:{distanceKm, movingSec, date, sessionId, label}|null,
  *           best:{ '5k'|'10k'|'half'|'marathon': {id, label, distanceKm, timeSec, timeLabel, paceLabel,
  *                  date, sessionId, fromKm, fromSec, estimated}|null } },
- *   bike: { count, longest }, swim: { count, longest } }}
+ *   bike: { count, longest }, swim: { count, longest },
+ *   hike: { count, longest:{…, elevationM|null}|null, maxGain:{elevationM, distanceKm, movingSec, date, sessionId, label}|null } }}
  *  best.X sale de carreras de distancia ≥ X: tiempo = movingSec × X / distanceKm (ritmo medio de esa carrera);
- *  estimated = distanceKm > X × 1,02 («estimado a ritmo medio»). Empates: cuenta la primera vez.
+ *  estimated = distanceKm > X × 1,02 («estimado a ritmo medio»). hike.maxGain = mayor desnivel positivo
+ *  (elevationM > 0; con o sin distancia). Empates: cuenta la primera vez.
  */
 export function enduranceRecords(data) {
   const idx = getIndex(data);
@@ -691,16 +700,24 @@ export function enduranceRecords(data) {
     run: { count: 0, longest: null, best: Object.fromEntries(RACE_DISTANCES.map((r) => [r.id, null])) },
     bike: { count: 0, longest: null },
     swim: { count: 0, longest: null },
+    hike: { count: 0, longest: null, maxGain: null },
   };
   for (const kind of DISTANCE_KINDS) {
     const bucket = out[kind];
     for (const a of idx.activities[kind]) {
       bucket.count++;
+      if (kind === 'hike' && a.elevationM > 0 && (!bucket.maxGain || a.elevationM > bucket.maxGain.elevationM + EPS)) {
+        bucket.maxGain = {
+          elevationM: a.elevationM, distanceKm: a.distanceKm > 0 ? a.distanceKm : null, movingSec: actSec(a), date: a.date,
+          sessionId: a.id, label: elevationLabel(a.elevationM),
+        };
+      }
       const km = a.distanceKm > 0 ? a.distanceKm : null;
       if (km == null) continue;
       const sec = actSec(a);
       if (!bucket.longest || km > bucket.longest.distanceKm + EPS) {
         bucket.longest = { distanceKm: km, movingSec: sec, date: a.date, sessionId: a.id, label: distanceLabel(kind, km) };
+        if (kind === 'hike') bucket.longest.elevationM = a.elevationM > 0 ? a.elevationM : null;
       }
       if (kind !== 'run' || !(sec > 0)) continue;
       for (const r of RACE_DISTANCES) {
@@ -725,7 +742,7 @@ export function enduranceRecords(data) {
 function emptyAgg() {
   return {
     sessions: 0, count: zeroKinds(), strengthVolume: 0, workSets: 0, load: zeroKinds(), noLoad: 0, minutes: zeroKinds(),
-    km: { run: 0, bike: 0, swim: 0 }, paced: { run: { km: 0, sec: 0 }, bike: { km: 0, sec: 0 }, swim: { km: 0, sec: 0 } },
+    km: zeroDist(), paced: Object.fromEntries(DISTANCE_KINDS.map((k) => [k, { km: 0, sec: 0 }])),
     muscleSets: {},
   };
 }
@@ -771,12 +788,8 @@ function weekRow(week, agg, idx) {
   const loadTotal = KINDS.reduce((t, k) => t + load[k], 0);
   const minutes = Object.fromEntries(KINDS.map((k) => [k, round(a.minutes[k], 0.01)]));
   const minutesTotal = round(KINDS.reduce((t, k) => t + a.minutes[k], 0), 0.01);
-  const km = { run: r3(a.km.run), bike: r3(a.km.bike), swim: r3(a.km.swim) };
-  const paced = {
-    run: { km: r3(a.paced.run.km), sec: a.paced.run.sec },
-    bike: { km: r3(a.paced.bike.km), sec: a.paced.bike.sec },
-    swim: { km: r3(a.paced.swim.km), sec: a.paced.swim.sec },
-  };
+  const km = Object.fromEntries(DISTANCE_KINDS.map((k) => [k, r3(a.km[k])]));
+  const paced = Object.fromEntries(DISTANCE_KINDS.map((k) => [k, { km: r3(a.paced[k].km), sec: a.paced[k].sec }]));
   const runPace = pace(a.paced.run.sec, a.paced.run.km);
   const bikeSpeed = speed(a.paced.bike.sec, a.paced.bike.km);
   const swimPace = pace100(a.paced.swim.sec, a.paced.swim.km);
@@ -806,7 +819,7 @@ function weekRow(week, agg, idx) {
       strengthVolume: fmtMetric('volume', strengthVolume),
       loadTotal: fmtMetric('load', loadTotal),
       load: Object.fromEntries(KINDS.map((k) => [k, fmtMetric('load', load[k])])),
-      km: { run: fmtMetric('km.run', km.run), bike: fmtMetric('km.bike', km.bike), swim: fmtMetric('km.swim', km.swim) },
+      km: Object.fromEntries(DISTANCE_KINDS.map((k) => [k, fmtMetric(`km.${k}`, km[k])])),
       runPace: fmtMetric('runPace', runPace),
       bikeSpeed: fmtMetric('bikeSpeed', bikeSpeed),
       swimPace: fmtMetric('swimPace', swimPace),
@@ -818,15 +831,16 @@ function weekRow(week, agg, idx) {
 /**
  * Una fila por semana (lunes) de `from` a `to`, TODAS (las vacías con ceros) para que las barras no salten.
  * from = null → semana de la primera sesión terminada; to = null → semana de hoy (data.today).
- * @returns {{week, weekEnd, current, sessions, count:{strength,run,bike,swim,other}, strengthVolume, workSets,
- *   loadTotal, load:{strength,run,bike,swim,other}, noLoad, minutesTotal, minutes:{…}, km:{run,bike,swim},
+ * @returns {{week, weekEnd, current, sessions, count:{strength,run,bike,swim,hike,other}, strengthVolume, workSets,
+ *   loadTotal, load:{strength,run,bike,swim,hike,other}, noLoad, minutesTotal, minutes:{…}, km:{run,bike,swim,hike},
  *   runPace (s/km|null), bikeSpeed (km/h|null), swimPace (s/100 m|null), paced:{run:{km,sec},…},
  *   muscleSets:{muscleId:n}, labels:{…}}[]}
  *  - La semana es la de `date` (el día en que se hizo), no la del plan.
  *  - load: calc.sessionLoad (min × RPE) de TODAS las sesiones, fuerza incluida; las actividades enlazadas a una
  *    sesión de fuerza cuentan en su deporte (la duración de la fuerza ya las descuenta). noLoad = sesiones sin
  *    carga (falta el esfuerzo percibido o la duración).
- *  - runPace/bikeSpeed/swimPace ponderados por distancia (Σ tiempo / Σ km de las que tienen distancia y tiempo).
+ *  - runPace/bikeSpeed/swimPace ponderados por distancia (Σ tiempo / Σ km de las que tienen distancia y tiempo);
+ *    paced.hike tiene los km y segundos del senderismo (no hay ritmo semanal propio).
  *  - muscleSets: calc.sessionMuscleSets con settings (primaryFactor/secondaryFactor).
  */
 export function weeklySeries(data, from = null, to = null) {
@@ -909,7 +923,7 @@ function metricDef(metric) {
 /**
  * Puntos {x: lunes, y, label} de una métrica de las filas de weeklySeries. Las sumas incluyen las semanas a 0;
  * los ritmos (runPace, bikeSpeed, swimPace) omiten las semanas sin datos.
- * metric: 'strengthVolume' | 'loadTotal' | 'load.<tipo>' | 'km.run|bike|swim' | 'runPace' | 'bikeSpeed' |
+ * metric: 'strengthVolume' | 'loadTotal' | 'load.<tipo>' | 'km.run|bike|swim|hike' | 'runPace' | 'bikeSpeed' |
  *         'swimPace' | 'minutesTotal' | 'minutes.<tipo>' | 'sessions' | 'workSets' | 'muscle.<id>'
  */
 export function weeklyPoints(rows, metric) {
@@ -984,6 +998,10 @@ export function bikeSpeedSeries(data, from = null, to = null) {
 /** Ritmo de cada natación: y = s/100 m, label «2:00 /100 m · 1500 m». */
 export function swimPaceSeries(data, from = null, to = null) {
   return activitySeries(data, 'swim', from, to, pace100, (y, km) => `${fmtPace(y, '/100 m')} · ${distanceLabel('swim', km)}`);
+}
+/** Ritmo de cada ruta de senderismo: y = s/km, label «15:00 /km · 12,5 km». */
+export function hikePaceSeries(data, from = null, to = null) {
+  return activitySeries(data, 'hike', from, to, pace, (y, km) => `${fmtPace(y)} · ${distanceLabel('hike', km)}`);
 }
 
 // ===========================================================================

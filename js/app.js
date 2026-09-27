@@ -65,12 +65,14 @@ function renderTabbar() {
       if (cur && cur.path === t.href.slice(1)) {
         refresh({ keepScroll: false });
       } else {
-        navigate(t.href);
+        // Otra pestaña: fundido corto. La misma pestaña desde una pantalla interior: vuelve a su raíz («atrás»).
+        navigate(t.href, { transition: t.id === activeTab ? 'pop' : 'tab' });
       }
     });
     tabButtons[t.id] = b;
     return b;
   }));
+  bar.style.setProperty('--tab-n', TABS.length);
   updateBadges();
 }
 
@@ -85,6 +87,9 @@ function tabFor(route) {
 function onRouteChange(route) {
   activeTab = tabFor(route);
   for (const [id, b] of Object.entries(tabButtons)) b.classList.toggle('active', id === activeTab);
+  // Posición de la cápsula de la pestaña activa (se desliza entre pestañas, css/app.css).
+  const i = TABS.findIndex((t) => t.id === activeTab);
+  if (i >= 0) document.getElementById('tabbar')?.style.setProperty('--tab-i', i);
   document.body.dataset.route = route.route.pattern;
   closeStaleToasts();
   paintUpdateBar();
@@ -209,5 +214,6 @@ async function boot() {
 
 boot();
 
-// Exposición mínima para pruebas automáticas y depuración.
-window.__app = { store, navigate, refresh };
+// Exposición mínima para pruebas automáticas y depuración. `__app.navigate` salta a la ruta SIN transición
+// (como abrir la URL; las pruebas hacen capturas justo después). La navegación de la app sí se anima.
+window.__app = { store, navigate: (hash, opts = {}) => navigate(hash, { transition: 'none', ...opts }), refresh };

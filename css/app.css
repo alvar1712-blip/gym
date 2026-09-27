@@ -49,8 +49,32 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
-  --tabbar-h: 56px;
+  /* Barra de pestañas: cápsula flotante de --tb-h a --tb-gap del borde inferior (dentro del área segura si la
+     hay). --tabbar-h + --sab = espacio que ocupa desde abajo (lo usan el contenido, los avisos y los pies fijos). */
+  --tb-h: 50px;
+  --tb-gap: max(6px, calc(var(--sab) - 10px));
+  --tabbar-h: calc(var(--tb-h) + var(--tb-gap) - var(--sab));
   --kb: 0px;
+
+  /* Movimiento (curva de las hojas de iOS) */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-press: cubic-bezier(0.25, 0.8, 0.3, 1);
+  --dur-sheet: 350ms;
+  --dur-nav: 380ms;
+  --dur-enter: 300ms;
+  --dur-tab: 200ms;
+  --dur-press: 120ms;
+
+  /* Cristal («Liquid Glass»): mismo fondo oscuro, translúcido y desenfocado, con canto interior brillante */
+  --glass-blur: blur(24px) saturate(180%);
+  /* Legibilidad primero: casi opacos (lo de debajo nunca compite con el texto, aunque no haya desenfoque) */
+  --glass-bar: rgba(11, 13, 16, 0.92);
+  --glass-float: rgba(29, 33, 40, 0.94);
+  --glass-panel: rgba(21, 24, 29, 0.94);
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --glass-hairline: rgba(255, 255, 255, 0.07);
+  --glass-shine: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 55%);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
 }
 
@@ -106,10 +130,10 @@ img, svg { display: block; }
   gap: 6px;
   min-height: calc(52px + var(--sat));
   padding: calc(var(--sat) + 6px) 12px 8px 16px;
-  background: rgba(11, 13, 16, 0.92);
-  -webkit-backdrop-filter: saturate(160%) blur(14px);
-  backdrop-filter: saturate(160%) blur(14px);
-  border-bottom: 1px solid var(--border);
+  background: var(--glass-bar);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-hairline);
 }
 .topbar:has(.back-btn) { padding-left: 4px; }
 .topbar-titles { flex: 1; min-width: 0; }
@@ -141,23 +165,45 @@ img, svg { display: block; }
   margin: 10px 2px -2px;
 }
 
-/* ---------- Barra de pestañas ---------- */
+/* ---------- Barra de pestañas (cápsula de cristal flotante, como iOS 26) ---------- */
 .tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: calc(12px + var(--sal));
+  right: calc(12px + var(--sar));
+  bottom: var(--tb-gap);
   z-index: 30;
   display: flex;
-  padding: 0 var(--sar) var(--sab) var(--sal);
-  background: rgba(14, 16, 20, 0.96);
-  -webkit-backdrop-filter: saturate(160%) blur(14px);
-  backdrop-filter: saturate(160%) blur(14px);
-  border-top: 1px solid var(--border);
+  height: var(--tb-h);
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--glass-sheen), var(--glass-float);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shine), 0 8px 26px rgba(0, 0, 0, 0.45);
 }
+/* Cápsula de la pestaña activa: se desliza hasta ella (--tab-i lo pone app.js). */
+.tabbar::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--tab-n, 5));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateX(calc(var(--tab-i, 0) * 100%));
+}
+.ready .tabbar::before { transition: transform var(--dur-nav) var(--ease-ios); }
 .tab {
+  position: relative;
+  z-index: 1;
   flex: 1;
-  min-height: var(--tabbar-h);
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -182,7 +228,7 @@ img, svg { display: block; }
   height: 9px;
   border-radius: 50%;
   background: var(--warn);
-  border: 2px solid var(--bg);
+  border: 2px solid #1b1e24;
 }
 body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 
@@ -226,6 +272,7 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 }
 .list-item:last-child { border-bottom: 0; }
 .list-item:active { background: var(--surface-2); }
+.list-item:active > * { opacity: 0.8; }
 .list-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .list-item-title { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item-sub { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -248,9 +295,7 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
   text-align: center;
   user-select: none;
   -webkit-user-select: none;
-  transition: transform 0.06s ease, background 0.15s ease;
 }
-.btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.45; pointer-events: none; }
 .btn-block { width: 100%; }
 .btn-lg { min-height: var(--tap-lg); font-size: 18px; border-radius: 14px; }
@@ -276,7 +321,7 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
   color: var(--text);
   border-radius: 12px;
 }
-.icon-btn:active { background: var(--surface-2); }
+.icon-btn:active { background: rgba(255, 255, 255, 0.07); }
 .icon-btn-text { font-weight: 700; font-size: 16px; color: var(--accent); }
 .back-btn { color: var(--accent); min-width: 44px; }
 
@@ -323,6 +368,7 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
   white-space: nowrap;
 }
 .seg-btn.active { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 1px 3px rgba(0, 0, 0, 0.4); }
+.seg-btn, .chip { transition: transform var(--dur-press) var(--ease-press), opacity var(--dur-press) ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
 .seg-sm .seg-btn { min-height: 34px; font-size: 14px; }
 
 .badge {
@@ -344,6 +390,18 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 .badge-danger { background: var(--danger-soft); color: var(--danger); }
 .badge-info { background: var(--info-soft); color: var(--info); }
 .badge-pr { background: rgba(251, 191, 36, 0.18); color: var(--pr); }
+
+/* ---------- Respuesta al toque (escala + atenuación, sin retrasar el clic) ---------- */
+.btn, .icon-btn, .why-btn, .stepper-btn, .action-item, .pick-row, .pick-create, .toast-action, .tab {
+  transition: transform var(--dur-press) var(--ease-press), opacity var(--dur-press) ease, background-color 0.18s ease;
+}
+.btn:active, .chip:active, .seg-btn:active, .why-btn:active, .stepper-btn:active, .toast-action:active, .pick-create:active {
+  transform: scale(0.97);
+  opacity: 0.84;
+}
+.icon-btn:active { transform: scale(0.92); opacity: 0.75; }
+.tab:active { transform: scale(0.92); opacity: 0.7; }
+.action-item:active, .pick-row:active { opacity: 0.8; }
 
 /* Estado de día */
 .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
@@ -476,36 +534,49 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
 .dur-unit { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--muted); pointer-events: none; }
 
 /* ---------- Hojas (bottom sheet) ---------- */
+/* Abren y cierran con la curva de iOS; el fondo se oscurece con un fundido (capa ::before, solo opacidad).
+   Al cerrar (.closing) ya no reciben toques y se quitan del DOM al terminar (ui.js). */
 .sheet-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  transition: background 0.2s ease;
 }
-.sheet-overlay.open { background: rgba(0, 0, 0, 0.6); }
+.sheet-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity var(--dur-sheet) ease;
+}
+.sheet-overlay.open::before { opacity: 1; }
+.sheet-overlay.closing { pointer-events: none; }
 .sheet-panel {
-  background: var(--surface);
-  border-top-left-radius: var(--radius-lg);
-  border-top-right-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  position: relative;
+  background: var(--glass-sheen), var(--glass-panel);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-top-left-radius: 22px;
+  border-top-right-radius: 22px;
+  border: 1px solid var(--glass-edge);
   border-bottom: 0;
+  box-shadow: var(--glass-shine), 0 -12px 40px rgba(0, 0, 0, 0.35);
   max-height: calc(92vh - var(--kb));
   margin-bottom: var(--kb);
   display: flex;
   flex-direction: column;
   transform: translateY(100%);
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform var(--dur-sheet) var(--ease-ios);
   padding-bottom: calc(var(--sab) + 8px);
   padding-left: var(--sal);
   padding-right: var(--sar);
 }
 .sheet-overlay.open .sheet-panel { transform: translateY(0); }
 .sheet-tall { height: calc(88vh - var(--kb)); }
-.sheet-grabber { width: 40px; height: 5px; border-radius: 3px; background: var(--border-strong); margin: 8px auto 2px; flex: none; }
+.sheet-grabber { width: 38px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.22); margin: 8px auto 2px; flex: none; }
 .sheet-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px 6px 18px; flex: none; }
 .sheet-title { flex: 1; font-size: 19px; font-weight: 750; }
 .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 4px 16px 12px; flex: 1; min-height: 0; }
@@ -528,7 +599,7 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   font-weight: 600;
   text-align: left;
 }
-.action-item:active { background: var(--surface-2); }
+.action-item:active { background: rgba(255, 255, 255, 0.07); }
 .action-item.danger { color: var(--danger); }
 .action-item:disabled { opacity: 0.4; }
 .action-hint { margin-left: auto; color: var(--muted); font-size: 14px; font-weight: 500; }
@@ -551,7 +622,7 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   text-align: left;
   width: 100%;
 }
-.pick-row:active { background: var(--surface-2); }
+.pick-row:active { background: rgba(255, 255, 255, 0.06); }
 .pick-name { font-weight: 650; font-size: 17px; }
 .pick-meta { font-size: 13px; color: var(--muted); }
 .pick-section { font-size: 12px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 14px 6px 4px; }
@@ -582,16 +653,21 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   gap: 10px;
   min-height: 52px;
   padding: 8px 8px 8px 16px;
-  border-radius: 14px;
-  background: #eef1f4;
+  border-radius: 16px;
+  /* Claro y opaco (mismo color y contraste que antes: nunca se transparenta el texto de debajo), con el
+     canto brillante y el reflejo del cristal. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 60%), #eef1f4;
+  border: 1px solid rgba(255, 255, 255, 0.6);
   color: #0b0d10;
   font-weight: 600;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  transform: translateY(20px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 10px 30px rgba(0, 0, 0, 0.45);
+  transform: translateY(16px) scale(0.97);
   opacity: 0;
+  /* Salida corta (200 ms, ui.js la espera); la entrada usa la curva de iOS */
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
-.toast.show { transform: translateY(0); opacity: 1; }
+.toast.show { transform: none; opacity: 1; transition: transform 0.28s var(--ease-ios), opacity 0.2s ease; }
+.toast:not(.show) { pointer-events: none; }
 .toast-msg { flex: 1; font-size: 15px; line-height: 1.3; }
 .toast-action {
   flex: none;
@@ -609,9 +685,9 @@ body:has(.update-bar:not([hidden])) .toast { bottom: calc(var(--tabbar-h) + var(
 /* Con una hoja abierta, el toast sube arriba para no tapar sus botones. */
 body:has(.sheet-overlay.open) .toast { top: calc(var(--sat) + 10px); bottom: auto; transform: translateY(-20px); }
 body:has(.sheet-overlay.open) .toast.show { transform: translateY(0); }
-.toast-error { background: #fecaca; }
-.toast-pr { background: #fde68a; }
-.toast-success { background: #d9f99d; }
+.toast-error { background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 60%), #fecaca; }
+.toast-pr { background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 60%), #fde68a; }
+.toast-success { background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0) 60%), #d9f99d; }
 
 /* ---------- Aviso de versión nueva (app.js) ---------- */
 .update-bar {
@@ -625,10 +701,12 @@ body:has(.sheet-overlay.open) .toast.show { transform: translateY(0); }
   gap: 6px;
   min-height: 56px;
   padding: 6px 4px 6px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(184, 243, 74, 0.5);
-  background: var(--surface-3);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border-radius: 16px;
+  border: 1px solid rgba(184, 243, 74, 0.45);
+  background: var(--glass-sheen), rgba(38, 43, 52, 0.9);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shine), 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 .update-bar-msg { flex: 1; min-width: 0; font-size: 15px; font-weight: 650; line-height: 1.3; }
 .update-bar-btn { flex: none; min-height: 44px; }
@@ -696,6 +774,94 @@ body:has(.update-bar:not([hidden])) .view { padding-bottom: calc(var(--tabbar-h)
 @media (min-width: 700px) {
   .content { max-width: 680px; margin: 0 auto; }
 }
+
+/* ---------- Transiciones entre pantallas (router.js) ----------
+   Con View Transitions (Safari 18+, Chromium) el navegador anima una imagen de la pantalla anterior
+   (::view-transition-old) y la nueva en vivo (::view-transition-new); el tipo va en <html data-nav>.
+   La cabecera y la barra de pestañas tienen nombre propio: no se desplazan con la pantalla. */
+::view-transition { pointer-events: none; } /* los toques llegan a la pantalla nueva durante la animación */
+.tabbar { view-transition-name: tabbar; }
+.view-inner > .topbar { view-transition-name: topbar; }
+.toast.show { view-transition-name: toast; }
+/* Una hoja que se está cerrando no se queda congelada en la imagen de la pantalla anterior */
+html[data-nav] .sheet-overlay.closing { visibility: hidden; }
+
+::view-transition-group(root) { animation: none; }
+html[data-nav="push"]::view-transition-old(root),
+html[data-nav="push"]::view-transition-new(root),
+html[data-nav="pop"]::view-transition-old(root),
+html[data-nav="pop"]::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-duration: var(--dur-nav);
+  animation-timing-function: var(--ease-ios);
+  animation-fill-mode: both;
+}
+/* push: la nueva entra desde la derecha (con sombra); la anterior se desplaza un poco y se atenúa */
+html[data-nav="push"]::view-transition-old(root) { animation-name: vt-behind-out; }
+html[data-nav="push"]::view-transition-new(root) { animation-name: vt-slide-in; box-shadow: -10px 0 28px rgba(0, 0, 0, 0.45); }
+/* pop: la actual sale hacia la derecha por encima; la anterior vuelve de la izquierda */
+html[data-nav="pop"]::view-transition-old(root) { animation-name: vt-slide-out; z-index: 1; box-shadow: -10px 0 28px rgba(0, 0, 0, 0.45); }
+html[data-nav="pop"]::view-transition-new(root) { animation-name: vt-behind-in; }
+/* tab: fundido corto (el del navegador, más breve) */
+html[data-nav="tab"]::view-transition-old(root),
+html[data-nav="tab"]::view-transition-new(root) { animation-duration: var(--dur-tab); animation-timing-function: ease; }
+
+/* Cabecera: se queda en su sitio y cambia el título con un fundido */
+::view-transition-group(topbar) { animation-duration: var(--dur-nav); animation-timing-function: var(--ease-ios); }
+::view-transition-old(topbar),
+::view-transition-new(topbar) { animation-duration: calc(var(--dur-nav) * 0.6); }
+html[data-nav="tab"]::view-transition-group(topbar),
+html[data-nav="tab"]::view-transition-old(topbar),
+html[data-nav="tab"]::view-transition-new(topbar) { animation-duration: var(--dur-tab); }
+/* Barra de pestañas y aviso: en vivo, sin animación propia (la cápsula activa se desliza sola) */
+::view-transition-group(tabbar),
+::view-transition-new(tabbar) { animation: none; }
+::view-transition-old(tabbar) { display: none; }
+::view-transition-group(toast) { animation-duration: var(--dur-tab); }
+/* El cristal no se captura en la imagen: se reaplica al grupo mientras dura la transición */
+::view-transition-group(tabbar) { border-radius: 999px; -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+::view-transition-group(topbar) { -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+
+@keyframes vt-slide-in { from { transform: translateX(100%); } }
+@keyframes vt-slide-out { to { transform: translateX(100%); } }
+@keyframes vt-behind-out { to { transform: translateX(-28%); opacity: 0.5; } }
+@keyframes vt-behind-in { from { transform: translateX(-28%); opacity: 0.5; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+@keyframes vt-fade-out { to { opacity: 0; } }
+
+/* Sin View Transitions (iOS 17): solo entra la vista nueva (la anterior ya no existe); la cabecera no se mueve */
+.view-enter > :not(.topbar) { animation: vt-enter-push var(--dur-enter) var(--ease-ios) both; }
+.view-enter-pop > :not(.topbar) { animation-name: vt-enter-pop; }
+.view-enter-tab > :not(.topbar) { animation: vt-fade-in var(--dur-tab) ease both; }
+@keyframes vt-enter-push { from { transform: translateX(44px); opacity: 0; } }
+@keyframes vt-enter-pop { from { transform: translateX(-44px); opacity: 0; } }
+
+/* ---------- Sin backdrop-filter: superficies opacas con los mismos colores ---------- */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .topbar { background: var(--bg); }
+  .tabbar { background: #171a20; }
+  .sheet-panel { background: var(--surface); }
+  .update-bar { background: var(--surface-3); }
+}
+
+/* ---------- Reducir movimiento: sin desplazamientos, como mucho fundidos cortos ---------- */
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  .btn:active, .chip:active, .seg-btn:active, .why-btn:active, .stepper-btn:active, .toast-action:active,
+  .pick-create:active, .icon-btn:active, .tab:active { transform: none; }
+  /* Hojas y avisos: aparecen con un fundido, sin subir */
+  .sheet-panel, .sheet-overlay.open .sheet-panel { transform: none; opacity: 0; transition: opacity 150ms ease !important; }
+  .sheet-overlay.open .sheet-panel { opacity: 1; }
+  .sheet-overlay::before { transition: opacity 150ms ease !important; }
+  .toast, .toast.show { transform: none; transition: opacity 150ms ease !important; }
+  /* Pantallas: fundido cruzado corto en lugar de deslizar */
+  html[data-nav]::view-transition-old(root),
+  html[data-nav]::view-transition-old(topbar),
+  html[data-nav]::view-transition-old(toast) { animation: vt-fade-out 150ms ease both !important; box-shadow: none; }
+  html[data-nav]::view-transition-new(root),
+  html[data-nav]::view-transition-new(topbar),
+  html[data-nav]::view-transition-new(toast) { animation: vt-fade-in 150ms ease both !important; box-shadow: none; }
+  html[data-nav]::view-transition-group(topbar),
+  html[data-nav]::view-transition-group(toast) { animation: none !important; }
+  .view-enter > :not(.topbar) { animation: vt-fade-in 150ms ease both !important; }
 }

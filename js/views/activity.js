@@ -1,4 +1,4 @@
-// activity.js — registro rápido de carrera, bici, natación y otras actividades (estilo Strava).
+// activity.js — registro rápido de carrera, bici, natación, senderismo y otras actividades (estilo Strava).
 // Obligatorios: tipo, fecha y duración. La actividad se crea en cuanto es válida y desde ahí
 // cada cambio se guarda al instante; antes se conserva un borrador en localStorage.
 import * as store from '../store.js';
@@ -167,6 +167,11 @@ function mountForm(root, ctx) {
       })
     : null;
   if (kindSeg) kindSeg.classList.add('act-kinds');
+  // Actividad nueva y suelta: se puede traer desde un archivo del reloj o de Strava/Garmin.
+  const importLink = !record && !form.parentId
+    ? h('button.cal-link-btn.act-import-link', { type: 'button', onClick: () => navigate('#/import') },
+      'Importar desde archivo (GPX, TCX, FIT)', icon('chevron-right', 18))
+    : null;
 
   // ---------- enlace con la sesión de fuerza ----------
   let linkBanner = null;
@@ -197,7 +202,7 @@ function mountForm(root, ctx) {
   const statusEl = h('div.act-status', { role: 'status', 'aria-live': 'polite' });
   const doneBtn = h('button.btn.btn-primary.btn-lg.act-done', { type: 'button', onClick: () => done() }, icon('check', 22), 'Listo');
   const footer = h('div.act-footer', statusEl, doneBtn);
-  content.append(...[kindSeg, restoredBanner, linkBanner, body, deleteBtn, discardBtn, footer].filter(Boolean));
+  content.append(...[kindSeg, importLink, restoredBanner, linkBanner, body, deleteBtn, discardBtn, footer].filter(Boolean));
 
   const saveDraftSoon = debounce(() => storeDraft(), 300);
   /** Borrador en localStorage (síncrono): lo escrito, o nada si no queda nada escrito. */
@@ -280,19 +285,19 @@ function mountForm(root, ctx) {
 
     const parts = [essentials, live, rpe];
 
-    // Tipo de sesión / estilo
+    // Tipo de sesión / estilo (el senderismo no tiene)
     if (k === 'run' || k === 'bike') {
       parts.push(h('div.card.act-card',
         h('div.field-label', 'Tipo de sesión'),
         chips({ options: L.SUBTYPE_OPTIONS[k].map((o) => ({ value: o.id, label: o.label })), value: form.subtype, allowNone: true, onChange: (v) => change({ subtype: v }, true) })));
     } else if (k === 'swim') {
       parts.push(swimCard());
-    } else {
+    } else if (k === 'other') {
       parts.push(otherTypeCard());
     }
 
     // Datos opcionales (tipo Strava)
-    if (k === 'run' || k === 'bike') parts.push(detailsCard(k));
+    if (k === 'run' || k === 'bike' || k === 'hike') parts.push(detailsCard(k));
 
     // Sensaciones y notas
     const texts = h('div.card.act-card');
@@ -312,7 +317,7 @@ function mountForm(root, ctx) {
   function detailsCard(k) {
     const elapsed = durationInput({ seconds: form.elapsedSec, ariaLabel: 'Tiempo total', onChange: (sec) => change({ elapsedSec: sec }) });
     refs.elapsedHint = h('span.field-hint', 'Incluye paradas (opcional).');
-    const grid = h('div.grid-2.act-grid',
+    const grid = k === 'hike' ? hikeGrid() : h('div.grid-2.act-grid',
       num('Desnivel', 'elevationM', { unit: 'm', aria: 'Desnivel (m)' }),
       num('Cadencia', 'cadence', { unit: k === 'run' ? 'ppm' : 'rpm', aria: `Cadencia (${k === 'run' ? 'ppm' : 'rpm'})` }),
       num('FC media', 'hrAvg', { unit: 'lpm', aria: 'FC media (lpm)' }),
@@ -323,6 +328,17 @@ function mountForm(root, ctx) {
       h('div.act-card-title', 'Más datos', h('span.muted', ' · opcional')),
       h('div.field', h('span.field-label', 'Tiempo total'), elapsed, refs.elapsedHint),
       grid);
+  }
+
+  /** Senderismo: desnivel positivo y negativo, altitud máxima, mochila y pulso. */
+  function hikeGrid() {
+    return h('div.grid-2.act-grid.act-hike-grid',
+      num('Desnivel positivo', 'elevationM', { unit: 'm', aria: 'Desnivel positivo (m)', placeholder: 'p. ej. 850' }),
+      num('Desnivel negativo', 'elevationLossM', { unit: 'm', aria: 'Desnivel negativo (m)' }),
+      num('Altitud máxima', 'altMaxM', { unit: 'm', aria: 'Altitud máxima (m)' }),
+      num('Peso de la mochila', 'packKg', { unit: 'kg', aria: 'Peso de la mochila (kg)', decimals: 1, inputmode: 'decimal' }),
+      num('FC media', 'hrAvg', { unit: 'lpm', aria: 'FC media (lpm)' }),
+      num('FC máxima', 'hrMax', { unit: 'lpm', aria: 'FC máxima (lpm)' }));
   }
 
   function swimCard() {

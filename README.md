@@ -13,7 +13,11 @@ con copias de seguridad en JSON y exportación CSV.
   serie, récords al momento, duración automática, guardado inmediato y reanudación si se cierra la app.
 - Plantillas editables (rutina precargada D1–D6), superseries/circuitos, alternativas por ejercicio.
 - Calendario con semana tipo y cambios por semana concreta (mover, sustituir, marcar estado).
-- Carrera, bici, natación y otras actividades (campos tipo Strava), carga = minutos × esfuerzo percibido.
+- Carrera, bici, natación, senderismo (desnivel + y −, altitud máxima, mochila) y otras actividades (campos tipo
+  Strava), carga = minutos × esfuerzo percibido.
+- Importación de actividades desde archivos GPX, TCX y FIT (también .gz y .zip de Garmin) con vista previa editable y
+  detección de duplicados; todo se procesa en el iPhone.
+- Calentamiento sugerido plegado en cada ejercicio (se añade con un toque).
 - Peso corporal con media móvil de 7 días y tendencia.
 - Biblioteca de ejercicios con músculos principales/secundarios y patrón de movimiento.
 - Progreso: gráficas SVG propias (sin librerías) con selector de periodo y valor exacto al tocar: peso máximo, 1RM
@@ -22,6 +26,9 @@ con copias de seguridad en JSON y exportación CSV.
 - Panel semanal: primero información y después sugerencias (doble progresión, avisos prudentes de carga y km, semana de
   descarga), cada una con su «¿Por qué?» y los datos concretos que la generan; umbrales editables en Ajustes.
 - Check-in opcional (sueño, energía, agujetas) y objetivos de fuerza, resistencia y peso con estimación en rango de fechas.
+- Resúmenes semanal, mensual y anual con comparación con el periodo anterior; mapa corporal con las series de la semana
+  por músculo; tiempos previstos de 5 km a maratón (rangos) y comprobador «¿Puedo hacerlo?».
+- Transiciones tipo iOS y efecto cristal en barras, hojas y avisos (respeta «Reducir movimiento»).
 
 ## Desarrollo
 Sin dependencias ni compilación. Para probar en local:

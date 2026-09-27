@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx creator="Garmin Connect" version="1.1" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ns3="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <metadata><link href="connect.garmin.com"><text>Garmin Connect</text></link><time>2026-09-22T17:30:00Z</time></metadata>
+  <trk>
+    <name>Actividad</name>
+    <trkseg>
+      <trkpt lat="40.4168000" lon="-3.7038000"><ele>641.0</ele><time>2026-09-22T17:30:00Z</time></trkpt>
+      <trkpt lat="40.4170477" lon="-3.7034746"><ele>639.7</ele><time>2026-09-22T17:30:30Z</time></trkpt>
+      <trkpt lat="40.4172955" lon="-3.7031492"><ele>639.2</ele><time>2026-09-22T17:31:00Z</time></trkpt>
+      <trkpt lat="40.4175432" lon="-3.7028238"><ele>640.8</ele><time>2026-09-22T17:31:30Z</time></trkpt>
+      <trkpt lat="40.4177909" lon="-3.7024985"><ele>639.1</ele><time>2026-09-22T17:32:00Z</time></trkpt>
+      <trkpt lat="40.4180386" lon="-3.7021731"><ele>639.9</ele><time>2026-09-22T17:32:30Z</time></trkpt>
+      <trkpt lat="40.4182864" lon="-3.7018477"><ele>640.5</ele><time>2026-09-22T17:33:00Z</time></trkpt>
+      <trkpt lat="40.4185341" lon="-3.7015223"><ele>640.8</ele><time>2026-09-22T17:33:30Z</time></trkpt>
+      <trkpt lat="40.4187818" lon="-3.7011969"><ele>639.8</ele><time>2026-09-22T17:34:00Z</time></trkpt>
+      <trkpt lat="40.4190296" lon="-3.7008715"><ele>640.4</ele><time>2026-09-22T17:34:30Z</time></trkpt>
+      <trkpt lat="40.4192773" lon="-3.7005461"><ele>639.1</ele><time>2026-09-22T17:35:00Z</time></trkpt>
+      <trkpt lat="40.4195250" lon="-3.7002207"><ele>640.9</ele><time>2026-09-22T17:35:30Z</time></trkpt>
+      <trkpt lat="40.4197727" lon="-3.6998953"><ele>639.1</ele><time>2026-09-22T17:36:00Z</time></trkpt>
+      <trkpt lat="40.4200205" lon="-3.6995699"><ele>639.2</ele><time>2026-09-22T17:36:30Z</time></trkpt>
+      <trkpt lat="40.4202682" lon="-3.6992445"><ele>640.0</ele><time>2026-09-22T17:37:00Z</time></trkpt>
+      <trkpt lat="40.4205159" lon="-3.6989191"><ele>639.2</ele><time>2026-09-22T17:37:30Z</time></trkpt>
+      <trkpt lat="40.4207637" lon="-3.6985937"><ele>640.7</ele><time>2026-09-22T17:38:00Z</time></trkpt>
+      <trkpt lat="40.4210114" lon="-3.6982683"><ele>640.0</ele><time>2026-09-22T17:38:30Z</time></trkpt>
+      <trkpt lat="40.4212591" lon="-3.6979429"><ele>639.2</ele><time>2026-09-22T17:39:00Z</time></trkpt>
+      <trkpt lat="40.4215068" lon="-3.6976175"><ele>639.6</ele><time>2026-09-22T17:39:30Z</time></trkpt>
+      <trkpt lat="40.4217546" lon="-3.6972921"><ele>639.3</ele><time>2026-09-22T17:40:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

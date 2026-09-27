@@ -4,13 +4,14 @@ import { fmtNum, fmtMinutes, fmtPace, fmtSpeed, fmtKm, sortBy, MONTH_LONG, parse
 import { isWorkSet, sessionVolume, sessionDurationMin, sessionLoad, pace, speed, pace100 } from './calc.js';
 import { ACTIVITY_LABEL, ACTIVITY_EMOJI, RUN_TYPES, BIKE_TYPES, OTHER_TYPES } from './seed.js';
 
-/** Filtros del historial (Todas, Fuerza, Carrera, Bici, Natación, Otras). */
+/** Filtros del historial (Todas, Fuerza, Carrera, Bici, Natación, Senderismo, Otras). */
 export const HISTORY_FILTERS = [
   { value: 'all', label: 'Todas' },
   { value: 'strength', label: 'Fuerza' },
   { value: 'run', label: 'Carrera' },
   { value: 'bike', label: 'Bici' },
   { value: 'swim', label: 'Natación' },
+  { value: 'hike', label: 'Senderismo' },
   { value: 'other', label: 'Otras' },
 ];
 const FILTER_IDS = HISTORY_FILTERS.map((f) => f.value);
@@ -77,7 +78,8 @@ export function sessionTitle(s) {
 /**
  * Dato clave de una sesión:
  *  fuerza → «12 series · 4.350 kg»; carrera → «10 km · 5:00 /km»; bici → «42,5 km · 28,3 km/h»;
- *  natación → «1.500 m · 2:00 /100 m»; otras → ''.
+ *  natación → «1.500 m · 2:00 /100 m»; senderismo → «14,2 km · +850 m» (distancia y desnivel positivo, lo que
+ *  haya); otras → ''.
  * @param {object} s sesión
  * @param {{exMap?:Map|object, bwFn?:(date)=>number}} [opts] para el volumen de fuerza
  */
@@ -94,6 +96,10 @@ export function keyStat(s, { exMap = null, bwFn = () => null } = {}) {
   }
   const km = s.distanceKm;
   const sec = s.movingSec ?? (typeof s.durationMin === 'number' ? s.durationMin * 60 : null);
+  if (s.kind === 'hike') {
+    // En montaña el ritmo dice poco (depende del desnivel): distancia y desnivel positivo.
+    return [km > 0 ? fmtKm(km, 1) : null, s.elevationM > 0 ? `+${fmtNum(s.elevationM, 0)} m` : null].filter(Boolean).join(' · ');
+  }
   if (!(km > 0)) return '';
   if (s.kind === 'run') {
     const p = pace(sec, km);

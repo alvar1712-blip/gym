@@ -1,4 +1,4 @@
-/* activity.css — cardio, natación, otras actividades (.act-…) y peso corporal (.bw-…, .bwq-…). */
+/* activity.css — cardio, natación, senderismo, otras actividades (.act-…) y peso corporal (.bw-…, .bwq-…). */
 
 /* ---------- Formulario de actividad ---------- */
 .act-screen { padding-bottom: 0; }
@@ -6,6 +6,20 @@
 .act-card { gap: 14px; }
 .act-card-title { font-size: 15px; font-weight: 750; color: var(--text-2); }
 .act-kinds .seg-btn { min-height: 44px; font-size: 16px; }
+
+/* Selectores de deporte con 4–5 opciones (con senderismo, «Senderismo» no cabe en una fila de 375–430 px sin
+   cortarse): dos filas, 3 + 2 con cinco opciones y 2 + 2 con cuatro. Lo usan el tipo del formulario de actividad
+   (.act-kinds), el deporte de un objetivo y el filtro de km de Progreso (.act-seg-wrap). */
+.act-kinds,
+.act-seg-wrap { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.act-kinds > .seg-btn,
+.act-seg-wrap > .seg-btn { grid-column: span 2; min-width: 0; }
+.act-kinds > .seg-btn:nth-child(n + 4):nth-last-child(-n + 2),
+.act-seg-wrap > .seg-btn:nth-child(n + 4):nth-last-child(-n + 2) { grid-column: span 3; }
+.act-kinds > .seg-btn:first-child:nth-last-child(4),
+.act-kinds > .seg-btn:first-child:nth-last-child(4) ~ .seg-btn,
+.act-seg-wrap > .seg-btn:first-child:nth-last-child(4),
+.act-seg-wrap > .seg-btn:first-child:nth-last-child(4) ~ .seg-btn { grid-column: span 3; }
 .act-link .icon { color: var(--info); flex: none; }
 .act-req { font-weight: 500; color: var(--muted); font-size: 13px; }
 .act-dur-hint { color: var(--info); }
@@ -78,6 +92,15 @@
 .act-status-error { color: var(--danger); }
 .act-delete { margin-top: 8px; }
 .act-restored .btn { flex: none; min-height: 44px; padding: 0 14px; }
+
+/* ---------- Senderismo fuera del formulario ---------- */
+/* Accesos rápidos de Hoy (views/today.js): con senderismo son seis; en 3 × 2 cada botón es ancho y «Senderismo»
+   cabe entero (calendar.css los pone en una fila de cinco; dos clases para ganarle en especificidad). */
+.today-quick.act-quick-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.today-quick.act-quick-grid .today-quick-btn { min-height: 64px; }
+/* Fondo del emoji en las filas de sesión (Historial, Día, Hoy), como .cal-emoji-run… de calendar.css (que se carga
+   después: dos clases para que no lo pise el fondo gris de .cal-emoji). */
+.cal-emoji.cal-emoji-hike { background: rgba(45, 212, 191, 0.16); }
 
 /* ---------- Peso corporal ---------- */
 .bw-entry { gap: 12px; }

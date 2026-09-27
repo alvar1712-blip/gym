@@ -68,6 +68,7 @@ export function mountSession(root, params = {}) {
     editing: new Map(), // seId → setId abierto en el editor (si no, la primera pendiente)
     guardUntil: new Map(), // seId → instante hasta el que se ignora «Registrar» (doble toque)
     exercise: (eid) => store.exercise(eid),
+    settings: () => store.settings(), // incrementos (redondeo del calentamiento sugerido)
     /** «Última vez» de ESTE ejercicio de la sesión (un ejercicio repetido tiene la suya). */
     lastFor(se) {
       const key = `${se.id}|${se.exerciseId}`;

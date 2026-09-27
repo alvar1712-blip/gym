@@ -1,1 +1,111 @@
-/* bodymap.css — estilos del módulo. */
+/* bodymap.css — mapa corporal (js/bodymap.js). Colores de estado = los de la tabla de músculos
+   (por debajo --warn, en rango --ok, por encima --info, sin series gris). */
+
+.bm {
+  --bm-body: var(--surface-3);
+  --bm-none: #3b424e; /* --border-strong */
+  --bm-below: var(--warn);
+  --bm-in: var(--ok);
+  --bm-above: var(--info);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* ---------- Leyenda ---------- */
+.bm-legend {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  justify-content: center;
+  gap: 4px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.bm-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.bm-legend-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.bm-legend-item.is-empty { opacity: 0.55; }
+.bm-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.bm-swatch-below { background: var(--bm-below); }
+.bm-swatch-in { background: var(--bm-in); }
+.bm-swatch-above { background: var(--bm-above); }
+.bm-swatch-none { background: var(--bm-none); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+
+/* ---------- Figuras ---------- */
+.bm-figure { width: 100%; max-width: 320px; margin: 0 auto; }
+.bm-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.bm-silhouette { fill: var(--bm-body); }
+.bm-rim-path { fill: none; stroke: var(--bm-body); stroke-width: 2.4; stroke-linejoin: round; pointer-events: none; }
+
+.bm-zone { cursor: pointer; outline: none; fill: var(--bm-none); transition: opacity 160ms ease; }
+.bm-zone[data-status="below"] { fill: var(--bm-below); }
+.bm-zone[data-status="in"] { fill: var(--bm-in); }
+.bm-zone[data-status="above"] { fill: var(--bm-above); }
+.bm-shape { stroke: var(--bm-body); stroke-width: 1.3; stroke-linejoin: round; transition: fill 160ms ease; }
+.bm-zone[data-status="below"] .bm-shape,
+.bm-zone[data-status="in"] .bm-shape,
+.bm-zone[data-status="above"] .bm-shape { fill-opacity: 0.9; }
+
+/* Con una zona elegida, las demás se atenúan un poco y la elegida lleva contorno claro. */
+.bm-svg.has-sel .bm-zone:not(.is-sel) { opacity: 0.55; }
+.bm-hl-path { fill: #fff; fill-opacity: 0.12; stroke: var(--text); stroke-width: 1.8; stroke-linejoin: round; pointer-events: none; }
+.bm-zone:focus-visible .bm-shape { stroke: var(--text); stroke-width: 1.8; }
+
+.bm-compact .bm-figure { max-width: 250px; }
+.bm-compact .bm-legend { font-size: 12px; gap: 2px 14px; }
+
+.bm-captions { display: grid; grid-template-columns: 1fr 1fr; margin-top: 4px; }
+.bm-caption {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- Detalle de la zona tocada ---------- */
+.bm-detail {
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.bm-detail[data-status="below"] { border-color: rgba(251, 191, 36, 0.4); }
+.bm-detail[data-status="in"] { border-color: rgba(74, 222, 128, 0.4); }
+.bm-detail[data-status="above"] { border-color: rgba(96, 165, 250, 0.4); }
+.bm-detail-hint { font-size: 14px; color: var(--muted); text-align: center; }
+.bm-detail-main { font-size: 15px; line-height: 1.35; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.bm-detail-name { color: var(--text); font-weight: 700; }
+.bm-detail-sets, .bm-detail-range, .bm-detail-status { white-space: nowrap; } /* parte la línea por « · » */
+.bm-detail-status { font-weight: 700; }
+.bm-st-below { color: var(--bm-below); }
+.bm-st-in { color: var(--bm-in); }
+.bm-st-above { color: var(--bm-above); }
+.bm-st-none { color: var(--muted); }
+.bm-detail-sub { font-size: 13px; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bm-zone, .bm-shape { transition: none; }
+}
+
+/* Semana en curso: lo que aún no llega al mínimo no es un aviso todavía (como «Faltan N» en las tablas). */
+.bm-in-progress { --bm-below: var(--muted); }
+.bm-in-progress .bm-detail[data-status="below"] { border-color: var(--border); }

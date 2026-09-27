@@ -1,4 +1,4 @@
-// activity-logic.js — lógica PURA del módulo de actividades (carrera, bici, natación, otras)
+// activity-logic.js — lógica PURA del módulo de actividades (carrera, bici, natación, senderismo, otras)
 // y del peso corporal. Sin DOM ni store: se prueba en Node (tests/unit/activity.test.mjs).
 import { isDateStr, round, fmtPace, fmtSpeed, fmtNum, fmtDuration, addDays, diffDays, sortBy, normalize } from './util.js';
 import { pace, speed, pace100, sessionLoad, movingAverage, linearRegression, dayIndex } from './calc.js';
@@ -6,7 +6,7 @@ import { RUN_TYPES, BIKE_TYPES, SWIM_STROKES, OTHER_TYPES, ACTIVITY_LABEL } from
 import { targetText as itemTargetText } from './library-logic.js';
 
 /** Tipos de actividad que gestiona este módulo (la fuerza va en #/session). */
-export const ACTIVITY_KINDS = ['run', 'bike', 'swim', 'other'];
+export const ACTIVITY_KINDS = ['run', 'bike', 'swim', 'hike', 'other'];
 
 export const isActivityKind = (k) => ACTIVITY_KINDS.includes(k);
 
@@ -15,22 +15,32 @@ export const KIND_UI = {
   run: { label: 'Carrera', newTitle: 'Nueva carrera', durLabel: 'Tiempo en movimiento', seg: 'Carrera' },
   bike: { label: 'Bici', newTitle: 'Nueva salida en bici', durLabel: 'Tiempo', seg: 'Bici' },
   swim: { label: 'Natación', newTitle: 'Nueva natación', durLabel: 'Tiempo', seg: 'Natación' },
+  hike: { label: 'Senderismo', newTitle: 'Nuevo senderismo', durLabel: 'Tiempo en movimiento', seg: 'Senderismo' },
   other: { label: 'Otra actividad', newTitle: 'Nueva actividad', durLabel: 'Duración', seg: 'Otra' },
 };
 
-/** Campos opcionales que aplican a cada tipo; el resto se guarda vacío. */
+/**
+ * Campos opcionales que aplican a cada tipo; el resto se guarda vacío al cambiar de tipo. En carrera y bici,
+ * desnivel negativo y altitud máxima aplican aunque el formulario no los pida (llegan de archivos importados):
+ * se conservan al editar y al pasar entre carrera, bici y senderismo.
+ */
 export const KIND_FIELDS = {
-  run: ['distanceKm', 'elapsedSec', 'elevationM', 'hrAvg', 'hrMax', 'cadence', 'subtype', 'feel'],
-  bike: ['distanceKm', 'elapsedSec', 'elevationM', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp', 'subtype'],
+  run: ['distanceKm', 'elapsedSec', 'elevationM', 'elevationLossM', 'altMaxM', 'hrAvg', 'hrMax', 'cadence', 'subtype', 'feel'],
+  bike: ['distanceKm', 'elapsedSec', 'elevationM', 'elevationLossM', 'altMaxM', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp', 'subtype'],
   swim: ['distanceKm', 'poolType', 'poolLengthM', 'stroke'],
+  hike: ['distanceKm', 'elapsedSec', 'elevationM', 'elevationLossM', 'altMaxM', 'hrAvg', 'hrMax', 'packKg'],
   other: ['subtype'],
 };
-const OPTIONAL_FIELDS = ['distanceKm', 'elapsedSec', 'elevationM', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp', 'subtype', 'feel', 'poolType', 'poolLengthM', 'stroke'];
+const OPTIONAL_FIELDS = [
+  'distanceKm', 'elapsedSec', 'elevationM', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp', 'subtype', 'feel', 'poolType', 'poolLengthM', 'stroke',
+  'elevationLossM', 'altMaxM', 'packKg',
+];
 /** Nombres de los campos opcionales para los avisos («se quitarán FC media y cadencia»). */
 const FIELD_NAMES = {
   distanceKm: 'distancia', elapsedSec: 'tiempo total', elevationM: 'desnivel', hrAvg: 'FC media', hrMax: 'FC máxima',
   cadence: 'cadencia', powerAvg: 'potencia media', powerNp: 'potencia normalizada', subtype: 'tipo de sesión',
   feel: 'zona o sensaciones', poolType: 'piscina o aguas abiertas', poolLengthM: 'longitud de piscina', stroke: 'estilo',
+  elevationLossM: 'desnivel negativo', altMaxM: 'altitud máxima', packKg: 'peso de la mochila',
 };
 const INT_FIELDS = ['elapsedSec', 'hrAvg', 'hrMax', 'cadence', 'powerAvg', 'powerNp'];
 
@@ -69,6 +79,9 @@ export function emptyForm(kind, { date, planDate } = {}) {
     poolType: null,
     poolLengthM: null,
     stroke: null,
+    elevationLossM: null,
+    altMaxM: null,
+    packKg: null,
     parentId: null,
     parentItemId: null,
     templateItemId: null,
@@ -155,7 +168,11 @@ const txt = (v) => { const s = String(v ?? '').trim(); return s || null; };
 export function cleanField(key, value, form) {
   switch (key) {
     case 'distanceKm': { const v = posNum(value); return v == null ? null : round(v, 0.001); }
-    case 'elevationM': { const v = nonNeg(value); return v == null ? null : Math.round(v); }
+    case 'elevationM':
+    case 'elevationLossM': { const v = nonNeg(value); return v == null ? null : Math.round(v); }
+    // Altitud en metros sobre el nivel del mar (puede ser negativa, p. ej. junto al mar Muerto).
+    case 'altMaxM': return typeof value === 'number' && Number.isFinite(value) && value > -500 && value < 9000 ? Math.round(value) : null;
+    case 'packKg': { const v = posNum(value); return v == null || v > 100 ? null : round(v, 0.1); }
     case 'poolType': return value === 'pool' || value === 'open' ? value : null;
     case 'poolLengthM': return form?.poolType === 'pool' && POOL_LENGTHS.includes(Number(value)) ? Number(value) : null;
     case 'stroke': return SWIM_STROKES.some((s) => s.id === value) ? value : null;
@@ -176,7 +193,8 @@ export function cleanField(key, value, form) {
  * Construye el registro de sesión (store 'sessions') a partir del formulario.
  * - base: registro existente (se conservan id, createdAt, enlaces…). Si el formulario tiene
  *   la fecha o la duración vacías/incorrectas se mantienen las de base.
- * - Los campos que no aplican al tipo se guardan vacíos.
+ * - Los campos que no aplican al tipo se guardan vacíos; si el tipo no cambia respecto a base, se conservan los que
+ *   ya tenía (p. ej. la cadencia de un senderismo importado de un archivo, que el formulario no pide).
  * Devuelve un objeto NUEVO (no muta base).
  */
 export function buildRecord(form, base = null, { id = null, now = Date.now() } = {}) {
@@ -202,8 +220,11 @@ export function buildRecord(form, base = null, { id = null, now = Date.now() } =
   rec.rpe = Number.isInteger(form.rpe) && form.rpe >= 1 && form.rpe <= 10 ? form.rpe : null;
   rec.notes = String(form.notes || '').trim();
   const allowed = KIND_FIELDS[form.kind] || [];
+  const sameKind = !!base && base.kind === form.kind;
   for (const k of OPTIONAL_FIELDS) {
-    rec[k] = allowed.includes(k) ? cleanField(k, form[k], form) : (k === 'feel' ? '' : null);
+    const empty = k === 'feel' ? '' : null;
+    if (allowed.includes(k)) rec[k] = cleanField(k, form[k], form);
+    else rec[k] = sameKind && base[k] != null ? base[k] : empty;
   }
   if (form.parentId) {
     rec.parentId = form.parentId;
@@ -221,7 +242,7 @@ export function subtypeLabel(kind, subtype) {
   return opt ? opt.label : kind === 'other' ? String(subtype) : '';
 }
 
-/** Título legible: «Carrera · Rodaje / Z2», «Natación · Aguas abiertas», «Baloncesto». */
+/** Título legible: «Carrera · Rodaje / Z2», «Natación · Aguas abiertas», «Senderismo», «Baloncesto». */
 export function activityTitle(rec) {
   if (!rec) return '';
   const base = ACTIVITY_LABEL[rec.kind] || 'Actividad';
@@ -243,7 +264,7 @@ export function activityLoad(movingSec, rpe) {
 
 /**
  * Métrica principal calculada según el tipo:
- *  run → ritmo medio (s/km), bike → velocidad media (km/h), swim → ritmo /100 m (s), other → null.
+ *  run y hike → ritmo medio (s/km), bike → velocidad media (km/h), swim → ritmo /100 m (s), other → null.
  * Devuelve { label, value, text, num, unit, sub } o null. text = num + unit («5:00 /km»); la vista
  * pinta num y unit por separado (unidad más pequeña) para que la unidad no se corte.
  */
@@ -263,6 +284,11 @@ export function primaryMetric(form) {
   if (form.kind === 'swim') {
     const v = pace100(sec, km);
     return out('Ritmo /100 m', v, fmtPace(v, '/100 m'), v && fmtDuration(v), '/100 m', v && `${fmtNum(km * 1000, 0)} m en ${fmtDuration(sec)}`);
+  }
+  if (form.kind === 'hike') {
+    const v = pace(sec, km);
+    const gain = form.elevationM > 0 ? ` · +${fmtNum(Math.round(form.elevationM), 0)} m` : '';
+    return out('Ritmo medio', v, fmtPace(v), v && fmtDuration(v), '/km', v && `${fmtNum(km, 2)} km a ${fmtSpeed(speed(sec, km))}${gain}`);
   }
   return null;
 }

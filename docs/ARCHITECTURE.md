@@ -64,7 +64,7 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/history` | history · `mountHistory` | Lista de todas las sesiones (fuerza + actividades), filtrable |
 | `#/session/:id` | session · `mountSession` | Registro de fuerza (activa o edición de una pasada) |
 | `#/session/:id/summary` | session · `mountSessionSummary` | Resumen al terminar (récords, volumen, series, carga) |
-| `#/activity/new?kind=run\|bike\|swim\|other&date=&parent=&item=&planDate=&subtype=` | activity · `mountActivity` | Formulario de actividad nueva (`subtype` preelige el tipo de sesión, p. ej. «Ruta» al registrar la ruta en bici del plan) |
+| `#/activity/new?kind=run\|bike\|swim\|hike\|other&date=&parent=&item=&planDate=&subtype=` | activity · `mountActivity` | Formulario de actividad nueva (`subtype` preelige el tipo de sesión, p. ej. «Ruta» al registrar la ruta en bici del plan) |
 | `#/activity/:id` | activity · `mountActivity` | Editar actividad |
 | `#/bodyweight` | bodyweight · `mountBodyweight` | Peso corporal: registro rápido + lista (+ gráfica en fase 2) |
 | `#/exercises?seg=library\|templates` | exercises · `mountExercises` | Pestaña Ejercicios: segmentado **Rutinas / Biblioteca** |
@@ -76,12 +76,15 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/settings/week` | settings · `mountWeekPattern` | Editor de la semana tipo |
 | `#/settings/thresholds` | settings · `mountThresholds` | Umbrales de reglas |
 | `#/settings/data` | settings · `mountData` | Copias, CSV, almacenamiento, borrar todo |
-| `#/progress` | progress · `mountProgress` | Accesos (Panel semanal, Objetivos, Récords, Peso, Ejercicios), resúmenes del panel y de objetivos (Fase 3), gráficas por periodo |
+| `#/progress` | progress · `mountProgress` | Accesos (Panel semanal, Objetivos, Resúmenes, Predicciones, Récords, Peso, Ejercicios), resúmenes del panel y de objetivos (Fase 3), gráficas por periodo |
 | `#/progress/exercise/:id` | progress · `mountExerciseProgress` | Fase 2 |
 | `#/records` | progress · `mountRecords` | Fase 2 |
 | `#/weekly?week=YYYY-MM-DD` | weekly · `mountWeekly` | Panel semanal (cualquier día de la semana; por defecto la actual): INFORMACIÓN y después SUGERENCIAS, cada mensaje con «¿Por qué?» (back `#/progress`) |
 | `#/goals` | goals · `mountGoals` | Objetivos activos (barra, rango de fechas, «¿Por qué?»); conseguidos y archivados plegados |
 | `#/goal/new?kind=&exercise=`, `#/goal/:id` | goals · `mountGoalEdit` | Crear (con borrador) / editar al instante, archivar, borrar con confirmación + deshacer |
+| `#/import` | import · `mountImport` | Ronda 4: importar actividades desde GPX, TCX, FIT (.gz, .zip), vista previa editable y duplicados |
+| `#/predictions` | predictions · `mountPredictions` | Ronda 4: tiempos previstos 5k/10k/media/maratón (rangos) y «¿Puedo hacerlo?» (back `#/progress`) |
+| `#/summary?p=month\|year&d=YYYY-MM-DD` | summary · `mountSummary` | Ronda 4: resumen mensual / anual con comparación con el periodo anterior |
 
 Pestaña resaltada: la de la ruta; las rutas de sesión y actividad (`inherit` en la tabla) mantienen la pestaña
 desde la que se abrieron (p. ej. Calendario › Historial › sesión), salvo una sesión de fuerza en curso, que es de «Hoy».
@@ -141,7 +144,7 @@ Superserie/circuito: ítems consecutivos con el mismo `groupId`; se muestran agr
 
 ### sessions (fuerza Y actividades en la misma store)
 ```
-{ id, kind:'strength'|'run'|'bike'|'swim'|'other', date:'YYYY-MM-DD', planDate:'YYYY-MM-DD'|null,
+{ id, kind:'strength'|'run'|'bike'|'swim'|'hike'|'other', date:'YYYY-MM-DD', planDate:'YYYY-MM-DD'|null,
   templateId|null, templateName, status:'active'|'done', startedAt|null, endedAt|null,
   durationMin|null, rpe:1..10|null, notes:'', parentId|null, templateItemId|null, createdAt, updatedAt,
   // fuerza
@@ -152,7 +155,11 @@ Superserie/circuito: ítems consecutivos con el mismo `groupId`; se muestran agr
   // actividades (todas opcionales salvo kind, date y duración)
   distanceKm, movingSec, elapsedSec, elevationM, hrAvg, hrMax, cadence, powerAvg, powerNp,
   subtype (run: z2|intervals|tempo|long|race; bike: easy|route|intervals|trainer; other: basketball|agility|mobility|sport|<texto>),
-  feel:'' (zona / sensaciones), poolType:'pool'|'open', poolLengthM, stroke }
+  feel:'' (zona / sensaciones), poolType:'pool'|'open', poolLengthM, stroke,
+  // senderismo (ronda 4): elevationM = desnivel +, elevationLossM = desnivel −, altMaxM, packKg (mochila)
+  elevationLossM, altMaxM, packKg,
+  // importadas (ronda 4): startedAt (ms, hora de inicio del archivo) y source:{ type:'gpx'|'tcx'|'fit', fileName }
+  source }
 SessionExercise = { id, exerciseId, exName (copia del nombre), templateItemId|null, alternatives:[ids],
   target:{sets, setsMax, repMin, repMax, timeMin, timeMax, distance}, notes, section, groupId, groupType,
   sets:[SetEntry] }
@@ -343,6 +350,40 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
 «¿Cómo ha ido?» en la hoja «Terminar» y resumen del check-in en `#/session/:id/summary`.
 
 ---
+
+### Ronda 4 (contrato en `docs/MEJORAS.md`)
+- **Senderismo** (`kind:'hike'`, `seed.ACTIVITY_KINDS`): carga propia (min × RPE) y km propios (`km.hike` en
+  `stats.weeklySeries`), separado de la carrera; `stats.enduranceRecords().hike = { count, longest, maxGain }`,
+  `stats.hikePaceSeries`, `stats.elevationLabel`. Solo la carrera alimenta los avisos de km y las predicciones.
+- **Importar** (`#/import`): `import-zip.js` (ZIP propio + `DecompressionStream('deflate-raw'|'gzip')`),
+  `import-parse.js` (detección por contenido; GPX/TCX con un parser XML propio para que el mismo código corra en
+  Safari y en Node; FIT binario propio: file_id, session, lap, record, sport; métricas: tiempo en movimiento, desnivel
+  con histéresis de 3 m, haversine), `import-logic.js` (puro: deporte → kind, registro con
+  `activity-logic.buildRecord` + `startedAt` + `source`, duplicados ±2 min / ±3 %). No se guardan puntos GPS.
+- **Calentamiento** (`session-logic.js`): `warmupPlan({ workWeight, reps, exercise, settings })` → `[{ pct, weight,
+  reps }]`, `suggestedWarmup(se, exercise, settings, last)`, `warmupSetsFromPlan(plan, se, logType)`,
+  `warmupIncrement`, `warmupReference`. UI plegada al final de la tarjeta del ejercicio (`session-view-card.js`).
+- **Tiempos previstos** (`race-predict.js`, puro): `predictRaces(data, { today }?)`, `checkTarget(data, km, sec)`,
+  `analyzeRuns`; Riegel k = 1,06 (hasta 1,10 con poco volumen en media/maratón), rango mínimo ±3 %.
+- **Resúmenes** (`summary-logic.js`, puro): `periodSummary(data, { unit:'week'|'month'|'year', start, today? })`,
+  `summaryHref`, `kindInfo`, `fmtValue`, `fmtKm`; bloque «Resumen de la semana» arriba de `#/weekly`.
+- **Mapa corporal** (`bodymap.js`): `bodyMap({ muscles, onSelect?, selected?, label?, compact?, inProgress? })` →
+  `div.bm` (con `el.select(id)` y `el.update(muscles)`), `bodyMapData(muscleSets, ranges?)` (acepta `{id:n}`, `Map` o
+  filas `stats.muscleTable` / ítems de `insights`). `inProgress`: lo que aún no llega al mínimo sale en gris
+  («Faltan series»). Integrado en la tarjeta «Esta semana por músculo» de Progreso y en el mensaje `muscles` del panel.
+- **Accesos**: Hoy («Importar desde un archivo»), actividad nueva suelta («Importar desde archivo»), Copias y datos
+  («Importar actividades»), Progreso (Resúmenes, Predicciones), Récords › Resistencia › Carrera («Tiempos previstos»),
+  panel semanal («Ver mes» / «Ver año»).
+- **Transiciones y cristal** (`router.js`, `ui.js`, `css/app.css`): `navigate(hash, { transition:'push'|'pop'|'tab'|'none' })`
+  (por defecto `push`; `replace`/`refresh` sin animación; `back()` = `pop`; pestañas = `tab`, o `pop` si se pulsa la
+  pestaña actual desde una pantalla interior). Con View Transitions API (Safari 18+) se anima una imagen de la vista
+  anterior (una sola vista en el DOM; `::view-transition { pointer-events:none }`, cabecera y barra de pestañas con
+  `view-transition-name` propio); sin la API (iOS 17) solo entra la vista nueva (`.view-enter-*`). El tipo va en
+  `<html data-nav>`; `router.navInfo()` y `router.settled()` para pruebas; `window.__app.navigate` salta SIN animación.
+  Hojas con curva iOS (350 ms) y cierre animado (`.closing` + `inert`; si se abre otra, la vieja se quita al momento);
+  respuesta al toque (escala 0,97, 120 ms). Cristal: barra superior, cápsula flotante de pestañas y hojas translúcidas
+  (`backdrop-filter: blur() saturate()`, opacidad alta para que nunca se lea el texto de debajo; alternativa opaca con
+  `@supports not`); los avisos son opacos. `prefers-reduced-motion` → solo fundidos cortos.
 
 ## 6. Convenciones de UI (obligatorias)
 

@@ -2,12 +2,17 @@
 // PROPIETARIO: módulo del panel. Los mensajes salen de js/insights.js (puro); aquí solo se pintan:
 // bloque INFORMACIÓN y después bloque SUGERENCIAS, cada mensaje con su nivel (color + texto), su texto, sus
 // filas (tabla de músculos, carga por tipo…) y su «¿Por qué?» (ui.whyBox) con la regla y los datos concretos.
+// Encima de los dos bloques, el «Resumen de la semana» (totales frente a la semana anterior y enlaces a #/summary),
+// del módulo de resúmenes (weekRecap; números de js/summary-logic.js).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, emptyState, whyBox } from '../ui.js';
 import { todayStr, weekStart, addDays, fmtWeekRange, fmtDate, isDateStr, fmtNum } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
 import { weeklyInsights, keyMessages, LEVEL_LABEL } from '../insights.js';
+import { periodSummary, kindInfo, fmtValue, fmtKm, summaryHref } from '../summary-logic.js';
+import { deltaChip, kindColorStyle } from './summary.js';
+import { bodyMap, bodyMapData } from '../bodymap.js';
 
 const LEVEL_ICON = { neutral: 'info', good: 'check', warn: 'alert' };
 /** Mensajes cuyas filas se enseñan siempre en la tarjeta (aunque haya una sola). */
@@ -37,7 +42,8 @@ export function mountWeekly(root, params = {}) {
   const today = todayStr();
   const cur = weekStart(today);
   const ws = isDateStr(params.week) ? weekStart(params.week) : cur;
-  const r = weeklyInsights(weeklyData(today), ws);
+  const data = weeklyData(today); // el mismo objeto para insights y el resumen (comparten la caché de stats.js)
+  const r = weeklyInsights(data, ws);
   const otherYear = ws.slice(0, 4) !== today.slice(0, 4) ? `${ws.slice(0, 4)} · ` : '';
   const subtitle = r.future ? 'Semana futura' : r.inProgress ? `En curso · ${leftTxt(r.daysLeft)}` : `${otherYear}Semana terminada`;
   const c = screen(root, { title: `Semana ${fmtWeekRange(ws)}`, subtitle, back: '#/progress' });
@@ -73,6 +79,7 @@ export function mountWeekly(root, params = {}) {
     c.appendChild(h('p.wk-provisional', icon('clock', 16),
       h('span', `Semana en curso, ${leftTxt(r.daysLeft)}: los recuentos son provisionales y lo que aún no llega al mínimo se puede completar.`)));
   }
+  c.appendChild(weekRecap(data, ws, today));
   c.appendChild(block('info', 'Información', 'Lo que ha pasado esta semana, con los datos de tus registros.', r.info));
   c.appendChild(block('suggestion', 'Sugerencias', 'Qué podrías hacer según tus reglas (Ajustes › Umbrales). Son orientativas.', r.suggestions));
   c.appendChild(h('button.list-item.wk-settings-link', { type: 'button', onClick: () => navigate('#/settings/thresholds') },
@@ -93,6 +100,58 @@ function weekNav(ws, cur) {
       ws === cur ? 'Esta semana' : 'Ir a esta semana'),
     h('button.wk-nav-btn', { type: 'button', 'aria-label': 'Semana siguiente', disabled: ws >= cur, dataset: { nav: 'next' }, onClick: () => goWeek(addDays(ws, 7)) },
       icon('chevron-right', 22)));
+}
+
+// ===========================================================================
+// «Resumen de la semana» (módulo de resúmenes, MEJORAS §5): arriba del panel, antes de Información
+// ===========================================================================
+
+/**
+ * Bloque compacto con los totales de la semana (sesiones, tiempo, carga, volumen de fuerza y km por deporte)
+ * frente a la semana anterior (en curso: el mismo tramo, lunes → hoy) y enlaces al resumen del mes y del año.
+ * Los números salen de summary-logic.periodSummary (los mismos que en #/summary).
+ */
+function weekRecap(data, ws, today) {
+  const sum = periodSummary(data, { unit: 'week', start: ws, today });
+  const cmp = sum.compare;
+  const ok = cmp.available;
+  // Mes / año de la semana: el de hoy si está en curso; si no, el del jueves (el que tiene más días de la semana).
+  const ref = sum.inProgress ? today : addDays(ws, 3);
+  const kmKinds = sum.kindOrder.filter((k) => sum.byKind[k].km > 0 || (cmp.kinds[k] && cmp.kinds[k].km));
+  const stat = (key, label, value, d, fmt) => h('div.wk-recap-kpi', { dataset: { kpi: key } },
+    h('span.wk-recap-label', label),
+    h('span.wk-recap-value', value),
+    ok ? deltaChip(d, fmt) : null);
+  const minutes = (v) => fmtValue('minutes', v);
+  const volume = (v) => fmtValue('volume', v);
+  return h('section.card.wk-recap', { dataset: { card: 'week-summary' }, 'aria-labelledby': 'wk-recap-title' },
+    h('div.wk-recap-head',
+      h('span.wk-block-icon', { 'aria-hidden': 'true' }, icon('calendar', 20)),
+      h('div.wk-recap-titles',
+        h('h2#wk-recap-title.wk-recap-title', 'Resumen de la semana'),
+        h('p.wk-recap-sub', ok ? cmp.label : 'Sin semana anterior con registros para comparar'))),
+    sum.empty ? h('p.wk-recap-empty', 'Sin entrenamientos registrados esta semana.') : null,
+    h('div.wk-recap-kpis',
+      stat('sessions', 'Sesiones', fmtNum(sum.sessions, 0), cmp.sessions),
+      stat('minutes', 'Tiempo', minutes(sum.minutes), cmp.minutes, minutes),
+      stat('load', 'Carga', fmtValue('load', sum.load), cmp.load),
+      stat('volume', 'Volumen de fuerza', volume(sum.strength.volume), cmp.volume, volume)),
+    kmKinds.length
+      ? h('ul.wk-recap-km', { 'aria-label': 'Distancia por deporte' }, kmKinds.map((k) => {
+        const info = kindInfo(k);
+        const d = cmp.kinds[k] && cmp.kinds[k].km;
+        return h('li.wk-recap-km-row', { dataset: { kind: k }, style: kindColorStyle(k) },
+          h('span.wk-recap-km-name', h('span', { 'aria-hidden': 'true' }, `${info.emoji} `), info.label),
+          h('span.wk-recap-km-right',
+            h('span.wk-recap-km-val', fmtKm(k, sum.byKind[k].km)),
+            ok && d ? deltaChip(d, (v) => fmtKm(k, v)) : null));
+      }))
+      : null,
+    h('div.wk-recap-links',
+      h('button.btn.btn-secondary.wk-recap-link', { type: 'button', dataset: { link: 'month' }, onClick: () => navigate(summaryHref('month', ref)) },
+        'Ver mes', icon('chevron-right', 18)),
+      h('button.btn.btn-secondary.wk-recap-link', { type: 'button', dataset: { link: 'year' }, onClick: () => navigate(summaryHref('year', ref)) },
+        'Ver año', icon('chevron-right', 18))));
 }
 
 function block(section, title, sub, msgs) {
@@ -141,7 +200,11 @@ export function whyContent(why) {
 
 function itemsView(m) {
   if (!m.items || !m.items.length) return null;
-  if (m.id === 'muscles') return muscleTable(m.items, m.inProgress);
+  if (m.id === 'muscles') {
+    return h('div.wk-muscles',
+      bodyMap({ muscles: bodyMapData(m.items), inProgress: !!m.inProgress, label: 'Mapa corporal: series de la semana por músculo' }),
+      muscleTable(m.items, m.inProgress));
+  }
   if (NO_ITEMS.has(m.id) || (m.items.length < 2 && !ALWAYS_ITEMS.has(m.id))) return null;
   const stack = m.items.some((it) => isLong(it.label, it.value));
   const rows = m.items.map((it, i) => h('li.wk-item', { hidden: i >= ITEMS_VISIBLE },

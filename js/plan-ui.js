@@ -136,6 +136,7 @@ export function otherSessionMenu({ date = todayStr(), planDate = date, past = fa
       act('run', '🏃 Carrera'),
       act('bike', '🚴 Bici'),
       act('swim', '🏊 Natación'),
+      act('hike', '🥾 Senderismo'),
       act('other', '⚡ Otra actividad'),
     ],
   });
@@ -146,6 +147,6 @@ export function activityMenu({ date = todayStr(), planDate = date, title = 'Regi
   const act = (kind, label) => ({ label, onClick: () => navigate(activityHref(kind, date, planDate)) });
   actionSheet({
     title,
-    actions: [act('run', '🏃 Carrera'), act('bike', '🚴 Bici'), act('swim', '🏊 Natación'), act('other', '⚡ Otra actividad')],
+    actions: [act('run', '🏃 Carrera'), act('bike', '🚴 Bici'), act('swim', '🏊 Natación'), act('hike', '🥾 Senderismo'), act('other', '⚡ Otra actividad')],
   });
 }

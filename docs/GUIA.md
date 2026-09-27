@@ -57,8 +57,19 @@ Si el trabajo sigue en la rama `claude/personal-training-mobile-app-e82j38`, pue
   y listo (ajusta antes con ±2,5 kg / ±1 rep si hace falta).
 - **Calendario**: toca un día para cambiarlo solo esa semana (p. ej. el sábado por una ruta en bici), moverlo o marcarlo.
   Tu semana tipo no cambia (se edita en **Ajustes → Semana tipo**).
-- **Registrar**: carrera, bici, natación u otra actividad desde **Hoy**; el peso corporal también se apunta en **Hoy**.
-- **Progreso**: gráficas, récords, **Panel semanal** (información y sugerencias con su «¿Por qué?») y **Objetivos**.
+- **Registrar**: carrera, bici, natación, senderismo u otra actividad desde **Hoy**; el peso corporal también se apunta
+  en **Hoy**. En la sesión de fuerza, cada ejercicio con carga tiene una línea plegada **Calentamiento sugerido ▸**:
+  si no la abres, no molesta; si la abres, **Añadir estas series** pone los calentamientos al principio.
+- **Importar desde Strava, Garmin o Apple**: en **Hoy → Importar desde un archivo** (o Ajustes → Copias y datos) eliges
+  uno o varios archivos GPX, TCX o FIT (también .gz y el .zip de «Exportar original» de Garmin), revisas la vista previa
+  (tipo, fecha, datos; las repetidas salen marcadas «Ya registrada») y guardas. Cómo sacar los archivos:
+  - **Strava**: desde la web (no desde la app), en la actividad: «⋯ → Exportar GPX».
+  - **Garmin Connect**: desde la web, en la actividad: «⚙ → Exportar original» (o GPX / TCX).
+  - **Apple**: Salud no exporta entrenamientos sueltos; si tu reloj sincroniza con Strava, expórtalo desde Strava, o usa
+    apps como HealthFit o RunGap.
+- **Progreso**: gráficas, récords, **Panel semanal** (resumen de la semana, mapa corporal, información y sugerencias
+  con su «¿Por qué?»), **Objetivos**, **Resúmenes** mensuales y anuales, y **Predicciones** (tiempos previstos de 5 km a
+  maratón y «¿Puedo hacerlo?»: estimaciones prudentes a partir de tus carreras, no promesas).
 - **Ejercicios**: tus rutinas (editar, duplicar, reordenar, superseries) y la biblioteca de ejercicios.
 - **Ajustes**: semana tipo, umbrales de las sugerencias, copias de seguridad y exportación CSV.
 

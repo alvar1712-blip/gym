@@ -1,1 +1,200 @@
-/* predictions.css — estilos del módulo. */
+/* predictions.css — tiempos previstos (#/predictions). Clases con prefijo .prd-. Tokens de css/app.css. */
+
+.prd-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.prd-intro .icon { flex: none; margin-top: 2px; color: var(--info); }
+
+.prd-races { display: flex; flex-direction: column; gap: 10px; }
+.prd-races .section-title { margin-top: 2px; }
+
+/* ---------- Tarjeta de una distancia ---------- */
+.prd-race { gap: 6px; }
+.prd-race-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.prd-race-name { font-size: 17px; font-weight: 750; }
+.prd-race-range {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+}
+.prd-race-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  font-size: 15px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.prd-race-pace { font-weight: 650; }
+.prd-race-mid { color: var(--muted); font-size: 14px; }
+.prd-race-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--warn);
+}
+.prd-race-note .icon { flex: none; margin-top: 2px; }
+.prd-race .why { margin-top: 4px; }
+
+/* Rango destacado según la confianza (sin depender solo del color: el texto de la etiqueta lo dice). */
+.prd-race[data-confidence="baja"] .prd-race-range { color: var(--text-2); }
+
+/* ---------- ¿Por qué? ---------- */
+.prd-why { display: flex; flex-direction: column; gap: 6px; }
+.prd-why-rule { display: flex; flex-direction: column; gap: 4px; }
+.prd-why-rule p { margin: 0; }
+.prd-why-head {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.why-body ul.prd-why-data { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0; }
+.why-body .prd-why-data li + li { margin-top: 0; }
+.prd-why-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+.prd-why-row:first-child { border-top: 0; }
+.prd-why-label { color: var(--muted); min-width: 0; }
+.prd-why-value { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.prd-why-stacked .prd-why-row { flex-direction: column; align-items: stretch; gap: 1px; }
+.prd-why-stacked .prd-why-value { text-align: left; }
+
+/* ---------- ¿Puedo hacerlo? ---------- */
+.prd-check { gap: 12px; }
+.prd-check-head { display: flex; flex-direction: column; gap: 2px; }
+.prd-check-title { font-size: 20px; font-weight: 800; }
+.prd-check-sub { margin: 0; font-size: 14px; color: var(--muted); }
+.prd-seg { gap: 2px; }
+.prd-seg .seg-btn { flex: 1 1 auto; font-size: 14px; padding: 0 6px; }
+.prd-check-custom[hidden] { display: none; }
+.prd-check-hint { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prd-check-hint:empty { display: none; }
+
+.prd-verdict-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.prd-verdict {
+  --v: var(--muted);
+  --v-soft: var(--surface-2);
+  --v-line: var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--v-line);
+  background: var(--v-soft);
+}
+.prd-v-probable { --v: var(--ok); --v-soft: var(--ok-soft); --v-line: rgba(74, 222, 128, 0.5); }
+.prd-v-ajustado { --v: var(--warn); --v-soft: var(--warn-soft); --v-line: rgba(251, 191, 36, 0.5); }
+.prd-v-hoy_no { --v: var(--danger); --v-soft: var(--danger-soft); --v-line: rgba(248, 113, 113, 0.5); }
+.prd-v-insuficiente { --v: var(--muted); --v-soft: var(--surface-2); --v-line: var(--border-strong); }
+
+.prd-v-head { display: flex; align-items: center; gap: 10px; }
+.prd-v-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--v);
+  color: var(--bg);
+}
+.prd-v-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.prd-v-label { font-size: 19px; font-weight: 800; color: var(--v); line-height: 1.2; }
+.prd-v-sub { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.prd-v-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 8px; }
+.prd-v-line .badge { flex: none; }
+
+.prd-v-gap {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.prd-v-gap-label { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.prd-v-gap-value { font-size: 20px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.prd-v-gap-sub { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.prd-v-text { margin: 0; font-size: 15px; line-height: 1.45; color: var(--text); }
+.prd-verdict .why-body { background: rgba(0, 0, 0, 0.3); }
+
+/* ---------- Base del cálculo ---------- */
+.prd-basis-title { font-size: 17px; font-weight: 750; }
+.prd-kpis .kpi-value { font-size: 18px; }
+.prd-basis-sub {
+  margin: 4px 2px -2px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.prd-efforts { background: var(--surface-2); }
+.prd-effort { min-height: 52px; }
+.prd-effort .list-item-title { font-variant-numeric: tabular-nums; }
+.prd-effort-emoji { flex: none; font-size: 20px; }
+.prd-note { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+
+/* ---------- Estado vacío ---------- */
+.prd-empty { gap: 12px; }
+.prd-empty .empty { padding: 18px 8px 8px; }
+.prd-empty-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+.prd-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+}
+.prd-dot.on { background: var(--act-run); border-color: var(--act-run); }
+.prd-dot:last-of-type { margin-right: 4px; }
+.prd-empty-msg { margin: 0; font-size: 14px; color: var(--text-2); text-align: center; }
+
+@media (max-width: 380px) {
+  .prd-seg .seg-btn { font-size: 13px; padding: 0 4px; }
+}
+@media (max-width: 350px) {
+  .prd-race-range { font-size: 26px; }
+  .prd-seg .seg-btn { padding: 0 2px; }
+}

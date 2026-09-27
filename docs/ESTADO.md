@@ -29,9 +29,22 @@
 - [x] **Cierre**: documentación final (README, GUIA con primeros pasos, ARCHITECTURE §5), `stamp-sw`, batería completa
       (282 unitarias y 102 E2E en verde) y commit «Fase 3 completa»
 
+- [x] **Ronda 4 de mejoras** (contrato `docs/MEJORAS.md`): senderismo (`kind:'hike'`), importar GPX/TCX/FIT (.gz, .zip),
+      calentamiento sugerido plegado, tiempos previstos + «¿Puedo hacerlo?», resúmenes semanal/mensual/anual, mapa
+      corporal (panel semanal y Progreso), transiciones tipo iOS y efecto cristal. Integración de accesos (Hoy,
+      actividad nueva, Copias y datos, Progreso, Récords), `stamp-sw` + `check-assets` OK, 363 unitarias y 128 E2E en
+      verde. Fuera por decisión del usuario: notas fijas por ejercicio, medidas corporales, km por zapatillas.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).
 - Unilaterales: el incremento sugerido es por lado, sin dividir.
 - Objetivos de fuerza: estado «Al alcance» cuando el 1RM estimado ya llega pero aún no se ha hecho el peso × reps.
 - Objetivos de tiempo: «en menos de» es estricto (igualar el tiempo no cuenta como conseguido).
+- Ronda 4 · Mapa corporal: un músculo con 0 series sale en gris «Sin series»; en la semana en curso, lo que aún no
+  llega al mínimo sale en gris claro «Faltan series» (como en las tablas), no en amarillo.
+- Ronda 4 · Importar: la distancia de una caminata (tipo «Otra») va a las notas, porque «Otra» no tiene distancia.
+- Ronda 4 · Calentamiento: la línea plegada va al final de la tarjeta (junto a «+ Serie») para no mover el botón de
+  registrar; en los pasos ≥ 75 % las reps no superan las de la serie de trabajo.
+- Ronda 4 · Efecto cristal: barras y hojas con opacidad alta (nunca se lee el texto de debajo) y avisos opacos; en el
+  iPhone real el desenfoque puede verse algo distinto que en las pruebas.

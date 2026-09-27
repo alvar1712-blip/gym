@@ -532,7 +532,7 @@ test('enduranceRecords: 5k estimado desde un 10k y exacto; empates → la primer
   assert.equal(r2.run.best['5k'].estimated, true);
   assert.equal(enduranceRecords(mk({ sessions: [act('r3', 'run', '2026-09-10', { distanceKm: 5.1, movingSec: 1500 })] })).run.best['5k'].estimated, false);
   const empty = enduranceRecords(mk());
-  assert.deepEqual(empty, { run: { count: 0, longest: null, best: { '5k': null, '10k': null, half: null, marathon: null } }, bike: { count: 0, longest: null }, swim: { count: 0, longest: null } });
+  assert.deepEqual(empty, { run: { count: 0, longest: null, best: { '5k': null, '10k': null, half: null, marathon: null } }, bike: { count: 0, longest: null }, swim: { count: 0, longest: null }, hike: { count: 0, longest: null, maxGain: null } });
 });
 
 // ---------------------------------------------------------------------------
@@ -570,10 +570,10 @@ test('weeklySeries: todas las semanas del rango (vacías con ceros), lunes, carg
   const [w1, w2, w3, w4] = rows;
   assert.equal(w1.weekEnd, '2026-09-06');
   assert.equal(w1.sessions, 6); // de fecha 1 sep: la semana es la del lunes 31 ago aunque `from` sea miércoles
-  assert.deepEqual(w1.load, { strength: 420, run: 300 + 120 + 60, bike: 300, swim: 0, other: 0 });
+  assert.deepEqual(w1.load, { strength: 420, run: 300 + 120 + 60, bike: 300, swim: 0, hike: 0, other: 0 });
   assert.equal(w1.loadTotal, 420 + 480 + 300);
   assert.equal(w1.noLoad, 1);
-  assert.deepEqual(w1.km, { run: 15, bike: 50, swim: 0 });
+  assert.deepEqual(w1.km, { run: 15, bike: 50, swim: 0, hike: 0 });
   assert.equal(w1.runPace, (3000 + 1800) / 15); // ponderado por distancia: 5:20, no la media 5:30
   assert.equal(w1.labels.runPace, '5:20 /km');
   assert.equal(w1.bikeSpeed, 25); // 50 km en 2 h
@@ -584,10 +584,10 @@ test('weeklySeries: todas las semanas del rango (vacías con ceros), lunes, carg
   assert.equal(w1.count.run, 3);
   // Semana vacía: ceros y ritmos null.
   assert.deepEqual([w2.sessions, w2.loadTotal, w2.strengthVolume, w2.km.run, w2.runPace, w2.bikeSpeed], [0, 0, 0, 0, null, null]);
-  assert.deepEqual(w2.load, { strength: 0, run: 0, bike: 0, swim: 0, other: 0 });
+  assert.deepEqual(w2.load, { strength: 0, run: 0, bike: 0, swim: 0, hike: 0, other: 0 });
   assert.deepEqual(w2.muscleSets, {});
   // Carrera enlazada a la fuerza: cuenta en carrera (la duración de la fuerza ya la descuenta).
-  assert.deepEqual(w3.load, { strength: 240, run: 280, bike: 0, swim: 150, other: 540 });
+  assert.deepEqual(w3.load, { strength: 240, run: 280, bike: 0, swim: 150, hike: 0, other: 540 });
   assert.equal(w3.km.run, 8);
   assert.equal(w3.km.swim, 1.5);
   assert.equal(w3.swimPace, 120);

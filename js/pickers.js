@@ -155,6 +155,7 @@ export function pickTemplate({ title = 'Elegir rutina', includeRest = false, inc
         { activityKind: 'bike', label: 'Ruta en bici', emoji: '🚴' },
         { activityKind: 'run', label: 'Carrera', emoji: '🏃' },
         { activityKind: 'swim', label: 'Natación', emoji: '🏊' },
+        { activityKind: 'hike', label: 'Senderismo', emoji: '🥾' },
         { activityKind: 'other', label: 'Otra actividad', emoji: '⚡' },
         { activityKind: 'strength', label: 'Fuerza libre', emoji: '🏋️' },
       ];

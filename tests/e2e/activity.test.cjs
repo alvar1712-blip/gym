@@ -215,8 +215,8 @@ test('otra actividad con selector de tipo y tipo libre; borrar con confirmación
     await go(page, '#/activity/new');
     await shot(page, 'activity-new-top');
     const seg = page.locator('.act-kinds .seg-btn');
-    assert.deepStrictEqual(await seg.allInnerTexts(), ['Carrera', 'Bici', 'Natación', 'Otra']);
-    await seg.nth(3).click();
+    assert.deepStrictEqual(await seg.allInnerTexts(), ['Carrera', 'Bici', 'Natación', 'Senderismo', 'Otra']);
+    await seg.nth(4).click();
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Nueva actividad');
     assert.strictEqual(await page.locator('[aria-label="Distancia (km)"]').count(), 0);
     await page.getByRole('button', { name: 'Otro…', exact: true }).click();
@@ -420,7 +420,7 @@ test('cambiar el tipo de una actividad guardada pide confirmación, se puede des
     assert.ok(await page.getByRole('button', { name: 'Ruta', exact: true }).evaluate((b) => b.classList.contains('active')));
 
     // Ir a «Otra» y volver a «Bici» en la misma pantalla recupera los datos y el tipo de sesión.
-    await seg.nth(3).click();
+    await seg.nth(4).click();
     await page.waitForTimeout(250);
     await page.locator('.sheet-panel .btn-danger').click();
     await page.waitForTimeout(300);

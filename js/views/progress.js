@@ -14,6 +14,7 @@ import { emptyBests, addToBests, detectPRs } from '../calc.js';
 import { formatSet, fmtSec } from '../session-logic.js';
 import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts } from '../progress-ui.js';
 import { weeklySummaryCard } from './weekly.js';
+import { bodyMap, bodyMapData } from '../bodymap.js';
 import { goalsSummaryCard } from './goals.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
@@ -27,11 +28,14 @@ const LOAD_KINDS = [
   { key: 'run', label: 'Carrera', color: COLORS.run },
   { key: 'bike', label: 'Bici', color: COLORS.bike },
   { key: 'swim', label: 'Natación', color: COLORS.swim },
+  { key: 'hike', label: 'Senderismo', color: COLORS.hike },
 ];
+// El senderismo tiene su propia columna de km: nunca se suma a la carrera.
 const KM_KINDS = [
   { key: 'run', label: 'Carrera', color: COLORS.run, emoji: '🏃' },
   { key: 'bike', label: 'Bici', color: COLORS.bike, emoji: '🚴' },
   { key: 'swim', label: 'Natación', color: COLORS.swim, emoji: '🏊' },
+  { key: 'hike', label: 'Senderismo', color: COLORS.hike, emoji: '🥾' },
 ];
 const STATUS_TXT = { below: 'Por debajo', in: 'Dentro', above: 'Por encima', none: 'Sin rango', short: 'Faltan series' };
 const STATUS_LONG = { below: 'Por debajo del rango', in: 'Dentro del rango', above: 'Por encima del rango', none: 'Sin rango objetivo' };
@@ -210,7 +214,8 @@ function progressExtra(data) {
   return slot;
 }
 
-/** Accesos: Panel semanal y Objetivos (Fase 3), Récords, Peso corporal y salto a la lista de ejercicios. */
+/** Accesos: Panel semanal y Objetivos (Fase 3), Resúmenes y Tiempos previstos (ronda 4), Récords, Peso corporal y
+ * salto a la lista de ejercicios. */
 function linksRow(ctx, exSection) {
   const tile = (emoji, label, aria, onClick, key) => h('button.prg-link', { type: 'button', dataset: { link: key }, 'aria-label': aria, onClick },
     h('span.prg-link-emoji', { 'aria-hidden': 'true' }, emoji),
@@ -221,6 +226,8 @@ function linksRow(ctx, exSection) {
   return h('nav.prg-links', { 'aria-label': 'Accesos de progreso' },
     wide('📋', 'Panel semanal', 'Panel semanal: información y sugerencias de la semana', () => goChild('#/weekly'), 'weekly'),
     wide('🎯', 'Objetivos', 'Objetivos: progreso y fecha estimada', () => goChild('#/goals'), 'goals'),
+    wide('🗓️', 'Resúmenes', 'Resumen mensual y anual', () => goChild('#/summary'), 'summary'),
+    wide('⏱️', 'Predicciones', 'Tiempos previstos de 5 km a maratón', () => goChild('#/predictions'), 'predictions'),
     tile('🏆', 'Récords', 'Récords de fuerza y resistencia', () => goChild('#/records'), 'records'),
     tile('⚖️', 'Peso', 'Peso corporal', () => goChild('#/bodyweight'), 'bodyweight'),
     tile('🏋️', 'Ejercicios', 'Ir a la lista de ejercicios', () => exSection.el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 'exercises'));
@@ -423,8 +430,7 @@ function muscleTableCard(ctx, muscle) {
   const el = h('section.card.prg-card', { dataset: { chart: 'muscle-table' } },
     cardHead('Esta semana por músculo', `${fmtWeekRange(ws)} (en curso) · series efectivas frente a tu rango`,
       h('button.prg-head-link', { type: 'button', onClick: () => goChild('#/settings/thresholds') }, 'Rangos', icon('chevron-right', 16))),
-    h('div.prg-mlegend', { 'aria-hidden': 'true' },
-      ...['short', 'in', 'above'].map((s) => h('span.prg-mlegend-item', h(`span.prg-dot.prg-dot-${s}`), STATUS_TXT[s]))),
+    bodyMap({ muscles: bodyMapData(rows), compact: true, inProgress: true, label: 'Mapa corporal de esta semana' }),
     list,
     h('p.prg-howto', 'La zona clara de cada barra es tu rango objetivo y la barra, las series hechas esta semana (en gris mientras aún no llegan al mínimo: la semana no ha terminado). Toca un músculo para ver su evolución arriba.'));
   return { el };
@@ -443,10 +449,11 @@ function kmCard(ctx) {
     ariaLabel: 'Deporte',
     onChange: (v) => { ui.km = v; paint(); },
   });
-  seg.classList.add('prg-seg');
+  // Cinco opciones: en dos filas (css/activity.css) para que «Senderismo» no se corte.
+  seg.classList.add('prg-seg', 'act-seg-wrap');
   const { el, slot } = chartSection('km', {
     title: 'Kilómetros semanales',
-    sub: 'km por semana · carrera, bici y natación',
+    sub: 'km por semana · carrera, bici, natación y senderismo',
     before: [
       any.length ? statLine(any.map((k) => ({ label: `${k.emoji} ${k.label}`, value: S.fmtMetric(`km.${k.key}`, cur.km[k.key]), sub: 'esta semana' }))) : null,
       seg,
@@ -471,7 +478,7 @@ function kmCard(ctx) {
       yFormat: swimOnly ? (v) => S.fmtMetric('km.swim', v) : (v) => `${nf1(v)} km`,
       yTickFormat: swimOnly ? (v) => S.fmtNumFast(v * 1000, 0) : nf1,
       empty: !any.length
-        ? 'Registra tu primera carrera, salida en bici o natación (con distancia) para ver tus kilómetros.'
+        ? 'Registra tu primera carrera, salida en bici, natación o ruta de senderismo (con distancia) para ver tus kilómetros.'
         : one ? `Sin kilómetros de ${one.label.toLowerCase()} en este periodo` : 'Sin kilómetros en este periodo',
     });
   }
@@ -1058,9 +1065,18 @@ function enduranceRecordsView(data, today) {
       if (kind === 'bike') parts.push(`${nf1(r.distanceKm / (r.movingSec / 3600))} km/h`);
       if (kind === 'swim') parts.push(fmtPace(r.movingSec / (r.distanceKm * 10), '/100 m'));
     }
+    if (kind === 'hike' && r.elevationM > 0) parts.push(S.elevationLabel(r.elevationM));
     parts.push(dateTxt(r));
     return recRow({ key: 'longest', label: 'Mayor distancia', value: r.label, sub: parts.join(' · '), sessionId: r.sessionId, href: `#/activity/${r.sessionId}` });
   };
+  // Senderismo: mayor desnivel positivo en una ruta (con o sin distancia).
+  const gainRow = (g) => (g
+    ? recRow({
+      key: 'gain', label: 'Mayor desnivel', value: g.label,
+      sub: [g.distanceKm ? S.distanceLabel('hike', g.distanceKm) : null, g.movingSec > 0 ? fmtDuration(g.movingSec) : null, dateTxt(g)].filter(Boolean).join(' · '),
+      sessionId: g.sessionId, href: `#/activity/${g.sessionId}`,
+    })
+    : recRow({ key: 'gain', label: 'Mayor desnivel', value: 'sin datos', sub: 'Registra el desnivel positivo de una ruta.', muted: true }));
   const head = (emoji, title, count, one, many) => h('div.prg-rec-khead',
     h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, `${emoji} `), title),
     h('span.prg-rec-meta', count ? plural(count, one, many) : 'sin registros'));
@@ -1081,11 +1097,20 @@ function enduranceRecordsView(data, today) {
     h('section.card.prg-rec', { dataset: { sport: 'run' } },
       head('🏃', 'Carrera', e.run.count, 'carrera', 'carreras'),
       h('div.prg-rec-rows', runRows),
-      h('p.prg-hist-note', 'Los tiempos salen de carreras de esa distancia o más largas. Si la carrera fue más larga, el tiempo se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).')),
+      h('p.prg-hist-note', 'Los tiempos salen de carreras de esa distancia o más largas. Si la carrera fue más larga, el tiempo se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),
+      h('button.list-item.prg-link-row', { type: 'button', dataset: { link: 'predictions' }, onClick: () => navigate('#/predictions') },
+        icon('clock', 22),
+        h('span.list-item-main', h('span.list-item-title', 'Tiempos previstos'), h('span.list-item-sub', '5 km, 10 km, media y maratón · ¿Puedo hacerlo?')),
+        icon('chevron-right', 20, 'chev'))),
     h('section.card.prg-rec', { dataset: { sport: 'bike' } },
       head('🚴', 'Bici', e.bike.count, 'salida', 'salidas'),
       h('div.prg-rec-rows', longestRow('bike', e.bike.longest, 'Registra tu primera salida en bici con distancia.'))),
     h('section.card.prg-rec', { dataset: { sport: 'swim' } },
       head('🏊', 'Natación', e.swim.count, 'sesión', 'sesiones'),
-      h('div.prg-rec-rows', longestRow('swim', e.swim.longest, 'Registra tu primera sesión de natación con distancia.'))));
+      h('div.prg-rec-rows', longestRow('swim', e.swim.longest, 'Registra tu primera sesión de natación con distancia.'))),
+    h('section.card.prg-rec', { dataset: { sport: 'hike' } },
+      head('🥾', 'Senderismo', e.hike.count, 'ruta', 'rutas'),
+      h('div.prg-rec-rows',
+        longestRow('hike', e.hike.longest, 'Registra tu primera ruta de senderismo con distancia.'),
+        gainRow(e.hike.maxGain))));
 }
