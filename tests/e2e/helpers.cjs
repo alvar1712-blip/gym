@@ -61,10 +61,29 @@ async function reload(page) {
   await waitReady(page);
 }
 
-/** Navega por hash y espera a que la vista se monte. */
+/**
+ * Espera, por condición y no por tiempo, a que la pantalla esté quieta: sin navegación pendiente, sin montaje en curso
+ * (incluidas las partes asíncronas que la vista espera, como las tarjetas del final de Hoy) y sin transición
+ * animándose (router.settled), y a que se hayan pintado dos fotogramas (lo que se dibuja tras montar, p. ej. gráficas).
+ */
+async function settle(page) {
+  await page.evaluate(async () => {
+    const r = await import('./js/router.js');
+    await r.settled();
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+  });
+}
+
+/** Espera a que la URL cumpla `re` y a que su pantalla esté montada y quieta (tras un toque que navega). */
+async function waitRoute(page, re) {
+  await page.waitForFunction((src) => new RegExp(src).test(location.hash), re.source, { timeout: 8000 });
+  await settle(page);
+}
+
+/** Navega por hash y espera a que la vista esté montada y quieta. */
 async function go(page, hash) {
   await page.evaluate((h) => window.__app.navigate(h), hash.startsWith('#') ? hash : `#${hash}`);
-  await page.waitForTimeout(150);
+  await settle(page);
 }
 
 /** Lee datos del store en memoria. */
@@ -94,4 +113,4 @@ async function shot(page, name) {
   return file;
 }
 
-module.exports = { openApp, waitReady, reload, go, storeAll, idbAll, shot, devices, BROWSER, engineAvailable };
+module.exports = { openApp, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable };

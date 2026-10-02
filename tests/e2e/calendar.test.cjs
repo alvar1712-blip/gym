@@ -3,7 +3,7 @@
 // La fecha se fija con page.clock (semana del lunes 21 al domingo 27 de septiembre de 2026).
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
+const { openApp, go, waitRoute, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
 
 const MON = '2026-09-21';
 const TUE = '2026-09-22';
@@ -15,10 +15,8 @@ const at = (date, time = '10:00:00') => new Date(`${date}T${time}`);
 
 const hash = (page) => page.evaluate(() => location.hash);
 /** Espera a que el hash cumpla `re` y a que la vista termine de montarse. */
-async function waitHash(page, re) {
-  await page.waitForFunction((src) => new RegExp(src).test(location.hash), re.source, { timeout: 5000 });
-  await page.waitForTimeout(150);
-}
+/** La URL cumple `re` y su pantalla está montada y quieta (helpers.waitRoute: por condición, no por tiempo). */
+const waitHash = (page, re) => waitRoute(page, re);
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 const settle = (page, ms = 250) => page.waitForTimeout(ms);
 /** Nodos de texto «null»/«undefined» dentro de `sel` (un Element.append(null) los mete como texto). */

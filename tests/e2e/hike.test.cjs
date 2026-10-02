@@ -5,7 +5,7 @@
 // La fecha se fija con page.clock: sábado 26 sep 2026.
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, reload, idbAll, storeAll, shot } = require('./helpers.cjs');
+const { openApp, go, waitRoute, reload, idbAll, storeAll, shot } = require('./helpers.cjs');
 
 const FRI = '2026-09-25';
 const SAT = '2026-09-26';
@@ -13,10 +13,8 @@ const at = (date, time = '10:00:00') => new Date(`${date}T${time}`);
 const hash = (page) => page.evaluate(() => location.hash);
 const settle = (page, ms = 450) => page.waitForTimeout(ms); // saveSoon escribe a los 250 ms
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
-async function waitHash(page, re) {
-  await page.waitForFunction((src) => new RegExp(src).test(location.hash), re.source, { timeout: 5000 });
-  await page.waitForTimeout(150);
-}
+/** La URL cumple `re` y su pantalla está montada y quieta (helpers.waitRoute: por condición, no por tiempo). */
+const waitHash = (page, re) => waitRoute(page, re);
 /** Cajas de los elementos (para comprobar filas, tamaños y que el texto no se corta). */
 const boxes = (loc) => loc.evaluateAll((els) => els.map((e) => {
   const r = e.getBoundingClientRect();
