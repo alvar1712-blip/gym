@@ -39,6 +39,13 @@
       más marcado; perfil (sexo, objetivo, experiencia); «tu analista» (peso, fuerza, resistencia, recuperación,
       previsiones, informe para IA) basado en estudios; modo mujer con ciclo menstrual completo. IndexedDB v2 (store
       `cycle`). `stamp-sw` + `check-assets` OK, 444 unitarias y 151 E2E en verde.
+- [x] **Arranque más rápido con meses de datos** (la app se volvía lenta al entrar a medida que crecía el historial):
+      `fmtNum` reutiliza un `Intl.NumberFormat` por formato (`toLocaleString` creaba uno en cada llamada: casi la
+      mitad del tiempo al abrir); `addDays`/`diffDays`/`dow`/`isDateStr` con aritmética de días sin zona horaria
+      (idénticos a los de antes, comprobado en 1,5 millones de casos y 7 zonas horarias); las tarjetas del final de Hoy
+      (check-in, panel, objetivos, análisis) se calculan cada una en su tarea, después de pintar lo principal. Con un año
+      de datos (CPU ×4), el bloqueo más largo al abrir pasa de ~750 a ~130 ms y el total de ~900 a ~350 ms. Las pruebas
+      E2E que registraban series seguidas esperan 450 ms (el seguro contra doble toque es de 400 ms desde la ronda 5).
 
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).

@@ -14,25 +14,57 @@ export function toDateStr(d) {
 export function todayStr(now = new Date()) {
   return toDateStr(now);
 }
+// Los cálculos de fechas se hacen decenas de miles de veces al abrir la app (análisis): 'YYYY-MM-DD' se lee
+// cifra a cifra y la aritmética de días va en UTC (sin zona horaria; mismo resultado que con fechas locales a mediodía).
+function isYmd(s) {
+  if (typeof s !== 'string' || s.length !== 10) return false;
+  for (let i = 0; i < 10; i++) {
+    const c = s.charCodeAt(i);
+    if (i === 4 || i === 7 ? c !== 45 : c < 48 || c > 57) return false;
+  }
+  return true;
+}
+function digits(s, i, n) {
+  let v = 0;
+  for (let k = i; k < i + n; k++) v = v * 10 + s.charCodeAt(k) - 48;
+  return v;
+}
 /** 'YYYY-MM-DD' -> Date local a mediodía (evita problemas de cambio de hora). */
 export function parseDate(str) {
+  if (isYmd(str)) return new Date(digits(str, 0, 4), digits(str, 5, 2) - 1, digits(str, 8, 2), 12, 0, 0, 0);
   const [y, m, d] = String(str).split('-').map(Number);
   return new Date(y, m - 1, d, 12, 0, 0, 0);
 }
+const utcMs = (s, add = 0) => Date.UTC(digits(s, 0, 4), digits(s, 5, 2) - 1, digits(s, 8, 2) + add);
+function utcStr(ms) {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 export function isDateStr(str) {
-  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str) && toDateStr(parseDate(str)) === str;
+  if (!isYmd(str)) return false;
+  const y = digits(str, 0, 4);
+  const m = digits(str, 5, 2);
+  const d = digits(str, 8, 2);
+  // Años < 1000 no salen igual al escribirlos (toDateStr no rellena el año): no son fechas válidas.
+  if (y < 1000 || m < 1 || m > 12 || d < 1) return false;
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  return d <= (m === 2 && leap ? 29 : MONTH_DAYS[m - 1]);
 }
 export function addDays(str, n) {
+  if (Number.isInteger(n) && isYmd(str)) return utcStr(utcMs(str, n));
   const d = parseDate(str);
   d.setDate(d.getDate() + n);
   return toDateStr(d);
 }
 /** Días de a hasta b (b - a). */
 export function diffDays(a, b) {
+  if (isYmd(a) && isYmd(b)) return (utcMs(b) - utcMs(a)) / 86400000;
   return Math.round((parseDate(b) - parseDate(a)) / 86400000);
 }
 /** Día de la semana 0 = lunes … 6 = domingo. */
 export function dow(str) {
+  if (isYmd(str)) return (new Date(utcMs(str)).getUTCDay() + 6) % 7;
   return (parseDate(str).getDay() + 6) % 7;
 }
 /** Lunes de la semana de la fecha. */
@@ -127,10 +159,18 @@ export function parseIntSafe(v) {
   const n = parseNum(v);
   return n == null ? null : Math.round(n);
 }
+// toLocaleString crea un formateador en cada llamada (lentísimo con miles de series al abrir la app).
+const NUM_FMT = new Map();
 /** 72.5 → '72,5' ; null → '—' */
 export function fmtNum(n, dec = 1, minDec = 0) {
   if (n == null || !Number.isFinite(n)) return '—';
-  return n.toLocaleString('es-ES', { maximumFractionDigits: dec, minimumFractionDigits: minDec, useGrouping: true });
+  const key = `${dec}|${minDec}`;
+  let f = NUM_FMT.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat('es-ES', { maximumFractionDigits: dec, minimumFractionDigits: minDec, useGrouping: true });
+    NUM_FMT.set(key, f);
+  }
+  return f.format(n);
 }
 /** Para rellenar <input>: sin separador de miles, coma decimal, '' si null. */
 export function numToInput(n, dec = 2) {

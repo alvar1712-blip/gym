@@ -113,29 +113,36 @@ function safely(label, fn) {
   }
 }
 
-/** Rellena el hueco y lo marca con data-ready="1" al terminar (haya tarjetas o no). */
+/** Cede el hilo: la pantalla se pinta y atiende toques entre tarjeta y tarjeta. */
+const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * Rellena el hueco y lo marca con data-ready="1" al terminar (haya tarjetas o no). Cada tarjeta se calcula en su
+ * propia tarea (con meses de datos, todas juntas bloqueaban la pantalla casi un segundo al abrir la app).
+ */
 async function fillExtra(slot, today, active) {
-  let mods = null;
-  try {
-    mods = await loadExtraModules();
-  } catch (err) {
-    console.error('[hoy] módulos de la Fase 3', err);
-  }
-  let an = null;
-  try {
-    an = await loadAnalysisModule();
-  } catch (err) {
-    console.error('[hoy] módulo del análisis', err);
-  }
+  const [mods, an] = await Promise.all([
+    loadExtraModules().catch((err) => { console.error('[hoy] módulos de la Fase 3', err); return null; }),
+    loadAnalysisModule().catch((err) => { console.error('[hoy] módulo del análisis', err); return null; }),
+  ]);
+  await nextTask(); // lo principal de Hoy se pinta antes de calcular nada
   if (mods && slot.isConnected) { // si se cambió de pantalla mientras cargaban, no se calcula nada
     const [ci, weekly, goals] = mods;
     const data = safely('datos', () => weekly.weeklyData(today)); // un único `data` para todas las tarjetas
-    slot.append(...[
-      safely('check-in', () => todayCheckin(ci, today, active)),
-      data ? safely('panel semanal', () => weekly.weeklySummaryCard({ data })) : null,
-      data ? safely('objetivos', () => goals.goalsSummaryCard({ data })) : null,
-      data && an ? safely('análisis', () => an.analysisSummaryCard({ data, today })) : null,
-    ].filter(Boolean));
+    const cards = [
+      () => todayCheckin(ci, today, active),
+      data ? () => weekly.weeklySummaryCard({ data }) : null,
+      data ? () => goals.goalsSummaryCard({ data }) : null,
+      data && an ? () => an.analysisSummaryCard({ data, today }) : null,
+    ];
+    const labels = ['check-in', 'panel semanal', 'objetivos', 'análisis'];
+    for (let i = 0; i < cards.length; i++) {
+      if (!slot.isConnected) break;
+      if (!cards[i]) continue;
+      const el = safely(labels[i], cards[i]);
+      if (el) slot.append(el);
+      if (i < cards.length - 1) await nextTask();
+    }
   }
   slot.dataset.ready = '1';
 }

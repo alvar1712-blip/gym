@@ -100,8 +100,8 @@ async function launch({ time, serviceWorkers = 'block', hash = '', init = null, 
 const hashOf = (page) => page.evaluate(() => location.hash);
 const getSession = (page, id) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__app.store.get('sessions', i))), id);
 const card = (page, seId) => page.locator(`[data-se="${seId}"]`);
-/** El botón «Registrar» ignora un segundo toque durante 300 ms (doble toque accidental). */
-const guard = (page) => page.waitForTimeout(320);
+/** El botón «Registrar» ignora un segundo toque durante 400 ms (doble toque accidental). */
+const guard = (page) => page.waitForTimeout(450);
 const sheetPanel = (page) => page.locator('.sheet-overlay.open .sheet-panel').last();
 const sheetBtn = (page, text) => sheetPanel(page).locator('button', { hasText: text });
 const waitNoSheet = (page) => page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 5000 });

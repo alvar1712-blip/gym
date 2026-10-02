@@ -26,7 +26,7 @@ async function seedHistory(page) {
 const getSession = (page, id) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__app.store.get('sessions', i))), id);
 /** Textos sin espacios duros («40\u00a0%» → «40 %»). */
 const plain = (arr) => arr.map((t) => t.replace(/\u00a0/g, ' '));
-const settle = (page) => page.waitForTimeout(320); // el botón «Registrar» ignora dobles toques durante 300 ms
+const settle = (page) => page.waitForTimeout(450); // el botón «Registrar» ignora dobles toques durante 400 ms
 
 test('calentamiento sugerido: plegado, desplegar, añadir series, 1 toque y sin contar como trabajo ni récord', async () => {
   const app = await openApp();
