@@ -15,12 +15,15 @@ export function rirValue(rir) {
   return typeof rir === 'number' && Number.isFinite(rir) ? rir : null;
 }
 
+/** Repeticiones máximas de una serie para estimar el 1RM (por encima, la estimación no es fiable). */
+export const E1RM_MAX_REPS = 12;
+
 /**
  * 1RM estimado (Epley) usando reps + RIR como repeticiones hasta el fallo.
  * Solo para series de 1–12 repeticiones hechas. Devuelve null si no aplica.
  */
 export function e1rm(weight, reps, rir = null) {
-  if (!(weight > 0) || !(reps >= 1 && reps <= 12)) return null;
+  if (!(weight > 0) || !(reps >= 1 && reps <= E1RM_MAX_REPS)) return null;
   const r = reps + (rirValue(rir) ?? 0);
   return r <= 1 ? weight : weight * (1 + r / 30);
 }

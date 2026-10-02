@@ -16,6 +16,7 @@ import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts 
 import { weeklySummaryCard } from './weekly.js';
 import { bodyMap, bodyMapData } from '../bodymap.js';
 import { goalsSummaryCard } from './goals.js';
+import { pastRecoveryCard, pastRecordsLink } from './past-records.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
 const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null };
@@ -744,11 +745,14 @@ export function mountExerciseProgress(root, params = {}) {
     return undefined;
   }
   const sum = S.exerciseSummary(data, ex.id);
+  // Marca histórica (ronda 6): con marcas, una tarjeta bajo los datos clave; sin ellas, una fila junto a la ficha.
+  const past = pastRecoveryCard(ex, data);
+  const pastCard = past?.classList.contains('pr-card') ? past : null;
   if (!sum || !sum.sessions) {
     c.append(h('section.card', emptyState({
       emoji: '📈', title: 'Sin historial todavía',
       text: 'Registra una sesión con este ejercicio (al menos una serie de trabajo) para ver aquí su peso máximo, su 1RM estimado y su historial. Los calentamientos no cuentan.',
-    })), fichaLink(ex));
+    })), ...[past, fichaLink(ex)].filter(Boolean));
     return undefined;
   }
   const rec = sum.record || {};
@@ -789,6 +793,7 @@ export function mountExerciseProgress(root, params = {}) {
   kpis.push(k('Sesiones', nf0(sum.sessions), plural(sum.workSets, 'serie de trabajo', 'series de trabajo'), 'sessions'));
   kpis.push(k('Última vez', fmtDay(sum.lastDate, today), relDay(sum.lastDate, today), 'last'));
   c.appendChild(h('div.kpis.kpis-2.prg-kpis', kpis));
+  if (pastCard) c.appendChild(pastCard);
 
   // Gráficas (todas con el mismo selector de periodo)
   const defs = [];
@@ -926,7 +931,7 @@ export function mountExerciseProgress(root, params = {}) {
     h('div.row-between.prg-hist-head', h('h2.section-title', 'Historial completo'), h('span.muted.small', plural(hist.length, 'sesión', 'sesiones'))),
     h('p.prg-hist-note', '🏆 = récord en ese momento (más peso, más 1RM estimado, más reps a un peso, más tiempo o altura). Solo series de trabajo: sin calentamientos. Toca una sesión para abrirla.'),
     listEl,
-    fichaLink(ex));
+    ...[past && !pastCard ? past : null, fichaLink(ex)].filter(Boolean));
   return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
 }
 
@@ -974,10 +979,12 @@ export function mountRecords(root) {
 function strengthRecordsView(data, today) {
   const recs = S.strengthRecords(data);
   if (!recs.length) {
-    return h('section.card', emptyState({
-      emoji: '🏆', title: 'Aún no hay récords de fuerza',
-      text: 'Registra tu primera sesión de fuerza: cada ejercicio con series de trabajo tendrá aquí su mejor peso, su mejor 1RM estimado y sus mejores repeticiones a cada peso.',
-    }));
+    return h('div.prg-rec-strength',
+      h('section.card', emptyState({
+        emoji: '🏆', title: 'Aún no hay récords de fuerza',
+        text: 'Registra tu primera sesión de fuerza: cada ejercicio con series de trabajo tendrá aquí su mejor peso, su mejor 1RM estimado y sus mejores repeticiones a cada peso.',
+      })),
+      pastRecordsLink());
   }
   const items = recs.map((r) => ({ name: r.name, exercise: data.exercises.get(r.exerciseId), rec: r }));
   const dateTxt = (r) => fmtDate(r.date, 'full');
@@ -1055,8 +1062,9 @@ function strengthRecordsView(data, today) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
   paint();
   return h('div.prg-rec-strength',
+    pastRecordsLink(),
     input,
-    h('p.prg-hist-note', 'Cada récord lleva la fecha de la primera vez que lo lograste; tócalo para abrir esa sesión. El 1RM es una estimación (Epley con reps + RIR, series de 1–12 reps), no un peso levantado.'),
+    h('p.prg-hist-note', 'Cada récord lleva la fecha de la primera vez que lo lograste en Entreno; tócalo para abrir esa sesión. El 1RM es una estimación (Epley con reps + RIR, series de 1–12 reps), no un peso levantado. Tus marcas de antes de Entreno van aparte, en «Marcas históricas».'),
     listEl);
 }
 

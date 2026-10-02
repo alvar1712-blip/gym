@@ -645,6 +645,7 @@ export function mountData(root) {
     ['Check-ins', counts.checkins, 'checkins'],
     ['Objetivos', counts.goals, 'goals'],
     ['Contexto (fases y hechos)', counts.context, 'context'],
+    ['Marcas históricas', counts.pastRecords, 'pastRecords'],
   ].map(([label, n, id]) => kv(label, h('span.cfg-kv-value.tnum', String(n)), { dataset: { count: id } }));
 
   // ---------- borrar todo ----------

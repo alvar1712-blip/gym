@@ -56,6 +56,7 @@ export function dataCounts(data = {}) {
     checkins: (data.checkins || []).length,
     goals: (data.goals || []).length,
     context: (data.context || []).length,
+    pastRecords: (data.pastRecords || []).length,
   };
 }
 

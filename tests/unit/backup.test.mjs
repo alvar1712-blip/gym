@@ -139,7 +139,7 @@ test('buildBackupObject: lastBackupAt = ahora DENTRO de la copia, sin mutar el o
 test('dataCounts / backupSummary: recuento por tipo y fecha de la copia', () => {
   const obj = buildBackupObject(sampleExport(), Date.UTC(2026, 8, 23, 8, 0));
   const c = dataCounts(obj.data);
-  assert.deepEqual(c, { strength: 1, activities: 2, templates: 5, exercises: 2, customExercises: 1, bodyweight: 2, plan: 1, checkins: 1, goals: 0, context: 0 });
+  assert.deepEqual(c, { strength: 1, activities: 2, templates: 5, exercises: 2, customExercises: 1, bodyweight: 2, plan: 1, checkins: 1, goals: 0, context: 0, pastRecords: 0 });
   const sum = backupSummary(obj);
   assert.equal(sum.exportedAt, Date.UTC(2026, 8, 23, 8, 0));
   assert.equal(sum.appVersion, '1.0.0');
@@ -149,8 +149,9 @@ test('dataCounts / backupSummary: recuento por tipo y fecha de la copia', () => 
   const o2 = buildBackupObject(sampleExport(), 12345);
   o2.exportedAt = 'no es fecha';
   assert.equal(backupSummary(o2).exportedAt, 12345);
-  assert.deepEqual(dataCounts({}), { strength: 0, activities: 0, templates: 0, exercises: 0, customExercises: 0, bodyweight: 0, plan: 0, checkins: 0, goals: 0, context: 0 });
+  assert.deepEqual(dataCounts({}), { strength: 0, activities: 0, templates: 0, exercises: 0, customExercises: 0, bodyweight: 0, plan: 0, checkins: 0, goals: 0, context: 0, pastRecords: 0 });
   assert.equal(dataCounts({ context: [{ id: 'a' }, { id: 'b' }] }).context, 2);
+  assert.equal(dataCounts({ pastRecords: [{ id: 'a' }] }).pastRecords, 1);
 });
 
 test('lostSectionsWarning: solo avisa si la copia no trae una sección en la que ahora hay datos', () => {
