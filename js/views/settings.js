@@ -4,12 +4,14 @@
 import * as store from '../store.js';
 import { estimate } from '../db.js';
 import { navigate, refresh } from '../router.js';
-import { h, icon, screen, stepper, segmented, toast, undoToast, confirmDialog, sheet, shareFile, pickFile, isStandalone, actionSheet } from '../ui.js';
+import { h, icon, screen, stepper, segmented, chips, textInput, toast, undoToast, confirmDialog, sheet, shareFile, pickFile, isStandalone, actionSheet } from '../ui.js';
 import { todayStr, fmtDate, dateFromTs, hhmm, relDay, plural, DAY_LONG, DAY_LETTER, dow, deepClone, round, clamp } from '../util.js';
 import { defaultSettings, MUSCLES } from '../seed.js';
 import {
   getProfile, isFemale, isHormonal, g, profileIncomplete, label as plabel, SEXES, GOALS, EXPERIENCES, CONTRACEPTION,
+  SECONDARY_GOALS, SPORTS, ageOn, validBirthDate,
 } from '../profile.js';
+import { currentLabel, normalizeAll } from '../context-logic.js';
 import { currentPattern, setWeekPattern } from '../plan.js';
 import { pickTemplate } from '../pickers.js';
 import {
@@ -38,6 +40,7 @@ function countsText(c, { all = false, sep = ', ' } = {}) {
     [c.plan, 'día modificado en el calendario', 'días modificados en el calendario', false],
     [c.checkins, 'check-in', 'check-ins', false],
     [c.goals, 'objetivo', 'objetivos', false],
+    [c.context, 'apunte de contexto', 'apuntes de contexto', false],
   ];
   return parts.filter(([n, , , main]) => n > 0 || (all && main)).map(([n, one, many]) => plural(n, one, many)).join(sep);
 }
@@ -127,7 +130,7 @@ export function mountSettings(root) {
   }
 
   c.append(
-    h('div.list.cfg-profile-list', profileRow()),
+    h('div.list.cfg-profile-list', profileRow(), contextRow()),
     h('div.section-title', 'Plan'),
     h('div.list',
       navRow({ ico: 'calendar', title: 'Semana tipo', href: '#/settings/week', extra: weekMini(days, tpls), aria: `Semana tipo: ${weekSummaryText(days, tpls)}`, className: 'cfg-week-row' }),
@@ -638,6 +641,7 @@ export function mountData(root) {
     ['Días modificados en el calendario', counts.plan, 'plan'],
     ['Check-ins', counts.checkins, 'checkins'],
     ['Objetivos', counts.goals, 'goals'],
+    ['Contexto (fases y hechos)', counts.context, 'context'],
   ].map(([label, n, id]) => kv(label, h('span.cfg-kv-value.tnum', String(n)), { dataset: { count: id } }));
 
   // ---------- borrar todo ----------
@@ -753,6 +757,16 @@ function profileRow() {
   icon('chevron-right', 20, 'chev'));
 }
 
+/** «Tu contexto»: la fase vigente o cuántos apuntes hay (ronda 6). */
+function contextRow() {
+  const n = normalizeAll(store.all('context')).length;
+  const now = currentLabel(store.all('context'), todayStr());
+  return navRow({
+    ico: 'calendar', title: 'Tu contexto', href: '#/context', className: 'cfg-context-row',
+    sub: now ? `Ahora: ${now}` : n ? plural(n, 'apunte', 'apuntes') : 'Fases y hechos (también de antes): parones, vuelta al gimnasio, creatina…',
+  });
+}
+
 /** Lista de opciones con una elegida (radio). */
 function choiceList({ options, value, onPick, ariaLabel, name }) {
   return h('div.list.cfg-choices', { role: 'radiogroup', 'aria-label': ariaLabel, dataset: { choice: name } },
@@ -811,9 +825,47 @@ export function mountProfile(root) {
           onPick: (v) => pick({ experience: v }),
         }),
         h('p.cfg-why', 'Cambia lo que se considera un buen ritmo de mejora: cuanto más tiempo llevas, más despacio se progresa.')),
+      birthBlock(p),
+      h('section.card.cfg-block.cfg-prof', { dataset: { block: 'secondary' } },
+        h('h2.card-title', 'Otros objetivos'),
+        chips({
+          options: SECONDARY_GOALS.filter((x) => x.id !== p.goal).map((x) => ({ value: x.id, label: x.label })), value: p.secondaryGoals.filter((x) => x !== p.goal),
+          multi: true, className: 'cfg-secondary', onChange: (v) => saveProfile({ secondaryGoals: v }),
+        })),
+      h('section.card.cfg-block.cfg-prof', { dataset: { block: 'sports' } },
+        h('h2.card-title', 'Qué practicas'),
+        chips({ options: SPORTS.map((x) => ({ value: x.id, label: x.label })), value: p.sports, multi: true, className: 'cfg-sports', onChange: (v) => saveProfile({ sports: v }) }),
+        h('div.field', h('span.field-label', 'Días de entreno por semana'),
+          chips({
+            options: [1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: String(n), className: 'chip-num' })), value: p.weeklyFrequency, allowNone: true,
+            className: 'cfg-frequency', onChange: (v) => saveProfile({ weeklyFrequency: v }),
+          }))),
+      h('section.card.cfg-block.cfg-prof', { dataset: { block: 'limitations' } },
+        h('h2.card-title', 'Molestias o limitaciones'),
+        textInput({ value: p.limitations, multiline: true, rows: 3, maxlength: 500, placeholder: 'Opcional: p. ej. molestia en el hombro derecho', ariaLabel: 'Molestias o limitaciones', onInput: (v) => saveProfile({ limitations: v }, { soon: true }) }),
+        h('button.btn.btn-secondary.btn-block.cfg-context-link', { type: 'button', onClick: () => navigate('#/context') }, icon('calendar', 20), 'Tu contexto: fases y hechos')),
     ];
     if (female) blocks.push(cycleBlock(p));
     body.replaceChildren(...blocks);
+  }
+
+  /** Fecha de nacimiento (opcional): adapta los consejos a la edad (menores, mayores). */
+  function birthBlock(p) {
+    const today = todayStr();
+    const age = ageOn(p.birthDate, today);
+    const err = h('p.form-error', { hidden: true, role: 'alert', dataset: { err: 'birthDate' } });
+    const inp = h('input.input.cfg-birth', { type: 'date', value: p.birthDate || '', max: today, 'aria-label': 'Fecha de nacimiento' });
+    inp.addEventListener('change', () => {
+      const v = inp.value || null;
+      if (v && !validBirthDate(v, today)) { err.hidden = false; err.textContent = 'Revisa la fecha (no puede ser futura).'; return; }
+      pick({ birthDate: v });
+    });
+    return h('section.card.cfg-block.cfg-prof', { dataset: { block: 'birth' } },
+      h('h2.card-title', 'Fecha de nacimiento'),
+      inp, err,
+      h('p.cfg-why', age != null
+        ? `${age} años. Con menos de 18 o desde los 65, el análisis es más prudente (sin déficits agresivos ni progresiones rápidas).`
+        : 'Opcional. Con ella el análisis adapta sus consejos a tu edad; sin ella usa los de un adulto.'));
   }
 
   function cycleBlock(p) {

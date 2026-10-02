@@ -1,4 +1,4 @@
-// E2E del perfil (ronda 5, docs/MEJORAS5.md §2): fila «Perfil» arriba de Ajustes, #/settings/profile (sexo, objetivo,
+// E2E del perfil (ronda 5, docs/MEJORAS5.md §2; ronda 6, docs/MEJORAS6.md): fila «Perfil» arriba de Ajustes, #/settings/profile (sexo, objetivo,
 // experiencia y, en modo mujer, seguimiento del ciclo, anticonceptivo, duraciones y «Incluir el ciclo en el informe»)
 // con guardado inmediato en IndexedDB, tarjeta «Completa tu perfil (30 s)» de Hoy («Ahora no» la descarta para
 // siempre) y textos en femenino. Botones ≥ 44 px, sin scroll horizontal a 375 px y sin errores de consola.
@@ -82,7 +82,12 @@ test('Hoy: «Completa tu perfil (30 s)» tras «Te toca hoy»; «Completar» lle
     assert.ok(await startVisible(page), '«Empezar» sigue a la vista');
     for (const b of await card.locator('button').all()) assert.ok((await b.boundingBox()).height >= 44);
     await shot(page, 'profile-today-prompt');
+    // Ronda 6: con el perfil vacío, «Completar» abre la bienvenida (docs/MEJORAS6.md); con algo ya contestado, el perfil.
     await clickAndWait(page, card.locator('.an-prompt-go'));
+    assert.strictEqual(await hashOf(page), '#/welcome');
+    await page.evaluate(async () => { const s = window.__app.store; const st = s.settings(); st.profile.sex = 'male'; await s.save('meta', st); });
+    await open(page, '#/today');
+    await clickAndWait(page, page.locator('.today-profile .an-prompt-go'));
     assert.strictEqual(await hashOf(page), '#/settings/profile');
     await open(page, '#/today');
     await page.locator('.today-profile .an-prompt-later').click();

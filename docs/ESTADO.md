@@ -46,6 +46,15 @@
       (check-in, panel, objetivos, análisis) se calculan cada una en su tarea, después de pintar lo principal. Con un año
       de datos (CPU ×4), el bloqueo más largo al abrir pasa de ~750 a ~130 ms y el total de ~900 a ~350 ms. Las pruebas
       E2E que registraban series seguidas esperan 450 ms (el seguro contra doble toque es de 400 ms desde la ronda 5).
+- [x] **Ronda 6 · fase 0** (contrato `docs/MEJORAS6.md`): WebKit (motor de Safari) en Playwright junto a Chromium
+      (`scripts/setup-webkit.sh`, `npm run e2e:webkit`), `npm run perf` (arranque con 3 meses, 1, 2 y 5 años) y
+      `docs/PRUEBAS.md`.
+- [x] **Ronda 6 · fase A**: IndexedDB v3 (`context`, `pastRecords`, `races`; solo se añaden almacenes), copia formato 2
+      (acepta la 1), perfil ampliado (fecha de nacimiento completa y opcional, grupos de edad, otros objetivos, deportes,
+      días por semana, molestias), «Tu contexto» (fases y hechos, también de antes de la app, con fecha aproximada:
+      día, mes, estación o año), línea «Ahora» en Hoy y bienvenida de 3 pasos para perfiles nuevos. Pruebas de
+      migración v1/v2 → v3 y de copias en Chromium y WebKit. Arranque sin cambios medibles (rondas alternas, 1 año:
+      «hoy» 735 → 635 ms, bloqueo máx. 232 → 198 ms, dentro del ruido).
 
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).

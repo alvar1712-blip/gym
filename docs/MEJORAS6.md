@@ -63,8 +63,18 @@ Campos nuevos (todos opcionales): `birthDate`, `secondaryGoals:[]`, `sports:[]`,
 `weeklyFrequency` (días/semana), `onboardedAt` (ms). Grupo de edad: `minor` (< 18), `adult`, `senior` (≥ 65) o
 `unknown` sin fecha. Los días habituales salen de la semana tipo (no se duplican en el perfil).
 
-### Onboarding
-- Instalación nueva (sin sesiones ni pesajes ni perfil): pantalla `#/welcome` breve en 3 pasos saltables (tú ·
-  objetivo · contexto actual); «Ahora no» la cierra para siempre.
-- Usuarios existentes: nunca se les obliga; la invitación discreta de Hoy («Completa tu perfil») se mantiene y
-  también aparece si faltan los datos nuevos, una sola vez (`promptDismissed` / `profilePrompt2Dismissed`).
+### Onboarding (`#/welcome`, `js/views/welcome.js`)
+- Perfil nuevo (`isNewProfile`: sin sexo, objetivo ni experiencia y sin `onboardedAt`): la tarjeta de Hoy «Completa tu
+  perfil (30 s)» (misma posición y textos) lleva a la bienvenida: 3 pasos saltables (Sobre ti · Tu entrenamiento ·
+  Ahora mismo). Cada respuesta se guarda al momento; «Listo» o «Saltar y terminar» marcan `onboardedAt` y, si se eligió
+  una fase, la crean en `context` (desde el mes actual). Nunca se abre sola.
+- Perfil a medias o ya pasado por la bienvenida: «Completar» lleva a `#/settings/profile`, como antes.
+- Usuarios existentes con el perfil básico completo: Hoy no cambia; invitación discreta en Análisis
+  («Completa tu perfil para mejorar el análisis (…)», `.an-profile-more`) hasta que añadan fecha de nacimiento,
+  deportes y días por semana. Los campos nuevos están en `#/settings/profile` (fecha de nacimiento, otros objetivos,
+  qué practicas, días por semana, molestias) con acceso a «Tu contexto».
+
+### Contexto en la interfaz
+- `#/context` (lista: «Ahora» + historial), `#/context/new?kind=phase|event`, `#/context/:id` (editar, borrar con
+  deshacer). Fechas: Día (selector de fecha) · Mes · Estación · Año (desplegables, la rueda de iOS).
+- Entradas: Ajustes (fila «Tu contexto» bajo Perfil), Perfil, Hoy (una sola línea «Ahora: …» si hay una fase vigente).

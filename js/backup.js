@@ -55,6 +55,7 @@ export function dataCounts(data = {}) {
     plan: (data.plan || []).length,
     checkins: (data.checkins || []).length,
     goals: (data.goals || []).length,
+    context: (data.context || []).length,
   };
 }
 

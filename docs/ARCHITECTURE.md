@@ -87,7 +87,10 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/summary?p=month\|year&d=YYYY-MM-DD` | summary · `mountSummary` | Ronda 4: resumen mensual / anual con comparación con el periodo anterior |
 | `#/analysis` | analysis · `mountAnalysis` | Ronda 5: «tu analista» (peso, fuerza, resistencia, recuperación, ciclo, próximas semanas) + «Copiar informe para tu IA» |
 | `#/cycle` | cycle · `mountCycle` | Ronda 5 (modo mujer): anillo del ciclo, registro de días y síntomas, calendario, historial, «Cómo te afecta», alertas |
-| `#/settings/profile` | settings · `mountProfile` | Ronda 5: sexo, objetivo, experiencia y (mujer) ciclo y anticonceptivo |
+| `#/settings/profile` | settings · `mountProfile` | Ronda 5: sexo, objetivo, experiencia y (mujer) ciclo y anticonceptivo; ronda 6: fecha de nacimiento, otros objetivos, deportes, días por semana y molestias |
+| `#/context` | context · `mountContext` | Ronda 6: «Tu contexto» (fases y hechos, también anteriores a la app, con fecha aproximada): lo vigente y el historial |
+| `#/context/new?kind=phase\|event&type=`, `#/context/:id` | context · `mountContextEdit` | Ronda 6: añadir / editar / borrar (con deshacer) |
+| `#/welcome` | welcome · `mountWelcome` | Ronda 6: bienvenida de 3 pasos para perfiles nuevos (nunca se abre sola) |
 
 Pestaña resaltada: la de la ruta; las rutas de sesión y actividad (`inherit` en la tabla) mantienen la pestaña
 desde la que se abrieron (p. ej. Calendario › Historial › sesión), salvo una sesión de fuerza en curso, que es de «Hoy».
@@ -192,6 +195,15 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 `kind` ausente → se usa el de la semana tipo (el registro solo guarda un estado manual).
 
 ### cycle (ronda 5, IndexedDB v2; `id` = fecha): `{ id:'YYYY-MM-DD', flow:'none'|'spotting'|'light'|'medium'|'heavy', symptoms:[ids], notes, ended?, auto?, createdAt, updatedAt }`
+### context, pastRecords, races (ronda 6, IndexedDB v3) — ver `docs/MEJORAS6.md` («Fase A — modelo de datos»)
+- `context`: fases `{ id, kind:'phase', type, start:Approx, end:Approx|null, text, notes, goalIds, sports }` y hechos
+  `{ id, kind:'event', type, date:Approx, text, notes, kg? }`; `Approx = { date:'YYYY-MM-DD', precision:'day'|'month'|'season'|'year' }`.
+  Lógica pura en `js/context-logic.js` (`normalizeEntry` sanea al leer; `contextOn`, `recentChanges`, `timeline`).
+- `pastRecords` (marcas históricas manuales) y `races` (eventos deportivos) se crean ya vacíos; se usan en las fases B y E.
+- Perfil (`settings.profile`, `js/profile.js`): campos opcionales `birthDate`, `secondaryGoals`, `sports`, `limitations`,
+  `weeklyFrequency`, `onboardedAt`; `getProfile` los completa al leer (no se reescriben perfiles antiguos). `ageGroup`:
+  `minor` (< 18) · `adult` · `senior` (≥ 65) · `unknown` (sin fecha).
+- Copia JSON: `format: 2` (acepta 1 y 2; una de formato 1 deja vacíos los almacenes nuevos).
 ### bodyweight (`id` = fecha): `{ id:'YYYY-MM-DD', kg, createdAt, updatedAt }` (un valor por día; el último manda)
 ### checkins: `{ id:'ci_…', date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, soreness:1|2|3|null, createdAt, updatedAt }` (1 bajo, 2 normal, 3 alto)
 Uno por día y momento (si hay duplicados manda el editado más reciente). Sin ningún valor se elimina. «Omitir» no

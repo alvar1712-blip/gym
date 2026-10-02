@@ -15,7 +15,8 @@ import {
   activityMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 import { bodyweightQuickEntry } from './bodyweight.js';
-import { getProfile, profileIncomplete, cycleEnabled } from '../profile.js';
+import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
+import { currentLabel } from '../context-logic.js';
 
 const QUICK = [
   { kind: 'run', emoji: '🏃', label: 'Carrera' },
@@ -41,7 +42,13 @@ export async function mountToday(root) {
   const profile = getProfile(store.settings());
   const cycleSlot = cycleEnabled(profile) ? h('div.today-cycle-slot') : null;
   if (cycleSlot) content.appendChild(cycleSlot);
-  if (profileIncomplete(profile) && !profile.promptDismissed) content.appendChild(profilePrompt());
+  if (profileIncomplete(profile) && !profile.promptDismissed) content.appendChild(profilePrompt(isNewProfile(profile)));
+  // Ronda 6: una sola línea con la fase vigente de «Tu contexto» (nada si no hay ninguna).
+  const ctxNow = currentLabel(store.all('context'), today);
+  if (ctxNow) {
+    content.appendChild(h('button.cal-link-btn.today-context', { type: 'button', onClick: () => navigate('#/context') },
+      h('span.today-context-text', h('span.today-context-kicker', 'Ahora: '), ctxNow), icon('chevron-right', 18)));
+  }
 
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
@@ -164,8 +171,11 @@ function todayCheckin(ci, today, active) {
   return el;
 }
 
-/** «Completa tu perfil (30 s)» → #/settings/profile; «Ahora no» la descarta para siempre (profile.promptDismissed). */
-function profilePrompt() {
+/**
+ * «Completa tu perfil (30 s)» → la bienvenida (#/welcome) con el perfil vacío, o #/settings/profile si ya hay algo;
+ * «Ahora no» la descarta para siempre (profile.promptDismissed).
+ */
+function profilePrompt(isNew = false) {
   const card = h('section.card.today-profile.an-prompt', { dataset: { card: 'profile' } },
     h('div.an-prompt-top',
       h('span.an-card-icon', { 'aria-hidden': 'true' }, icon('sliders', 20)),
@@ -173,7 +183,7 @@ function profilePrompt() {
         h('h2.an-prompt-title', 'Completa tu perfil (30 s)'),
         h('p.an-prompt-text', 'Sexo, objetivo y experiencia: tu análisis usará tus rangos y te hablará a tu medida.'))),
     h('div.an-prompt-actions',
-      h('button.btn.btn-secondary.an-prompt-go', { type: 'button', onClick: () => navigate('#/settings/profile') }, 'Completar'),
+      h('button.btn.btn-secondary.an-prompt-go', { type: 'button', onClick: () => navigate(isNew ? '#/welcome' : '#/settings/profile') }, 'Completar'),
       h('button.btn.btn-ghost.an-prompt-later', {
         type: 'button',
         onClick: () => {

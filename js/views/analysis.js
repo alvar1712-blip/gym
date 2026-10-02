@@ -19,7 +19,7 @@ import { lineChart, COLORS } from '../charts.js';
 import { buildAnalysis, areaInsights, isPlaceholder, AREA_LABEL, LEVEL_LABEL, DISCLAIMER } from '../analysis.js';
 import { reportText } from '../analysis-report.js';
 import { rateText } from '../analysis-training.js';
-import { getProfile } from '../profile.js';
+import { getProfile, profileExtrasMissing } from '../profile.js';
 
 const LEVEL_ICON = { good: 'check', warn: 'alert', neutral: 'info', info: 'info' };
 const STATUS_TAG = { fast: 'Rápido', good: 'Bien', stalled: 'Estancado', down: 'Bajando' };
@@ -183,6 +183,7 @@ export function mountAnalysis(root) {
 
   c.appendChild(h('p.an-note', icon('info', 16), h('span', DISCLAIMER)));
   if (a.profileIncomplete) c.appendChild(profileBanner(a));
+  else if (profileExtrasMissing(profile).length) c.appendChild(profileMoreLink(profile));
 
   if (!a.hasData) {
     c.appendChild(h('section.card.an-nodata', emptyState({
@@ -203,6 +204,14 @@ export function mountAnalysis(root) {
   c.appendChild(forecastCard(a));
   c.appendChild(reportCard(a, report));
   return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
+}
+
+/** Ronda 6: invitación discreta a añadir los datos nuevos del perfil (edad, deportes, días por semana). */
+function profileMoreLink(p) {
+  const NAMES = { birthDate: 'fecha de nacimiento', sports: 'deportes', weeklyFrequency: 'días por semana' };
+  return h('button.cal-link-btn.an-profile-more', { type: 'button', onClick: () => navigate('#/settings/profile') },
+    h('span', `Completa tu perfil para mejorar el análisis (${profileExtrasMissing(p).map((k) => NAMES[k]).join(', ')})`),
+    icon('chevron-right', 18));
 }
 
 function profileBanner(a) {

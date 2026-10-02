@@ -6,7 +6,9 @@ import { deepClone, fillDefaults, sortBy, todayStr } from './util.js';
 
 export const STORES = db.STORES;
 export const APP_VERSION = '1.0.0';
-export const BACKUP_FORMAT = 1;
+// Formato de la copia JSON. 2 (ronda 6) añade 'context', 'pastRecords' y 'races'. Se aceptan copias de formato ≤ 2
+// (en una de formato 1 esos almacenes llegan vacíos); una app antigua rechaza la 2 en vez de perderlos en silencio.
+export const BACKUP_FORMAT = 2;
 export const BACKUP_APP_ID = 'entreno-pwa';
 
 const maps = Object.fromEntries(STORES.map((s) => [s, new Map()]));
@@ -304,7 +306,7 @@ export async function requestPersist() {
 /** true si hay datos del usuario (sesiones, peso…) y no hay copia en `days` días. */
 export function backupOverdue(now = Date.now()) {
   const s = settings();
-  const hasUserData = count('sessions') + count('bodyweight') + count('goals') + count('checkins') > 0;
+  const hasUserData = ['sessions', 'bodyweight', 'goals', 'checkins', 'context', 'pastRecords', 'races'].some((st) => count(st) > 0);
   if (!hasUserData) return false;
   const days = s.backupReminderDays ?? 7;
   if (!s.lastBackupAt) return true;

@@ -20,7 +20,7 @@ const { pathToFileURL } = require('url');
 const { chromium, devices } = require('playwright');
 const { waitReady, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
 
-const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle'];
+const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle', 'context', 'pastRecords', 'races'];
 const PREV_MON = '2026-09-14';
 const MON = '2026-09-21';
 const WED = '2026-09-23';

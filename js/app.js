@@ -40,6 +40,11 @@ export const ROUTES = [
   { pattern: '/analysis', tab: 'progress', load: v('analysis'), fn: 'mountAnalysis' },
   { pattern: '/cycle', tab: 'today', load: v('cycle'), fn: 'mountCycle' },
   { pattern: '/settings/profile', tab: 'settings', load: v('settings'), fn: 'mountProfile' },
+  // Ronda 6 (docs/MEJORAS6.md): contexto del usuario y bienvenida
+  { pattern: '/context', tab: 'settings', inherit: true, load: v('context'), fn: 'mountContext' },
+  { pattern: '/context/new', tab: 'settings', inherit: true, load: v('context'), fn: 'mountContextEdit' },
+  { pattern: '/context/:id', tab: 'settings', inherit: true, load: v('context'), fn: 'mountContextEdit' },
+  { pattern: '/welcome', tab: 'today', load: v('welcome'), fn: 'mountWelcome' },
 ];
 
 const TABS = [

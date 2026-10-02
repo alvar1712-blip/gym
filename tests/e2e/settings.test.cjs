@@ -8,7 +8,7 @@ const { openApp, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs')
 
 const NOW = new Date('2026-09-23T10:00:00Z'); // 12:00 en Madrid
 const WS = '2026-09-21';
-const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle'];
+const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle', 'context', 'pastRecords', 'races'];
 
 const settle = (page, ms = 250) => page.waitForTimeout(ms);
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
@@ -442,7 +442,7 @@ test('CRITERIO: exportar copia → borrar todo (doble confirmación) → importa
     const backup = JSON.parse(text);
     await settle(page);
     assert.strictEqual(backup.app, 'entreno-pwa');
-    assert.strictEqual(backup.format, 1);
+    assert.strictEqual(backup.format, 2); // ronda 6: formato 2 (almacenes context, pastRecords, races)
     assert.deepStrictEqual(Object.keys(backup.data).sort(), [...STORES].sort());
     const fileSettings = backup.data.meta.find((m) => m.id === 'settings');
     assert.strictEqual(fileSettings.lastBackupAt, NOW.getTime(), 'lastBackupAt = ahora DENTRO de la copia');
@@ -756,7 +756,7 @@ test('almacenamiento: persistente, espacio usado y recuento por tipo', async () 
     // El botón de volver a pedirlo solo aparece si no está concedido.
     assert.strictEqual(await page.locator('.cfg-persist-btn').isVisible(), !status.persisted && status.supported);
     const counts = Object.fromEntries(await page.locator('.cfg-counts .cfg-kv').evaluateAll((els) => els.map((e) => [e.dataset.count, e.querySelector('.cfg-kv-value').textContent])));
-    assert.deepStrictEqual({ ...counts, exercises: undefined }, { strength: '3', activities: '4', bodyweight: '3', templates: '5', plan: '1', checkins: '1', goals: '1', exercises: undefined });
+    assert.deepStrictEqual({ ...counts, exercises: undefined }, { strength: '3', activities: '4', bodyweight: '3', templates: '5', plan: '1', checkins: '1', goals: '1', context: '0', exercises: undefined });
     assert.match(counts.exercises, /^\d+ \(1 propio\)$/);
     await page.locator('.cfg-block[data-block="storage"]').scrollIntoViewIfNeeded();
     await shot(page, 'settings-data-storage');
