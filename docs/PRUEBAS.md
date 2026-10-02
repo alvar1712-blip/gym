@@ -53,3 +53,26 @@ Antes: exporta una copia (Ajustes › Copias y datos).
    no salta de vuelta.
 6. **Cerrar y reabrir.** Cierra la app desde el selector de apps y ábrela: el contexto y el perfil siguen ahí.
 7. **Copia.** Exporta una copia nueva y comprueba que el archivo se guarda en Archivos (formato 2, con el contexto).
+
+## Comprobación manual en iPhone (fase B, ~5 min)
+Antes: exporta una copia (Ajustes › Copias y datos).
+
+1. **Actualizar.** «Hay una versión nueva · Actualizar». Abre un día antiguo con check-in (Calendario › día): sale como
+   antes, con «—» en Estrés. Ajustes › Copias y datos tiene una fila nueva «Marcas históricas» = 0.
+2. **Check-in en 4 toques.** Empieza una sesión de fuerza › «¿Cómo llegas hoy?» › sueño, energía, estrés y agujetas: se
+   pliega sola y la franja muestra las cuatro sin cortar letras (SUEÑO, ENERGÍA, ESTRÉS, AGUJETAS). «Registrar serie 1»
+   sigue a la vista.
+3. **Zona con el mapa.** Despliega el check-in › «Añadir zona» › toca los isquiotibiales en el mapa (con el dedo, sin
+   zoom), «Izquierda», 7 › Añadir. Sale la ficha «Isquiotibiales izq. · 7». «Otra zona» › «Molestia o dolor» › Rodilla › 3.
+   Toca la ficha de la rodilla › 5 › Guardar. Desliza hacia abajo una hoja abierta: se cierra sin guardar.
+4. **Día del calendario.** Calendario › ayer › «Añadir check-in» › contesta y añade una zona desde ahí (hoja sobre
+   hoja) › Listo: el día muestra el resumen «Ese día». Gesto de atrás desde el borde: vuelve al calendario sin doble
+   animación.
+5. **Marca histórica.** Progreso › Récords › «Marcas históricas» › + › Press banca › 100 kg × 5 › «Sé cuándo fue» ›
+   Estación › Verano › año pasado › Guardar. Comprueba: teclado numérico en peso y reps, ruedas de iOS en estación y
+   año, «Guardar» alcanzable con el teclado abierto. Si has hecho press banca en las últimas 4 semanas, sale
+   «Rendimiento actual ≈ N %…»; abre «¿Cómo se calcula?» y revisa que los números son los tuyos.
+6. **Peso corporal.** «Añadir marca» › Dominadas › «Asistencia» 20 kg × 8: el teclado es el decimal (sin «−») y el
+   segmentado decide el signo. Guarda y mira la ficha de Dominadas en Progreso.
+7. **Borrar y deshacer.** Abre la marca › Borrar › «Deshacer» en el aviso: vuelve a la lista sin salir de la pantalla.
+8. **Cerrar y reabrir** la app desde el selector: check-ins, zonas y marcas siguen ahí. Exporta una copia nueva.

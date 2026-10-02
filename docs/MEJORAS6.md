@@ -96,3 +96,44 @@ Campos nuevos (todos opcionales): `birthDate`, `secondaryGoals:[]`, `sports:[]`,
 - `#/context` (lista: «Ahora» + historial), `#/context/new?kind=phase|event`, `#/context/:id` (editar, borrar con
   deshacer). Fechas: Día (selector de fecha) · Mes · Estación · Año (desplegables, la rueda de iOS).
 - Entradas: Ajustes (fila «Tu contexto» bajo Perfil), Perfil, Hoy (una sola línea «Ahora: …» si hay una fase vigente).
+
+## Fase B — check-in ampliado y marcas históricas
+
+### Check-in (`js/checkin-logic.js`, `js/checkin.js`)
+- Cuatro preguntas, cada una Bajo · Normal · Alto (1/2/3): sueño, energía, **estrés** (nueva) y agujetas. Se contestan
+  en 4 toques; la franja plegada de la sesión muestra las cuatro en 44 px.
+- **Agujetas o molestias por zona** (opcional, debajo): «Añadir zona» abre una hoja: Agujetas (músculo, tocando el mapa
+  corporal en modo elegir) o Molestia o dolor (articulación: cuello, hombro, codo, muñeca, zona lumbar, cadera, rodilla,
+  tobillo, pie, otra); lado (izquierda, derecha, ambos; opcional); intensidad 0–10; nota. Una por zona y lado (volver a
+  apuntarla la sustituye); tocar su ficha la edita o la quita. El mapa marca lo ya apuntado por intensidad (1–3 · 4–6 ·
+  7–10) y se carga solo al abrir la hoja.
+- Datos: `stress` y `areas` opcionales en el mismo registro (sin migración: los antiguos se leen igual, con «—» en
+  estrés). `soreness` 1–3 sigue siendo el indicador general y NO se convierte a 0–10 (decisión del usuario). Una zona
+  sola ya guarda el check-in; sin nada se elimina.
+- Regla de check-in «bajo» SIN cambios (sueño o energía bajos, o agujetas altas): el estrés y las zonas se guardan y se
+  ven (también en el «¿Por qué?» del panel semanal), pero no cambian ninguna regla hasta las fases C y D.
+- Editar después: Calendario › día muestra el check-in de ese día (antes / después con sesión de fuerza, «Ese día» sin
+  ella) con «Editar check-in», o «Añadir check-in» en días pasados y hoy (p. ej. las agujetas del día siguiente). Hoy no
+  gana tarjetas: sigue ofreciendo el check-in solo si aún no hay ninguno.
+
+### Marcas históricas (`js/past-records-logic.js`, `js/views/past-records.js`)
+- Récords › Fuerza › «Marcas históricas» (`#/records/past`), y desde la ficha de progreso de cada ejercicio. Por marca:
+  ejercicio (peso × reps, unilateral o peso corporal), peso (unilateral: por lado; peso corporal: lastre o asistencia),
+  repeticiones (1–50), RIR opcional, fecha aproximada opcional (día · mes · estación · año, o sin fecha), «Anterior a
+  Entreno» (encendido por defecto), peso corporal de entonces (solo peso corporal, opcional) y nota.
+- Separadas siempre de los récords de Entreno: Récords los sigue calculando solo con lo registrado.
+- **Porcentaje recuperado** («Rendimiento actual ≈ 94 % de tu mejor marca histórica»):
+  - ahora = el mayor 1RM estimado de tus series de trabajo de los últimos 28 días;
+  - referencia = el mayor 1RM estimado entre tus marcas históricas y lo registrado en Entreno antes de esos 28 días (se
+    dice cuál: «tu mejor marca histórica» o «tu mejor marca anterior en Entreno»);
+  - porcentaje = ahora ÷ referencia × 100, redondeado a la unidad; ≥ 100 % → «ya la has superado».
+  - 1RM estimado = el mismo cálculo de toda la app (Epley con reps + RIR; sin RIR, como al fallo; solo series de 1 a
+    12 repeticiones). En peso corporal la carga es peso corporal + lastre: el de entonces sale de la marca, del pesaje
+    más cercano (± 14 días alrededor del periodo), del contexto (peso habitual o peso en esa fecha) o, si no hay nada,
+    del peso actual (y se dice).
+  - Sin porcentaje (y se explica por qué): sin series de 1–12 reps en los últimos 28 días, marcas de más de 12 reps,
+    core de peso corporal (sin 1RM estimado), o nada con lo que comparar.
+  - «¿Cómo se calcula?» muestra los números concretos (ahora, referencia, división) y las notas (estimación, RIR
+    supuesto, fecha aproximada, de dónde sale el peso corporal).
+- Lo que esta fase NO hace (fases C y D): interpretar si una subida rápida es recuperación, mejora real o adaptación
+  inicial, ni usar el contexto de vuelta tras un parón; aquí solo se mide.

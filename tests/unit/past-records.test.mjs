@@ -181,6 +181,10 @@ test('recuperación: superada, a la altura, sin datos actuales, sin referencia y
   // Core de peso corporal
   const wheel = exerciseRecovery({ exercise: WHEEL, marks: [mark({ exerciseId: 'rueda', weight: 0, reps: 10 })], history: [], today: TODAY });
   assert.deepEqual([wheel.status, wheel.reason], ['not_comparable', 'type']);
+  // Un ejercicio que ya no es de peso y reps (se cambió su tipo): la marca sigue, pero no se compara
+  const plank = exerciseRecovery({ exercise: PLANK, marks: [mark({ exerciseId: 'plancha' })], history: [], today: TODAY });
+  assert.deepStrictEqual([plank.status, plank.reason], ['not_comparable', 'logtype']);
+  assert.equal(recoveryLine(plank), 'Este ejercicio ya no se registra con peso y repeticiones: la marca se guarda, pero no se compara.');
   // La ventana se puede cambiar
   assert.equal(exerciseRecovery({ exercise: BENCH, marks: [mark()], history: [entry('2026-09-04', 100)], today: TODAY, days: 60 }).status, 'ok');
 });

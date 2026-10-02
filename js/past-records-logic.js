@@ -230,7 +230,7 @@ function bestEntry(entries) {
  * @param {object}   [p.env]      { bodyweight, context, fallbackKg } para el peso corporal de las marcas
  * @param {number}   [p.days]     ventana de «ahora» (CURRENT_DAYS)
  * @returns {{
- *   status:'ok'|'no_reference'|'no_current'|'not_comparable', reason:null|'type'|'reps',
+ *   status:'ok'|'no_reference'|'no_current'|'not_comparable', reason:null|'type'|'logtype'|'reps',
  *   pct:number|null, ratio:number|null, since:string,
  *   marks: object[],           // markEstimate de cada marca, de la de más 1RM a la de menos (sin 1RM al final)
  *   bestMark: object|null,     // la de más 1RM estimado
@@ -253,7 +253,8 @@ export function exerciseRecovery({ exercise, marks = [], history = [], today = t
   const lastDate = hist.length ? hist[hist.length - 1].date : null;
   const out = { status: 'no_reference', reason: null, pct: null, ratio: null, since, marks: est, bestMark, current, appBefore, reference: null, lastDate };
 
-  if (!comparableType(exercise)) return { ...out, status: own.length ? 'not_comparable' : 'no_reference', reason: own.length ? 'type' : null };
+  // Sin 1RM estimado: core de peso corporal ('type') o un ejercicio que ya no se registra con peso y reps ('logtype').
+  if (!comparableType(exercise)) return { ...out, status: own.length ? 'not_comparable' : 'no_reference', reason: own.length ? (markable(exercise) ? 'type' : 'logtype') : null };
   if (bestMark && (!appBefore || bestMark.e1rm >= appBefore.e1rm - EPS)) out.reference = { source: 'mark', e1rm: bestMark.e1rm, mark: bestMark };
   else if (appBefore) out.reference = { source: 'app', e1rm: appBefore.e1rm, entry: appBefore };
   if (!out.reference) return { ...out, status: own.length ? 'not_comparable' : 'no_reference', reason: own.length ? 'reps' : null };
@@ -279,9 +280,9 @@ export function recoveryLine(r) {
       : `Cuando registres este ejercicio (series de 1–12 repeticiones), verás aquí qué porcentaje de ${refTxt} llevas recuperado.`;
   }
   if (r.status === 'not_comparable') {
-    return r.reason === 'type'
-      ? 'Este ejercicio no tiene 1RM estimado (en core el peso corporal no es la carga): la marca se guarda, pero no se compara.'
-      : `Tus marcas tienen más de ${E1RM_MAX_REPS} repeticiones: el 1RM estimado no sería fiable, así que no se compara.`;
+    if (r.reason === 'type') return 'Este ejercicio no tiene 1RM estimado (en core el peso corporal no es la carga): la marca se guarda, pero no se compara.';
+    if (r.reason === 'logtype') return 'Este ejercicio ya no se registra con peso y repeticiones: la marca se guarda, pero no se compara.';
+    return `Tus marcas tienen más de ${E1RM_MAX_REPS} repeticiones: el 1RM estimado no sería fiable, así que no se compara.`;
   }
   return null;
 }

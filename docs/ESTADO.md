@@ -63,6 +63,11 @@
       análisis. (3) Pesos del contexto como números (`weightReferences`). (4) Aviso al restaurar una copia antigua que
       borrará contexto, marcas históricas o eventos.
 
+- [x] **Ronda 6 · fase B**: check-in con estrés (4 preguntas) y agujetas o molestias por zona (0–10, mapa corporal en
+      modo elegir o articulación, lado y nota), sin convertir los check-ins antiguos; check-in de cada día en
+      Calendario › día (ver, añadir y editar, también días pasados); marcas históricas (`pastRecords`) con el porcentaje
+      de rendimiento recuperado y su «¿Cómo se calcula?», en Récords y en la ficha de progreso de cada ejercicio.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).
@@ -80,3 +85,8 @@
   literatura); en mujer, rangos de ganancia de peso algo más prudentes (0,2–0,4 %/sem).
 - Ronda 5 · Doble toque en «Registrar serie»: se ignora un segundo toque en 400 ms (antes 300).
 - Ronda 5 · El gesto real de «atrás» del iPhone solo se puede comprobar en el propio iPhone (en las pruebas se simula).
+- Ronda 6 · Check-in: el estrés se guarda y se ve, pero aún no cuenta para el check-in «bajo» (que sigue siendo sueño,
+  energía y agujetas); las zonas tampoco. Se decidirá en las fases C y D.
+- Ronda 6 · Marcas históricas: «ahora» = lo mejor de los últimos 28 días; la referencia es la mayor entre tus marcas y lo
+  registrado en Entreno antes de esos días; sin RIR apuntado, la marca se cuenta como serie al fallo (igual que en las
+  sesiones). La fecha empieza apagada («sin fecha») y «Anterior a Entreno», encendido.

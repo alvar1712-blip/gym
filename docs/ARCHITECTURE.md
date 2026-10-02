@@ -31,7 +31,9 @@ Este documento es el **contrato**. Los requisitos completos del usuario están e
 | `js/charts.js`, `js/stats.js`, `js/views/progress.js`, `css/progress.css` | Fase 2: gráficas y récords | progreso |
 | `js/insights.js`, `js/views/weekly.js`, `css/weekly.css` (sección weekly) | Fase 3: panel semanal | panel |
 | `js/goals-logic.js`, `js/views/goals.js`, `css/weekly.css` (sección goals) | Fase 3: objetivos | objetivos |
-| `js/checkin-logic.js`, `js/checkin.js` (estilos `.ci-*` en `css/session.css`) | Fase 3: check-in | check-in |
+| `js/checkin-logic.js`, `js/checkin.js` (estilos `.ci-*` en `css/session.css`) | Fase 3: check-in (ronda 6: estrés y zonas) | check-in |
+| `js/context-logic.js`, `js/views/context.js`, `js/approx-input.js`, `css/context.css` | Ronda 6: tu contexto y el campo de fecha aproximada | contexto |
+| `js/past-records-logic.js`, `js/views/past-records.js` (estilos `.pr-*` en `css/progress.css`) | Ronda 6: marcas históricas | progreso |
 
 **Regla de propiedad:** cada módulo solo edita SUS archivos. Los archivos del núcleo son de solo lectura para
 los módulos; si necesitas un cambio en el núcleo, impleméntalo localmente en tu módulo y descríbelo en tu
@@ -91,6 +93,8 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/context` | context · `mountContext` | Ronda 6: «Tu contexto» (fases y hechos, también anteriores a la app, con fecha aproximada): lo vigente y el historial |
 | `#/context/new?kind=phase\|event&type=`, `#/context/:id` | context · `mountContextEdit` | Ronda 6: añadir / editar / borrar (con deshacer) |
 | `#/welcome` | welcome · `mountWelcome` | Ronda 6: bienvenida de 3 pasos para perfiles nuevos (nunca se abre sola) |
+| `#/records/past` | past-records · `mountPastRecords` | Ronda 6: marcas históricas por ejercicio con «Rendimiento actual ≈ N % de tu mejor marca histórica» (back `#/records`) |
+| `#/records/past/new?exercise=`, `#/records/past/:id` | past-records · `mountPastRecordEdit` | Ronda 6: añadir / editar / borrar (con deshacer) una marca |
 
 Pestaña resaltada: la de la ruta; las rutas de sesión y actividad (`inherit` en la tabla) mantienen la pestaña
 desde la que se abrieron (p. ej. Calendario › Historial › sesión), salvo una sesión de fuerza en curso, que es de «Hoy».
@@ -199,13 +203,23 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 - `context`: fases `{ id, kind:'phase', type, start:Approx, end:Approx|null, text, notes, goalIds, sports }` y hechos
   `{ id, kind:'event', type, date:Approx, text, notes, kg? }`; `Approx = { date:'YYYY-MM-DD', precision:'day'|'month'|'season'|'year' }`.
   Lógica pura en `js/context-logic.js` (`normalizeEntry` sanea al leer; `contextOn`, `recentChanges`, `timeline`).
-- `pastRecords` (marcas históricas manuales) y `races` (eventos deportivos) se crean ya vacíos; se usan en las fases B y E.
+- `pastRecords` (fase B, marcas históricas manuales, aparte de los récords de `stats.js`): `{ id:'pr_…', exerciseId, weight,
+  reps, rir:0–5|null, date:Approx|null, beforeApp, bodyweightKg|null, note, createdAt, updatedAt }`. `weight` en kg
+  (unilateral: por lado; peso corporal: lastre, 0 = sin lastre, negativo = asistencia); `bodyweightKg` solo en ejercicios
+  de peso corporal. Lógica pura en `js/past-records-logic.js` (`normalizePastRecord` sanea al leer).
+- `races` (eventos deportivos) se crea ya vacío; se usa en la fase E.
 - Perfil (`settings.profile`, `js/profile.js`): campos opcionales `birthDate`, `secondaryGoals`, `sports`, `limitations`,
   `weeklyFrequency`, `onboardedAt`; `getProfile` los completa al leer (no se reescriben perfiles antiguos). `ageGroup`:
   `minor` (< 18) · `adult` · `senior` (≥ 65) · `unknown` (sin fecha).
 - Copia JSON: `format: 2` (acepta 1 y 2; una de formato 1 deja vacíos los almacenes nuevos).
 ### bodyweight (`id` = fecha): `{ id:'YYYY-MM-DD', kg, createdAt, updatedAt }` (un valor por día; el último manda)
-### checkins: `{ id:'ci_…', date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, soreness:1|2|3|null, createdAt, updatedAt }` (1 bajo, 2 normal, 3 alto)
+### checkins: `{ id:'ci_…', date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, stress?:1|2|3|null, soreness:1|2|3|null, areas?:Area[], createdAt, updatedAt }` (1 bajo, 2 normal, 3 alto)
+Ronda 6 (fase B): `stress` y `areas` son opcionales (los check-ins antiguos no los tienen y no se reescriben).
+`Area = { id:'ar_…', kind:'muscle'|'joint', zone, side:'left'|'right'|'both'|null, level:0–10, note }`: `zone` es un id de
+`seed.MUSCLES` (agujetas, en el mapa corporal) o de `JOINTS` (molestia o dolor: cuello, hombro, codo, muñeca, zona
+lumbar, cadera, rodilla, tobillo, pie, otra). Una por clase, zona y lado. `soreness` 1–3 sigue siendo el indicador
+general (no se convierte a 0–10). El check-in «bajo» no cambia: sueño o energía bajos o agujetas altas (el estrés y las
+zonas se guardan y se muestran; las fases C y D decidirán cómo usarlos).
 Uno por día y momento (si hay duplicados manda el editado más reciente). Sin ningún valor se elimina. «Omitir» no
 guarda check-in: marca `session.checkinDismissed = {pre?, post?}` y la clave de `localStorage`
 `entreno:checkin-omitido:<fecha>:<momento>` (así tampoco se ofrece en Hoy ese día). Al cambiar la fecha de una
@@ -351,11 +365,17 @@ semanas distintas (lunes–domingo). ETA siempre rango: pendiente ± 1 error tí
 **`checkin-logic.js` (puro) / `checkin.js` (DOM; reexporta la lógica)** — `checkinCard({ date = hoy, timing:'pre'|'post',
 sessionId, compact, open, title, ignoreDismissed, skippable, onChange })` → HTMLElement | **null** (omitido y sin datos).
 `compact:false` = franja plegable de 44 px (sesión de fuerza, arriba: no añade toques para registrar); `compact:true` =
-las tres filas a la vista, 3 toques (hoja «Terminar» y Hoy). Guardado al instante; tocar el valor elegido lo quita.
-`checkinSummary({ date, sessionId })` (resumen antes/después con «Editar check-in»), `isDismissed` / `setDismissed`,
-`moveSessionCheckins`, `CHECKIN_HINT`. Lógica: `checkinFor(checkins, date, timing?)`, `hasValues`, `isComplete`,
-`isLowCheckin` (sueño 1, energía 1 o agujetas 3; igual que en `insights.js`), `summary(checkins, from, to)`,
-`applyValue`, `checkinText`, `FIELDS`, `TIMINGS`.
+las cuatro filas a la vista, 4 toques (hoja «Terminar» y Hoy). Guardado al instante; tocar el valor elegido lo quita.
+Debajo, «Agujetas o molestias por zona» (opcional): fichas por zona y «Añadir zona» → `areaSheet({ date, timing,
+sessionId, area, onDone })` (mapa corporal en modo elegir, cargado al abrirla, o articulaciones; lado; 0–10; nota).
+`checkinSummary({ date, sessionId })` (resumen antes/después, o «Ese día» sin sesión, con zonas y «Editar check-in»),
+`checkinEditSheet({ date, sessionId, timings })` (también desde Calendario › día, días pasados incluidos),
+`isDismissed` / `setDismissed`, `moveSessionCheckins`, `CHECKIN_HINT`. Lógica: `checkinFor(checkins, date, timing?)`,
+`hasValues` (una zona sola cuenta), `isComplete` (las cuatro), `isLowCheckin` (sueño 1, energía 1 o agujetas 3; igual que
+en `insights.js`; `LOW_FIELDS`), `summary(checkins, from, to)`, `applyValue`, `checkinText`, `FIELDS`, `TIMINGS`;
+zonas: `AREA_KINDS`, `JOINTS`, `SIDES`, `normalizeArea`, `areasOf`, `areaText`, `areaShort`, `levelBand`,
+`validateArea`, `upsertArea`, `removeArea`. Mapa corporal: `bodyMap({ legend:false, marks:{id:'none'|'low'|'mid'|'high'},
+describe(id), emptyHint })` = modo elegir (sin leyenda ni colores de series); `root.update(data, marks)`.
 
 **Integración.** Hoy (`views/today.js`): tras pintar lo principal («Te toca hoy» y «Empezar» siguen arriba), importa los
 módulos de la Fase 3 y rellena `.today-extra` (al final) con: check-in de hoy (`compact`, `pre`; solo si hoy no hay
@@ -424,6 +444,21 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   (`ui.clearPressed()`); títulos grandes que se compactan (`.topbar-root.is-compact`); aparición escalonada
   (`.view-stagger`, solo push); `router.onMount(fn)`; cristal con opacidad 66–78 % y `blur(28px) saturate(190%)`
   (alternativas opacas con `@supports not` y `prefers-reduced-transparency`).
+
+### Ronda 6 (contrato en `docs/MEJORAS6.md`)
+- **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
+  `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
+  compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.
+- **Marcas históricas** (`past-records-logic.js`, puro): `markable(ex)` (peso × reps, unilateral, peso corporal),
+  `comparableType(ex)` (con 1RM estimado: no el core de peso corporal), `validatePastRecord(draft, ex, today)`,
+  `pastRecordFrom`, `markLabel`, `markWhen`, `markBodyweight(r, env)` (la marca → pesaje ± 14 días alrededor del periodo
+  → contexto → último pesaje → `bodyweightDefault`, con `source`), `markEstimate` (calc.setMetrics: Epley con reps +
+  RIR, 1–12 reps), `exerciseRecovery({ exercise, marks, history, today, env, days = 28 })` → `{ status:'ok'|
+  'no_reference'|'no_current'|'not_comparable', pct, current, reference:{source:'mark'|'app'}, … }` (ahora = mayor 1RM
+  estimado de los últimos 28 días; referencia = el mayor entre las marcas y lo registrado antes de esos días),
+  `recoveryLine`, `recoveryWhy` (filas y notas del «¿Cómo se calcula?»), `groupByExercise`. Vista
+  `views/past-records.js`: `mountPastRecords`, `mountPastRecordEdit`, `pastRecoveryCard(ex, data)` (ficha de progreso) y
+  `pastRecordsLink()` (Récords › Fuerza).
 
 ## 6. Convenciones de UI (obligatorias)
 
