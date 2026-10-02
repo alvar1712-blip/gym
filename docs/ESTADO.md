@@ -67,6 +67,9 @@
       modo elegir o articulación, lado y nota), sin convertir los check-ins antiguos; check-in de cada día en
       Calendario › día (ver, añadir y editar, también días pasados); marcas históricas (`pastRecords`) con el porcentaje
       de rendimiento recuperado y su «¿Cómo se calcula?», en Récords y en la ficha de progreso de cada ejercicio.
+      463 → 479 unitarias y 170 → 178 E2E (3 ejecuciones completas en verde, WebKit incluido). Arranque sin cambios
+      (aperturas intercaladas antes/después, CPU ×4, mediana de 15: 1 año 670 → 674 ms, 2 años 679 → 681 ms hasta
+      «Te toca hoy»; las rondas alternas daban saltos de ±200 ms por la carga de la máquina, no por el código).
 
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
