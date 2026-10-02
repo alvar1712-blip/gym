@@ -9,6 +9,8 @@
     "test": "node --test 'tests/unit/*.test.mjs'",
     "e2e": "NODE_PATH=$(npm root -g) node --test --test-concurrency=4 'tests/e2e/*.test.cjs'",
     "check": "node scripts/check-assets.mjs && node --test 'tests/unit/*.test.mjs'",
-    "stamp": "node scripts/stamp-sw.mjs"
+    "stamp": "node scripts/stamp-sw.mjs",
+    "e2e:webkit": "NODE_PATH=$(npm root -g) node --test --test-concurrency=2 'tests/e2e/webkit-*.test.cjs'",
+    "perf": "NODE_PATH=$(npm root -g) node scripts/perf-startup.cjs"
   }
 }
