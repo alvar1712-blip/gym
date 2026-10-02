@@ -188,3 +188,37 @@ test('Tu contexto a 375 px: sin scroll horizontal y objetivos táctiles ≥ 44 p
     await app.close();
   }
 });
+
+test('fases simultáneas: «Ahora» las lista todas y Hoy las nombra en una sola línea', async () => {
+  const app = await openApp({ beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(TODAY) }); } });
+  const { page } = app;
+  try {
+    await page.evaluate(async () => {
+      const { store } = window.__app;
+      const C = await import('./js/context-logic.js');
+      const add = (d, id, createdAt) => store.save('context', C.entryRecord(d, { id, now: createdAt }));
+      await add({ kind: 'phase', type: 'gain', start: { date: '2026-07-01', precision: 'month' }, end: null }, 'p_gain', 1);
+      await add({ kind: 'phase', type: 'prep_10k', start: { date: '2026-09-01', precision: 'month' }, end: null, sports: ['run'] }, 'p_10k', 2);
+      await add({ kind: 'phase', type: 'stress', start: '2026-10-01', end: '2026-10-20', text: 'Exámenes' }, 'p_exams', 3);
+      await add({ kind: 'phase', type: 'deficit', start: { date: '2026-03-01', precision: 'month' }, end: { date: '2026-05-01', precision: 'month' } }, 'p_old', 4);
+    });
+    await go(page, '#/today');
+    await waitView(page, '.today-context');
+    assert.strictEqual(await page.locator('.today-context').count(), 1, 'una sola línea');
+    assert.match(await page.locator('.today-context').innerText(), /Ahora: Exámenes o época de estrés · Preparación 10K · Ganancia muscular/);
+    assert.ok(await noHScroll(page));
+    await page.locator('.today-context').click();
+    await waitView(page, '.ctx-now');
+    const now = await page.locator('.ctx-now .ctx-row').evaluateAll((els) => els.map((e) => e.dataset.id));
+    assert.deepStrictEqual(now, ['p_exams', 'p_10k', 'p_gain'], 'las tres vigentes; la terminada, no');
+    const summary = await page.evaluate(async () => {
+      const C = await import('./js/context-logic.js');
+      const s = C.contextSummary(window.__app.store.all('context'), '2026-10-02');
+      return Object.fromEntries(Object.entries(s.byAspect).map(([k, v]) => [k, v.map((p) => p.id)]));
+    });
+    assert.deepStrictEqual(summary, { body: ['p_gain'], training: [], sport: ['p_10k'], life: ['p_exams'], custom: [] });
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});

@@ -54,9 +54,27 @@ reescritura de registros: los campos nuevos son opcionales y se completan al lee
 - `races` — eventos deportivos (fase E): `{ id, name, type, date, distanceKm, targetSec|null, priority, note,
   goalId|null, createdAt, updatedAt }`.
 
+#### Fases simultáneas y datos estructurados (cierre de la fase A)
+- Pueden estar vigentes varias fases a la vez (p. ej. ganancia muscular + preparación 10K + exámenes). Cada tipo de fase
+  tiene un `aspect`: `body` (composición), `training` (parón, vuelta, descarga), `sport` (preparaciones, híbrido),
+  `life` (enfermedad, lesión, viaje, estrés) o `custom`.
+- `contextOn(list, date)` → TODAS las fases vigentes (de la más reciente a la más antigua; a igualdad, la última creada).
+- `contextSummary(list, date)` → lo que recibirá el análisis: `phases`, `byAspect`, `types` (Set), `events` del día,
+  `usualWeight` y `weights` (`weightReferences`: peso habitual y pesos en una fecha como números con su rango de
+  fechas y precisión). Ningún cálculo lee números del texto libre: los hechos de peso guardan `kg` (20–400) aparte del
+  texto. Si más adelante otro hecho necesita un número (p. ej. una dosis), tendrá su campo propio y validado, no un
+  «valor + unidad» genérico.
+- Hoy: una sola línea. Una fase: «Vuelta tras vacaciones o parón · desde sep 2026»; varias: sus nombres
+  («Exámenes o época de estrés · Preparación 10K · Ganancia muscular», hasta 3 y «+N»). «Ahora» (en #/context) las
+  lista todas.
+
 ### Copias (`store.js`)
 `BACKUP_FORMAT` pasa a 2: la app nueva acepta copias 1 y 2 (en una copia 1 los almacenes nuevos llegan vacíos); una
 versión antigua de la app rechaza la copia 2 («versión más nueva») en vez de perder en silencio los datos nuevos.
+Restaurar sustituye todo. Si la copia no trae una sección nueva (copia de formato 1) y en el iPhone hay datos en ella,
+la confirmación lo dice antes de «Sustituir todo» (`backup.lostSectionsWarning`): «Esta copia se hizo con una versión
+anterior de la app y no contiene contexto, marcas históricas ni eventos deportivos. Al restaurarla se borrará lo que
+tienes ahora en esa sección: 2 apuntes de contexto.»
 
 ### Perfil (`settings.profile`, `js/profile.js`)
 Campos nuevos (todos opcionales): `birthDate`, `secondaryGoals:[]`, `sports:[]`, `limitations` (texto),

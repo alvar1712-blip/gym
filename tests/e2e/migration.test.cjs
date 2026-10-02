@@ -6,7 +6,7 @@
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/migration.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, engineAvailable, waitReady } = require('./helpers.cjs');
+const { openApp, engineAvailable, waitReady, go } = require('./helpers.cjs');
 
 const OLD_STORES_V2 = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle'];
 const NEW_STORES = ['context', 'pastRecords', 'races'];
@@ -140,6 +140,60 @@ for (const browser of ['chromium', 'webkit']) {
       }
     });
   }
+
+  test(`${browser}: importar una copia antigua avisa de que se borrará el contexto actual (y solo entonces)`, { skip }, async () => {
+    const app = await openApp({ browser });
+    const { page } = app;
+    try {
+      const { v1, v2 } = await page.evaluate(async () => {
+        const { store } = window.__app;
+        const C = await import('./js/context-logic.js');
+        await store.save('context', C.entryRecord({ kind: 'event', type: 'creatine_start', date: '2026-09-15' }, { id: 'ctx_1' }));
+        await store.save('context', C.entryRecord({ kind: 'phase', type: 'return', start: '2026-09-01', end: null }, { id: 'ctx_2' }));
+        const v2 = store.exportData();
+        const v1 = JSON.parse(JSON.stringify(v2));
+        v1.format = 1;
+        for (const k of ['context', 'pastRecords', 'races']) delete v1.data[k];
+        return { v1, v2 };
+      });
+      const panel = page.locator('.sheet-overlay.open .sheet-panel').last();
+      const confirmFor = async (name, obj) => {
+        await go(page, '#/settings/data');
+        await page.waitForSelector('.cfg-import');
+        const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.cfg-import').click()]);
+        await fc.setFiles({ name, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(obj), 'utf8') });
+        await panel.waitFor();
+        return panel.innerText();
+      };
+      // Copia de formato 2 (trae el contexto): sin aviso extra.
+      let msg = await confirmFor('nueva.json', v2);
+      assert.match(msg, /¿Importar esta copia\?/);
+      assert.doesNotMatch(msg, /versión anterior/);
+      await panel.locator('button', { hasText: 'Cancelar' }).click();
+      await page.waitForFunction(() => !document.querySelector('.sheet-overlay.open'));
+      // Copia antigua con contexto en el iPhone: lo explica antes de «Sustituir todo».
+      msg = await confirmFor('antigua.json', v1);
+      assert.match(msg, /Esta copia se hizo con una versión anterior de la app y no contiene contexto, marcas históricas ni eventos deportivos\./);
+      assert.match(msg, /Al restaurarla se borrará lo que tienes ahora en esa sección: 2 apuntes de contexto\./);
+      assert.ok(msg.indexOf('versión anterior') < msg.indexOf('SUSTITUYE'), 'el aviso va antes de la advertencia general');
+      // Cancelar no toca nada.
+      await panel.locator('button', { hasText: 'Cancelar' }).click();
+      await page.waitForFunction(() => !document.querySelector('.sheet-overlay.open'));
+      assert.strictEqual(await page.evaluate(() => window.__app.store.count('context')), 2);
+      // Confirmar: restauración completa, el contexto queda vacío (decisión: restaurar sustituye todo).
+      await confirmFor('antigua.json', v1);
+      await panel.locator('button', { hasText: 'Sustituir todo' }).click();
+      await page.waitForFunction(() => window.__app.store.count('context') === 0);
+      assert.deepStrictEqual((await readDisk(page)).data.context, []);
+      // Sin contexto que perder, una copia antigua ya no avisa.
+      msg = await confirmFor('antigua.json', v1);
+      assert.doesNotMatch(msg, /versión anterior/);
+      await panel.locator('button', { hasText: 'Cancelar' }).click();
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
 
   test(`${browser}: copias de formato 1 y 2, y una más nueva rechazada`, { skip }, async () => {
     const app = await openApp({ browser });

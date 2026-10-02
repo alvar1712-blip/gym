@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  backupFileName, csvFileName, fileStamp, buildBackupObject, backupSummary, dataCounts, parseBackupText,
+  backupFileName, csvFileName, fileStamp, buildBackupObject, backupSummary, dataCounts, parseBackupText, lostSectionsWarning,
   csvFormat, csvNumber, csvText, buildCsv, strengthCsv, strengthRows, cardioCsv, cardioRows, csvCounts,
   STRENGTH_COLUMNS, CARDIO_COLUMNS, hms, formatBytes, localKeysToClear,
 } from '../../js/backup.js';
@@ -151,6 +151,20 @@ test('dataCounts / backupSummary: recuento por tipo y fecha de la copia', () => 
   assert.equal(backupSummary(o2).exportedAt, 12345);
   assert.deepEqual(dataCounts({}), { strength: 0, activities: 0, templates: 0, exercises: 0, customExercises: 0, bodyweight: 0, plan: 0, checkins: 0, goals: 0, context: 0 });
   assert.equal(dataCounts({ context: [{ id: 'a' }, { id: 'b' }] }).context, 2);
+});
+
+test('lostSectionsWarning: solo avisa si la copia no trae una sección en la que ahora hay datos', () => {
+  const v1 = { format: 1, data: { meta: [], sessions: [] } };
+  const v2 = { format: 2, data: { meta: [], context: [], pastRecords: [], races: [] } };
+  assert.equal(lostSectionsWarning(v1, { context: 5 }),
+    'Esta copia se hizo con una versión anterior de la app y no contiene contexto, marcas históricas ni eventos deportivos. '
+    + 'Al restaurarla se borrará lo que tienes ahora en esa sección: 5 apuntes de contexto.');
+  assert.match(lostSectionsWarning(v1, { context: 1, pastRecords: 0, races: 2 }), /en esas secciones: 1 apunte de contexto y 2 eventos deportivos\.$/);
+  assert.equal(lostSectionsWarning(v1, {}), null, 'sin datos actuales en esas secciones no hay nada que perder');
+  assert.equal(lostSectionsWarning(v1, { context: 0 }), null);
+  assert.equal(lostSectionsWarning(v2, { context: 5, races: 1 }), null, 'una copia que trae las secciones (aunque vacías) no avisa');
+  assert.match(lostSectionsWarning({ data: { context: [] } }, { races: 3 }), /no contiene marcas históricas ni eventos deportivos\. .*3 eventos deportivos\.$/);
+  assert.equal(lostSectionsWarning(null, { context: 2 }).startsWith('Esta copia'), true);
 });
 
 test('parseBackupText: copia válida (también con BOM y espacios)', () => {

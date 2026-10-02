@@ -11,27 +11,37 @@
 // un año: «invierno 2026-27»).
 import { isDateStr, todayStr, addDays, addMonths, fmtDate, fmtNum, MONTH_LONG, MONTH_SHORT } from './util.js';
 
+/**
+ * Tipos de fase. `aspect` = qué aspecto describe; pueden estar vigentes VARIAS fases a la vez (p. ej. ganancia muscular +
+ * preparación 10K + exámenes) y el análisis las consulta por aspecto:
+ *   body      composición corporal (qué se busca con el peso)
+ *   training  estado del entrenamiento (parón, vuelta, descarga)
+ *   sport     preparación de un deporte o prueba
+ *   life      circunstancias (enfermedad, lesión, viaje, estrés)
+ *   custom    personalizada
+ */
 export const PHASE_TYPES = [
-  { id: 'gain', label: 'Ganancia muscular' },
-  { id: 'deficit', label: 'Déficit (perder grasa)' },
-  { id: 'maintain', label: 'Mantenimiento' },
-  { id: 'recomp', label: 'Recomposición' },
-  { id: 'break', label: 'Parón o entrenamiento irregular' },
-  { id: 'return', label: 'Vuelta tras vacaciones o parón' },
-  { id: 'recondition', label: 'Reacondicionamiento' },
-  { id: 'prep_5k', label: 'Preparación 5K', sport: 'run' },
-  { id: 'prep_10k', label: 'Preparación 10K', sport: 'run' },
-  { id: 'prep_half', label: 'Preparación media maratón', sport: 'run' },
-  { id: 'prep_marathon', label: 'Preparación maratón', sport: 'run' },
-  { id: 'prep_cycling', label: 'Preparación ciclismo', sport: 'bike' },
-  { id: 'hybrid', label: 'Entrenamiento híbrido' },
-  { id: 'deload', label: 'Descarga' },
-  { id: 'illness', label: 'Enfermedad' },
-  { id: 'injury', label: 'Lesión o molestia' },
-  { id: 'travel', label: 'Viaje' },
-  { id: 'stress', label: 'Exámenes o época de estrés' },
-  { id: 'custom', label: 'Personalizada' },
+  { id: 'gain', label: 'Ganancia muscular', aspect: 'body' },
+  { id: 'deficit', label: 'Déficit (perder grasa)', aspect: 'body' },
+  { id: 'maintain', label: 'Mantenimiento', aspect: 'body' },
+  { id: 'recomp', label: 'Recomposición', aspect: 'body' },
+  { id: 'break', label: 'Parón o entrenamiento irregular', aspect: 'training' },
+  { id: 'return', label: 'Vuelta tras vacaciones o parón', aspect: 'training' },
+  { id: 'recondition', label: 'Reacondicionamiento', aspect: 'training' },
+  { id: 'deload', label: 'Descarga', aspect: 'training' },
+  { id: 'prep_5k', label: 'Preparación 5K', aspect: 'sport', sport: 'run' },
+  { id: 'prep_10k', label: 'Preparación 10K', aspect: 'sport', sport: 'run' },
+  { id: 'prep_half', label: 'Preparación media maratón', aspect: 'sport', sport: 'run' },
+  { id: 'prep_marathon', label: 'Preparación maratón', aspect: 'sport', sport: 'run' },
+  { id: 'prep_cycling', label: 'Preparación ciclismo', aspect: 'sport', sport: 'bike' },
+  { id: 'hybrid', label: 'Entrenamiento híbrido', aspect: 'sport' },
+  { id: 'illness', label: 'Enfermedad', aspect: 'life' },
+  { id: 'injury', label: 'Lesión o molestia', aspect: 'life' },
+  { id: 'travel', label: 'Viaje', aspect: 'life' },
+  { id: 'stress', label: 'Exámenes o época de estrés', aspect: 'life' },
+  { id: 'custom', label: 'Personalizada', aspect: 'custom' },
 ];
+export const ASPECTS = ['body', 'training', 'sport', 'life', 'custom'];
 
 export const EVENT_TYPES = [
   { id: 'creatine_start', label: 'Empiezo creatina' },
@@ -265,13 +275,16 @@ export function entryLine(e) {
   return `${title}${kg}${extra}`;
 }
 
-/** Línea temporal: de lo más reciente a lo más antiguo (por fecha de inicio; a igualdad, lo último creado). */
+/** Orden: de lo más reciente a lo más antiguo (por fecha de inicio; a igualdad, lo último creado). */
+function newestFirst(a, b) {
+  const fa = entryRange(a).from; const fb = entryRange(b).from;
+  if (fa !== fb) return fa < fb ? 1 : -1;
+  return (b.createdAt || 0) - (a.createdAt || 0);
+}
+
+/** Línea temporal: de lo más reciente a lo más antiguo. */
 export function timeline(list) {
-  return normalizeAll(list).sort((a, b) => {
-    const fa = entryRange(a).from; const fb = entryRange(b).from;
-    if (fa !== fb) return fa < fb ? 1 : -1;
-    return (b.createdAt || 0) - (a.createdAt || 0);
-  });
+  return normalizeAll(list).sort(newestFirst);
 }
 
 /**
@@ -281,7 +294,7 @@ export function timeline(list) {
  */
 export function contextOn(list, date = todayStr()) {
   const all = normalizeAll(list);
-  const phases = all.filter((e) => phaseActiveOn(e, date)).sort((a, b) => (entryRange(a).from < entryRange(b).from ? 1 : -1));
+  const phases = all.filter((e) => phaseActiveOn(e, date)).sort(newestFirst);
   const events = all.filter((e) => e.kind === 'event' && e.type !== 'usual_weight' && entryRange(e).from <= date && entryRange(e).to >= date);
   const usual = all.filter((e) => e.kind === 'event' && e.type === 'usual_weight' && isNum(e.kg) && entryRange(e).from <= date)
     .sort((a, b) => (entryRange(a).from < entryRange(b).from ? 1 : -1))[0];
@@ -310,10 +323,38 @@ export function recentChanges(list, today = todayStr(), days = RECENT_DAYS) {
   return out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 }
 
-/** «Ahora: Vuelta tras vacaciones o parón · desde sep 2026» (la fase vigente más reciente; +N si hay más). */
+/**
+ * Lo que el análisis necesita del contexto un día: TODAS las fases vigentes (por aspecto y por tipo), los hechos de
+ * ese día y las referencias de peso estructuradas. Un aspecto puede tener más de una fase (p. ej. dos preparaciones):
+ * van de la más reciente a la más antigua.
+ * @returns {{ date, phases, byAspect:{body,training,sport,life,custom}, types:Set<string>, events, usualWeight, weights }}
+ */
+export function contextSummary(list, date = todayStr()) {
+  const { phases, events, usualWeight } = contextOn(list, date);
+  const byAspect = Object.fromEntries(ASPECTS.map((a) => [a, []]));
+  for (const p of phases) byAspect[phaseType(p.type)?.aspect || 'custom'].push(p);
+  return { date, phases, byAspect, types: new Set(phases.map((p) => p.type)), events, usualWeight, weights: weightReferences(list, date) };
+}
+
+/**
+ * Referencias de peso apuntadas a mano (peso habitual y pesos en una fecha) hasta `date`, de la más antigua a la más
+ * reciente: { kind:'usual'|'point', kg, from, to, precision, id }. Números estructurados: nada se lee del texto.
+ */
+export function weightReferences(list, date = todayStr()) {
+  return normalizeAll(list)
+    .filter((e) => e.kind === 'event' && (e.type === 'usual_weight' || e.type === 'weight') && isNum(e.kg) && entryRange(e).from <= date)
+    .map((e) => ({ id: e.id, kind: e.type === 'usual_weight' ? 'usual' : 'point', kg: e.kg, ...entryRange(e), precision: e.date.precision }))
+    .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+}
+
+/**
+ * Línea compacta de Hoy. Una fase: «Vuelta tras vacaciones o parón · desde sep 2026». Varias: sus nombres, de la más
+ * reciente a la más antigua («Exámenes o época de estrés · Preparación 10K · Ganancia muscular»), hasta 3 y «+N».
+ */
 export function currentLabel(list, today = todayStr()) {
   const { phases } = contextOn(list, today);
   if (!phases.length) return null;
-  const more = phases.length > 1 ? ` · +${phases.length - 1}` : '';
-  return `${cap(entryTitle(phases[0]))} · ${entryWhen(phases[0])}${more}`;
+  if (phases.length === 1) return `${cap(entryTitle(phases[0]))} · ${entryWhen(phases[0])}`;
+  const names = phases.slice(0, 3).map((p) => cap(entryTitle(p)));
+  return `${names.join(' · ')}${phases.length > 3 ? ` · +${phases.length - 3}` : ''}`;
 }

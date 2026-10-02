@@ -59,6 +59,32 @@ export function dataCounts(data = {}) {
   };
 }
 
+/** Secciones que no existían en copias de versiones anteriores (formato 1). */
+export const NEWER_SECTIONS = [
+  { store: 'context', name: 'contexto', one: 'apunte de contexto', many: 'apuntes de contexto' },
+  { store: 'pastRecords', name: 'marcas históricas', one: 'marca histórica', many: 'marcas históricas' },
+  { store: 'races', name: 'eventos deportivos', one: 'evento deportivo', many: 'eventos deportivos' },
+];
+
+/**
+ * Aviso al restaurar una copia de una versión anterior que NO trae alguna sección en la que ahora hay datos (restaurar
+ * sustituye todo: esos datos se borrarán). null si no hace falta avisar.
+ * @param {object} backup  copia (con .data)
+ * @param {Record<string, number>} current  registros actuales por almacén ({ context: 5, … })
+ */
+export function lostSectionsWarning(backup, current = {}) {
+  const data = backup?.data || {};
+  const missing = NEWER_SECTIONS.filter((x) => !Array.isArray(data[x.store]));
+  const lost = missing.filter((x) => (current[x.store] || 0) > 0);
+  if (!lost.length) return null;
+  const list = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} ni ${xs.at(-1)}`);
+  const joinY = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} y ${xs.at(-1)}`);
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  return `Esta copia se hizo con una versión anterior de la app y no contiene ${list(missing.map((x) => x.name))}. `
+    + `Al restaurarla se borrará lo que tienes ahora en ${lost.length === 1 ? 'esa sección' : 'esas secciones'}: `
+    + `${joinY(lost.map((x) => plural(current[x.store], x.one, x.many)))}.`;
+}
+
 /** Resumen de una copia para la confirmación de importar. */
 export function backupSummary(obj) {
   const data = obj?.data || {};

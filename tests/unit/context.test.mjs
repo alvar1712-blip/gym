@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeApprox, makeApprox, approxFrom, approxTo, approxLabel, approxParts, normalizeEntry, normalizeAll, validateEntry,
   entryRecord, entryRange, phaseActiveOn, entryTitle, entryWhen, entryLine, timeline, contextOn, recentChanges, currentLabel,
-  PHASE_TYPES, EVENT_TYPES,
+  contextSummary, weightReferences, PHASE_TYPES, EVENT_TYPES, ASPECTS,
 } from '../../js/context-logic.js';
 
 const ap = (date, precision) => ({ date, precision });
@@ -148,9 +148,64 @@ test('cambios recientes: inicios, fines y hechos de las últimas 6 semanas', () 
   assert.deepEqual(recentChanges(EXAMPLE, '2027-06-01'), []);
 });
 
-test('catálogo: tipos con id y texto únicos', () => {
+test('catálogo: tipos con id y texto únicos; cada fase con su aspecto', () => {
   for (const list of [PHASE_TYPES, EVENT_TYPES]) {
     assert.equal(new Set(list.map((t) => t.id)).size, list.length);
     assert.ok(list.every((t) => t.label));
   }
+  assert.ok(PHASE_TYPES.every((t) => ASPECTS.includes(t.aspect)));
+});
+
+/** Tres fases a la vez: ganancia muscular (desde julio), preparación 10K (desde septiembre) y exámenes (desde ayer). */
+const OVERLAP = [
+  { id: 'gain', kind: 'phase', type: 'gain', start: ap('2026-07-01', 'month'), end: null, createdAt: 1 },
+  { id: 'tenk', kind: 'phase', type: 'prep_10k', start: ap('2026-09-01', 'month'), end: null, goalIds: ['goal_10k'], sports: ['run'], createdAt: 2 },
+  { id: 'exams', kind: 'phase', type: 'stress', start: ap('2026-10-01', 'day'), end: ap('2026-10-20', 'day'), text: 'Exámenes de la universidad', createdAt: 3 },
+  { id: 'old', kind: 'phase', type: 'deficit', start: ap('2026-03-01', 'month'), end: ap('2026-06-01', 'month'), createdAt: 4 },
+  { id: 'future', kind: 'phase', type: 'prep_half', start: ap('2026-11-01', 'month'), end: null, createdAt: 5 },
+];
+
+test('fases simultáneas: todas las vigentes, por aspecto, sin suponer una sola', () => {
+  const now = contextOn(OVERLAP, '2026-10-02');
+  assert.deepEqual(now.phases.map((p) => p.id), ['exams', 'tenk', 'gain'], 'las tres, de la más reciente a la más antigua');
+  const sum = contextSummary(OVERLAP, '2026-10-02');
+  assert.deepEqual(sum.phases.map((p) => p.id), ['exams', 'tenk', 'gain']);
+  assert.deepEqual(Object.fromEntries(Object.entries(sum.byAspect).map(([k, v]) => [k, v.map((p) => p.id)])),
+    { body: ['gain'], training: [], sport: ['tenk'], life: ['exams'], custom: [] });
+  assert.ok(sum.types.has('gain') && sum.types.has('prep_10k') && sum.types.has('stress'));
+  assert.ok(!sum.types.has('deficit') && !sum.types.has('prep_half'), 'ni las terminadas ni las que aún no han empezado');
+  assert.deepEqual(sum.byAspect.sport[0].goalIds, ['goal_10k']);
+  // Tras los exámenes, quedan dos; en noviembre entra la media.
+  assert.deepEqual(contextOn(OVERLAP, '2026-10-21').phases.map((p) => p.id), ['tenk', 'gain']);
+  assert.deepEqual(contextOn(OVERLAP, '2026-11-05').phases.map((p) => p.id), ['future', 'tenk', 'gain']);
+  // Misma fecha de inicio: primero la última creada (orden estable).
+  const tie = [
+    { id: 'a', kind: 'phase', type: 'gain', start: ap('2026-09-01', 'month'), end: null, createdAt: 10 },
+    { id: 'b', kind: 'phase', type: 'hybrid', start: ap('2026-09-01', 'month'), end: null, createdAt: 20 },
+  ];
+  assert.deepEqual(contextOn(tie, '2026-10-02').phases.map((p) => p.id), ['b', 'a']);
+  assert.deepEqual(contextOn([...tie].reverse(), '2026-10-02').phases.map((p) => p.id), ['b', 'a']);
+});
+
+test('línea compacta de Hoy: una fase con su fecha; varias, sus nombres (hasta 3 y «+N»)', () => {
+  assert.equal(currentLabel(OVERLAP.slice(0, 1), '2026-10-02'), 'Ganancia muscular · desde jul 2026');
+  assert.equal(currentLabel(OVERLAP, '2026-10-02'), 'Exámenes o época de estrés · Preparación 10K · Ganancia muscular');
+  const four = [...OVERLAP, { id: 'inj', kind: 'phase', type: 'injury', start: ap('2026-10-02', 'day'), end: null, createdAt: 6 }];
+  assert.equal(currentLabel(four, '2026-10-02'), 'Lesión o molestia · Exámenes o época de estrés · Preparación 10K · +1');
+});
+
+test('referencias de peso estructuradas (sin leer números del texto)', () => {
+  const list = [
+    ...EXAMPLE,
+    { id: 'txt', kind: 'event', type: 'other', date: ap('2026-08-15', 'day'), text: 'Pesaba 71 kg en la báscula del hotel' },
+  ];
+  const refs = weightReferences(list, '2026-10-02');
+  assert.deepEqual(refs.map((r) => [r.kind, r.kg, r.from, r.to, r.precision]), [
+    ['usual', 75, '2026-01-01', '2026-12-31', 'year'],
+    ['point', 72.7, '2026-08-28', '2026-08-28', 'day'],
+  ], 'el «71 kg» escrito en un texto libre no cuenta');
+  assert.deepEqual(weightReferences(list, '2026-08-27').map((r) => r.kg), [75], 'solo lo anterior a la fecha');
+  const sum = contextSummary(list, '2026-10-02');
+  assert.deepEqual(sum.weights.map((r) => r.kg), [75, 72.7]);
+  assert.equal(sum.usualWeight.kg, 75);
 });

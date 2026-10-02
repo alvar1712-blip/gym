@@ -55,6 +55,13 @@
       día, mes, estación o año), línea «Ahora» en Hoy y bienvenida de 3 pasos para perfiles nuevos. Pruebas de
       migración v1/v2 → v3 y de copias en Chromium y WebKit. Arranque sin cambios medibles (rondas alternas, 1 año:
       «hoy» 735 → 635 ms, bloqueo máx. 232 → 198 ms, dentro del ruido).
+- [x] **Ronda 6 · cierre de la fase A**: (1) la prueba intermitente de tiempos previstos era un fallo real de los campos
+      numéricos: el `select()` diferido de un campo ya abandonado le devolvía el foco (con dos campos, el foco saltaba
+      entre ellos sin parar y lo escrito iba al campo anterior). `ui.selectOnFocus`: solo selecciona si el campo sigue
+      enfocado y aún no se ha escrito, con `setSelectionRange` (no mueve el foco); regresión en `tests/e2e/inputs.test.cjs`
+      (Chromium y WebKit); 0 fallos en 25 repeticiones. (2) Fases simultáneas por aspecto y `contextSummary` para el
+      análisis. (3) Pesos del contexto como números (`weightReferences`). (4) Aviso al restaurar una copia antigua que
+      borrará contexto, marcas históricas o eventos.
 
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).

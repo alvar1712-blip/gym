@@ -16,7 +16,7 @@ import { currentPattern, setWeekPattern } from '../plan.js';
 import { pickTemplate } from '../pickers.js';
 import {
   buildBackupObject, backupFileName, csvFileName, parseBackupText, strengthCsv, cardioCsv, csvCounts, dataCounts, formatBytes,
-  localKeysToClear,
+  localKeysToClear, lostSectionsWarning, NEWER_SECTIONS,
 } from '../backup.js';
 import {
   thresholdDefaults, getPath, setPath, fixPair, planLabel, shortPlanLabel, weekSummaryText, patternFromDate,
@@ -531,9 +531,12 @@ export function mountData(root) {
     const curText = cur.strength + cur.activities + cur.bodyweight > 0
       ? ` (ahora hay ${plural(cur.strength, 'sesión de fuerza', 'sesiones de fuerza')}, ${plural(cur.activities, 'actividad', 'actividades')} y ${plural(cur.bodyweight, 'pesaje', 'pesajes')})`
       : '';
+    // Copia de una versión anterior sin secciones que ahora tienen datos: se dice qué se perderá.
+    const lostText = lostSectionsWarning(res.backup, Object.fromEntries(NEWER_SECTIONS.map((x) => [x.store, store.count(x.store)])));
     const ok = await confirmDialog({
       title: '¿Importar esta copia?',
       message: `Copia ${when}: ${countsText(sum, { all: true, sep: ' · ' })}.\n\n`
+        + (lostText ? `${lostText}\n\n` : '')
         + `SUSTITUYE todos los datos de este iPhone${curText}. `
         + 'No se puede deshacer: si no tienes copia de lo actual, cancela y exporta antes.',
       confirmText: 'Sustituir todo',

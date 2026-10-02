@@ -815,7 +815,7 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
     cur = v;
     input.value = numToInput(v, decimals);
   }
-  input.addEventListener('focus', () => setTimeout(() => { try { input.select(); } catch { /* iOS */ } }, 0));
+  selectOnFocus(input);
   input.addEventListener('input', () => {
     cur = parseNum(input.value);
     onChange(cur, { final: false });
@@ -943,7 +943,7 @@ export function durationInput({ seconds = null, onChange = () => {}, showHours =
       placeholder: key === 'h' ? '0' : '00',
       'aria-label': `${ariaLabel}: ${lbl}`,
     });
-    inp.addEventListener('focus', () => setTimeout(() => { try { inp.select(); } catch { /* iOS */ } }, 0));
+    selectOnFocus(inp);
     inp.addEventListener('input', () => {
       const v = inp.value.replace(/\D/g, '');
       if (v !== inp.value) inp.value = v;
@@ -983,6 +983,25 @@ export function durationInput({ seconds = null, onChange = () => {}, showHours =
   return el;
 }
 
+/**
+ * Al enfocar un campo numérico se selecciona su texto, para que lo escrito lo sustituya (en iOS hay que hacerlo tras el
+ * evento focus). Solo si el campo SIGUE enfocado y aún no se ha escrito en él, y sin select(): un select() tardío sobre
+ * un campo ya abandonado le devuelve el foco (lo escrito iría al campo anterior; con dos campos así, el foco salta
+ * entre ellos sin parar), y seleccionar después de la primera tecla haría que la segunda la borrase.
+ */
+export function selectOnFocus(inp) {
+  inp.addEventListener('focus', () => {
+    let typed = false;
+    const onInput = () => { typed = true; };
+    inp.addEventListener('input', onInput);
+    setTimeout(() => {
+      inp.removeEventListener('input', onInput);
+      if (typed || inp.ownerDocument.activeElement !== inp) return;
+      try { inp.setSelectionRange(0, inp.value.length); } catch { /* tipo de campo sin selección */ }
+    }, 0);
+  });
+}
+
 /** Campo con etiqueta. */
 export function field(label, control, hint = null) {
   return h('label.field', label ? h('span.field-label', label) : null, control, hint ? h('span.field-hint', hint) : null);
@@ -1001,7 +1020,7 @@ export function textInput({ value = '', placeholder = '', inputmode = 'text', on
 export function numInput({ value = null, placeholder = '', decimals = 2, inputmode = 'decimal', onInput = () => {}, suffix = '', ariaLabel = '' } = {}) {
   const inp = h('input.input.input-num', { type: 'text', inputmode, value: numToInput(value, decimals), placeholder, autocomplete: 'off', 'aria-label': ariaLabel || placeholder });
   inp.addEventListener('input', () => onInput(parseNum(inp.value)));
-  inp.addEventListener('focus', () => setTimeout(() => { try { inp.select(); } catch { /* iOS */ } }, 0));
+  selectOnFocus(inp);
   if (!suffix) return inp;
   const wrap = h('div.input-suffix-wrap', inp, h('span.input-suffix', suffix));
   wrap.input = inp;
