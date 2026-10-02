@@ -525,6 +525,19 @@ test('check-ins: mensaje de contexto en la información de la semana (solo si lo
   assert.match(byId(weeklyInsights(mk({ sessions, checkins }), W.w4), 'checkins').text, /^1 check-in · 1 bajo/);
 });
 
+test('check-ins con estrés y zonas (ronda 6): se ven en el porqué, pero no cambian qué cuenta como bajo', () => {
+  const sessions = [ses('q', W.w4, [['remo_pecho_apoyado', [set(60, 10)]]]), ses('p', W.cur, [['remo_pecho_apoyado', [set(60, 10)]]])];
+  const checkins = [
+    { id: 'c1', date: '2026-09-21', timing: 'pre', sleep: 2, energy: 2, stress: 3, soreness: 2, areas: [{ id: 'a', kind: 'muscle', zone: 'hamstrings', side: 'left', level: 8 }] },
+    { id: 'c2', date: '2026-09-22', timing: 'pre', sleep: null, energy: null, stress: null, soreness: null, areas: [{ id: 'b', kind: 'joint', zone: 'knee', side: null, level: 3 }] },
+  ];
+  const m = byId(weeklyInsights(mk({ sessions, checkins })), 'checkins');
+  assert.match(m.text, /^De momento, 2 check-ins · ninguno bajo\./, 'estrés alto y agujetas 8/10 en una zona no lo hacen «bajo»');
+  assert.ok(m.why.data.some((x) => x.sub && x.label === '21 sep · antes'
+    && x.value === 'sueño normal · energía normal · estrés alto · agujetas normales · Isquiotibiales (izq.): agujetas 8/10'), 'estrés alto y agujetas 8/10: no cuenta como bajo');
+  assert.ok(m.why.data.some((x) => x.sub && x.label === '22 sep · antes' && x.value === 'Rodilla: molestia 3/10'), 'solo una zona: no «sin valores»');
+});
+
 // ===========================================================================
 // INFORMACIÓN 6 · Progresan / se mantienen / se estancan
 // ===========================================================================

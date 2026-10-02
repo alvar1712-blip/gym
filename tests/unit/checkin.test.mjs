@@ -2,16 +2,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  FIELDS, FIELD_KEYS, LEVEL_OPTIONS, level, checkinFor, hasValues, isComplete, isLowCheckin, lowReasons, valueWord,
+  FIELDS, FIELD_KEYS, LOW_FIELDS, LEVEL_OPTIONS, level, checkinFor, hasValues, isComplete, isLowCheckin, lowReasons, valueWord,
   valueText, checkinText, newCheckin, applyValue, checkinsBetween, summary, dismissKey,
+  AREA_KINDS, JOINTS, SIDES, normalizeArea, areasOf, areaName, areaText, areasText, levelBand, validateArea, upsertArea, removeArea,
 } from '../../js/checkin-logic.js';
 import { isLowCheckin as insightsIsLow } from '../../js/insights.js';
 
 const ck = (id, date, timing, sleep, energy, soreness, extra = {}) => ({ id, date, timing, sessionId: null, sleep, energy, soreness, createdAt: 1, ...extra });
 
-test('tres preguntas con tres opciones Bajo · Normal · Alto (1/2/3)', () => {
-  assert.deepEqual(FIELD_KEYS, ['sleep', 'energy', 'soreness']);
-  assert.deepEqual(FIELDS.map((f) => f.label), ['Sueño', 'Energía', 'Agujetas']);
+test('cuatro preguntas (ronda 6: + estrés) con tres opciones Bajo · Normal · Alto (1/2/3)', () => {
+  assert.deepEqual(FIELD_KEYS, ['sleep', 'energy', 'stress', 'soreness']);
+  assert.deepEqual(FIELDS.map((f) => f.label), ['Sueño', 'Energía', 'Estrés', 'Agujetas']);
+  assert.deepEqual(LOW_FIELDS.map((f) => f.key), ['sleep', 'energy', 'soreness'], 'el check-in «bajo» sigue con sus tres de siempre');
   assert.deepEqual(LEVEL_OPTIONS, [{ value: 1, label: 'Bajo' }, { value: 2, label: 'Normal' }, { value: 3, label: 'Alto' }]);
   assert.deepEqual([level(1), level(2), level(3)], [1, 2, 3]);
   for (const bad of [0, 4, '2', null, undefined, 2.5, NaN]) assert.equal(level(bad), null, String(bad));
@@ -66,8 +68,12 @@ test('hasValues / isComplete', () => {
   assert.equal(hasValues(ck('a', '2026-09-24', 'pre', null, null, null)), false);
   assert.equal(hasValues(ck('a', '2026-09-24', 'pre', 0, 5, 'x')), false, 'valores fuera de 1–3 no cuentan');
   assert.equal(hasValues(null), false);
-  assert.equal(isComplete(ck('a', '2026-09-24', 'pre', 1, 2, 3)), true);
-  assert.equal(isComplete(ck('a', '2026-09-24', 'pre', 1, 2, null)), false);
+  assert.equal(isComplete(ck('a', '2026-09-24', 'pre', 1, 2, 3, { stress: 2 })), true);
+  assert.equal(isComplete(ck('a', '2026-09-24', 'pre', 1, 2, 3)), false, 'sin estrés (como los antiguos) no está completo, pero vale');
+  assert.equal(isComplete(ck('a', '2026-09-24', 'pre', 1, 2, null, { stress: 2 })), false);
+  assert.equal(hasValues(ck('a', '2026-09-24', 'pre', null, null, null, { stress: 3 })), true, 'solo el estrés');
+  assert.equal(hasValues(ck('a', '2026-09-24', 'pre', null, null, null, { areas: [{ kind: 'muscle', zone: 'hamstrings', level: 6 }] })), true, 'solo una zona');
+  assert.equal(hasValues(ck('a', '2026-09-24', 'pre', null, null, null, { areas: [{ kind: 'muscle', zone: 'nope', level: 6 }] })), false, 'una zona ilegible no cuenta');
   assert.equal(isComplete(null), false);
 });
 
@@ -85,7 +91,7 @@ test('textos concordados: «Sueño normal · Energía alta · Agujetas bajas»',
 
 test('newCheckin: forma del registro de la store «checkins»', () => {
   const c = newCheckin({ date: '2026-09-24', timing: 'post', sessionId: 's1' }, 1234, 'ci_1');
-  assert.deepEqual(c, { id: 'ci_1', date: '2026-09-24', timing: 'post', sessionId: 's1', sleep: null, energy: null, soreness: null, createdAt: 1234 });
+  assert.deepEqual(c, { id: 'ci_1', date: '2026-09-24', timing: 'post', sessionId: 's1', sleep: null, energy: null, stress: null, soreness: null, areas: [], createdAt: 1234 });
   const d = newCheckin({ date: '2026-09-24', timing: 'raro' }, 1);
   assert.equal(d.timing, 'pre');
   assert.equal(d.sessionId, null);
@@ -109,6 +115,8 @@ test('applyValue: uno por día y momento (crea el primero y después edita el mi
   assert.equal(r.record.id, id);
   r = applyValue(store, key, 'soreness', 1);
   assert.equal(r.record, store[0], 'muta el existente');
+  assert.equal(isComplete(store[0]), false, 'falta el estrés');
+  applyValue(store, key, 'stress', 2);
   assert.equal(isComplete(store[0]), true);
   // editar
   applyValue(store, key, 'energy', 1);
@@ -121,6 +129,7 @@ test('applyValue: uno por día y momento (crea el primero y después edita el mi
   // quitar valores (null): cuando no queda ninguno, empty
   applyValue(store, key, 'sleep', null);
   applyValue(store, key, 'energy', null);
+  applyValue(store, key, 'stress', null);
   r = applyValue(store, key, 'soreness', null);
   assert.equal(r.empty, true);
   // sin registro y sin valor: no crea nada
@@ -191,4 +200,86 @@ test('summary: valores parciales cuentan por pregunta', () => {
 test('dismissKey: una clave por día y momento', () => {
   assert.equal(dismissKey('2026-09-24', 'pre'), 'entreno:checkin-omitido:2026-09-24:pre');
   assert.notEqual(dismissKey('2026-09-24', 'pre'), dismissKey('2026-09-24', 'post'));
+});
+
+test('check-ins antiguos (sin estrés ni zonas) siguen valiendo tal cual', () => {
+  const old = { id: 'old', date: '2026-08-10', timing: 'pre', sessionId: 's1', sleep: 1, energy: 2, soreness: 3, createdAt: 1, updatedAt: 1 };
+  assert.equal(hasValues(old), true);
+  assert.equal(isLowCheckin(old), true);
+  assert.deepEqual(lowReasons(old), ['sueño bajo', 'agujetas altas']);
+  assert.equal(checkinText(old), 'Sueño bajo · Energía normal · Agujetas altas');
+  assert.deepEqual(areasOf(old), []);
+  assert.equal(areasText(old), '');
+  const s = summary([old], '2026-08-01', '2026-08-31');
+  assert.deepEqual([s.count, s.low, s.fields.stress.n, s.fields.soreness.mean], [1, 1, 0, 3]);
+  assert.match(s.text, /1 check-in · 1 bajo \(sueño bajo ×1, agujetas altas ×1\)/);
+  // Su «agujetas» (1–3) no se convierte ni se le inventa zona.
+  assert.equal(old.soreness, 3);
+  assert.equal('areas' in old, false);
+});
+
+test('el estrés se registra y se muestra, pero no cambia la regla del check-in «bajo»', () => {
+  const c = ck('a', '2026-09-24', 'pre', 2, 2, 2, { stress: 3 });
+  assert.equal(isLowCheckin(c), false);
+  assert.deepEqual(lowReasons(c), []);
+  assert.equal(checkinText(c), 'Sueño normal · Energía normal · Estrés alto · Agujetas normales');
+  assert.equal(valueWord('stress', 1), 'Bajo');
+  const s = summary([c, ck('b', '2026-09-25', 'pre', 2, 2, 2, { stress: 1 })]);
+  assert.deepEqual(s.fields.stress, { n: 2, counts: { 1: 1, 2: 0, 3: 1 }, mean: 2 });
+  assert.equal(s.low, 0);
+  assert.equal('stress' in s.lowBy, false);
+});
+
+test('zonas: catálogo, saneado al leer y textos', () => {
+  assert.deepEqual(AREA_KINDS.map((k) => k.id), ['muscle', 'joint']);
+  assert.ok(JOINTS.some((j) => j.id === 'knee') && JOINTS.length === new Set(JOINTS.map((j) => j.id)).size);
+  assert.deepEqual(SIDES.map((x) => x.id), ['left', 'right', 'both']);
+  assert.deepEqual(normalizeArea({ id: 'a1', kind: 'muscle', zone: 'hamstrings', side: 'left', level: 7, note: '  tras el RDL ', extra: 1 }),
+    { id: 'a1', kind: 'muscle', zone: 'hamstrings', side: 'left', level: 7, note: 'tras el RDL' });
+  assert.equal(normalizeArea({ kind: 'muscle', zone: 'knee', level: 3 }), null, 'una articulación no es un músculo');
+  assert.equal(normalizeArea({ kind: 'joint', zone: 'hamstrings', level: 3 }), null);
+  assert.equal(normalizeArea({ kind: 'muscle', zone: 'quads', level: 11 }), null);
+  assert.equal(normalizeArea({ kind: 'muscle', zone: 'quads', level: 2.5 }), null);
+  assert.equal(normalizeArea({ kind: 'muscle', zone: 'quads', level: 0 }).level, 0, '0 = nada, válido');
+  assert.equal(normalizeArea({ kind: 'joint', zone: 'knee', level: 4, side: 'arriba' }).side, null);
+  assert.equal(normalizeArea({ kind: 'joint', zone: 'knee', level: 4 }).id, 'joint:knee:', 'sin id: uno estable');
+  assert.equal(areaName({ kind: 'muscle', zone: 'hamstrings' }), 'Isquiotibiales');
+  assert.equal(areaName({ kind: 'joint', zone: 'knee' }), 'Rodilla');
+  assert.equal(areaText({ kind: 'muscle', zone: 'hamstrings', side: 'left', level: 7 }), 'Isquiotibiales (izq.): agujetas 7/10');
+  assert.equal(areaText({ kind: 'joint', zone: 'knee', side: null, level: 3 }), 'Rodilla: molestia 3/10');
+  assert.deepEqual([0, 1, 3, 4, 6, 7, 10].map(levelBand), ['none', 'low', 'low', 'mid', 'mid', 'high', 'high']);
+  assert.deepEqual(validateArea({ kind: 'muscle', zone: 'quads', level: 5 }), {});
+  assert.ok(validateArea({ kind: 'muscle', zone: null, level: 5 }).zone);
+  assert.ok(validateArea({ kind: 'joint', zone: 'knee', level: null }).level);
+  assert.ok(validateArea({}).kind);
+});
+
+test('upsertArea / removeArea: una por clase, zona y lado; crea el check-in si hace falta', () => {
+  const store = [];
+  const key = { date: '2026-09-25', timing: 'pre' };
+  let r = upsertArea(store, key, { kind: 'muscle', zone: 'hamstrings', side: 'both', level: 7 }, 100);
+  assert.equal(r.created, true);
+  assert.deepEqual([r.record.sleep, r.record.stress, r.record.soreness], [null, null, null], 'sin tocar las preguntas');
+  store.push(r.record);
+  const firstId = r.record.areas[0].id;
+  assert.match(firstId, /^ar_/);
+  // misma zona y lado: la sustituye (sin duplicar)
+  r = upsertArea(store, key, { kind: 'muscle', zone: 'hamstrings', side: 'both', level: 5 });
+  assert.equal(r.created, false);
+  assert.deepEqual(areasOf(store[0]).map((a) => [a.zone, a.side, a.level]), [['hamstrings', 'both', 5]]);
+  // otro lado u otra clase: otra zona
+  upsertArea(store, key, { kind: 'muscle', zone: 'hamstrings', side: 'left', level: 8 });
+  upsertArea(store, key, { kind: 'joint', zone: 'knee', side: 'right', level: 3, note: 'al bajar escaleras' });
+  assert.equal(areasOf(store[0]).length, 3);
+  assert.equal(areasText(store[0]), 'Isquiotibiales (ambos lados): agujetas 5/10 · Isquiotibiales (izq.): agujetas 8/10 · Rodilla (der.): molestia 3/10');
+  // editar por id
+  const knee = areasOf(store[0]).find((a) => a.zone === 'knee');
+  upsertArea(store, key, { ...knee, level: 2 });
+  assert.equal(areasOf(store[0]).find((a) => a.zone === 'knee').level, 2);
+  assert.equal(areasOf(store[0]).length, 3);
+  // quitar
+  for (const a of areasOf(store[0])) r = removeArea(store, key, a.id);
+  assert.equal(r.empty, true, 'sin zonas ni respuestas: vacío');
+  assert.deepEqual(removeArea([], key, 'x'), { record: null, empty: true });
+  assert.throws(() => upsertArea([], key, { kind: 'muscle', zone: 'nope', level: 3 }));
 });

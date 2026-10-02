@@ -109,3 +109,13 @@
 /* Semana en curso: lo que aún no llega al mínimo no es un aviso todavía (como «Faltan N» en las tablas). */
 .bm-in-progress { --bm-below: var(--muted); }
 .bm-in-progress .bm-detail[data-status="below"] { border-color: var(--border); }
+
+/* ---------- Modo «elegir» (agujetas por zona): zonas ya apuntadas por intensidad ---------- */
+.bm-pick .bm-zone[data-mark="none"] { fill: var(--text-2); }
+.bm-pick .bm-zone[data-mark="low"] { fill: var(--warn); }
+.bm-pick .bm-zone[data-mark="low"] .bm-shape { fill-opacity: 0.55; }
+.bm-pick .bm-zone[data-mark="mid"] { fill: var(--warn); }
+.bm-pick .bm-zone[data-mark="high"] { fill: var(--danger); }
+.bm-pick .bm-zone[data-mark="mid"] .bm-shape,
+.bm-pick .bm-zone[data-mark="high"] .bm-shape { fill-opacity: 0.9; }
+.bm-pick .bm-svg.has-sel .bm-zone:not(.is-sel) { opacity: 0.7; }

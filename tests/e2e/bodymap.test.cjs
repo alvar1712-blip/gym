@@ -212,6 +212,51 @@ test('selected al montar (sin onSelect) y update() recolorea sin volver a montar
   }
 });
 
+test('modo elegir (check-in, ronda 6): sin leyenda ni series, marcas por intensidad, describe() y update() de marcas', async () => {
+  const app = await openBench();
+  try {
+    const { page } = app;
+    const res = await page.evaluate(() => {
+      const { lib } = window.__bm;
+      const picked = [];
+      const m = lib.bodyMap({
+        legend: false, compact: true, marks: { hamstrings: 'high', quads: 'low', calves: 'none' },
+        describe: (id) => `Zona ${id}`, emptyHint: 'Toca el músculo con agujetas.', onSelect: (id) => picked.push(id),
+      });
+      m.id = 'pick-map';
+      document.getElementById('bench').appendChild(m);
+      const z = (id) => m.querySelector(`.bm-zone[data-muscle="${id}"]`);
+      const before = {
+        cls: m.classList.contains('bm-pick'), legend: m.querySelectorAll('.bm-legend').length,
+        hint: m.querySelector('.bm-detail').textContent,
+        statuses: [...new Set([...m.querySelectorAll('.bm-zone')].map((g) => g.dataset.status))],
+        marks: ['hamstrings', 'quads', 'calves', 'chest'].map((id) => z(id).dataset.mark),
+        label: z('hamstrings').getAttribute('aria-label'),
+        fills: ['hamstrings', 'chest'].map((id) => getComputedStyle(z(id).querySelector('path')).fill),
+      };
+      z('quads').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const afterTap = { picked: [...picked], selected: m.dataset.selected, detail: m.querySelector('.bm-detail').textContent, pressed: z('quads').getAttribute('aria-pressed') };
+      const g = z('chest');
+      m.update(null, { chest: 'mid' });
+      return { before, afterTap, update: { same: z('chest') === g, chest: z('chest').dataset.mark, ham: z('hamstrings').dataset.mark, selected: m.dataset.selected } };
+    });
+    assert.deepStrictEqual(res.before.cls, true);
+    assert.strictEqual(res.before.legend, 0, 'sin leyenda de series');
+    assert.strictEqual(res.before.hint, 'Toca el músculo con agujetas.');
+    assert.deepStrictEqual(res.before.statuses, ['none'], 'no colorea por series');
+    assert.deepStrictEqual(res.before.marks, ['high', 'low', 'none', '']);
+    assert.strictEqual(res.before.label, 'Zona hamstrings', 'aria-label con describe()');
+    assert.notStrictEqual(res.before.fills[0], res.before.fills[1], 'lo marcado se ve distinto');
+    assert.deepStrictEqual(res.afterTap, { picked: ['quads'], selected: 'quads', detail: 'Zona quads', pressed: 'true' });
+    assert.deepStrictEqual(res.update, { same: true, chest: 'mid', ham: '', selected: 'quads' }, 'update() cambia las marcas sin volver a montar ni perder lo elegido');
+    // El mapa de series de siempre sigue con su leyenda
+    assert.strictEqual(await page.locator(`${MAIN} .bm-legend`).count(), 1);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 for (const width of [375, 430]) {
   test(`nítido y legible a ${width} px: sin scroll horizontal, figura ancha y texto ≥ 12 px (captura)`, async () => {
     const app = await openBench({ width });

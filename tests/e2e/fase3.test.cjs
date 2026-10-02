@@ -1,4 +1,4 @@
-// E2E de la integración de la Fase 3 en Hoy y Progreso: check-in de hoy (3 toques, saltable, solo si no se ha
+// E2E de la integración de la Fase 3 en Hoy y Progreso: check-in de hoy (4 toques, saltable, solo si no se ha
 // hecho ni omitido), tarjeta resumen del panel semanal y de objetivos, accesos a #/weekly y #/goals, y que
 // #/weekly, #/goals, #/goal/new y #/goal/:id se abren desde la app y vuelven atrás. «Te toca hoy» y «Empezar»
 // siguen arriba. Ronda 5: con datos, «Tu análisis» va la última del hueco y «Análisis» encabeza los accesos. Siembra 6 semanas + la actual (rutina precargada, carreras, bici, pesajes, check-ins y dos
@@ -253,12 +253,12 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     });
     assert.deepStrictEqual([...order].sort((a, b) => a - b), order, 'Te toca hoy → Registrar → Esta semana → Fase 3');
 
-    // Check-in: tres filas a la vista (3 toques), opcional y con «Omitir»
+    // Check-in: cuatro filas a la vista (4 toques), opcional y con «Omitir»
     const ci = page.locator('.today-checkin');
     assert.match(await ci.innerText(), /¿Cómo llegas hoy\?/);
-    assert.strictEqual(await ci.locator('.ci-row').count(), 3);
+    assert.strictEqual(await ci.locator('.ci-row').count(), 4);
     assert.strictEqual(await ci.locator('.ci-skip').count(), 1);
-    for (const b of await ci.locator('.ci-row .seg-btn, .ci-skip').all()) assert.ok((await b.boundingBox()).height >= 44, 'botones ≥ 44 px');
+    for (const b of await ci.locator('.ci-row .seg-btn, .ci-skip, .ci-zone-add').all()) assert.ok((await b.boundingBox()).height >= 44, 'botones ≥ 44 px');
 
     // Panel semanal: 2–3 mensajes clave + «Ver panel semanal»
     const wk = page.locator('.today-extra .wk-summary');
@@ -275,15 +275,16 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     await scrollShots(page, 'fase3-today-390');
     await shotAt(page, '.today-extra', 'fase3-today-390-extra');
 
-    // 3 toques → guardado al instante (uno por día y momento)
+    // 4 toques → guardado al instante (uno por día y momento)
     await pick(ci, 'sleep', 'Normal').click();
     await pick(ci, 'energy', 'Alto').click();
+    await pick(ci, 'stress', 'Normal').click();
     await pick(ci, 'soreness', 'Bajo').click();
     await page.waitForTimeout(250);
     const saved = (await idbAll(page, 'checkins')).filter((c) => c.date === TODAY);
     assert.strictEqual(saved.length, 1);
-    assert.deepStrictEqual({ timing: saved[0].timing, sessionId: saved[0].sessionId, sleep: saved[0].sleep, energy: saved[0].energy, soreness: saved[0].soreness },
-      { timing: 'pre', sessionId: null, sleep: 2, energy: 3, soreness: 1 });
+    assert.deepStrictEqual({ timing: saved[0].timing, sessionId: saved[0].sessionId, sleep: saved[0].sleep, energy: saved[0].energy, stress: saved[0].stress, soreness: saved[0].soreness },
+      { timing: 'pre', sessionId: null, sleep: 2, energy: 3, stress: 2, soreness: 1 });
     await shotAt(page, '.today-extra', 'fase3-today-390-checkin-done');
     // Ya hecho hoy: al volver a Hoy ya no se ofrece
     await open(page, '#/calendar');

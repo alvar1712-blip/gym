@@ -1,5 +1,5 @@
-// E2E del check-in opcional (js/checkin.js) en la sesión de fuerza: «¿Cómo llegas hoy?» arriba (plegado, 3 toques
-// una vez abierto, guardado al instante en IndexedDB), editar, «Omitir» (sin guardar nada), «¿Cómo ha ido?» en la
+// E2E del check-in opcional (js/checkin.js) en la sesión de fuerza: «¿Cómo llegas hoy?» arriba (plegado, 4 toques
+// una vez abierto: sueño, energía, estrés y agujetas; guardado al instante en IndexedDB), editar, «Omitir» (sin guardar nada), «¿Cómo ha ido?» en la
 // hoja de terminar, el check-in en el resumen y que registrar una serie prellenada sigue costando 1 toque. En una
 // sesión a posteriori (sin cronómetro) el «antes» no va arriba sino en la hoja de terminar, junto al «después».
 // La fecha se fija con el reloj de Playwright (jueves 24 sep 2026, 18:00 en Madrid; el tiempo sigue corriendo).
@@ -62,7 +62,7 @@ async function openSession(page, opts = { templateId: 'tpl_d1' }) {
 
 const getSession = (page, id) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__app.store.get('sessions', i))), id);
 const diskCheckins = async (page) => (await idbAll(page, 'checkins')).sort((a, b) => (a.timing < b.timing ? 1 : -1));
-const values = (c) => c && [c.date, c.timing, c.sleep, c.energy, c.soreness];
+const values = (c) => c && [c.date, c.timing, c.sleep, c.energy, c.stress ?? null, c.soreness];
 const pick = (root, field, label) => root.locator(`.ci-row[data-field="${field}"] .seg-btn`, { hasText: new RegExp(`^${label}$`) });
 
 async function countTaps(page) {
@@ -102,7 +102,7 @@ async function stripUnclipped(page, ci) {
   return asIs.equals(free);
 }
 
-test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante, editar; «después» en Terminar y en el resumen', async () => {
+test('check-in «antes» en la sesión: plegado, 4 toques guardados al instante, editar; «después» en Terminar y en el resumen', async () => {
   const app = await launch();
   const { page } = app;
   try {
@@ -123,42 +123,47 @@ test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante,
     assert.deepStrictEqual(await storeAll(page, 'checkins'), [], 'no guarda nada solo por mostrarse');
     await shot(page, 'checkin-pre-collapsed');
 
-    // Abrir (1 toque) y contestar: 3 toques, cada uno guardado al instante en IndexedDB
+    // Abrir (1 toque) y contestar: 4 toques, cada uno guardado al instante en IndexedDB
     const taps = await countTaps(page);
     await ci.locator('.ci-toggle').click();
     assert.strictEqual(await taps(), 1);
     assert.strictEqual(await ci.locator('.ci-body').isVisible(), true);
     assert.strictEqual(await ci.locator('.ci-hint').innerText(), HINT);
-    assert.deepStrictEqual(await ci.locator('.ci-label').allInnerTexts(), ['Sueño', 'Energía', 'Agujetas']);
+    assert.deepStrictEqual(await ci.locator('.ci-label').allInnerTexts(), ['Sueño', 'Energía', 'Estrés', 'Agujetas']);
     assert.deepStrictEqual(await ci.locator('.ci-row[data-field="sleep"] .seg-btn').allInnerTexts(), ['Bajo', 'Normal', 'Alto']);
+    assert.deepStrictEqual(await ci.locator('.ci-row[data-field="stress"] .seg-btn').allInnerTexts(), ['Bajo', 'Normal', 'Alto']);
+    assert.strictEqual(await ci.locator('.ci-zone-add').innerText(), 'Añadir zona', 'las zonas, opcionales y debajo');
+    assert.ok((await ci.locator('.ci-zone-add').boundingBox()).height >= 44);
     for (const b of await ci.locator('.ci-row .seg-btn').all()) assert.ok((await b.boundingBox()).height >= 44, 'botones ≥ 44 px');
     await shot(page, 'checkin-pre-open');
 
     await pick(ci, 'sleep', 'Normal').click();
     let disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 1);
-    assert.deepStrictEqual(values(disk[0]), [TODAY, 'pre', 2, null, null], 'el primer toque ya está en disco');
+    assert.deepStrictEqual(values(disk[0]), [TODAY, 'pre', 2, null, null, null], 'el primer toque ya está en disco');
     assert.strictEqual(disk[0].sessionId, id);
     const ckId = disk[0].id;
     await pick(ci, 'energy', 'Alto').click();
+    await pick(ci, 'stress', 'Bajo').click();
     await pick(ci, 'soreness', 'Bajo').click();
-    assert.strictEqual(await taps(), 3, 'tres toques');
+    assert.strictEqual(await taps(), 4, 'cuatro toques');
     disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 1);
-    assert.deepStrictEqual(values(disk[0]), [TODAY, 'pre', 2, 3, 1]);
+    assert.deepStrictEqual(values(disk[0]), [TODAY, 'pre', 2, 3, 1, 1]);
+    assert.deepStrictEqual(disk[0].areas, [], 'sin zonas');
     assert.ok(disk[0].createdAt > 0);
     // el elegido, resaltado
     assert.strictEqual(await pick(ci, 'energy', 'Alto').getAttribute('aria-pressed'), 'true');
     assert.match(await pick(ci, 'energy', 'Alto').getAttribute('class'), /active/);
     assert.strictEqual(await ci.locator('.ci-row[data-field="energy"] .seg-btn.active').count(), 1);
 
-    // Al contestar las tres, se pliega sola con el resumen
+    // Al contestar las cuatro, se pliega sola con el resumen
     await ci.locator('.ci-body').waitFor({ state: 'hidden' });
-    assert.deepStrictEqual(await ci.locator('.ci-mini-v').allInnerTexts(), ['Normal', 'Alta', 'Bajas']);
-    assert.deepStrictEqual(await ci.locator('.ci-mini-k').allInnerTexts(), ['SUEÑO', 'ENERGÍA', 'AGUJETAS']);
+    assert.deepStrictEqual(await ci.locator('.ci-mini-v').allInnerTexts(), ['Normal', 'Alta', 'Bajo', 'Bajas']);
+    assert.deepStrictEqual(await ci.locator('.ci-mini-k').allInnerTexts(), ['SUEÑO', 'ENERGÍA', 'ESTRÉS', 'AGUJETAS']);
     assert.ok(await stripUnclipped(page, ci), 'la franja plegada no recorta las tildes («SUEÑO», «ENERGÍA»)');
     assert.strictEqual(await ci.locator('.ci-skip').isHidden(), true, 'ya no hay nada que omitir');
-    assert.match(await ci.locator('.ci-toggle').getAttribute('aria-label'), /Sueño normal · Energía alta · Agujetas bajas/);
+    assert.match(await ci.locator('.ci-toggle').getAttribute('aria-label'), /Sueño normal · Energía alta · Estrés bajo · Agujetas bajas/);
     assert.ok((await ci.boundingBox()).height <= 46);
     assert.ok((await registerVisible(page)).ok, 'sigue a la vista');
     await shot(page, 'checkin-pre-done');
@@ -179,7 +184,7 @@ test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante,
     disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 1);
     assert.strictEqual(disk[0].id, ckId, 'se edita el mismo');
-    assert.deepStrictEqual(values(disk[0]), [TODAY, 'pre', 2, 1, 1]);
+    assert.deepStrictEqual(values(disk[0]), [TODAY, 'pre', 2, 1, 1, 1]);
     // editar no lo pliega de golpe (solo al completar por primera vez)
     await page.waitForTimeout(800);
     assert.strictEqual(await ci.locator('.ci-body').isVisible(), true);
@@ -192,35 +197,36 @@ test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante,
     assert.strictEqual((await diskCheckins(page))[0].energy, null, 'tocar el elegido lo quita');
     assert.strictEqual(await ci.locator('.ci-row[data-field="energy"] .seg-btn.active').count(), 0);
     await pick(ci, 'energy', 'Normal').click();
-    assert.deepStrictEqual(values((await diskCheckins(page))[0]), [TODAY, 'pre', 2, 2, 1]);
+    assert.deepStrictEqual(values((await diskCheckins(page))[0]), [TODAY, 'pre', 2, 2, 1, 1]);
     await ci.locator('.ci-toggle').click();
     assert.strictEqual(await ci.locator('.ci-body').isHidden(), true, 'se pliega al tocar la cabecera');
 
     // Cerrar y volver a abrir la app: sigue ahí
     await reload(page);
     await page.waitForSelector('.ci-card[data-checkin="pre"]');
-    assert.deepStrictEqual(await page.locator('.ci-card .ci-mini-v').allInnerTexts(), ['Normal', 'Normal', 'Bajas']);
+    assert.deepStrictEqual(await page.locator('.ci-card .ci-mini-v').allInnerTexts(), ['Normal', 'Normal', 'Bajo', 'Bajas']);
 
-    // Terminar: «¿Cómo ha ido?» compacto (3 toques, sin plegar)
+    // Terminar: «¿Cómo ha ido?» compacto (4 toques, sin plegar)
     await page.locator('.ses-finish').click();
     const fin = page.locator('.sheet-panel.ses-finish-sheet');
     await fin.waitFor();
     const post = fin.locator('.ci-compact[data-checkin="post"]');
     assert.strictEqual(await post.locator('.ci-ctitle').innerText(), '¿Cómo ha ido?');
     assert.strictEqual(await post.locator('.ci-hint').innerText(), HINT);
-    assert.strictEqual(await post.locator('.ci-row').count(), 3);
+    assert.strictEqual(await post.locator('.ci-row').count(), 4);
     await post.scrollIntoViewIfNeeded();
     await fin.locator('.rpe-chips .chip', { hasText: /^7$/ }).click();
     const taps2 = await countTaps(page); // la recarga borró el contador
     await pick(post, 'sleep', 'Normal').click();
     await pick(post, 'energy', 'Bajo').click();
+    await pick(post, 'stress', 'Alto').click();
     await pick(post, 'soreness', 'Alto').click();
-    assert.strictEqual(await taps2(), 3, '«después» en 3 toques');
+    assert.strictEqual(await taps2(), 4, '«después» en 4 toques');
     await page.waitForTimeout(700);
-    assert.strictEqual(await post.locator('.ci-row').count(), 3, 'la versión compacta no se pliega');
+    assert.strictEqual(await post.locator('.ci-row').count(), 4, 'la versión compacta no se pliega');
     disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 2);
-    assert.deepStrictEqual(disk.map(values), [[TODAY, 'pre', 2, 2, 1], [TODAY, 'post', 2, 1, 3]]);
+    assert.deepStrictEqual(disk.map(values), [[TODAY, 'pre', 2, 2, 1, 1], [TODAY, 'post', 2, 1, 3, 3]]);
     assert.strictEqual(disk[1].sessionId, id);
     await post.locator('.ci-row[data-field="soreness"]').scrollIntoViewIfNeeded();
     await shot(page, 'checkin-post-finish');
@@ -237,8 +243,8 @@ test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante,
     await page.waitForSelector('.sheet-overlay', { state: 'detached' }); // la hoja de terminar ya se ha ido
     await sum.scrollIntoViewIfNeeded();
     const row = (t) => sum.locator(`.ci-sum-row[data-timing="${t}"] .ci-sum-v`);
-    assert.deepStrictEqual(await row('pre').allInnerTexts(), ['Normal', 'Normal', 'Bajas']);
-    assert.deepStrictEqual(await row('post').allInnerTexts(), ['Normal', 'Baja', 'Altas']);
+    assert.deepStrictEqual(await row('pre').allInnerTexts(), ['Normal', 'Normal', 'Bajo', 'Bajas']);
+    assert.deepStrictEqual(await row('post').allInnerTexts(), ['Normal', 'Baja', 'Alto', 'Altas']);
     assert.deepStrictEqual(await sum.locator('.ci-sum-when').allInnerTexts(), ['ANTES', 'DESPUÉS']);
     assert.match(await sum.innerText(), /panel semanal y en la sugerencia de descarga/);
     await shot(page, 'checkin-summary');
@@ -253,7 +259,7 @@ test('check-in «antes» en la sesión: plegado, 3 toques guardados al instante,
     await shot(page, 'checkin-summary-edit');
     await ed.locator('.sheet-actions button', { hasText: 'Listo' }).click();
     await page.waitForTimeout(300);
-    assert.deepStrictEqual(await row('post').allInnerTexts(), ['Normal', 'Baja', 'Normales']);
+    assert.deepStrictEqual(await row('post').allInnerTexts(), ['Normal', 'Baja', 'Alto', 'Normales']);
     assert.strictEqual((await diskCheckins(page)).find((c) => c.timing === 'post').soreness, 2);
     assert.strictEqual((await diskCheckins(page)).length, 2);
 
@@ -350,7 +356,7 @@ test('sesión a posteriori (iPhone SE): sin franja arriba, «Registrar serie 1»
     await pick(pre, 'energy', 'Normal').click();
     let disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 1);
-    assert.deepStrictEqual(values(disk[0]), ['2026-09-22', 'pre', 1, 2, null], 'con la fecha de la sesión, guardado al instante');
+    assert.deepStrictEqual(values(disk[0]), ['2026-09-22', 'pre', 1, 2, null, null], 'con la fecha de la sesión, guardado al instante');
     assert.strictEqual(disk[0].sessionId, id);
     await page.waitForTimeout(250);
     await shot(page, 'checkin-past-finish');
@@ -368,7 +374,7 @@ test('sesión a posteriori (iPhone SE): sin franja arriba, «Registrar serie 1»
     await page.waitForSelector('.sheet-overlay', { state: 'detached' });
     disk = await diskCheckins(page);
     assert.strictEqual(disk.length, 1);
-    assert.deepStrictEqual(values(disk[0]), [YESTERDAY, 'pre', 1, 2, null], 'el check-in se mueve con la sesión');
+    assert.deepStrictEqual(values(disk[0]), [YESTERDAY, 'pre', 1, 2, null, null], 'el check-in se mueve con la sesión');
     assert.strictEqual((await getSession(page, id)).date, YESTERDAY);
     assert.strictEqual(await page.locator('.ses-content .ci-card').count(), 0, 'tras rehacer la vista, sigue sin franja');
     assert.ok((await registerVisible(page)).ok);
@@ -402,9 +408,10 @@ test('una mano en iPhone SE: con el check-in arriba, «Registrar serie 1» sigue
     await shot(page, 'checkin-se-open');
     await pick(ci, 'sleep', 'Alto').click();
     await pick(ci, 'energy', 'Normal').click();
+    await pick(ci, 'stress', 'Normal').click();
     await pick(ci, 'soreness', 'Alto').click();
     await ci.locator('.ci-body').waitFor({ state: 'hidden' });
-    assert.deepStrictEqual(values((await diskCheckins(page))[0]), [TODAY, 'pre', 3, 2, 3]);
+    assert.deepStrictEqual(values((await diskCheckins(page))[0]), [TODAY, 'pre', 3, 2, 2, 3]);
     v = await registerVisible(page);
     assert.ok(v.ok, `sigue a la vista con el resumen (${JSON.stringify(v)})`);
     assert.ok(await stripUnclipped(page, ci), 'resumen plegado sin recortes en 375 px');

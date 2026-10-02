@@ -7,8 +7,8 @@
 //
 // ENTRADA `data` (la de stats.js más los check-ins; ver progress-ui.dataFromStore):
 //   { sessions, exercises: Map, templates: Map, plan: Map, settings, bodyweight, checkins: [...], today }
-//   checkins: store 'checkins' { id, date, timing:'pre'|'post', sessionId, sleep, energy, soreness } (1 bajo,
-//   2 normal, 3 alto). Solo son contexto: un mensaje de información «Check-ins de la semana» y la condición (c)
+//   checkins: store 'checkins' { id, date, timing:'pre'|'post', sessionId, sleep, energy, stress?, soreness, areas? }
+//   (1 bajo, 2 normal, 3 alto; estrés y zonas desde la ronda 6, solo se muestran). Solo son contexto: un mensaje de información «Check-ins de la semana» y la condición (c)
 //   de la sugerencia de descarga (ninguna otra regla depende de ellos).
 //
 // SALIDA de weeklyInsights(data, weekStart):
@@ -27,7 +27,7 @@ import {
 import { PATTERNS, PATTERN_LABEL, SET_TYPE_LABEL, defaultSettings } from './seed.js';
 import { formatSet, targetText, LOAD_REP_TYPES } from './session-logic.js';
 import { joinList } from './activity-logic.js';
-import { checkinsBetween, isLowCheckin, valueText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
+import { checkinsBetween, isLowCheckin, valueText, areasText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
 
 // ===========================================================================
 // Constantes y formato
@@ -1047,9 +1047,12 @@ function loadWarningMessages(ctx) {
 /** Check-in «bajo»: sueño o energía bajos (1) o agujetas altas (3). El mismo criterio que checkin-logic.js. */
 export { isLowCheckin };
 
-/** «sueño bajo · energía baja · agujetas normales» (concordado, solo lo contestado; checkin-logic.valueText). */
+/**
+ * «sueño bajo · energía baja · agujetas normales» (concordado, solo lo contestado; checkin-logic.valueText), y las zonas
+ * apuntadas si las hay («Isquiotibiales (izq.): agujetas 7/10»). Se muestran como dato: no cambian la regla de «bajo».
+ */
 function checkinText(c) {
-  return FIELD_KEYS.map((k) => valueText(k, c[k])).filter(Boolean).join(' · ') || 'sin valores';
+  return [...FIELD_KEYS.map((k) => valueText(k, c[k])), areasText(c)].filter(Boolean).join(' · ') || 'sin valores';
 }
 /** Fila de un check-in en un «¿Por qué?»: «22 sep · antes» → «sueño bajo · energía normal · agujetas normales → cuenta como bajo». */
 const checkinRow = (k) => ({

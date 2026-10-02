@@ -6,6 +6,9 @@
 //     onSelect(muscleId): al tocar (o activar con teclado) una zona. selected: zona elegida al montar (sin
 //     llamar a onSelect). compact: figura más pequeña (≤ 250 px de ancho) para tarjetas resumen.
 //     El elemento devuelto trae el.select(id|null, { silent }) y el.update(muscles) para no volver a montarlo.
+//   Modo «elegir» (ronda 6, agujetas por zona): bodyMap({ legend: false, marks, describe, emptyHint, label, onSelect }) →
+//     sin leyenda de series; marks = { [muscleId]: 'low'|'mid'|'high'|'none' } colorea las zonas ya apuntadas
+//     (data-mark) y describe(id) → texto del detalle y de su aria-label. Sin esas opciones, todo igual que siempre.
 //   bodyMapData(muscleSets, ranges?, { zeroAsNone = true }) → objeto `muscles` (función PURA, sin DOM)
 //   detailText(id, entry) / detailHint(entry) / zoneAriaLabel(id, entry) → textos del detalle
 //     («Pecho · 8 series · objetivo 10–20 · por debajo» · «Faltan 2 series para el mínimo»)
@@ -309,7 +312,11 @@ const ZONE_ORDER = ['frontdelt', 'sidedelt', 'reardelt', 'chest', 'back', 'bicep
  *   (igual que las tablas de músculos de Progreso y del panel semanal).
  * @returns {HTMLElement} div.bm con el.select(id|null, {silent}) y el.update(muscles)
  */
-export function bodyMap({ muscles = {}, onSelect = null, selected = null, label = 'Mapa corporal: series de la semana por músculo', compact = false, inProgress = false } = {}) {
+export function bodyMap({
+  muscles = {}, onSelect = null, selected = null, label = 'Mapa corporal: series de la semana por músculo', compact = false, inProgress = false,
+  legend: showLegend = true, marks = null, describe = null, emptyHint = 'Toca un músculo para ver sus series.',
+} = {}) {
+  const pickMode = !showLegend;
   const uid = ++uidSeq;
   const clipId = `bm-clip-${uid}`;
   const detailId = `bm-detail-${uid}`;
@@ -371,13 +378,20 @@ export function bodyMap({ muscles = {}, onSelect = null, selected = null, label 
   detail.id = detailId;
   detail.setAttribute('aria-live', 'polite');
 
-  const root = htmlEl('div', `bm${compact ? ' bm-compact' : ''}${inProgress ? ' bm-in-progress' : ''}`, legend, figure, detail);
+  const root = htmlEl('div', `bm${compact ? ' bm-compact' : ''}${inProgress ? ' bm-in-progress' : ''}${pickMode ? ' bm-pick' : ''}`,
+    pickMode ? null : legend, figure, detail);
+  let markData = marks || {};
 
   function paintDetail() {
     detail.replaceChildren();
     if (!current) {
       detail.dataset.status = '';
-      detail.appendChild(htmlEl('p', 'bm-detail-hint', 'Toca un músculo para ver sus series.'));
+      detail.appendChild(htmlEl('p', 'bm-detail-hint', emptyHint));
+      return;
+    }
+    if (pickMode) {
+      detail.dataset.status = '';
+      detail.appendChild(htmlEl('p', 'bm-detail-main', htmlEl('strong', 'bm-detail-name', describe ? describe(current) : MUSCLE_LABEL[current] || current)));
       return;
     }
     const e = data[current];
@@ -404,6 +418,14 @@ export function bodyMap({ muscles = {}, onSelect = null, selected = null, label 
   }
 
   function paintZones() {
+    if (pickMode) {
+      for (const [id, g] of zones) {
+        g.dataset.status = 'none';
+        g.dataset.mark = markData[id] || '';
+        g.setAttribute('aria-label', describe ? describe(id) : MUSCLE_LABEL[id] || id);
+      }
+      return;
+    }
     const counts = { below: 0, in: 0, above: 0, none: 0 };
     let noneWithSets = false;
     for (const [id, g] of zones) {
@@ -473,8 +495,9 @@ export function bodyMap({ muscles = {}, onSelect = null, selected = null, label 
   select(selected, { silent: true });
 
   root.select = (id, opts) => select(id, opts);
-  root.update = (next) => {
+  root.update = (next, nextMarks) => {
     data = next || {};
+    if (nextMarks !== undefined) markData = nextMarks || {};
     paintZones();
     paintDetail();
   };

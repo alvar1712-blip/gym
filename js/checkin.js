@@ -1,4 +1,5 @@
-// checkin.js — check-in opcional: sueño, energía y agujetas, cada uno Bajo · Normal · Alto (1/2/3).
+// checkin.js — check-in opcional: sueño, energía, estrés y agujetas, cada uno Bajo · Normal · Alto (1/2/3), y agujetas o
+// molestias por zona (0–10, opcional; ronda 6, docs/MEJORAS6.md).
 // PROPIETARIO: módulo de check-in. Lógica pura en ./checkin-logic.js (reexportada aquí).
 //
 // CONTRATO: checkinCard({ date, timing: 'pre'|'post', sessionId, compact }) → HTMLElement | null
@@ -9,19 +10,22 @@
 //     (así tampoco vuelve a salir en Hoy). Devuelve null si está omitido y no hay nada guardado.
 //   - compact:false (por defecto) → tarjeta plegable de una línea (44 px) que se despliega al tocarla: no añade
 //     ningún toque obligatorio a la pantalla donde va (p. ej. arriba de la sesión, sobre «Registrar serie»).
-//     Al contestar las tres preguntas se pliega sola mostrando el resumen.
-//   - compact:true → las tres filas a la vista (para una hoja, p. ej. «Terminar sesión»): 3 toques.
+//     Al contestar las cuatro preguntas se pliega sola mostrando el resumen.
+//   - compact:true → las cuatro filas a la vista (para una hoja, p. ej. «Terminar sesión»): 4 toques.
+//   - Debajo de las filas, «Agujetas o molestias por zona» (opcional): fichas con lo apuntado y «Añadir zona», que abre
+//     una hoja (mapa corporal o articulación, lado, 0–10 y nota).
 //   Opciones extra: open (empieza desplegada), title (otro título), ignoreDismissed (mostrar aunque se
 //   omitiera), skippable (false = sin «Omitir»), onChange(record|null) tras cada guardado.
-// checkinSummary({ date, sessionId }) → HTMLElement | null — bloque de solo lectura (antes / después) con
-//   «Editar check-in»; null si ese día no hay ninguno.
+// checkinSummary({ date, sessionId }) → HTMLElement | null — bloque de solo lectura (antes / después; sin sesión,
+//   «Ese día») con «Editar check-in»; null si ese día no hay ninguno.
 // moveSessionCheckins(sessionId, from, to) — al cambiar la fecha de una sesión, sus check-ins van con ella.
 import * as store from './store.js';
-import { h, icon, segmented, toast, sheet } from './ui.js';
+import { h, icon, segmented, chips, textInput, toast, sheet } from './ui.js';
 import { todayStr, addDays, isDateStr } from './util.js';
 import {
   TIMINGS, FIELDS, LEVEL_OPTIONS, TIMING_LABEL, TIMING_SHORT, level, checkinFor, hasValues, isComplete, checkinText,
-  applyValue, dismissKey, valueWord,
+  applyValue, dismissKey, valueWord, AREA_KINDS, JOINTS, SIDES, AREA_MIN, AREA_MAX, areasOf, areaText, areaShort, areaName,
+  levelBand, validateArea, upsertArea, removeArea,
 } from './checkin-logic.js';
 
 export * from './checkin-logic.js';
@@ -31,7 +35,7 @@ export const CHECKIN_HINT = 'Solo se usa como contexto en el panel semanal y en 
 
 /** Un segundo toque sobre el mismo botón en este margen es un doble toque accidental: no quita el valor. */
 const DOUBLE_TAP_MS = 450;
-/** Tras contestar la tercera pregunta, la tarjeta se pliega sola (se ve un instante lo elegido). */
+/** Tras contestar la última pregunta, la tarjeta se pliega sola (se ve un instante lo elegido). */
 const AUTO_COLLAPSE_MS = 600;
 
 function titleFor(date, timing) {
@@ -94,15 +98,124 @@ function current(date, timing) {
 
 /** Aplica un toque y lo guarda ya. → el registro guardado, o null si ya no queda ninguno. */
 function saveValue(key, field, value) {
-  const { record, empty } = applyValue(store.all('checkins'), key, field, value);
+  return persist(applyValue(store.all('checkins'), key, field, value));
+}
+
+/** Guarda el resultado de un cambio; sin ningún valor no aporta nada y se elimina. → el registro o null. */
+function persist({ record, empty }) {
   if (!record) return null;
   if (empty) {
-    // Sin ningún valor no aporta nada: se elimina (lo único que se pierde es lo que se acaba de quitar).
     if (store.get('checkins', record.id)) store.remove('checkins', record.id).catch(() => {});
     return null;
   }
   store.save('checkins', record).catch(() => {});
   return record;
+}
+
+// ---------------------------------------------------------------------------
+// Agujetas o molestias por zona (hoja)
+// ---------------------------------------------------------------------------
+/**
+ * Hoja para añadir o editar una zona: agujetas (músculo, en el mapa corporal) o molestia (articulación), lado
+ * (opcional), intensidad 0–10 y nota. onDone(record|null) tras guardar o quitar.
+ */
+export function areaSheet({ date, timing = 'pre', sessionId = null, area = null, onDone = null } = {}) {
+  const key = { date, timing, sessionId };
+  const draft = area ? { ...area } : { kind: 'muscle', zone: null, side: null, level: null, note: '' };
+  const err = h('p.form-error.ci-area-err', { hidden: true, role: 'alert' });
+  const zoneSlot = h('div.ci-area-zone');
+  const marksNow = () => Object.fromEntries(areasOf(current(date, timing)).filter((a) => a.kind === 'muscle')
+    .map((a) => [a.zone, levelBand(a.level)]));
+
+  async function paintZone() {
+    if (draft.kind === 'joint') {
+      zoneSlot.replaceChildren(chips({
+        options: JOINTS.map((j) => ({ value: j.id, label: j.label })), value: draft.zone && JOINTS.some((j) => j.id === draft.zone) ? draft.zone : null,
+        className: 'ci-area-joints', onChange: (v) => { draft.zone = v; },
+      }));
+      return;
+    }
+    // El mapa corporal se carga al abrir la hoja (no retrasa Hoy).
+    zoneSlot.replaceChildren(h('p.ci-hint', 'Cargando el mapa…'));
+    const { bodyMap } = await import('./bodymap.js');
+    if (draft.kind !== 'muscle') return;
+    const map = bodyMap({
+      legend: false, compact: true, marks: marksNow(), selected: draft.zone,
+      label: 'Mapa corporal: toca el músculo con agujetas',
+      emptyHint: 'Toca el músculo con agujetas.',
+      describe: (id) => areaName({ kind: 'muscle', zone: id }),
+      onSelect: (id) => { draft.zone = id; },
+    });
+    zoneSlot.replaceChildren(map);
+  }
+
+  const kindSeg = segmented({
+    options: AREA_KINDS.map((k) => ({ value: k.id, label: k.label })), value: draft.kind, ariaLabel: 'Qué es',
+    onChange: (v) => { if (v !== draft.kind) { draft.kind = v; draft.zone = null; paintZone(); } },
+  });
+  kindSeg.classList.add('ci-area-kind');
+  const body = h('div.stack.ci-area-body',
+    kindSeg,
+    zoneSlot,
+    h('div.field', h('span.field-label', 'Lado (opcional)'),
+      chips({ options: SIDES.map((x) => ({ value: x.id, label: x.label })), value: draft.side, allowNone: true, className: 'ci-area-side', onChange: (v) => { draft.side = v; } })),
+    h('div.field', h('span.field-label', 'Intensidad'),
+      chips({
+        options: Array.from({ length: AREA_MAX - AREA_MIN + 1 }, (_, i) => ({ value: AREA_MIN + i, label: String(AREA_MIN + i), className: 'chip-num' })),
+        value: draft.level, className: 'ci-area-level', onChange: (v) => { draft.level = v; },
+      }),
+      h('span.field-hint', '0 nada · 10 lo máximo que has tenido')),
+    h('label.field', h('span.field-label', 'Nota (opcional)'),
+      textInput({ value: draft.note, maxlength: 200, placeholder: 'p. ej. tras el peso muerto rumano', ariaLabel: 'Nota', onInput: (v) => { draft.note = v; } })),
+    err);
+  paintZone();
+
+  const actions = [{
+    label: area ? 'Guardar' : 'Añadir', kind: 'primary',
+    onClick: (close) => {
+      const e = validateArea(draft);
+      const msg = e.kind || e.zone || e.level;
+      if (msg) { err.hidden = false; err.textContent = msg; return; }
+      const rec = persist(upsertArea(store.all('checkins'), key, draft));
+      close();
+      if (onDone) onDone(rec);
+    },
+  }];
+  if (area) {
+    actions.push({
+      label: 'Quitar', kind: 'danger',
+      onClick: (close) => {
+        const rec = persist(removeArea(store.all('checkins'), key, area.id));
+        close();
+        if (onDone) onDone(rec);
+      },
+    });
+  }
+  return sheet({ title: area ? 'Editar zona' : 'Agujetas o molestia', className: 'ci-area-sheet', body, actions, tall: true });
+}
+
+/** Bloque de zonas de un check-in: fichas (tocar = editar) y «Añadir zona». */
+function zonesBlock({ date, timing, sessionId, onChange }) {
+  const el = h('div.ci-zones');
+  function paint() {
+    const list = areasOf(current(date, timing));
+    el.dataset.count = String(list.length);
+    el.replaceChildren(
+      h('div.ci-zones-head', h('span.ci-zones-title', 'Agujetas o molestias por zona'), h('span.ci-copt', 'Opcional')),
+      list.length ? h('div.ci-zone-list', list.map((a) => h(`button.ci-zone.ci-band-${levelBand(a.level)}`, {
+        type: 'button', dataset: { zone: a.zone, kind: a.kind }, 'aria-label': `Editar ${areaText(a)}`,
+        onClick: () => areaSheet({ date, timing, sessionId, area: a, onDone: done }),
+      }, areaShort(a)))) : null,
+      h('button.btn.btn-ghost.btn-sm.ci-zone-add', { type: 'button', onClick: () => areaSheet({ date, timing, sessionId, onDone: done }) },
+        icon('plus', 18), list.length ? 'Otra zona' : 'Añadir zona'));
+  }
+  function done(rec) {
+    paint();
+    if (onChange) onChange(rec);
+  }
+  el.repaint = paint;
+  paint();
+  return el;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +270,7 @@ export function checkinCard({
     return h('div.ci-row', { dataset: { field: f.key } }, h('span.ci-label', f.label), seg);
   });
   const rowsEl = h('div.ci-rows', rows);
+  const zones = zonesBlock({ date, timing, sessionId, onChange: (rec) => { paint(); if (onChange) onChange(rec); } });
   const hint = h('p.ci-hint', CHECKIN_HINT);
 
   const skipBtn = skippable ? h('button.ci-skip', { type: 'button', onClick: () => skip() }, 'Omitir') : null;
@@ -171,6 +285,7 @@ export function checkinCard({
         h('div.ci-chead-main', h('span.field-label.ci-ctitle', ttl), h('span.ci-copt', 'Opcional')),
         skipBtn),
       rowsEl,
+      zones,
       hint);
   } else {
     stateEl = h('span.ci-state', { 'aria-hidden': 'true' });
@@ -179,7 +294,7 @@ export function checkinCard({
       icon('check', 16, 'ci-ok'),
       stateEl,
       icon('chevron-down', 20, 'ci-chev'));
-    body = h('div.ci-body', { hidden: !isOpen }, rowsEl, hint);
+    body = h('div.ci-body', { hidden: !isOpen }, rowsEl, zones, hint);
     el = h('section.ci-card', { dataset: { checkin: timing }, 'aria-label': `Check-in ${TIMING_LABEL[timing].toLowerCase()}` },
       h('div.ci-bar', toggle, skipBtn),
       body);
@@ -229,9 +344,13 @@ export function checkinCard({
 export function checkinSummary({ date, sessionId = null } = {}) {
   if (!isDateStr(date)) return null;
   const el = h('div.ci-sum-wrap');
+  let single = false;
   function render() {
     const all = store.all('checkins');
     const items = TIMINGS.map((t) => ({ t, c: checkinFor(all, date, t) })).filter((x) => hasValues(x.c));
+    // Sin sesión de fuerza (p. ej. desde Hoy o el calendario) no hay «antes» ni «después»: es el de ese día.
+    single = !sessionId && items.every((x) => x.t === 'pre');
+    const when = (t) => (single ? 'Ese día' : TIMING_SHORT[t]);
     el.hidden = !items.length;
     el.replaceChildren(...(items.length ? [
       h('h2.section-title', 'Check-in'),
@@ -240,25 +359,36 @@ export function checkinSummary({ date, sessionId = null } = {}) {
           h('div.ci-sum-row', { role: 'row' }, h('span', { role: 'columnheader' }),
             FIELDS.map((f) => h('span.ci-sum-k', { role: 'columnheader' }, f.label))),
           items.map(({ t, c }) => h('div.ci-sum-row', { role: 'row', dataset: { timing: t }, title: checkinText(c) },
-            h('span.ci-sum-when', { role: 'rowheader' }, TIMING_SHORT[t]),
-            FIELDS.map((f) => h('span.ci-sum-v', { role: 'cell', dataset: { field: f.key } }, valueWord(f.key, c[f.key]) || '—'))))),
+            h('span.ci-sum-when', { role: 'rowheader' }, when(t)),
+            FIELDS.map((f) => h('span.ci-sum-v', { role: 'cell', dataset: { field: f.key, label: f.label } }, valueWord(f.key, c[f.key]) || '—'))))),
+        ...items.filter(({ c }) => areasOf(c).length).map(({ t, c }) => h('p.ci-sum-zones', { dataset: { timing: t } },
+          items.length > 1 ? h('span.ci-sum-zones-when', `${when(t)}: `) : null, areasOf(c).map(areaText).join(' · '))),
         h('p.ci-hint', CHECKIN_HINT),
         h('button.btn.btn-ghost.btn-block.ci-sum-edit', { type: 'button', onClick: edit }, icon('edit', 18), 'Editar check-in')),
     ] : []));
   }
   function edit() {
-    sheet({
-      title: 'Check-in',
-      className: 'ci-sheet',
-      body: h('div.stack.ci-sheet-body', TIMINGS.map((t) => checkinCard({
-        date, timing: t, sessionId, compact: true, title: TIMING_LABEL[t], ignoreDismissed: true, skippable: false,
-      }))),
-      actions: [{ label: 'Listo', kind: 'primary' }],
-      onClose: render,
-    });
+    checkinEditSheet({ date, sessionId, timings: single ? ['pre'] : TIMINGS, onClose: render });
   }
   render();
   return el.hidden ? null : el;
+}
+
+/**
+ * Hoja para editar (o crear) el check-in de un día: «Antes» y «Después» con sesión; sin sesión, uno solo («Ese día»,
+ * guardado como 'pre'). Sin «Omitir». onClose al cerrarla.
+ */
+export function checkinEditSheet({ date, sessionId = null, timings = TIMINGS, onClose = null } = {}) {
+  const single = timings.length === 1;
+  return sheet({
+    title: 'Check-in',
+    className: 'ci-sheet',
+    body: h('div.stack.ci-sheet-body', timings.map((t) => checkinCard({
+      date, timing: t, sessionId, compact: true, title: single ? 'Ese día' : TIMING_LABEL[t], ignoreDismissed: true, skippable: false,
+    }))),
+    actions: [{ label: 'Listo', kind: 'primary' }],
+    onClose,
+  });
 }
 
 // ---------------------------------------------------------------------------

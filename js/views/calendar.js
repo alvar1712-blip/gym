@@ -15,6 +15,7 @@ import {
 } from '../plan.js';
 import { sessionSummary } from '../history-logic.js';
 import { getProfile, cycleEnabled } from '../profile.js';
+import { checkinSummary, checkinEditSheet } from '../checkin.js';
 import { cycleInfo, calendarMarks } from '../cycle-logic.js';
 import {
   cap, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart,
@@ -263,6 +264,7 @@ export function mountDay(root, params = {}) {
       planSection(date, st, ctx),
       statusSection(st),
       sessionsSection(date, st, ctx),
+      checkinSection(date, st, today),
       actionsSection(date, st, today),
       planningSection(date, st, ctx));
   }
@@ -271,11 +273,27 @@ export function mountDay(root, params = {}) {
   // Tras cambiar el día (o deshacer) se vuelve a pintar; varias escrituras seguidas → un solo pintado.
   let queued = false;
   const off = store.on('change', (e) => {
-    if ((e.store !== 'plan' && e.store !== 'sessions') || queued) return;
+    if ((e.store !== 'plan' && e.store !== 'sessions' && e.store !== 'checkins') || queued) return;
     queued = true;
     queueMicrotask(() => { queued = false; render(); });
   });
   return off;
+}
+
+/**
+ * Check-in del día (ronda 6): el resumen con «Editar» si lo hay; si no, y el día no es futuro, «Añadir check-in»
+ * (p. ej. las agujetas del día siguiente a una sesión, también en un día de descanso).
+ */
+function checkinSection(date, st, today) {
+  const strength = st.sessions.find((s) => s.kind === 'strength');
+  const sessionId = strength ? strength.id : null;
+  const sum = checkinSummary({ date, sessionId });
+  if (sum) return sum;
+  if (date > today) return null;
+  return h('button.cal-link-btn.cal-checkin-add', {
+    type: 'button',
+    onClick: () => checkinEditSheet({ date, sessionId, timings: strength ? ['pre', 'post'] : ['pre'] }),
+  }, icon('plus', 18), 'Añadir check-in (sueño, energía, estrés, agujetas)');
 }
 
 /** «Miércoles 23 sep». */

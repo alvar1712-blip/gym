@@ -325,14 +325,16 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 /* Plegada y contestada: el resumen ocupa la franja entera (tres columnas: pregunta arriba, valor debajo). */
 .ci-has:not(.ci-open) .ci-title { display: none; }
 .ci-has:not(.ci-open) .ci-ok { display: inline; }
-.ci-has:not(.ci-open) .ci-state { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; overflow: visible; }
+/* Cuatro valores: columnas a la medida del texto (caben «AGUJETAS» y «Normales» a 375 px). */
+.ci-has:not(.ci-open) .ci-state { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: space-between; gap: 6px; overflow: visible; }
 .ci-mini { display: flex; flex-direction: column; min-width: 0; }
 /* Sin recortar por arriba: la tilde de «ENERGÍA» y la virgulilla de «SUEÑO» sobresalen de una línea ajustada. La
-   elipsis va en cada texto, y el de la pregunta tiene holgura arriba (padding) para los signos de las mayúsculas. */
+   elipsis va en cada texto, y el de la pregunta tiene holgura arriba (padding) para los signos de las mayúsculas.
+   Holgura lateral (sin mover nada) para las letras que sobresalen de su caja, como el pie de la «A» de «Alta». */
 .ci-mini-k,
-.ci-mini-v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-mini-v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-inline: 2px; margin-inline: -2px; }
 .ci-mini-k { padding-top: 3px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-.ci-mini-v { font-size: 15px; font-weight: 750; line-height: 1.25; color: var(--text); }
+.ci-mini-v { font-size: 14px; font-weight: 750; line-height: 1.25; color: var(--text); }
 .ci-skip {
   flex: none;
   min-width: 44px;
@@ -368,15 +370,50 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 /* Resumen de la sesión */
 .ci-sum-wrap { display: flex; flex-direction: column; gap: 12px; }
 .ci-sum { gap: 10px; }
-.ci-sum-grid { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 4px 8px; align-items: baseline; }
-.ci-sum-row { display: contents; }
+/* Cada momento (antes / después) en un bloque con sus cuatro valores en 2 × 2 y su nombre delante (data-label):
+   cuatro columnas no caben a 375 px. La fila de cabecera queda solo para lectores de pantalla. */
+.ci-sum-grid { display: flex; flex-direction: column; gap: 10px; }
+.ci-sum-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; align-items: baseline; }
+.ci-sum-row:first-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ci-sum-row .ci-sum-when { grid-column: 1 / -1; }
+.ci-sum-row .ci-sum-v { display: flex; flex-direction: column; white-space: normal; }
+.ci-sum-v::before { content: attr(data-label); font-size: 12px; font-weight: 650; line-height: 1.3; color: var(--muted); }
 .ci-sum-k, .ci-sum-when { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .ci-sum-when { padding-right: 4px; }
 .ci-sum-k { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ci-sum-v { font-size: 16px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-sum-v { font-size: 15px; font-weight: 750; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ci-sum-edit { min-height: 44px; margin-top: 2px; }
 
 /* Arriba de la sesión: plegada es una franja de 44 px pegada a la cabecera, para que en un iPhone SE
    «Registrar serie 1» siga a la vista sin desplazar (criterio de 1–2 toques por serie). */
 .ses-content > .ci-card { margin-bottom: -6px; }
 .ses-content > .ci-card:first-child { margin-top: -8px; }
+
+/* ---------- Check-in: agujetas o molestias por zona (ronda 6) ---------- */
+.ci-zones { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.ci-zones-head { display: flex; align-items: baseline; gap: 8px; }
+.ci-zones-title { font-size: 14px; font-weight: 700; color: var(--text-2); }
+.ci-zone-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.ci-zone {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+}
+.ci-zone.ci-band-low { border-color: rgba(255, 200, 87, 0.45); }
+.ci-zone.ci-band-mid { border-color: var(--warn); }
+.ci-zone.ci-band-high { border-color: var(--danger); }
+.ci-zone-add { align-self: flex-start; min-height: 44px; }
+.ci-sum-zones { margin: 0; font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.ci-sum-zones-when { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.ci-area-body { gap: 14px; }
+.ci-area-kind .seg-btn { min-height: 44px; font-size: 15px; }
+.ci-area-level { gap: 6px; }
+.ci-area-level .chip { flex: 1 0 calc(16.66% - 6px); min-width: 0; padding: 0; }
+.ci-area-joints .chip, .ci-area-side .chip { padding: 0 12px; }
+.ci-area-zone .bm-figure { max-width: 280px; }
