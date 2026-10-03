@@ -15,7 +15,19 @@ const maps = Object.fromEntries(STORES.map((s) => [s, new Map()]));
 const listeners = new Map();
 const pendingTimers = new Map(); // `${store}:${id}` → {timer, obj}
 const inflight = new Set();
+// Revisiones (ronda 6, fase G; docs/MEJORAS6.md): cada almacén lleva un contador que sube en la MISMA llamada síncrona
+// que cambia su memoria (save, saveSoon, remove, restore); `epoch` cambia cuando se sustituyen todos los datos de golpe
+// (carga inicial, importar una copia, borrar todo). Las cachés en memoria (analysis-cache.js) guardan estos números y
+// recalculan si alguno cambió. Solo en memoria: no se guardan ni viajan en las copias.
+const revs = Object.fromEntries(STORES.map((s) => [s, 0]));
+let epoch = 0;
+const bump = (store) => { revs[store] = (revs[store] || 0) + 1; };
 let persistInfo = { supported: false, persisted: false };
+
+/** Revisiones actuales: { epoch, meta, exercises, …, races } (números; cambian con cada escritura). */
+export function revisions() {
+  return { epoch, ...revs };
+}
 
 // ---------- eventos ----------
 export function on(evt, fn) {
@@ -52,6 +64,7 @@ export async function init() {
   } else {
     await migrate();
   }
+  epoch++;
   return true;
 }
 
@@ -176,6 +189,7 @@ export function save(store, obj) {
   if (pending) { clearTimeout(pending.timer); pendingTimers.delete(key); }
   stamp(obj);
   maps[store].set(obj.id, obj);
+  bump(store);
   emit('change', { store, id: obj.id, op: 'put', obj });
   return track(db.put(store, obj), { store, id: obj.id });
 }
@@ -189,6 +203,7 @@ export function saveSoon(store, obj, ms = 250) {
   const key = `${store}:${obj.id}`;
   stamp(obj);
   maps[store].set(obj.id, obj);
+  bump(store);
   const prev = pendingTimers.get(key);
   if (prev) clearTimeout(prev.timer);
   const timer = setTimeout(() => {
@@ -216,6 +231,7 @@ export async function remove(store, id) {
   if (pending) { clearTimeout(pending.timer); pendingTimers.delete(key); }
   const obj = maps[store].get(id) ?? null;
   maps[store].delete(id);
+  bump(store);
   emit('change', { store, id, op: 'delete', obj });
   await track(db.del(store, id), { store, id });
   return obj;
@@ -227,6 +243,7 @@ export function restore(store, obj) {
   const pending = pendingTimers.get(key);
   if (pending) { clearTimeout(pending.timer); pendingTimers.delete(key); }
   maps[store].set(obj.id, obj);
+  bump(store);
   emit('change', { store, id: obj.id, op: 'put', obj });
   return track(db.put(store, obj), { store, id: obj.id });
 }
@@ -279,12 +296,14 @@ export async function importData(obj) {
     maps[s].clear();
     for (const o of data[s]) maps[s].set(o.id, o);
   });
+  epoch++; // en cuanto cambia la memoria (y otra vez al terminar la migración)
   if (!maps.meta.get('app')) {
     const app = { id: 'app', createdAt: Date.now(), seedVersion: 0, schema: 1 };
     maps.meta.set('app', app);
     await db.put('meta', app);
   }
   await migrate();
+  epoch++;
   emit('reset', { reason: 'import' });
 }
 
@@ -293,7 +312,9 @@ export async function wipeAll() {
   await flush();
   await db.replaceAll({});
   STORES.forEach((s) => maps[s].clear());
+  epoch++;
   await seedAll();
+  epoch++;
   emit('reset', { reason: 'wipe' });
 }
 

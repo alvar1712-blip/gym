@@ -24,6 +24,7 @@
 | D | `analysis-hybrid.test.mjs` | `analysis-hybrid.test.cjs` (Chromium 375 px, WebKit, objetivo sin pesajes) |
 | E | `races.test.mjs` | `races.test.cjs` (Chromium 375 px, WebKit, validación, «Borrar todo» con marcas y eventos) |
 | F | `analysis-report.test.mjs` (secciones y orden, contexto, privacidad, menores, longitud) y `analysis.test.mjs` | `analysis.test.cjs` (copiar el informe) |
+| G | `analysis-cache.test.mjs` (invalidación por fecha, versión, epoch y cada almacén) | `analysis-cache.test.cjs` (cada escritura real del store = calcular desde cero; Chromium y WebKit) |
 
 Esperas: nunca pausas fijas. Tras navegar, `go()` / `settle()` (espera a `router.settled()` y a dos fotogramas); para
 estados con transición CSS, `page.waitForFunction` con la condición (p. ej. la opacidad del mapa corporal, fase D).
@@ -87,3 +88,28 @@ Antes: exporta una copia (Ajustes › Copias y datos).
    segmentado decide el signo. Guarda y mira la ficha de Dominadas en Progreso.
 7. **Borrar y deshacer.** Abre la marca › Borrar › «Deshacer» en el aviso: vuelve a la lista sin salir de la pantalla.
 8. **Cerrar y reabrir** la app desde el selector: check-ins, zonas y marcas siguen ahí. Exporta una copia nueva.
+
+## Comprobación manual en iPhone (cierre de la ronda 6, ~10 min)
+Lo que ni Chromium ni WebKit de Playwright reproducen: la app instalada en la pantalla de inicio, el teclado y las
+ruedas de iOS, el gesto de atrás, las zonas seguras, el almacenamiento real y el modo sin conexión de verdad.
+Antes: Ajustes › Copias y datos › «Exportar copia» (guárdala en Archivos).
+
+1. **Actualizar (1 min).** Abre la app con conexión → «Hay una versión nueva · Actualizar». Hoy, Calendario, Progreso e
+   historial muestran lo de siempre; Ajustes › Copias y datos tiene los mismos recuentos y la fila «Eventos deportivos».
+2. **Hoy (1 min).** «Te toca hoy» y «Empezar» a la vista sin desplazar; como mucho una línea «Ahora: …» y una
+   «🏁 …» (si tienes un evento A o B). Abajo, «Tu análisis» con la confianza junto a cada punto.
+3. **Sesión de fuerza (2 min).** Empezar › check-in en 4 toques › registra 2 series escribiendo peso y reps (teclado
+   numérico, la coma decimal funciona) › cierra la app desde el selector de apps a mitad › ábrela: la sesión sigue igual ›
+   Terminar.
+4. **Contexto y marcas (1 min).** Ajustes › Tu contexto › añade «Empiezo creatina» (rueda de iOS en la fecha). Progreso ›
+   Récords › Marcas históricas: abre una y vuelve con el gesto del borde (sin doble animación).
+5. **Evento (1 min).** Objetivos › «Eventos deportivos» › + › 10K, fecha (rueda de iOS), 50 min en «Tiempo objetivo» ›
+   Guardar. Hoy muestra «🏁 10K · N días · objetivo <50:00»; tócala y vuelve.
+6. **Análisis e informe (2 min).** Progreso › Análisis: «Tu contexto» arriba (creatina, evento), tarjetas con «Confianza
+   …», «Carga por deporte» en Resistencia. Abre un «¿Por qué?». «Copiar informe para tu IA» › pégalo en Notas: empieza
+   por PERFIL, OBJETIVO, CONTEXTO DEL USUARIO, CAMBIOS RECIENTES y termina con DATOS CON BAJA CONFIANZA y PREGUNTA.
+   Vuelve a Hoy y otra vez a Análisis: debe abrir al instante (caché).
+7. **Sin conexión (1 min).** Modo avión › cierra y abre la app desde la pantalla de inicio: Hoy, Calendario, Progreso y
+   Análisis se abren; registra un pesaje. Quita el modo avión.
+8. **Copia (1 min).** Exporta una copia nueva y comprueba que se guarda en Archivos. Si algo fue mal en los pasos
+   anteriores, importa la copia del principio (Ajustes › Copias y datos › Importar).

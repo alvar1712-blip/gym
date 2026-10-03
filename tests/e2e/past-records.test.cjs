@@ -112,7 +112,9 @@ async function marksFlow(page, { shots = false } = {}) {
     { exerciseId: rec.exerciseId, weight: rec.weight, reps: rec.reps, rir: rec.rir, date: rec.date, beforeApp: rec.beforeApp, bodyweightKg: rec.bodyweightKg, note: rec.note },
     { exerciseId: 'press_banca', weight: 100, reps: 5, rir: 1, date: { date: '2025-06-01', precision: 'season' }, beforeApp: true, bodyweightKg: null, note: 'En mi antiguo gimnasio' },
   );
-  assert.ok(rec.createdAt > 0 && rec.updatedAt === rec.createdAt);
+  // Recién creada: createdAt sale de pastRecordFrom y updatedAt del sello de store.save (dos Date.now() seguidos, que
+  // pueden caer en milisegundos distintos): se comprueba que es de ahora y que no hay una edición posterior.
+  assert.ok(rec.createdAt > 0 && rec.updatedAt >= rec.createdAt && rec.updatedAt - rec.createdAt < 1000, `${rec.createdAt} / ${rec.updatedAt}`);
 
   // Lista: por ejercicio, con la comparación (87,5 × 8 @2 hace 6 días frente a 100 × 5 @1)
   const grp = page.locator('.pr-group[data-ex="press_banca"]');

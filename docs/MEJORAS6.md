@@ -344,3 +344,90 @@ próximos con `racePrediction`) y `goals` (objetivos activos: id, tipo y título
   texto, que continúa el título. Ahora van título y texto completos.
 - `docs/MEJORAS6.md` (fase A) describía los hechos de peso con `value.kg` y el tipo `weight_note`; el código usa `kg` y
   `weight`. Corregido el documento (el código y sus pruebas no cambian).
+
+## Fase G — caché del análisis (contadores de revisión)
+
+### Antes de tocar código: comparación
+Qué se recalcula hoy: `buildAnalysis` entero cada vez que se pinta «Tu análisis» (Hoy, panel semanal) y al abrir
+#/analysis, aunque no haya cambiado nada. En Node (mediana de 7): 1 año ~30 ms, 5 años ~70 ms; en el navegador con la CPU
+×4 (como un iPhone modesto) varias veces más. Reparto con 5 años: fuerza ~40 %, recuperación ~35 %, híbrido ~25 %.
+
+| | A) Huella («fingerprint») de los datos | B) Contadores de revisión por almacén |
+|---|---|---|
+| Qué es | Firma calculada a partir de los datos: por almacén, nº de registros + `updatedAt` máximo y suma (o un hash del contenido) | `store.js` sube un contador del almacén en cada alta, cambio o borrado; la caché guarda los contadores con que calculó |
+| Corrección | Depende de que TODO cambio toque `updatedAt`: `restore` (deshacer) lo conserva a propósito, una copia importada trae los suyos, registros antiguos no lo tienen. Un hash del contenido sí es exacto, pero cuesta O(datos) en cada consulta (serializar 5 años ≈ lo mismo que analizar) | Exacta por construcción: todas las escrituras pasan por seis funciones de `store.js` (`save`, `saveSoon`, `remove`, `restore`, `importData`, `wipeAll`) y la carga inicial; el contador sube en la misma llamada síncrona que cambia la memoria |
+| Coste de comprobar | O(registros) en cada consulta | O(almacenes): comparar 12 números |
+| Dónde encaja | Fuera de `store.js`, pero con reglas implícitas sobre `updatedAt` | Dentro de `store.js`, que ya es la única puerta de escritura (y ya emite 'change' en cada una) |
+| Entre aperturas de la app | Posible (se recalcula la huella al cargar), con los riesgos de corrección de arriba | Solo si el contador se guarda en la MISMA transacción que cada escritura (todas las rutas de `db.js`), se excluye de las copias y se rehace al importar; si no, tras un cierre a medias la caché podría parecer válida con datos distintos |
+
+**Decisión: B en memoria.** Contadores de revisión por almacén en `store.js` y una caché del análisis en memoria
+(la última entrada) que guarda las revisiones de los almacenes de los que depende, la fecha, la versión de la app y la
+versión del análisis. Corrección antes que milisegundos:
+- NO se guarda el análisis entre aperturas: para hacerlo bien habría que meter un contador en cada transacción de
+  IndexedDB, sacarlo de las copias y rehacerlo al importar. Es la parte que más ganaría (el arranque en frío), pero la que
+  más fácil es de equivocar en silencio; queda anotada como posible mejora, no hecha.
+- NO hay caché incremental por ejercicio: con 5 años la fuerza es ~40 % del total; cuando no cambia nada la caché entera
+  ya lo evita, y cuando cambia algo (una serie nueva) casi siempre cambia el ejercicio que se está entrenando. La
+  complejidad no compensa con estas mediciones.
+
+### Invalidación (cualquiera de estas → se recalcula)
+- Fecha: «hoy» es parte de la clave (al cambiar el día, Hoy ya se vuelve a montar).
+- Versión de la app (`APP_VERSION`) y versión del análisis (`ANALYSIS_VERSION`, subirla si cambian las reglas sin
+  recargar no aplica: el código nuevo siempre llega con una recarga, que vacía la caché).
+- Datos: revisión de `sessions`, `exercises`, `templates`, `plan`, `bodyweight`, `checkins`, `cycle`, `goals`,
+  `context`, `pastRecords`, `races` y `meta` (ajustes: perfil, configuración del analista, umbrales, semana tipo).
+  Perfil, contexto y configuración del analista quedan cubiertos por `meta` y `context`.
+- `epoch` de `store.js`: cambia al cargar, importar una copia o borrar todo (sustituyen todos los datos de golpe).
+- Por seguridad, ante la duda se recalcula: cualquier cambio en `meta` (también apuntar la fecha de la última copia)
+  invalida, aunque no afecte al análisis.
+
+### Implementación
+- `store.js`: `revisions()` → `{ epoch, meta, exercises, …, races }`. `save`, `saveSoon`, `remove` y `restore` suben el
+  contador del almacén en la misma llamada que cambia la memoria; `init`, `importData` y `wipeAll` cambian `epoch` (al
+  sustituir la memoria y otra vez al terminar). Solo en memoria: ni en IndexedDB ni en las copias.
+- `js/analysis-cache.js` (sin store ni DOM): `createAnalysisCache({ revisions, appVersion })`, `cacheKey`, `DEPENDS`,
+  `ANALYSIS_VERSION`. Una sola entrada (la última).
+- `views/analysis.js`: `analysisFor(today, base)` sustituye a las dos llamadas a `buildAnalysis` (tarjeta de Hoy y del
+  panel semanal, y #/analysis); `analysisCacheStats()` para pruebas.
+- Datos tomados antes de calcular: `progress-ui.dataFromStore()` guarda `revisions` del momento; la caché usa ESAS
+  revisiones como clave. Si entre tomar los datos y calcular hay una escritura, lo calculado queda con la clave vieja (a
+  lo sumo un recálculo de más), nunca un resultado viejo con la clave nueva.
+- El resultado es compartido: las vistas y el informe solo lo leen (comprobado: no lo modifican).
+
+### Pruebas de invalidación
+- `tests/unit/analysis-cache.test.mjs` (7): reutiliza sin cambios; fecha; cada almacén de `DEPENDS` por separado;
+  perfil/configuración (`meta`) y contexto; `epoch`; versión; datos tomados antes de una escritura.
+- `tests/e2e/analysis-cache.test.cjs` (Chromium y WebKit): Hoy → Análisis → Hoy sin recalcular (el mismo objeto); tras
+  cada tipo de escritura real del store (save, saveSoon, remove, restore, ajustes, contexto, eventos, check-ins, importar
+  una copia, borrar todo) recalcula, cambia y es IDÉNTICO a calcular desde cero; y al cambiar el día. Se comprobó que la
+  prueba detecta los fallos: quitando el contador de `save` falla en «save (pesaje)» y quitando el `epoch` de importar,
+  en «importar una copia».
+
+### Medición antes / después (misma metodología)
+`phaseG-ab` (como `npm run perf`: iPhone 13 emulado en Chromium, CPU ×4, mismas semillas de 3 meses a 5 años; A = la
+fase F, B = la fase G; aperturas intercaladas A/B, mediana). «frío» = abrir la app hasta las tarjetas de Hoy; «Análisis»
+= de Hoy a #/analysis montada; «vuelta» = de #/analysis a Hoy con sus tarjetas. ms:
+
+| historial | frío A → B | Hoy → Análisis A → B | vuelta a Hoy A → B |
+|---|---|---|---|
+| 3 meses (7 rondas) | 1087 → 1241 | 473 → 340 | 278 → 204 |
+| 1 año (7) | 1642 → 1483 | 665 → 470 | 516 → 384 |
+| 2 años (7) | 1771 → 1761 | 753 → 409 | 653 → 457 |
+| 5 años (7) | 2689 → 2868 | 1196 → 410 | 1183 → 938 |
+| 3 meses (15) | 1150 → 1272 | 534 → 427 | 296 → 253 |
+| 5 años (15) | 2519 → 2540 | 1158 → 414 | 1144 → 782 |
+| 3 meses (15, papeles cambiados: A = G) | 1163 (F) / 1137 (G) | 529 (F) / 396 (G) | 328 (F) / 233 (G) |
+| control A contra A (15) | 1137 / 1146 | 518 / 512 | 308 / 288 |
+
+- **Arranque en frío: sin cambio medible.** Las diferencias (−160 … +180 ms) cambian de signo entre tandas y al cambiar
+  los papeles, y el camino en frío calcula lo mismo que antes (la caché empieza vacía). No se presenta como mejora ni
+  como empeoramiento.
+- **Navegación: mejora real y estable en todas las tandas.** Ir a Análisis tras Hoy ya no recalcula: −20 a −30 % con
+  3 meses y −65 % con 5 años (1,2 s → 0,41 s, lo que queda es pintar la pantalla). Volver a Hoy: −15 a −30 % (lo que
+  queda: panel semanal y objetivos, que no tienen caché).
+
+### Prueba inestable corregida de paso
+`tests/e2e/past-records.test.cjs` exigía `updatedAt === createdAt` en una marca recién creada: `createdAt` sale de
+`pastRecordFrom` y `updatedAt` del sello de `store.save` (dos `Date.now()` seguidos), que a veces caen en milisegundos
+distintos (falló 1 vez en la batería de la fase G). Ahora comprueba lo que importa (de ahora y sin edición posterior,
+< 1 s), sin depender del reloj. El comportamiento de la app no cambia.

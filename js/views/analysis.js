@@ -18,6 +18,7 @@ import { dataFromStore, chartHeight } from '../progress-ui.js';
 import { lineChart, COLORS } from '../charts.js';
 import { buildAnalysis, areaInsights, isPlaceholder, AREA_LABEL, LEVEL_LABEL, DISCLAIMER } from '../analysis.js';
 import { reportText } from '../analysis-report.js';
+import { createAnalysisCache } from '../analysis-cache.js';
 import { rateText } from '../analysis-training.js';
 import { getProfile, profileExtrasMissing } from '../profile.js';
 
@@ -54,6 +55,19 @@ export function analysisData(today = todayStr(), base = null) {
   if (!d.goals) d.goals = store.all('goals');
   return d;
 }
+
+/**
+ * Ronda 6 (fase G): buildAnalysis con caché en memoria (analysis-cache.js). Hoy, el panel semanal y #/analysis
+ * comparten el resultado mientras no cambie nada (fecha, versión ni ninguna revisión del store). `base`: el
+ * dataFromStore() de la pantalla, que trae las revisiones con que se tomó. El resultado no se debe modificar.
+ */
+const cache = createAnalysisCache({ revisions: store.revisions, appVersion: store.APP_VERSION });
+export function analysisFor(today = todayStr(), base = null) {
+  const revs = base?.revisions || store.revisions();
+  return cache.get(today, () => buildAnalysis(analysisData(today, base), today), revs);
+}
+/** Aciertos y fallos de la caché (pruebas y depuración). */
+export const analysisCacheStats = () => cache.stats();
 
 // ===========================================================================
 // Piezas comunes
@@ -162,7 +176,7 @@ function linkRow(ic, title, href) {
  */
 export function analysisSummaryCard({ data = null, today = null, max = 3, compact = false } = {}) {
   const t = today || data?.today || todayStr();
-  const a = buildAnalysis(analysisData(t, data), t);
+  const a = analysisFor(t, data);
   if (a.errors.length) console.error('[análisis]', a.errors);
   const pts = a.hasData ? a.keyPoints.filter((i) => !isPlaceholder(i)).slice(0, max) : [];
   if (!pts.length) return null;
@@ -187,7 +201,7 @@ export function analysisSummaryCard({ data = null, today = null, max = 3, compac
 export function mountAnalysis(root) {
   const today = todayStr();
   const profile = getProfile(store.settings());
-  const a = buildAnalysis(analysisData(today), today);
+  const a = analysisFor(today);
   if (a.errors.length) console.error('[análisis]', a.errors);
   const charts = [];
   const report = { include: !!profile.cycleInReport };

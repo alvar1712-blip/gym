@@ -13,6 +13,8 @@ import { todayStr, fmtNum, weekStart } from './util.js';
  */
 export function dataFromStore(today = todayStr()) {
   return {
+    // Ronda 6 (fase G): las revisiones del store al tomar estos datos (para la caché del análisis)
+    revisions: store.revisions(),
     sessions: store.all('sessions'),
     exercises: new Map(store.all('exercises').map((e) => [e.id, e])),
     templates: new Map(store.all('templates').map((t) => [t.id, t])),

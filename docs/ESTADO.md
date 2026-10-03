@@ -94,6 +94,12 @@
       EVENTOS FUTUROS, TENDENCIAS, INSIGHTS (con su confianza) y DATOS CON BAJA CONFIANZA; sin secciones vacías,
       ~100 líneas con todos los datos. Arreglo: las previsiones del informe perdían el rango a 4 semanas.
 
+- [x] **Ronda 6 · fase G**: contadores de revisión por almacén en `store.js` (solo en memoria) y caché del análisis
+      (`js/analysis-cache.js`): Hoy, el panel y #/analysis comparten el resultado mientras no cambie nada (fecha, versión,
+      ninguna escritura). Elegidos frente a una huella de los datos por corrección (exactos por construcción). Sin caché
+      entre aperturas (exigiría tocar cada transacción de IndexedDB). Hoy → Análisis: 5 años 1,2 s → 0,41 s (CPU ×4);
+      arranque en frío sin cambio medible.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).

@@ -37,6 +37,7 @@ Este documento es el **contrato**. Los requisitos completos del usuario están e
 | `js/confidence.js`, `js/analysis-context.js` | Ronda 6: confianza común y contexto del análisis | analista |
 | `js/analysis-hybrid.js` | Ronda 6: carga por deporte, volumen con contexto, asociaciones personales, agujetas por ejercicio | analista |
 | `js/races-logic.js`, `js/races-progress.js`, `js/views/races.js` (estilos `.rc-*` en `css/progress.css`) | Ronda 6: eventos deportivos | progreso |
+| `js/analysis-cache.js` | Ronda 6: caché en memoria del análisis (contadores de revisión del store) | analista |
 
 **Regla de propiedad:** cada módulo solo edita SUS archivos. Los archivos del núcleo son de solo lectura para
 los módulos; si necesitas un cambio en el núcleo, impleméntalo localmente en tu módulo y descríbelo en tu
@@ -475,6 +476,11 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
 - **Informe** (fase F): `reportText(analysis, { includeCycle })` (puro) con las secciones de `docs/MEJORAS6.md` › Fase F;
   `SHOWN_IN_SECTIONS(i)` = Insights que ya salen en su sección. `buildAnalysis` añade `wellbeing`
   (`wellbeingSummary(checkins, today, 28)`), `events` (eventos próximos + `racePrediction`) y `goals` (activos).
+- **Revisiones y caché** (fase G): `store.revisions()` → `{ epoch, <almacén>: n }` (suben con `save`, `saveSoon`,
+  `remove`, `restore`; `epoch` con `init`, `importData`, `wipeAll`; solo en memoria). `dataFromStore()` incluye
+  `revisions`. `views/analysis.analysisFor(today, base?)` = `buildAnalysis` con `analysis-cache.createAnalysisCache`
+  (clave: fecha, `APP_VERSION`, `ANALYSIS_VERSION`, `epoch` y la revisión de cada almacén); el resultado no se modifica.
+  Toda escritura de datos DEBE pasar por esas funciones de `store.js` (ya era así: no hay escrituras directas a `db.js`).
 - **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
   `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
   compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.
