@@ -100,6 +100,12 @@
       entre aperturas (exigiría tocar cada transacción de IndexedDB). Hoy → Análisis: 5 años 1,2 s → 0,41 s (CPU ×4);
       arranque en frío sin cambio medible.
 
+- [x] **Ronda 6 · fase H**: toda la batería E2E también en WebKit (`npm run e2e:webkit`: 182 pasan y 11 que necesitan
+      CDP se omiten diciendo por qué; en Chromium 193 de 193). Arreglo real en WebKit: una hoja cerrada mientras aún se
+      abría se quitaba de golpe. Esperas fijas sustituidas por condiciones donde fallaban. Lista de comprobación manual
+      en iPhone (~10 min) en `docs/PRUEBAS.md`. Baterías finales: unitarias 517/517; Chromium 193/193 en 4 pasadas
+      (dos con un fallo de una prueba inestable, ya corregida); WebKit 0 fallos en las 2 últimas pasadas.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).
@@ -117,8 +123,10 @@
   literatura); en mujer, rangos de ganancia de peso algo más prudentes (0,2–0,4 %/sem).
 - Ronda 5 · Doble toque en «Registrar serie»: se ignora un segundo toque en 400 ms (antes 300).
 - Ronda 5 · El gesto real de «atrás» del iPhone solo se puede comprobar en el propio iPhone (en las pruebas se simula).
-- Ronda 6 · Check-in: el estrés se guarda y se ve, pero aún no cuenta para el check-in «bajo» (que sigue siendo sueño,
-  energía y agujetas); las zonas tampoco. Se decidirá en las fases C y D.
+- Ronda 6 · Check-in: el estrés se guarda y se ve, pero no cuenta para el check-in «bajo» (que sigue siendo sueño,
+  energía y agujetas); las zonas tampoco. Decidido en la fase D: la regla «bajo» no cambia; el estrés y las zonas se
+  usan en el analista (rendimiento con estrés alto o con agujetas fuertes, agujetas por ejercicio, y reducir volumen con
+  agujetas ≥ 7/10 repetidas).
 - Ronda 6 · Marcas históricas: «ahora» = lo mejor de los últimos 28 días; la referencia es la mayor entre tus marcas y lo
   registrado en Entreno antes de esos días; sin RIR apuntado, la marca se cuenta como serie al fallo (igual que en las
   sesiones). La fecha empieza apagada («sin fecha») y «Anterior a Entreno», encendido.
@@ -135,3 +143,7 @@
 - Ronda 6 · Fase E: Hoy enseña el evento A o B más cercano del próximo año (o uno C si es en ≤ 30 días); la fecha de un
   evento es un día concreto; triatlón y «otro» admiten no poner distancia; solo las carreras a pie tienen tiempo
   previsto.
+- Ronda 6 · Fase G: la caché del análisis es solo en memoria (se pierde al cerrar la app): guardarla entre aperturas
+  exigiría un contador en cada transacción de IndexedDB y tratarlo en copias e importación; se prefirió la corrección.
+- Ronda 6 · Fase H: en la batería de WebKit, 11 pruebas que necesitan CDP (solo Chromium) se omiten diciendo por qué;
+  en Chromium se ejecutan todas.

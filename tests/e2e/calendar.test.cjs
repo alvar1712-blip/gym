@@ -182,7 +182,9 @@ test('CRITERIO: sustituir el sábado de esta semana por una ruta en bici no camb
     await page.locator('.cal-act-change').click();
     await page.locator('.pick-row', { hasText: 'Ruta en bici' }).click();
     await page.locator('.toast').waitFor();
-    await page.waitForFunction(() => window.scrollY === 0, null, { timeout: 3000 });
+    // Condición con margen: el desplazamiento suave avanza por fotogramas, y WebKit sin pantalla con la batería en
+    // paralelo los da muy espaciados (solo, pasa en < 1 s).
+    await page.waitForFunction(() => window.scrollY === 0, null, { timeout: 8000 });
     await settle(page);
     assert.strictEqual(await page.locator('.cal-plan .today-plan-name').innerText(), 'Ruta en bici');
     assert.match(await page.locator('.cal-plan').innerText(), /Cambiado\s+Semana tipo: Día 6 — Atlético \+ pierna ligera/);

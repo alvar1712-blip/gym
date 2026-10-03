@@ -431,3 +431,57 @@ fase F, B = la fase G; aperturas intercaladas A/B, mediana). «frío» = abrir l
 `pastRecordFrom` y `updatedAt` del sello de `store.save` (dos `Date.now()` seguidos), que a veces caen en milisegundos
 distintos (falló 1 vez en la batería de la fase G). Ahora comprueba lo que importa (de ahora y sin edición posterior,
 < 1 s), sin depender del reloj. El comportamiento de la app no cambia.
+
+## Fase H — WebKit, regresión y cierre
+
+### Cobertura WebKit
+- `npm run e2e:webkit` ejecuta TODA la batería E2E con `E2E_BROWSER=webkit` (antes, solo una prueba de humo y las
+  variantes «WebKit:» de las fases B–G). Los 13 archivos que lanzaban Chromium a mano usan ahora el motor elegido
+  (`playwright[BROWSER]`). `npm run e2e` sigue siendo Chromium (más las variantes WebKit explícitas).
+- Cubre en WebKit: apertura y pestañas, rutas, sesión de fuerza (registro, doble toque, desplazamiento automático,
+  una mano en iPhone SE), campos numéricos y de duración, check-ins y zonas, contexto, marcas históricas, calendario,
+  progreso y gráficas, objetivos, eventos, análisis e informe (copiar), copia / borrar / importar, onboarding, modo
+  mujer y ciclo, cierre y reapertura, service worker (instalación y actualización) y sin conexión.
+- 11 pruebas se omiten en WebKit DICIENDO por qué (`chromiumOnly`): usan CDP, que solo existe en Chromium (toques
+  reales con `Input.dispatchTouchEvent` para gestos y arrastres de gráficas; zonas seguras simuladas con
+  `Emulation.setSafeAreaInsetsOverride`). En la batería de Chromium se ejecutan todas (0 omitidas).
+
+### Diferencias de WebKit encontradas
+- **Arreglo real (js/ui.js)**: al cerrar una hoja cuando su transición de abrir aún no había dado su `transitionend`,
+  WebKit lo disparaba justo después de cerrar y la hoja se quitaba de golpe, sin bajar (en un iPhone: cerrar o elegir
+  una opción nada más abrir un menú). `afterTransition` solo acepta el final de una transición que empezó después
+  (`transitionrun`), y el plazo de reserva cuenta desde que arranca (si el hilo está ocupado, no corta la animación).
+  Prueba en `transitions.test.cjs` (falla sin el arreglo en los dos motores, pasa con él).
+- **No son fallos de la app** (y las pruebas ya no dependen de ello):
+  - Dos `click()` seguidos de Playwright tardan ~70 ms en Chromium y ~400 ms en WebKit: la app (bien) trataba el
+    segundo como un toque deliberado. La prueba del doble toque hace los dos toques en el mismo instante.
+  - WebKit sin pantalla da fotogramas a saltos (~400 ms) y su estilo calculado no avanza entre ellos: no se puede
+    ver la posición intermedia de una hoja al cerrarse (esa comprobación queda en Chromium; en WebKit se comprueba que
+    no se quita de golpe). Las esperas fijas que fallaban por eso son ahora condiciones (`waitForFunction`).
+  - `innerText` añade un salto final en WebKit en algunos bloques: `.trim()` en esas comparaciones.
+  - Playwright cierra la página en WebKit abortando las escrituras de IndexedDB sin confirmar: lo tecleado < 250 ms
+    antes (guardado diferido) se perdería. En iOS la app pasa antes a segundo plano (selector de apps), donde se guarda
+    todo: en WebKit la prueba de cierre brusco reproduce esa secuencia, y la de «segundo plano y después matar la app»
+    se ejecuta en los dos motores.
+  - `context.setOffline(true)` de Playwright rompe la navegación en WebKit incluso servida por el service worker
+    («internal error»); con el servidor apagado (sin red real para la app) el service worker sirve la app y la prueba
+    sin conexión pasa en WebKit.
+- Pruebas inestables corregidas en las baterías repetidas (esperas fijas → condiciones): «volver arriba» del día del
+  calendario tras cambiar el plan (desplazamiento suave, WebKit con carga), y la respuesta al toque (`.is-pressed` tras
+  un temporizador, Chromium con carga).
+- WebKit de Playwright en Linux NO es Safari de iOS: la lista manual de `docs/PRUEBAS.md` (cierre de la ronda 6) cubre
+  lo que no reproduce.
+
+### Coste acumulado de la ronda (fin de la fase B → fin de la fase H)
+Misma medición intercalada (CPU ×4, 7 rondas, ms):
+
+| historial | frío B → H | Hoy → Análisis B → H | vuelta a Hoy B → H | tarea larga máx. B → H |
+|---|---|---|---|---|
+| 1 año | 1232 → 1395 | 512 → 420 | 372 → 287 | 223 → 261 |
+| 5 años | 2119 → 2245 | 861 → 357 | 865 → 675 | 540 → 529 |
+
+- Navegar es más rápido que antes de la ronda aunque el analista hace bastante más (gracias a la caché de la fase G).
+- El arranque en frío sale +126 a +163 ms: está en el borde del ruido medido (±150 ms), pero las dos filas apuntan en la
+  misma dirección y es plausible (en frío el análisis, ahora más completo, se calcula una vez). No se maquilla: es el
+  candidato a mejorar si en el iPhone se nota (p. ej., calcular la tarjeta «Tu análisis» de Hoy cuando la pantalla esté
+  quieta).

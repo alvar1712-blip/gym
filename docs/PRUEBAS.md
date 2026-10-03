@@ -4,7 +4,7 @@
 |---|---|---|
 | Unitarias (lógica pura) | `npm test` | Node, sin navegador |
 | E2E en Chromium (iPhone 13 emulado) | `npm run e2e` | Incluye también las de WebKit (`tests/e2e/webkit-*.test.cjs`) si WebKit está instalado |
-| E2E solo en WebKit (motor de Safari) | `npm run e2e:webkit` | Antes, una vez por máquina: `scripts/setup-webkit.sh` (navegador + bibliotecas del sistema) |
+| E2E solo en WebKit (motor de Safari) | `npm run e2e:webkit` | TODA la batería con `E2E_BROWSER=webkit`; 11 pruebas con CDP se omiten diciendo por qué. Antes, una vez por máquina: `scripts/setup-webkit.sh` |
 | Archivos precacheados y versión | `node scripts/check-assets.mjs` | Tras cambiar la app: `npm run stamp` |
 | Velocidad de arranque | `npm run perf` | Historiales de 3 meses, 1, 2 y 5 años; CPU ×4; mediana de 5 aperturas |
 
@@ -13,6 +13,11 @@
   forzar el cristal con SwiftShader). Sigue siendo la referencia.
 - `openApp({ browser: 'webkit' })` (o `E2E_BROWSER=webkit`) abre la app en WebKit con el mismo iPhone emulado. Las
   pruebas `webkit-*.test.cjs` se omiten, diciéndolo, si WebKit no está instalado.
+- Fase H: todos los archivos E2E respetan `E2E_BROWSER`. Las pruebas que necesitan CDP llevan
+  `{ skip: chromiumOnly('…') }`: en WebKit se omiten con el motivo; en Chromium, nunca.
+- Diferencias de WebKit sin pantalla a tener en cuenta al escribir pruebas: fotogramas a saltos (~400 ms; usar
+  condiciones, nunca pausas), `innerText` con salto final (comparar con `.trim()`), dos `click()` seguidos ~400 ms
+  separados, `page.close()` aborta escrituras de IndexedDB sin confirmar, `setOffline` rompe la navegación.
 - WebKit de Playwright en Linux NO es Safari de iOS: no reproduce la app instalada en la pantalla de inicio
   (standalone), el gesto de atrás del borde, el teclado real, las zonas seguras ni el almacenamiento de iOS. Esos
   puntos van en la lista de comprobación manual en iPhone (fase H de `docs/MEJORAS6.md`).
@@ -25,6 +30,7 @@
 | E | `races.test.mjs` | `races.test.cjs` (Chromium 375 px, WebKit, validación, «Borrar todo» con marcas y eventos) |
 | F | `analysis-report.test.mjs` (secciones y orden, contexto, privacidad, menores, longitud) y `analysis.test.mjs` | `analysis.test.cjs` (copiar el informe) |
 | G | `analysis-cache.test.mjs` (invalidación por fecha, versión, epoch y cada almacén) | `analysis-cache.test.cjs` (cada escritura real del store = calcular desde cero; Chromium y WebKit) |
+| H | — | toda la batería en WebKit (`npm run e2e:webkit`); `transitions.test.cjs` (hoja que se cierra mientras se abre) |
 
 Esperas: nunca pausas fijas. Tras navegar, `go()` / `settle()` (espera a `router.settled()` y a dos fotogramas); para
 estados con transición CSS, `page.waitForFunction` con la condición (p. ej. la opacidad del mapa corporal, fase D).

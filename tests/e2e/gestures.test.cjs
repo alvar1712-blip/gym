@@ -504,7 +504,12 @@ test('respuesta al toque: .is-pressed tras un instante quieto, nunca al desplaza
     });
     const hb = await page.locator('#hold').boundingBox();
     await ts.start(hb.x + 20, hb.y + 10);
-    await wait(page, 200);
+    // Por condición (no 200 ms fijos): .is-pressed llega tras un instante quieto (un temporizador) y la escala con una
+    // transición de 120 ms; con la máquina cargada, el temporizador se retrasa.
+    await page.waitForFunction(() => {
+      const b = document.getElementById('hold');
+      return b.classList.contains('is-pressed') && /matrix\(0\.97/.test(getComputedStyle(b).transform);
+    }, null, { timeout: 3000 }).catch(() => {});
     const held = await page.evaluate(() => {
       const b = document.getElementById('hold');
       const cs = getComputedStyle(b);
