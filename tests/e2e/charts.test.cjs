@@ -5,15 +5,17 @@ const assert = require('node:assert');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const { chromium, devices } = require('playwright');
-const { waitReady } = require('./helpers.cjs');
+// Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
+const playwright = require('playwright');
+const { devices } = playwright;
+const { waitReady, BROWSER, chromiumOnly } = require('./helpers.cjs');
 
 const RESULTS = path.join(__dirname, '..', '..', 'test-results');
 
 async function openBench({ width = 390, height = 844, dpr } = {}) {
   const mod = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
   const server = await mod.startServer(0);
-  const browser = await chromium.launch();
+  const browser = await playwright[BROWSER].launch();
   const dev = devices['iPhone 13'];
   const context = await browser.newContext({
     ...dev, viewport: { width, height }, deviceScaleFactor: dpr || dev.deviceScaleFactor, locale: 'es-ES', timezoneId: 'Europe/Madrid',
@@ -123,7 +125,7 @@ test('pinta todas las gráficas: ancho del contenedor, 3–5 marcas Y, ≤ 6 eti
   }
 });
 
-test('tocar muestra guía y globo con el valor exacto; arrastrar lo mueve; tocar fuera lo oculta; ratón también', async () => {
+test('tocar muestra guía y globo con el valor exacto; arrastrar lo mueve; tocar fuera lo oculta; ratón también', { skip: chromiumOnly('arrastre táctil con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openBench();
   const { page } = app;
   try {
@@ -182,7 +184,7 @@ test('tocar muestra guía y globo con el valor exacto; arrastrar lo mueve; tocar
   }
 });
 
-test('barras apiladas: el globo da la semana, el total, cada tipo y la media exactos', async () => {
+test('barras apiladas: el globo da la semana, el total, cada tipo y la media exactos', { skip: chromiumOnly('arrastre táctil con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openBench();
   const { page } = app;
   try {
@@ -529,7 +531,7 @@ test('periodo: el selector redibuja con update() y se recuerda en localStorage',
   }
 });
 
-test('400+ puntos: pocos nodos SVG y el globo sigue al dedo', async () => {
+test('400+ puntos: pocos nodos SVG y el globo sigue al dedo', { skip: chromiumOnly('arrastre táctil con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openBench();
   const { page } = app;
   try {
@@ -564,8 +566,11 @@ test('redimensionado: redibuja al ancho nuevo (ResizeObserver) sin scroll horizo
   const { page } = app;
   try {
     const w390 = Number(await page.locator('#card-bw .chart-svg').getAttribute('width'));
+    // Esperas por condición (no 150 ms fijos): el redibujado va al siguiente fotograma, y WebKit sin pantalla los da
+    // a saltos. Si no llegara a redibujar, las comprobaciones de abajo fallan igual.
+    const widthIs = (pred, arg = null) => page.waitForFunction(pred, arg, { timeout: 3000 }).catch(() => {});
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.waitForTimeout(150);
+    await widthIs((w) => Number(document.querySelector('#card-bw .chart-svg').getAttribute('width')) !== w, w390);
     const w375 = Number(await page.locator('#card-bw .chart-svg').getAttribute('width'));
     assert.strictEqual(w390 - w375, 15, `${w390} → ${w375}`);
     const all = await page.evaluate(() => [...document.querySelectorAll('.chart')].filter((c) => !c.classList.contains('chart-is-empty'))
@@ -574,14 +579,14 @@ test('redimensionado: redibuja al ancho nuevo (ResizeObserver) sin scroll horizo
     assert.ok(await noHScroll(page));
     // contenedor más estrecho (sin cambiar la ventana)
     await page.evaluate(() => { document.getElementById('slot-bw').style.width = '240px'; });
-    await page.waitForTimeout(150);
+    await widthIs(() => Number(document.querySelector('#card-bw .chart-svg').getAttribute('width')) === 240);
     assert.strictEqual(Number(await page.locator('#card-bw .chart-svg').getAttribute('width')), 240);
     assert.ok((await page.locator('#card-bw .chart-xlabel').count()) >= 2);
     // el globo sobrevive al redibujado
     const b = await svgBox(page, 'bw');
     await page.touchscreen.tap(b.x + Number(b.ds.x1), b.y + b.height / 2);
     await page.evaluate(() => { document.getElementById('slot-bw').style.width = '300px'; });
-    await page.waitForTimeout(150);
+    await widthIs(() => Number(document.querySelector('#card-bw .chart-svg').getAttribute('width')) === 300);
     assert.ok(await tipVisible(page, 'bw'));
     assert.ok((await tipText(page, 'bw')).startsWith('24 sep 2026'));
     assert.deepStrictEqual(app.errors, []);
@@ -636,7 +641,7 @@ test('destroy() quita el DOM, los listeners del documento y el ResizeObserver; u
   }
 });
 
-test('pan-y: arrastrar en vertical sobre una gráfica desplaza la página y no deja el globo', async () => {
+test('pan-y: arrastrar en vertical sobre una gráfica desplaza la página y no deja el globo', { skip: chromiumOnly('arrastre táctil con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openBench();
   const { page } = app;
   try {

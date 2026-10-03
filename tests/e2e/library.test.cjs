@@ -1,7 +1,7 @@
 // E2E de rutinas (plantillas) y biblioteca de ejercicios (módulo de biblioteca).
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
+const { openApp, go, reload, storeAll, idbAll, shot, chromiumOnly } = require('./helpers.cjs');
 
 const getTpl = (page, id) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__app.store.get('templates', i))), id);
 const getEx = (page, id) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__app.store.exercise(i))), id);
@@ -250,7 +250,7 @@ test('rutina nueva sin tocar se descarta al salir; el editor muestra secciones y
   }
 });
 
-test('editor de rutina con muesca/isla: al desplegar un ejercicio, su cabecera no queda bajo la barra superior', async () => {
+test('editor de rutina con muesca/isla: al desplegar un ejercicio, su cabecera no queda bajo la barra superior', { skip: chromiumOnly('zonas seguras (muesca o isla) simuladas con CDP (Emulation.setSafeAreaInsetsOverride)') }, async () => {
   const app = await openApp();
   const { page, context } = app;
   try {

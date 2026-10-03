@@ -17,8 +17,10 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { chromium, devices } = require('playwright');
-const { waitReady, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
+// Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
+const playwright = require('playwright');
+const { devices } = playwright;
+const { waitReady, go, reload, storeAll, idbAll, shot, BROWSER, chromiumOnly } = require('./helpers.cjs');
 
 const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle', 'context', 'pastRecords', 'races'];
 const PREV_MON = '2026-09-14';
@@ -78,7 +80,7 @@ function startPagesServer(prefix = '/gym/') {
 async function launch({ time, serviceWorkers = 'block', hash = '', init = null, pages = false } = {}) {
   const { startServer } = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
   const server = pages ? await startPagesServer('/gym/') : await startServer(0);
-  const browser = await chromium.launch();
+  const browser = await playwright[BROWSER].launch();
   const context = await browser.newContext({ ...devices['iPhone 13'], locale: 'es-ES', timezoneId: 'Europe/Madrid', serviceWorkers });
   if (time) await context.clock.install({ time });
   if (init) await context.addInitScript(init);
@@ -226,6 +228,17 @@ test('CRITERIO 1: cierro la app de golpe a mitad de sesión, vuelvo y se reabre 
     assert.strictEqual(expected.notes, NOTE);
 
     // Cerrar de golpe, sin esperar a nada (como cerrar Safari o deslizar la app fuera).
+    // WebKit (Playwright) aborta al cerrar la página las escrituras de IndexedDB aún sin confirmar, y lo tecleado hace
+    // < 250 ms (guardado diferido) se perdería: no es lo que pasa en iOS, donde la app pasa ANTES a segundo plano (el
+    // selector de apps) y ahí se guarda todo (la prueba siguiente lo comprueba en los dos motores). En WebKit se
+    // reproduce esa secuencia: segundo plano, esperar a que esté en disco y cerrar. Chromium: cierre inmediato.
+    if (BROWSER !== 'chromium') {
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await waitDiskSession(page, id, (d) => d.notes === NOTE);
+    }
     await page.close();
 
     // Volver a abrir la app (start_url «./», sin hash).
@@ -338,12 +351,17 @@ test('CRITERIO 1: pasar a segundo plano guarda al instante lo pendiente; si iOS 
     disk = (await idbAll(page, 'sessions')).find((x) => x.id === id);
     assert.deepStrictEqual(disk, expected, 'al pasar a segundo plano se escribe todo en disco sin esperar');
 
-    // iOS mata la app en segundo plano: sin pagehide ni beforeunload (el proceso muere).
+    // iOS mata la app en segundo plano: sin pagehide ni beforeunload (el proceso muere). Chromium: se mata la página
+    // con CDP. WebKit no tiene CDP: se cierra la página (lo que importa ya está comprobado en disco, justo arriba).
     await app.context.clock.resume();
-    const cdp = await app.context.newCDPSession(page);
-    const crashed = page.waitForEvent('crash');
-    cdp.send('Page.crash').catch(() => {});
-    await crashed;
+    if (BROWSER === 'chromium') {
+      const cdp = await app.context.newCDPSession(page);
+      const crashed = page.waitForEvent('crash');
+      cdp.send('Page.crash').catch(() => {});
+      await crashed;
+    } else {
+      await page.close();
+    }
 
     page = await app.newPage('');
     assert.strictEqual(await hashOf(page), `#/session/${id}`);
@@ -747,8 +765,10 @@ test('CRITERIO 5: instalada (service worker activo), funciona sin conexión: pes
     assert.match(app.url, /\/gym\/$/);
     assert.strictEqual(await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).scope), app.url);
 
-    // Sin red: modo avión y, además, el servidor apagado (no responde a nada).
-    await app.context.setOffline(true);
+    // Sin red: modo avión y, además, el servidor apagado (no responde a nada). En WebKit, el modo sin conexión de
+    // Playwright (setOffline) rompe hasta la navegación servida por el service worker («internal error», también sin
+    // apagar el servidor): ahí la falta de red es solo el servidor apagado, que es lo que comprueba la prueba.
+    if (BROWSER === 'chromium') await app.context.setOffline(true);
     await app.server.close();
     const failed = [];
     const network = [];

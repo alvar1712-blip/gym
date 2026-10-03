@@ -68,8 +68,14 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
 
     // 1 toque registra la serie prellenada (y se guarda al instante).
     // El segundo toque inmediato (doble toque accidental) no registra también la serie 2.
-    await bc.locator('.ses-register').click();
-    await bc.locator('.ses-register').click();
+    // Los dos toques en el mismo instante (sobre el botón que haya tras el primero): dos .click() de Playwright seguidos
+    // tardan ~70 ms en Chromium pero ~400 ms en WebKit, y a partir de 400 ms la app lo trata, con razón, como un segundo
+    // toque deliberado.
+    await page.evaluate((seId) => {
+      const sel = `[data-se="${seId}"] .ses-register`;
+      document.querySelector(sel).click();
+      document.querySelector(sel).click();
+    }, bench.id);
     s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets.filter((x) => x.done).length, 1, 'doble toque ignorado');
     const b1 = s.exercises[0].sets[0];
@@ -299,7 +305,8 @@ test('alternativas, cardio enlazado y cursor al volver', async () => {
     assert.strictEqual(s.cursor, s.exercises.findIndex((x) => x.id === prensa.id));
     await reload(page);
     await page.waitForSelector('.ses-card');
-    await page.waitForTimeout(200);
+    // Por condición (no una pausa fija): la app desplaza a la tarjeta del cursor tras dos fotogramas.
+    await page.waitForFunction(() => window.scrollY > 0, null, { timeout: 4000 }).catch(() => {});
     const top = await card(page, prensa.id).evaluate((el) => el.getBoundingClientRect().top);
     assert.ok(await page.evaluate(() => window.scrollY) > 0, 'se ha desplazado');
     assert.ok(top > 40 && top < 200, `la tarjeta del cursor queda arriba (${top})`);
@@ -629,14 +636,26 @@ test('una mano en iPhone SE: «Registrar serie» siempre a la vista (sin desplaz
         const t = await page.locator('.toast.toast-pr').boundingBox();
         assert.ok(t && t.y < 120, `aviso de récord arriba (${t && t.y})`);
       }
-      // espera a que termine el desplazamiento automático (el usuario no desplaza nada)
+      // Ritmo del usuario: no vuelve a tocar «Registrar» antes de 400 ms (antes, la app lo toma por un doble toque y lo
+      // ignora, con razón). No es una espera al desplazamiento: esa va por condición justo debajo.
       await page.waitForTimeout(400);
-      for (let k = 0, y = -1; k < 20; k++) {
-        const y2 = await page.evaluate(() => window.scrollY);
-        if (y2 === y) break;
-        y = y2;
-        await page.waitForTimeout(120);
-      }
+      // El desplazamiento automático (el usuario no desplaza nada): la app desplaza 350 ms después del toque al terminar
+      // un ejercicio, y en WebKit el toque de Playwright ya tarda más. Primero, a que el «Registrar» que toca quede a la
+      // vista (si nunca llega, lo cuenta state() como fallo)…
+      await page.waitForFunction(() => {
+        const ed = document.querySelector('.ses-editor[data-state="editing"]');
+        if (!ed) return true;
+        const r = ed.querySelector('.ses-register').getBoundingClientRect();
+        const hdr = document.querySelector('.topbar').getBoundingClientRect().bottom;
+        const tab = document.getElementById('tabbar').getBoundingClientRect().top;
+        return r.top >= hdr - 1 && r.bottom <= tab + 1;
+      }, null, { timeout: 4000 }).catch(() => {});
+      // …y después, a que el desplazamiento termine (la posición no cambia en 5 fotogramas seguidos).
+      await page.evaluate(() => new Promise((res) => {
+        let y = -1; let same = 0;
+        const tick = () => { const y2 = window.scrollY; same = y2 === y ? same + 1 : 0; y = y2; if (same >= 5) res(); else requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      }));
     }
     assert.ok(taps >= 18, `series registradas: ${taps}`);
     assert.deepStrictEqual(misses, [], 'el botón «Registrar» siempre visible y tocable');

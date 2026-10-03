@@ -5,8 +5,10 @@ const assert = require('node:assert');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const { chromium, devices } = require('playwright');
-const { waitReady } = require('./helpers.cjs');
+// Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
+const playwright = require('playwright');
+const { devices } = playwright;
+const { waitReady, BROWSER } = require('./helpers.cjs');
 
 const RESULTS = path.join(__dirname, '..', '..', 'test-results');
 const MAIN = '#card-main';
@@ -14,7 +16,7 @@ const MAIN = '#card-main';
 async function openBench({ width = 390, height = 844 } = {}) {
   const mod = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
   const server = await mod.startServer(0);
-  const browser = await chromium.launch();
+  const browser = await playwright[BROWSER].launch();
   const dev = devices['iPhone 13'];
   const context = await browser.newContext({ ...dev, viewport: { width, height }, locale: 'es-ES', timezoneId: 'Europe/Madrid' });
   const page = await context.newPage();

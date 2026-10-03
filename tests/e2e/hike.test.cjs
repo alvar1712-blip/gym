@@ -185,7 +185,7 @@ test('sesión libre de senderismo en el calendario; Progreso, récords, panel se
     await go(page, `#/day/${FRI}`);
     await page.locator('.cal-act-change').click();
     const row = page.locator('.pick-row', { hasText: 'Senderismo' });
-    assert.strictEqual(await row.innerText(), '🥾 Senderismo');
+    assert.strictEqual((await row.innerText()).trim(), '🥾 Senderismo'); // .trim(): salto final de WebKit
     await row.click();
     await page.locator('.toast').waitFor();
     await settle(page, 300);

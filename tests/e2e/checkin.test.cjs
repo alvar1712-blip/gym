@@ -8,8 +8,10 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { chromium, devices } = require('playwright');
-const { waitReady, go, reload, idbAll, storeAll, shot } = require('./helpers.cjs');
+// Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
+const playwright = require('playwright');
+const { devices } = playwright;
+const { waitReady, go, reload, idbAll, storeAll, shot, BROWSER } = require('./helpers.cjs');
 
 const TODAY = '2026-09-24';
 const YESTERDAY = '2026-09-23';
@@ -19,7 +21,7 @@ const HINT = 'Solo se usa como contexto en el panel semanal y en la sugerencia d
 async function launch({ width = 390, height = 844, sat = null } = {}) {
   const { startServer } = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
   const server = await startServer(0);
-  const browser = await chromium.launch();
+  const browser = await playwright[BROWSER].launch();
   const context = await browser.newContext({
     ...devices['iPhone 13'], viewport: { width, height }, locale: 'es-ES', timezoneId: 'Europe/Madrid', serviceWorkers: 'block',
   });

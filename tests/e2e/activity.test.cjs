@@ -8,6 +8,17 @@ const hash = (page) => page.evaluate(() => location.hash);
 const val = (page, sel) => page.locator(sel).inputValue();
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 const settle = (page, ms = 450) => page.waitForTimeout(ms); // saveSoon escribe a los 250 ms
+/** Espera por condición (fase H): `fn` en Node (p. ej. leer IndexedDB) hasta que da true, o hasta `ms`. */
+async function until(fn, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await fn()) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+}
+/** Espera a que la pantalla montada tenga ese título (cambio de ruta por condición, no por tiempo). */
+const titleIs = (page, t) => page.waitForFunction((x) => document.querySelector('.topbar h1')?.textContent === x, t, { timeout: 5000 }).catch(() => {});
 
 /** Sesión de fuerza sembrada con un ítem de cardio (como Día 3), para las actividades enlazadas. */
 async function seedStrength(page, { status = 'done' } = {}) {
@@ -321,7 +332,8 @@ test('actividad enlazada a una sesión de fuerza (parent + item)', async () => {
     assert.match(await page.locator('.act-dur-hint').innerText(), /Objetivo: 30–45 min/);
     assert.strictEqual(await val(page, '[aria-label="Tiempo en movimiento: min"]'), '', 'la duración objetivo es pista, no valor');
     // Lo prellenado (tipo de sesión de las notas) no es un borrador: «Listo» sale y no queda nada guardado.
-    assert.strictEqual(await page.locator('.act-status').innerText(), 'Se guarda al poner la duración');
+    // .trim(): WebKit añade un salto final al innerText de un bloque (Chromium no)
+    assert.strictEqual((await page.locator('.act-status').innerText()).trim(), 'Se guarda al poner la duración');
     assert.strictEqual(await page.locator('.act-discard').isVisible(), false);
     await shot(page, 'activity-linked');
     await page.locator('.act-done').click();
@@ -351,12 +363,12 @@ test('actividad enlazada a una sesión de fuerza (parent + item)', async () => {
     assert.strictEqual(await page.locator('.act-kinds').count(), 0);
 
     await page.locator('.act-done').click();
-    await page.waitForTimeout(250);
+    await page.waitForFunction(() => location.hash === '#/session/s_test', null, { timeout: 5000 }).catch(() => {});
     assert.strictEqual(await hash(page), '#/session/s_test');
 
     // Sin kind: se deduce del deporte del ejercicio del ítem.
     await page.evaluate(() => { location.hash = '#/activity/new?parent=s_test&item=se_run'; });
-    await page.waitForTimeout(250);
+    await titleIs(page, 'Nueva carrera');
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Nueva carrera');
 
     // Una sesión de fuerza abierta como actividad redirige al registro de fuerza.
@@ -526,7 +538,7 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     assert.match(summary, /\+0,3\d kg\/sem/, summary);
     assert.match(summary, /subiendo/);
     assert.strictEqual(await page.locator('.bw-row').count(), 28);
-    assert.match(await page.locator('.bw-row').first().innerText(), /75,4 kg\s+(±0|[+−]0,\d)$/, 'variación respecto al anterior');
+    assert.match((await page.locator('.bw-row').first().innerText()).trim(), /75,4 kg\s+(±0|[+−]0,\d)$/, 'variación respecto al anterior'); // .trim(): salto final de WebKit
     await shot(page, 'bodyweight');
     assert.ok(await noHScroll(page));
     await page.locator('.why-btn').click();
@@ -565,13 +577,15 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     assert.strictEqual(all.find((b) => b.id === secondId)?.kg, kgNow);
     assert.strictEqual(all.length, 28);
 
-    // Borrar desde la hoja → deshacer
+    // Borrar desde la hoja → deshacer (esperas por condición: la lista repintada y el disco)
     await page.locator('.sheet-panel .btn-danger-ghost').click();
-    await settle(page, 300);
+    await until(async () => !(await idbAll(page, 'bodyweight')).some((b) => b.id === secondId));
+    await page.waitForFunction(() => document.querySelectorAll('.bw-row').length === 27, null, { timeout: 5000 }).catch(() => {});
     assert.strictEqual((await idbAll(page, 'bodyweight')).some((b) => b.id === secondId), false);
     assert.strictEqual(await page.locator('.bw-row').count(), 27);
     await page.locator('.toast-action').click();
-    await settle(page, 300);
+    await until(async () => (await idbAll(page, 'bodyweight')).some((b) => b.id === secondId));
+    await page.waitForFunction(() => document.querySelectorAll('.bw-row').length === 28, null, { timeout: 5000 }).catch(() => {});
     assert.strictEqual((await idbAll(page, 'bodyweight')).some((b) => b.id === secondId), true);
     assert.strictEqual(await page.locator('.bw-row').count(), 28);
 

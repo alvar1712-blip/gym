@@ -3,7 +3,7 @@
 // transición en curso, hojas con cierre animado, «reducir movimiento» y alternativa sin View Transitions.
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, shot } = require('./helpers.cjs');
+const { openApp, go, shot, engineAvailable } = require('./helpers.cjs');
 
 const wait = (page, ms) => page.waitForTimeout(ms);
 
@@ -253,14 +253,20 @@ test('hojas: curva de iOS al abrir y cerrar, cierre animado antes de quitarse, s
       return o && { closing: o.classList.contains('closing'), open: o.classList.contains('open'), inert: o.inert, hidden: o.getAttribute('aria-hidden'), pe: getComputedStyle(o).pointerEvents };
     });
     assert.deepStrictEqual(closing, { closing: true, open: false, inert: true, hidden: 'true', pe: 'none' }, 'cierre animado');
-    await wait(page, 120);
-    const mid = await page.evaluate(() => {
-      const o = document.querySelector('.sheet-overlay');
-      if (!o) return null;
-      return new DOMMatrix(getComputedStyle(o.querySelector('.sheet-panel')).transform).m42;
-    });
-    assert.ok(mid != null && mid > 0, `a medio cerrar, la hoja va bajando (${mid})`);
-    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 1000 });
+    // Por condición, no a los 120 ms: mientras sigue en el DOM, la hoja baja. Solo en Chromium: WebKit sin pantalla
+    // (Playwright en Linux) da fotogramas cada ~400 ms y su estilo calculado no avanza entre ellos, así que no se puede
+    // ver la posición intermedia (en un iPhone de verdad, 60–120 fotogramas por segundo). Lo que sí se comprueba en
+    // WebKit: que no se quita de golpe (prueba «cerrar mientras aún se abre», más abajo).
+    if (app.browser.browserType().name() === 'chromium') {
+      const mid = await page.waitForFunction(() => {
+        const o = document.querySelector('.sheet-overlay');
+        if (!o) return 'gone';
+        const y = new DOMMatrix(getComputedStyle(o.querySelector('.sheet-panel')).transform).m42;
+        return y > 0 ? y : false;
+      }, null, { polling: 10, timeout: 2000 }).then((h) => h.jsonValue()).catch(() => null);
+      assert.ok(typeof mid === 'number' && mid > 0, `a medio cerrar, la hoja va bajando (${mid})`);
+    }
+    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 3000 });
     assert.strictEqual(await page.evaluate(() => document.activeElement && document.activeElement.id), 'opener', 'el foco vuelve al botón que la abrió');
 
     // Elegir una acción y abrir otra hoja mientras la primera aún baja: nunca dos menús a la vez.
@@ -269,14 +275,15 @@ test('hojas: curva de iOS al abrir y cerrar, cierre animado antes de quitarse, s
     await page.locator('#opener').click();
     assert.strictEqual(await page.locator('.action-item', { hasText: 'Segunda' }).count(), 1, 'la hoja que se cerraba ya no está');
     await page.locator('.action-item', { hasText: 'Segunda' }).click();
-    await page.waitForFunction(() => window.__picked === 'Segunda', null, { timeout: 1000 });
-    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 1000 });
+    await page.waitForFunction(() => window.__picked === 'Segunda', null, { timeout: 3000 });
+    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 3000 });
 
     // confirmDialog: se resuelve al pulsar y desaparece con la animación
     const answer = page.evaluate(async () => (await import('./js/ui.js')).confirmDialog({ title: '¿Seguro?', confirmText: 'Sí' }));
     await page.locator('.sheet-overlay.open .btn-primary', { hasText: 'Sí' }).click();
     assert.strictEqual(await answer, true);
-    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 1000 });
+    // Condición con margen (no una pausa): en WebKit sin pantalla la transición de cierre puede arrancar tarde.
+    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 3000 });
 
     // Respuesta al toque: escala ~0,97 y atenuación en 120 ms, sin retrasar el clic
     const press = await page.evaluate(() => {
@@ -289,14 +296,15 @@ test('hojas: curva de iOS al abrir y cerrar, cierre animado antes de quitarse, s
     const box = await page.locator('#opener').boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
-    await wait(page, 200);
+    // Por condición: la escala llega tras un instante quieto y 120 ms de transición (en WebKit sin pantalla, a saltos).
+    await page.waitForFunction(() => /matrix\(0\.97/.test(getComputedStyle(document.getElementById('opener')).transform), null, { timeout: 3000 }).catch(() => {});
     const pressed = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById('opener')); return { t: cs.transform, o: Number(cs.opacity) }; });
     await page.mouse.up();
     assert.match(pressed.t, /matrix\(0\.97/, `escala al pulsar (${pressed.t})`);
     assert.ok(pressed.o < 1, 'se atenúa al pulsar');
     await page.locator('.sheet-overlay.open').waitFor();
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 1000 });
+    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 3000 });
 
     // Aviso: un aviso nuevo sustituye al que se está ocultando (nunca dos .toast a la vez)
     await page.evaluate(async () => {
@@ -449,3 +457,34 @@ test('sin View Transitions (iOS 17): solo entra la vista nueva, sin clonar la an
     await app.close();
   }
 });
+
+// Regresión (WebKit, fase H): si se cerraba una hoja mientras su transición de abrir aún no había dado su
+// transitionend, WebKit lo disparaba justo después de cerrar y la hoja se quitaba de golpe, sin bajar (visto en WebKit;
+// Chromium cancela esa transición). El momento exacto depende de los fotogramas, así que se reproduce ese evento tal cual:
+// un transitionend de transform justo después de cerrar, antes de que arranque la transición de cierre.
+for (const engine of ['chromium', 'webkit']) {
+  const skip = engine === 'webkit' && !engineAvailable('webkit') ? 'WebKit no instalado: ejecuta scripts/setup-webkit.sh' : false;
+  test(`${engine}: un transitionend de la apertura que llega tras cerrar no quita la hoja de golpe`, { skip }, async () => {
+    const app = await openApp({ browser: engine });
+    const { page } = app;
+    try {
+      await go(page, '#/today');
+      const stillThere = await page.evaluate(async () => {
+        const ui = await import('./js/ui.js');
+        ui.actionSheet({ title: 'Opciones', actions: [{ label: 'Primera', onClick: () => {} }] });
+        const overlay = document.querySelector('.sheet-overlay');
+        const panel = overlay.querySelector('.sheet-panel');
+        panel.querySelector('.icon-btn[aria-label="Cerrar"]').click();
+        panel.dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'transform', elapsedTime: 0.35, bubbles: true }));
+        await new Promise((res) => setTimeout(res, 0));
+        return overlay.isConnected && overlay.classList.contains('closing');
+      });
+      assert.strictEqual(stillThere, true, 'sigue en el DOM, cerrándose');
+      // Y se quita al terminar de bajar (o por el plazo de reserva)
+      await page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 3000 });
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+}

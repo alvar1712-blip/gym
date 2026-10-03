@@ -10,8 +10,10 @@ const assert = require('node:assert');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const { chromium, devices } = require('playwright');
-const { waitReady, go, idbAll } = require('./helpers.cjs');
+// Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
+const playwright = require('playwright');
+const { devices } = playwright;
+const { waitReady, go, idbAll, BROWSER } = require('./helpers.cjs');
 
 const RESULTS = path.join(__dirname, '..', '..', 'test-results');
 const TODAY = '2026-09-24'; // jueves
@@ -31,7 +33,7 @@ const noise = (i) => Math.sin(i * 12.9898) * 0.5 + Math.sin(i * 4.1414) * 0.5;
 async function launch({ width = 390, height = 844, time = madrid(TODAY, 12) } = {}) {
   const { startServer } = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
   const server = await startServer(0);
-  const browser = await chromium.launch();
+  const browser = await playwright[BROWSER].launch();
   const context = await browser.newContext({
     ...devices['iPhone 13'], viewport: { width, height }, deviceScaleFactor: 2, locale: 'es-ES', timezoneId: 'Europe/Madrid', serviceWorkers: 'block',
   });
@@ -466,7 +468,7 @@ test('editar (guardado inmediato y título automático), archivar/desarchivar y 
     assert.strictEqual(await page.locator('.goal-list .goal-card').count(), 0);
     assert.strictEqual(await page.locator('.goal-none').innerText(), 'No tienes objetivos activos.');
     const fold = page.locator('[data-fold="archived"] .goal-fold');
-    assert.strictEqual(await fold.innerText(), 'Archivados (1)');
+    assert.strictEqual((await fold.innerText()).trim(), 'Archivados (1)'); // .trim(): salto final de WebKit
     assert.strictEqual(await page.locator('[data-fold="archived"] .goal-fold-body').isHidden(), true);
     await fold.click();
     assert.strictEqual(await page.locator('[data-fold="archived"] .goal-card .goal-badge-arch').innerText(), 'Archivado');
@@ -565,7 +567,7 @@ test('conseguido: se sincroniza achievedAt y pasa a «Conseguidos»; goalsSummar
     assert.strictEqual(done.achievedAt, '2026-09-07');
     assert.strictEqual(await page.locator('.goal-list .goal-card').count(), 4);
     const fold = page.locator('[data-fold="achieved"] .goal-fold');
-    assert.strictEqual(await fold.innerText(), 'Conseguidos (1)');
+    assert.strictEqual((await fold.innerText()).trim(), 'Conseguidos (1)'); // .trim(): salto final de WebKit
     await fold.click();
     const dc = page.locator('[data-fold="achieved"] .goal-card');
     assert.strictEqual(await dc.getAttribute('data-status'), 'achieved');

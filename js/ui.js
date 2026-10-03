@@ -407,19 +407,33 @@ const SHEET_MS = 350;
 /**
  * Llama a fn cuando termina la transición de transform/opacity de `el` (o a los ms + margen si no llega
  * transitionend: pestaña oculta, «reducir movimiento», elemento sin transición). Solo una vez.
+ * Solo cuenta el final de una transición que EMPEZÓ después de llamar (transitionrun): WebKit, si la anterior (la de
+ * abrir) aún no había terminado, dispara su transitionend justo después del cambio, y la hoja se quitaba sin animar.
  */
 function afterTransition(el, ms, fn) {
   let done = false;
+  const started = new Set();
   const finish = () => {
     if (done) return;
     done = true;
+    el.removeEventListener('transitionrun', onRun);
     el.removeEventListener('transitionend', onEnd);
     clearTimeout(timer);
     fn();
   };
-  const onEnd = (e) => { if (e.target === el && (e.propertyName === 'transform' || e.propertyName === 'opacity')) finish(); };
+  const watched = (e) => e.target === el && (e.propertyName === 'transform' || e.propertyName === 'opacity');
+  // Si la transición arranca tarde (hilo principal ocupado), el plazo de reserva cuenta desde que arranca: así no se
+  // corta a medias. Sin transición (reducir movimiento, pestaña oculta), el plazo de siempre.
+  const onRun = (e) => {
+    if (!watched(e)) return;
+    started.add(e.propertyName);
+    clearTimeout(timer);
+    timer = setTimeout(finish, ms + 60);
+  };
+  const onEnd = (e) => { if (watched(e) && started.has(e.propertyName)) finish(); };
+  el.addEventListener('transitionrun', onRun);
   el.addEventListener('transitionend', onEnd);
-  const timer = setTimeout(finish, ms + 60);
+  let timer = setTimeout(finish, ms + 60);
 }
 
 function isTextField(el) {

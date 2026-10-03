@@ -113,4 +113,13 @@ async function shot(page, name) {
   return file;
 }
 
-module.exports = { openApp, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable };
+/**
+ * Para pruebas que necesitan herramientas que solo tiene Chromium (CDP: toques reales con Input.dispatchTouchEvent,
+ * frenar la CPU…): con E2E_BROWSER=webkit se omiten DICIENDO por qué; en la batería de Chromium se ejecutan siempre.
+ *   test('…', { skip: chromiumOnly('toques con CDP') }, async () => …)
+ */
+function chromiumOnly(why) {
+  return BROWSER === 'chromium' ? false : `Solo en Chromium (${why}); en WebKit no existe esa herramienta de Playwright`;
+}
+
+module.exports = { openApp, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable, chromiumOnly };

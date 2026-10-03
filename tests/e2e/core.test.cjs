@@ -7,8 +7,10 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const { pathToFileURL } = require('url');
-const { chromium, devices } = require('playwright');
-const { openApp, go, storeAll, shot, waitReady } = require('./helpers.cjs');
+// Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
+const playwright = require('playwright');
+const { devices } = playwright;
+const { openApp, go, storeAll, shot, waitReady, chromiumOnly, BROWSER } = require('./helpers.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
 const wait = (page, ms) => page.waitForTimeout(ms);
@@ -118,7 +120,7 @@ test('avisos: «Deshacer» se cierra al cambiar de pantalla, sigue en la de dest
   }
 });
 
-test('router y pestañas: % inválido no rompe, pestaña de origen al abrir una sesión, error con margen de la barra de estado', async () => {
+test('router y pestañas: % inválido no rompe, pestaña de origen al abrir una sesión, error con margen de la barra de estado', { skip: chromiumOnly('zonas seguras simuladas con CDP (Emulation.setSafeAreaInsetsOverride)') }, async () => {
   const app = await openApp();
   const { page, context } = app;
   try {
@@ -299,7 +301,7 @@ test('service worker: primera instalación sin recarga; versión nueva con aviso
   for (const f of ['index.html', 'manifest.json', 'sw.js', 'js', 'css', 'icons']) fs.cpSync(path.join(ROOT, f), path.join(copy, f), { recursive: true });
   stampMod.stamp(copy);
   const server = await serveCopy(copy);
-  const browser = await chromium.launch();
+  const browser = await playwright[BROWSER].launch();
   const context = await browser.newContext({ ...devices['iPhone 13'], locale: 'es-ES', timezoneId: 'Europe/Madrid', serviceWorkers: 'allow' });
   const page = await context.newPage();
   const errors = [];

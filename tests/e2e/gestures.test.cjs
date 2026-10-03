@@ -5,7 +5,7 @@
 // Los toques son reales (CDP Input.dispatchTouchEvent: el navegador genera touch* y pointer* y desplaza la página).
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, shot, waitReady, devices } = require('./helpers.cjs');
+const { openApp, go, shot, waitReady, devices, chromiumOnly } = require('./helpers.cjs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -123,7 +123,7 @@ function staggerOnPush(page, hash) {
   }, hash);
 }
 
-test('gesto del borde izquierdo: la vuelta no se anima otra vez y la pantalla aparece con su scroll', async () => {
+test('gesto del borde izquierdo: la vuelta no se anima otra vez y la pantalla aparece con su scroll', { skip: chromiumOnly('toques reales con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openApp();
   const { page } = app;
   try {
@@ -168,7 +168,7 @@ test('gesto del borde izquierdo: la vuelta no se anima otra vez y la pantalla ap
   }
 });
 
-test('scroll por entrada: montaje asíncrono (Hoy), adelante/atrás y sin iOS 17 (sin entrada animada al volver)', async () => {
+test('scroll por entrada: montaje asíncrono (Hoy), adelante/atrás y sin iOS 17 (sin entrada animada al volver)', { skip: chromiumOnly('toques reales con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openApp();
   const { page } = app;
   try {
@@ -251,7 +251,7 @@ const histState = (page) => page.evaluate(async () => ({
   hash: location.hash, st: history.state, len: history.length, depth: (await import('./js/router.js')).overlayDepth(),
 }));
 
-test('hojas y «atrás»: la cierra sin cambiar de pantalla; cerrar o navegar desde la hoja no deja entradas muertas', async () => {
+test('hojas y «atrás»: la cierra sin cambiar de pantalla; cerrar o navegar desde la hoja no deja entradas muertas', { skip: chromiumOnly('toques reales con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openApp();
   const { page } = app;
   try {
@@ -379,7 +379,7 @@ test('hojas y «atrás»: la cierra sin cambiar de pantalla; cerrar o navegar de
   }
 });
 
-test('arrastrar hacia abajo: sigue al dedo, cierra por distancia o velocidad y rebota si no llega', async () => {
+test('arrastrar hacia abajo: sigue al dedo, cierra por distancia o velocidad y rebota si no llega', { skip: chromiumOnly('toques reales con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openApp();
   const { page } = app;
   try {
@@ -470,7 +470,7 @@ test('arrastrar hacia abajo: sigue al dedo, cierra por distancia o velocidad y r
   }
 });
 
-test('respuesta al toque: .is-pressed tras un instante quieto, nunca al desplazar', async () => {
+test('respuesta al toque: .is-pressed tras un instante quieto, nunca al desplazar', { skip: chromiumOnly('toques reales con CDP (Input.dispatchTouchEvent)') }, async () => {
   const app = await openApp();
   const { page } = app;
   try {

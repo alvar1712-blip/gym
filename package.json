@@ -10,7 +10,7 @@
     "e2e": "NODE_PATH=$(npm root -g) node --test --test-concurrency=4 'tests/e2e/*.test.cjs'",
     "check": "node scripts/check-assets.mjs && node --test 'tests/unit/*.test.mjs'",
     "stamp": "node scripts/stamp-sw.mjs",
-    "e2e:webkit": "NODE_PATH=$(npm root -g) node --test --test-concurrency=2 'tests/e2e/webkit-*.test.cjs'",
+    "e2e:webkit": "E2E_BROWSER=webkit NODE_PATH=$(npm root -g) node --test --test-concurrency=3 'tests/e2e/*.test.cjs'",
     "perf": "NODE_PATH=$(npm root -g) node scripts/perf-startup.cjs"
   }
 }
