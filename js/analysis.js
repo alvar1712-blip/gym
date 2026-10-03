@@ -3,7 +3,8 @@
 // Sin store, ui ni DOM; «hoy» inyectable. Lo usan #/analysis, la tarjeta «Tu análisis» de Hoy y del panel semanal
 // y el informe para pegar en una IA (analysis-report.js). Pruebas: tests/unit/analysis.test.mjs.
 //
-// ENTRADA `data` = progress-ui.dataFromStore(today) + `checkins` (store 'checkins') + `cycleDays` (store 'cycle').
+// ENTRADA `data` = progress-ui.dataFromStore(today) + `checkins` (store 'checkins') + `cycleDays` (store 'cycle') y, desde la
+// ronda 6, `context` (store 'context') y `pastRecords` (store 'pastRecords'); sin ellos, el análisis es el de siempre.
 // El envoltorio que la construye desde el store vive en la vista (views/analysis.js · analysisData()).
 //
 // SALIDA buildAnalysis(data, today) → {
@@ -15,7 +16,9 @@
 //   cycle    : null (sin modo mujer o sin seguimiento) | { info: CycleInfo, state, next, basis, hormonal, insights }
 //   forecast : Insight[] (área 'forecast': fuerza, 5 km y la proyección del peso de aquí)
 //   keyPoints: Insight[] (hasta 3, los de mayor prioridad y de áreas distintas; ver pickKeyPoints)
-//   all      : Insight[] (todos, sin repetir id, por prioridad), errors: [{ area, message }] }
+//   all      : Insight[] (todos, sin repetir id, por prioridad), errors: [{ area, message }],
+//   context  : analysis-context.analysisContext(...) (ronda 6: lo que se tuvo en cuenta del contexto) }
+// Ronda 6 (fase C): los Insights pueden llevar `confidence` (confidence.js), `context` y `parts`; ver analysis-weight.js.
 // Un fallo en un análisis no tumba los demás: su parte queda vacía y se anota en `errors`.
 import { addDays, isDateStr, todayStr, fmtNum, fmtDate } from './util.js';
 import { sessionDurationMin } from './calc.js';
@@ -23,6 +26,7 @@ import { getProfile, cycleEnabled, isFemale, profileIncomplete } from './profile
 import { analyzeWeight } from './analysis-weight.js';
 import { analyzeStrength, analyzeEndurance, analyzeRecovery, ENDURANCE_KINDS } from './analysis-training.js';
 import { cycleInfo, fmtRange, LIMITS as CYCLE_LIMITS } from './cycle-logic.js';
+import { analysisContext } from './analysis-context.js';
 
 /** Orden de las áreas (desempates y orden de las tarjetas). */
 export const AREAS = ['weight', 'strength', 'endurance', 'recovery', 'cycle', 'forecast'];
@@ -119,6 +123,8 @@ export function cycleSummary(info) {
 export function weightForecast(weight, { today, female = false } = {}) {
   const t = weight?.trend;
   if (!weight?.ok || !t || !isNum(t.currentKg) || !isNum(t.ratePerWeekKg) || !t.ci || !isNum(t.ci.lo) || !isNum(t.ci.hi)) return null;
+  // Ronda 6: sin proyección para menores, con confianza baja o si el contexto explica el cambio (weight.projectable).
+  if (weight.projectable === false) return null;
   if ((weight.insights || []).some((i) => /^weight-reds/.test(i.id))) return null;
   const W = WEIGHT_FORECAST_WEEKS;
   const date = addDays(today, W * 7);
@@ -210,7 +216,8 @@ export function buildAnalysis(data = {}, today) {
   const profile = getProfile(d.settings);
   const female = isFemale(profile);
   const errors = [];
-  const opts = { profile, today: t };
+  const context = attempt(errors, 'context', () => analysisContext({ context: d.context || [], sessions: d.sessions, today: t, profile }), null);
+  const opts = { profile, today: t, context };
 
   const info = cycleEnabled(profile) ? attempt(errors, 'cycle', () => cycleInfo(d.cycleDays || [], profile, t), null) : null;
   const strength = attempt(errors, 'strength', () => analyzeStrength(d, opts),
@@ -224,9 +231,10 @@ export function buildAnalysis(data = {}, today) {
     bodyweight: d.bodyweight || [],
     today: t,
     profile,
-    strength: isNum(sum.trendPctPerWeek) ? { trendPctPerWeek: sum.trendPctPerWeek, n: sum.mainCount } : null,
+    strength: isNum(sum.trendPctPerWeek) ? { trendPctPerWeek: sum.trendPctPerWeek, n: sum.mainCount, recoveryShare: sum.recoveryShare } : null,
     endurance: { weeklyMinutes4w: endurance.weeklyMinutes4w },
     cycle: info,
+    context,
   }), { ok: false, trend: null, target: null, status: 'insufficient', insights: [] });
   const recovery = attempt(errors, 'recovery', () => analyzeRecovery(d, { ...opts, cycle: info }), { insights: [] });
 
@@ -255,7 +263,7 @@ export function buildAnalysis(data = {}, today) {
   return {
     today: t, profile, profileIncomplete: profileIncomplete(profile), female, hasData,
     weight, strength, endurance, recovery, cycle, forecast,
-    keyPoints: pickKeyPoints(all, 3), all, errors,
+    keyPoints: pickKeyPoints(all, 3), all, errors, context,
   };
 }
 

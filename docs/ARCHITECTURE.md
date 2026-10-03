@@ -34,6 +34,7 @@ Este documento es el **contrato**. Los requisitos completos del usuario están e
 | `js/checkin-logic.js`, `js/checkin.js` (estilos `.ci-*` en `css/session.css`) | Fase 3: check-in (ronda 6: estrés y zonas) | check-in |
 | `js/context-logic.js`, `js/views/context.js`, `js/approx-input.js`, `css/context.css` | Ronda 6: tu contexto y el campo de fecha aproximada | contexto |
 | `js/past-records-logic.js`, `js/views/past-records.js` (estilos `.pr-*` en `css/progress.css`) | Ronda 6: marcas históricas | progreso |
+| `js/confidence.js`, `js/analysis-context.js` | Ronda 6: confianza común y contexto del análisis | analista |
 
 **Regla de propiedad:** cada módulo solo edita SUS archivos. Los archivos del núcleo son de solo lectura para
 los módulos; si necesitas un cambio en el núcleo, impleméntalo localmente en tu módulo y descríbelo en tu
@@ -446,6 +447,17 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   (alternativas opacas con `@supports not` y `prefers-reduced-transparency`).
 
 ### Ronda 6 (contrato en `docs/MEJORAS6.md`)
+- **Confianza** (`confidence.js`, puro): `LEVELS` (`insufficient`, `low`, `medium`, `high`; nunca probabilidades),
+  `combine(factors)` → `{ level, label, short, reasons, basis, factors }` (manda el factor más débil), `byCount`,
+  `bySpan`, `byNoise`, `capAt`, `insufficient`, `confidenceRow`.
+- **Contexto del análisis** (`analysis-context.js`, puro): `analysisContext({ context, sessions, today, profile })` →
+  `{ summary, recent, training:{returning, since, source}, creatine, body:{goal}, health, life, usualWeight, age, labels,
+  changes }`; `detectReturn(sessions, today)`. `buildAnalysis` lo calcula una vez y lo pasa al peso y a la fuerza;
+  `analysisData()` añade `context` y `pastRecords` del store.
+- **Insight ampliado**: opcionales `confidence`, `context` (strings) y `parts` ({ observation, interpretation,
+  recommendation }); `text` = texto completo (compatibilidad). `analyzeWeight` devuelve además `confidence`, `goal`,
+  `goalSource` ('profile'|'phase'), `regain`, `age` y `projectable`; cada fila de `analyzeStrength().exercises` lleva
+  `kind` ('recovery'|'new_exercise'|'new_best'|'progress'|'insufficient'), `recovery` y `confidence`.
 - **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
   `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
   compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.

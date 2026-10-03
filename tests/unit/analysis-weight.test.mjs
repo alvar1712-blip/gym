@@ -48,6 +48,8 @@ const ALLOWED = [
   ['Schoenfeld', 2017], ['Roberts', 2020], ['Seiler', 2010], ['Schumann', 2022], ['Eddens', 2018], ['Knowles', 2018],
   ['McNulty', 2020], ['Colenso-Semple', 2023], ['Elliott-Sale', 2020], ['White', 2011], ['Munro', 2018], ['Fraser', 2018],
   ['Pedlar', 2018], ['Bruinvels', 2016],
+  // Ronda 6 (docs/MEJORAS6.md, plan aprobado): creatina, jóvenes y mayores
+  ['Kreider', 2017], ['Lloyd', 2014], ['Fragala', 2019],
 ];
 const allowedSource = (s) => ALLOWED.some(([a, y]) => s.short.startsWith(a) && s.short.includes(String(y)));
 

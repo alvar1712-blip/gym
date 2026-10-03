@@ -674,8 +674,10 @@ function createChart(container, initialOpts, spec) {
     if (raf || !alive) return;
     raf = requestAnimationFrame(() => { raf = 0; if (Math.floor(plot.clientWidth) !== width) render(); });
   }
+  // El redibujo va al siguiente fotograma (schedule): hacerlo dentro del callback puede cambiar el tamaño observado en
+  // el mismo ciclo y Safari/WebKit lo avisa como error («ResizeObserver loop completed with undelivered notifications»).
   const ro = typeof ResizeObserver === 'function'
-    ? new ResizeObserver(() => { if (alive && Math.floor(plot.clientWidth) !== width) render(); })
+    ? new ResizeObserver(() => { if (alive && Math.floor(plot.clientWidth) !== width) schedule(); })
     : null;
   if (ro) ro.observe(plot); else window.addEventListener('resize', schedule);
 

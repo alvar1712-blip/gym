@@ -137,3 +137,62 @@ Campos nuevos (todos opcionales): `birthDate`, `secondaryGoals:[]`, `sports:[]`,
     supuesto, fecha aproximada, de dónde sale el peso corporal).
 - Lo que esta fase NO hace (fases C y D): interpretar si una subida rápida es recuperación, mejora real o adaptación
   inicial, ni usar el contexto de vuelta tras un parón; aquí solo se mide.
+
+## Fase C — confianza común y análisis con contexto
+
+### Confianza (`js/confidence.js`)
+- Cuatro niveles, NO probabilidades: `insufficient` (datos insuficientes) · `low` · `medium` · `high`. Cada análisis
+  describe sus factores y la confianza es la del más débil (`combine`), con los motivos que la limitan («datos de solo
+  23 días», «empezaste creatina hace 12 días», «solo 1 ejercicio»). Ayudas: `byCount`, `bySpan`, `byNoise`, `capAt`.
+- Peso: pesajes (8 · 12 · 18), días cubiertos (14 · 21 · 28), variación diaria (> 0,9 % media, > 1,5 % baja), margen
+  que incluye el 0, ciclo incompleto, y contexto reciente (creatina ≤ 14 días → baja; ≤ 6 semanas, vuelta a entrenar,
+  cambio de fase ≤ 4 semanas o recuperar peso previo → media; enfermedad o lesión → baja).
+- Fuerza (por ejercicio): sesiones (4 · 6 · 8), días (14 · 28 · 42), ruido entre sesiones (> 2,5 % media, > 4 % baja),
+  cambio de rutina reciente → media; marca histórica sin fecha → baja, con fecha de año o estación → media. Las
+  previsiones nunca pasan de «media» (son proyecciones).
+
+### Formato del Insight (compatible)
+Se mantienen `id, area, level, priority, title, text, why, sources, action`. Nuevos y opcionales: `confidence`
+({ level, label, short, reasons }), `context` (hechos tenidos en cuenta) y `parts` ({ observation, interpretation,
+recommendation }); `text` sigue siendo el texto completo. En el «¿Por qué?» se añaden al final «Contexto tenido en
+cuenta» y «Confianza». Pantalla: insignia de confianza, línea «Contexto:» y «Qué hacer:» aparte; la tarjeta de Hoy
+muestra la confianza de cada punto. Arriba de #/analysis, «Tu contexto» (lo vigente y los cambios recientes).
+
+### Contexto del análisis (`js/analysis-context.js`)
+`analysisContext({ context, sessions, today, profile })` usa `contextSummary` y `recentChanges` de la fase A y añade:
+vuelta a entrenar (fase «Vuelta»/«Reacondicionamiento», hecho «Vuelvo al gimnasio» o DETECTADA: ≥ 3 semanas sin
+sesiones y la vuelta en las últimas 8), creatina (último «Empiezo» sin «Dejo» posterior), fase de composición vigente,
+enfermedad o lesión (vigente o terminada hace ≤ 14 días), peso habitual y grupo de edad.
+
+### Peso
+- La fase de composición vigente (ganancia, déficit, mantenimiento, recomposición) manda sobre el objetivo del perfil
+  (se dice en la regla).
+- «Vienes de una bajada»: al empezar la ventana del ritmo, la tendencia estaba ≥ 1,5 % por debajo del peso habitual
+  apuntado o de su máximo de los 120 días previos (y aún no has vuelto a él).
+- Si el ritmo SUBE por encima del rango y coincide con recuperar peso previo, la vuelta a entrenar o creatina (≤ 6
+  semanas): «Subes rápido, pero hay contexto» → dato, por qué sería elevado, qué lo puede explicar en parte («podría
+  corresponder a…»), «Mantén lo que haces y reevalúa en 3–4 semanas». Sin ajuste ni balance en kcal, sin proyección ni
+  objetivo propuesto. Si BAJA fuera del rango con enfermedad, lesión o viaje: «Bajas, pero hay contexto».
+- Con confianza baja y el ritmo fuera del rango: «Aún es pronto para ajustar» (no se cambia lo que comes), salvo si
+  bajas demasiado rápido.
+- «Peso y fuerza suben juntos» no afirma que sea músculo si hay contexto o recuperas marcas.
+- Edad: menores de 18 → sin calorías (ni ajuste ni balance), sin ritmos de pérdida, sin «déficit», sin proyección ni
+  objetivo de peso; tarjeta con tendencia y ritmo solamente (Lloyd et al., 2014). 65 o más → pérdida en la mitad prudente
+  del rango (0,5–0,75 %) y ajustes de como mucho 250 kcal (Fragala et al., 2019).
+
+### Fuerza
+Por ejercicio que mejora: `kind` = `recovery` (por debajo del 97 % de tu mejor referencia: la mayor entre tus marcas
+históricas y lo registrado antes de las últimas 4 semanas), `new_exercise` (primera sesión hace < 6 semanas, sin
+marca), `new_best` (≥ 100 % de la referencia), `progress`, o `insufficient`. Insights nuevos: «Recuperando tu marca
+anterior» (`strength-recovery`) y «Primeras semanas» (`strength-new`); el resumen dice «No estás necesariamente
+progresando a X por encima de tu nivel: … estás recuperando rendimiento que ya habías alcanzado». La previsión de un
+ejercicio en recuperación no pasa de su referencia. Menores: sin previsiones de 1RM y consejos de técnica y supervisión
+en lugar de más series; 65 o más: tope prudente («avanzado») en la previsión y técnica y recuperación antes de más
+volumen. Las marcas manuales siguen separadas de los récords de Entreno (solo se leen).
+
+### Arreglo encontrado de paso
+- Las gráficas redibujaban dentro del callback de su ResizeObserver: en WebKit eso daba el error «ResizeObserver loop
+  completed with undelivered notifications» en Análisis. Ahora redibujan en el siguiente fotograma (prueba WebKit en
+  `tests/e2e/analysis-context.test.cjs`: falla sin el arreglo, pasa con él).
+- La tarjeta del peso decía «Calorías: sin cambios · estás en tu rango» cuando no se proponía ajuste por el contexto o
+  por confianza baja (sin estar en el rango): ahora dice «por ahora: reevalúa en unas semanas».

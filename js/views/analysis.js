@@ -25,6 +25,9 @@ const LEVEL_ICON = { good: 'check', warn: 'alert', neutral: 'info', info: 'info'
 const STATUS_TAG = { fast: 'Rápido', good: 'Bien', stalled: 'Estancado', down: 'Bajando' };
 const STATUS_CLASS = { fast: 'ok', good: 'ok', stalled: 'warn', down: 'danger' };
 const PACE_CLASS = { in: 'ok', below: 'warn', above: 'warn' };
+/** Ronda 6: clase de mejora en la lista de ejercicios («al 88 % de tu marca», «ejercicio nuevo»…). */
+const KIND_SUB = (x) => (x.kind === 'recovery' && x.recovery ? `al ${x.recovery.pct}${NB}% de tu marca`
+  : x.kind === 'new_exercise' ? 'ejercicio nuevo' : x.kind === 'new_best' ? 'por encima de tu marca' : null);
 /** Ejercicios visibles en «Fuerza» antes de «Ver N más». */
 const EX_VISIBLE = 6;
 /** Semanas de la minigráfica del peso. */
@@ -44,6 +47,9 @@ export function analysisData(today = todayStr(), base = null) {
   const d = base || dataFromStore(today);
   if (!d.checkins) d.checkins = store.all('checkins');
   if (!d.cycleDays) d.cycleDays = store.all('cycle');
+  // Ronda 6: tu contexto y tus marcas históricas (el análisis los usa para interpretar y para la confianza)
+  if (!d.context) d.context = store.all('context');
+  if (!d.pastRecords) d.pastRecords = store.all('pastRecords');
   return d;
 }
 
@@ -53,6 +59,12 @@ export function analysisData(today = todayStr(), base = null) {
 
 function levelBadge(level, small = false) {
   return h(`span.an-level.an-level-${level}${small ? '.an-level-sm' : ''}`, icon(LEVEL_ICON[level] || 'info', 14), LEVEL_LABEL[level] || 'Info');
+}
+
+/** Ronda 6: «Confianza media» (o «Datos insuficientes»); los motivos van en el «¿Por qué?». */
+function confBadge(c, small = false) {
+  if (!c) return null;
+  return h(`span.an-conf.an-conf-${c.level}${small ? '.an-conf-sm' : ''}`, { title: c.reasons?.length ? c.reasons.join('; ') : c.label }, c.label);
 }
 
 /** «¿Por qué?»: la regla y los datos (mismas clases que el panel semanal). */
@@ -95,10 +107,14 @@ function folds(ins) {
 }
 
 function insightItem(ins) {
-  return h('article.an-ins', { class: `an-ins-${ins.level}`, dataset: { insight: ins.id, level: ins.level, area: ins.area } },
-    h('div.an-ins-head', levelBadge(ins.level)),
+  const parts = ins.parts;
+  return h('article.an-ins', { class: `an-ins-${ins.level}`, dataset: { insight: ins.id, level: ins.level, area: ins.area, confidence: ins.confidence?.level || '' } },
+    h('div.an-ins-head', levelBadge(ins.level), confBadge(ins.confidence)),
     h('h3.an-ins-title', ins.title),
-    h('p.an-ins-text', ins.text),
+    // Ronda 6: dato e interpretación; el contexto que se tuvo en cuenta; y qué hacer, aparte
+    h('p.an-ins-text', parts ? [parts.observation, parts.interpretation].filter(Boolean).join(' ') : ins.text),
+    ins.context?.length ? h('p.an-ins-ctx', h('b', 'Contexto: '), ins.context.join(' · ')) : null,
+    parts?.recommendation ? h('p.an-ins-rec', h('b', 'Qué hacer: '), parts.recommendation) : null,
     ins.action && ins.action.href
       ? h('button.btn.btn-ghost.an-ins-action', { type: 'button', onClick: () => navigate(ins.action.href) }, ins.action.label, icon('chevron-right', 16))
       : null,
@@ -155,7 +171,7 @@ export function analysisSummaryCard({ data = null, today = null, max = 3, compac
         h('h2.an-sum-title', 'Tu análisis'),
         h('p.an-sum-sub', 'Lo más importante ahora · orientativo'))),
     h('ul.an-sum-list', pts.map((i) => h('li.an-sum-item', { dataset: { insight: i.id, level: i.level, area: i.area } },
-      h('span.an-sum-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area])),
+      h('span.an-sum-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area]), confBadge(i.confidence, true)),
       h('span.an-sum-mtitle', i.title),
       h('p.an-sum-mtext', i.text)))),
     h('button.btn.btn-secondary.btn-block.an-sum-btn', { type: 'button', onClick: () => navigate('#/analysis') },
@@ -184,6 +200,7 @@ export function mountAnalysis(root) {
   c.appendChild(h('p.an-note', icon('info', 16), h('span', DISCLAIMER)));
   if (a.profileIncomplete) c.appendChild(profileBanner(a));
   else if (profileExtrasMissing(profile).length) c.appendChild(profileMoreLink(profile));
+  if (a.hasData) c.appendChild(contextStrip(a));
 
   if (!a.hasData) {
     c.appendChild(h('section.card.an-nodata', emptyState({
@@ -204,6 +221,26 @@ export function mountAnalysis(root) {
   c.appendChild(forecastCard(a));
   c.appendChild(reportCard(a, report));
   return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
+}
+
+/**
+ * Ronda 6: lo que el análisis tiene en cuenta de tu contexto (fases vigentes, vuelta a entrenar, creatina, peso habitual)
+ * y los cambios recientes, con acceso a «Tu contexto». Sin nada apuntado ni detectado, una fila discreta para añadirlo.
+ */
+function contextStrip(a) {
+  const ctx = a.context;
+  const labels = ctx?.labels || [];
+  const changes = (ctx?.changes || []).filter((x) => !labels.some((l) => l.key === `phase:${x.type}`)).slice(0, 3);
+  if (!labels.length && !changes.length) {
+    return h('button.cal-link-btn.an-ctx-add', { type: 'button', onClick: () => navigate('#/context') },
+      h('span', 'Añade tu contexto (fases, creatina, peso habitual) para interpretar mejor tus datos'), icon('chevron-right', 18));
+  }
+  return h('section.card.an-ctx', { dataset: { block: 'context' } },
+    h('div.an-ctx-head', h('h2.an-ctx-title', 'Tu contexto'),
+      h('button.btn.btn-ghost.btn-sm.an-ctx-edit', { type: 'button', onClick: () => navigate('#/context') }, 'Editar', icon('chevron-right', 16))),
+    labels.length ? h('ul.an-ctx-list', labels.map((l) => h('li.an-ctx-item', { dataset: { key: l.key } }, l.text))) : null,
+    changes.length ? h('p.an-ctx-changes', h('b', 'Cambios recientes: '), changes.map((x) => x.text).join(' · ')) : null,
+    h('p.an-ctx-why', 'El análisis lo tiene en cuenta al interpretar tus datos y al decir cuánta confianza tiene.'));
 }
 
 /** Ronda 6: invitación discreta a añadir los datos nuevos del perfil (edad, deportes, días por semana). */
@@ -253,20 +290,22 @@ function weightCard(a, charts) {
   const w = a.weight || {};
   const t = w.trend;
   const badge = w.paceLabel ? h(`span.badge.an-pace.badge-${PACE_CLASS[w.status] || 'info'}`, w.paceLabel) : null;
-  const el = card('weight', cardHead('scale', 'Peso', w.target ? cap(w.target.label) : 'Tendencia y ritmo', badge));
+  // Ronda 6: menores de 18, sin rango de pérdida, sin barra frente a ese rango y sin kcal (solo tendencia y ritmo).
+  const minor = w.age === 'minor';
+  const el = card('weight', cardHead('scale', 'Peso', w.target && !minor ? cap(w.target.label) : 'Tendencia y ritmo', badge));
   if (t && isNum(t.currentKg)) {
     const kc = w.kcalPerDay;
-    el.appendChild(h('div.kpis.an-kpis',
+    el.appendChild(h(`div.kpis.an-kpis${minor ? '.kpis-2' : ''}`,
       kpi('Tendencia', kgTxt(t.currentKg), 'media de ~10 días', 'trend'),
       kpi('Ritmo', w.ok ? signedKg(t.ratePerWeekKg) : '—', w.ok ? `por semana · ${signedPct(t.ratePerWeekPct)}` : 'faltan datos', 'rate'),
-      kpi('Balance', kc && isNum(kc.estimate) ? `${sgn(kc.estimate)}${fmtNum(Math.abs(kc.estimate), 0)}` : '—', 'kcal/día (aprox.)', 'kcal')));
+      minor ? null : kpi('Balance', kc && isNum(kc.estimate) ? `${sgn(kc.estimate)}${fmtNum(Math.abs(kc.estimate), 0)}` : '—', 'kcal/día (aprox.)', 'kcal')));
     const chart = weightChart(a);
     if (chart) {
       el.appendChild(chart.wrap);
       charts.push(chart.chart);
     }
   }
-  if (w.ok && w.target && t) el.appendChild(paceGauge(w));
+  if (w.ok && w.target && t && !minor) el.appendChild(paceGauge(w));
   el.appendChild(nutritionRow(w));
   if (w.goalSuggestion) el.appendChild(goalBox(w.goalSuggestion));
   el.append(...[insightList(areaInsights(a, 'weight')), linkRow('scale', 'Peso corporal: registrar y ver la gráfica', '#/bodyweight')].filter(Boolean));
@@ -341,9 +380,10 @@ function nutritionRow(w) {
     const a1 = Math.min(Math.abs(sug.min), Math.abs(sug.max));
     const b1 = Math.max(Math.abs(sug.min), Math.abs(sug.max));
     tiles.push(kpi('Ajuste orientativo', `${sug.max > 0 ? '+' : '−'}${fmtNum(a1, 0)}–${fmtNum(b1, 0)}`, `kcal/día ${sug.max > 0 ? 'más' : 'menos'}`, 'adjust'));
-  } else if (w.ok && w.target) {
-    tiles.push(kpi('Calorías', 'Sin cambios', 'estás en tu rango', 'adjust'));
-  } else if (!w.target) {
+  } else if (w.ok && w.target && w.age !== 'minor') {
+    // Sin ajuste: o estás en tu rango, o el análisis no lo propone aún (contexto o confianza baja).
+    tiles.push(kpi('Calorías', 'Sin cambios', w.status === 'in' ? 'estás en tu rango' : 'por ahora: reevalúa en unas semanas', 'adjust'));
+  } else if (!w.target && w.age !== 'minor') {
     tiles.push(kpi('Objetivo', 'Sin elegir', 'en tu perfil', 'goal'));
   }
   if (!tiles.length) return null;
@@ -392,7 +432,7 @@ function exerciseList(rows) {
   },
   h('span.list-item-main',
     h('span.list-item-title', x.name),
-    h('span.list-item-sub', `1RM est. ${kgTxt(x.e1rmNow)} · ${x.sessions}${NB}sesiones`)),
+    h('span.list-item-sub', [`1RM est. ${kgTxt(x.e1rmNow)}`, `${x.sessions}${NB}sesiones`, KIND_SUB(x)].filter(Boolean).join(' · '))),
   h('span.an-ex-right',
     h('span.an-ex-rate.tnum', rateText(x.ratePctPerWeek)),
     h(`span.badge.badge-${STATUS_CLASS[x.status] || 'info'}.an-ex-status`, x.status === 'good' && x.slow ? 'Despacio' : STATUS_TAG[x.status])),

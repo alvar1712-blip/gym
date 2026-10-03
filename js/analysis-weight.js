@@ -34,14 +34,23 @@
 //
 // ENTRADA analyzeWeight(input):
 //   { bodyweight:[{ id:'YYYY-MM-DD', kg }], today, profile (profile.getProfile(settings)),
-//     strength?: { trendPctPerWeek, n } | null, endurance?: { weeklyMinutes4w } | null, cycle?: CycleInfo | null }
+//     strength?: { trendPctPerWeek, n, recoveryShare? } | null, endurance?: { weeklyMinutes4w } | null, cycle?: CycleInfo | null,
+//     context?: analysis-context.analysisContext(...) | null }
+// RONDA 6 (fase C): cada Insight lleva `confidence` (confidence.js: insuficiente · baja · media · alta, con sus motivos) y,
+//   si el contexto cambia la lectura, `context` (hechos tenidos en cuenta) y `parts` ({ observation, interpretation,
+//   recommendation }; `text` sigue siendo el texto completo). El contexto: la fase de composición vigente manda sobre el
+//   objetivo del perfil; una subida rápida que coincide con recuperar peso previo, volver a entrenar o empezar creatina
+//   no lleva a recortar calorías (se mantiene y se reevalúa); con confianza baja no se cambia lo que comes (salvo si
+//   bajas demasiado rápido). Edad: menores de 18, sin calorías, sin ritmos de pérdida y sin objetivo propuesto; 65 o más,
+//   pérdida en la mitad prudente del rango.
 // SALIDA (contrato §3a + campos extra documentados en analyzeWeight):
 //   { ok, reason?, trend:{ points:[{ date, kg, trendKg }], currentKg, ratePerWeekKg, ratePerWeekPct, windowDays, n },
 //     target:{ minPct, maxPct, label } | null, status:'below'|'in'|'above'|'insufficient'|'no_goal',
 //     kcalPerDay:{ estimate, suggestion:{ min, max } | null }, proteinG:{ min, max }, insights: Insight[],
 //     goalSuggestion?: { targetKg, byFrom, byTo, title } }
 import { addDays, diffDays, isDateStr, todayStr, fmtDate, fmtNum, round } from './util.js';
-import { g, isFemale, isHormonal } from './profile.js';
+import { g, isFemale, isHormonal, ageGroup } from './profile.js';
+import { combine, byCount, bySpan, byNoise, capAt, insufficient as confInsufficient, confidenceRow } from './confidence.js';
 
 /**
  * @typedef {{ label:string, value:string }} WhyRow
@@ -81,6 +90,19 @@ const Z = 1.96;
 const MAX_STEP_KG = 2.5;
 const MIN_KCAL = 100;
 const MAX_KCAL = 500;
+/** 65 años o más: ajuste de calorías prudente, como mucho esto al día. */
+export const SENIOR_MAX_KCAL = 250;
+/** Limita un ajuste {min, max} (con signo) a ±max kcal, manteniendo un hueco de 50 kcal. */
+function capKcal(sug, max) {
+  const sign = sug.max > 0 ? 1 : -1;
+  let a = Math.min(Math.abs(sug.min), Math.abs(sug.max));
+  let b = Math.max(Math.abs(sug.min), Math.abs(sug.max));
+  b = Math.min(b, max);
+  a = Math.min(a, b - 50);
+  a = Math.max(MIN_KCAL, a);
+  if (b <= a) b = a + 50;
+  return sign > 0 ? { min: a, max: b } : { min: -b, max: -a };
+}
 const LATE_DAYS = 7;
 const AMENORRHEA_DAYS = 90;
 const LONG_CYCLE_DAYS = 38;
@@ -88,6 +110,17 @@ const PRE_DAYS = 5;
 const MENSES_RETENTION_DAYS = 3;
 const REF = '2000-01-01';
 const GOAL_WEEKS = { gain: 12, lose: 8 };
+/** Confianza del ritmo: pesajes, días cubiertos y variación diaria (% del peso). */
+export const CONF = {
+  count: { low: MIN_POINTS, medium: 12, high: 18 },
+  span: { low: MIN_SPAN_DAYS, medium: 21, high: 28 },
+  noisePct: { medium: 0.9, low: 1.5 },
+};
+/** «Vienes de una bajada»: el peso de tendencia al empezar la ventana está ≥ 1,5 % por debajo del habitual o de su máximo de los 120 días previos. */
+export const REGAIN_PCT = 1.5;
+export const REGAIN_LOOKBACK_DAYS = 120;
+/** Una vuelta a entrenar, una enfermedad o un cambio de fase de hace menos de esto bajan la confianza. */
+const RECENT_CONTEXT_DAYS = 28;
 const GOAL_IDS = ['gain', 'lose', 'maintain', 'performance'];
 const EXP_IDS = ['beginner', 'intermediate', 'advanced'];
 const GOAL_NAME = { gain: 'ganar músculo', lose: 'perder grasa', maintain: 'mantener', performance: 'rendimiento' };
@@ -121,6 +154,10 @@ export const SOURCES = Object.freeze({
   roberts2020: { short: 'Roberts, Nuckols y Krieger, 2020', detail: 'J Strength Cond Res · mujeres y hombres ganan fuerza y músculo de forma parecida en términos relativos' },
   white2011: { short: 'White et al., 2011', detail: 'Obstet Gynecol Int · la retención de líquidos cambia a lo largo del ciclo y es máxima el primer día de la regla' },
   munro2018: { short: 'Munro et al. (FIGO), 2018', detail: 'Int J Gynaecol Obstet · ciclo normal de 24–38 días, con variación ≤ 7–9 días' },
+  // Ronda 6 (fase C; docs/MEJORAS6.md)
+  kreider2017: { short: 'Kreider et al., 2017', detail: 'J Int Soc Sports Nutr · posición de la ISSN sobre la creatina: al empezar es habitual subir algo de peso por agua' },
+  lloyd2014: { short: 'Lloyd et al., 2014', detail: 'Br J Sports Med · consenso sobre fuerza en jóvenes: técnica, progresión gradual y supervisión cualificada' },
+  fragala2019: { short: 'Fragala et al., 2019', detail: 'J Strength Cond Res · posición de la NSCA: fuerza en mayores, progresión individualizada y prudente' },
 });
 
 // ===========================================================================
@@ -552,11 +589,12 @@ export function weightTrend(bodyweight, opts = {}) {
 /**
  * Rango recomendado para el perfil. Experiencia sin indicar → intermedio; sexo sin indicar → rangos de hombre.
  * @returns {{goal, minPct, maxPct, label, minKg, maxKg, sex, experience, experienceGuessed:boolean, basis,
- *   recommended:{minPct, maxPct, minKg, maxKg, label, reason:'endurance'|'female'}|null}|null} null sin objetivo.
+ *   recommended:{minPct, maxPct, minKg, maxKg, label, reason:'endurance'|'female'|'senior'}|null}|null} null sin objetivo.
+ *   `goal` (opcional) sustituye al del perfil (la fase de composición vigente de «Tu contexto»).
  *   minPct ≤ maxPct con signo (perder grasa: −1 y −0,5). minKg/maxKg: lo mismo en kg/sem con el peso actual.
  */
-export function targetFor(profile, { currentKg = null, enduranceHigh = false } = {}) {
-  const goal = GOAL_IDS.includes(profile?.goal) ? profile.goal : null;
+export function targetFor(profile, { currentKg = null, enduranceHigh = false, senior = false, goal: goalOverride = null } = {}) {
+  const goal = GOAL_IDS.includes(goalOverride) ? goalOverride : GOAL_IDS.includes(profile?.goal) ? profile.goal : null;
   if (!goal) return null;
   const female = isFemale(profile);
   const sex = female ? 'female' : 'male';
@@ -570,9 +608,9 @@ export function targetFor(profile, { currentKg = null, enduranceHigh = false } =
   else if (goal === 'maintain') label = 'mantener: ±0,25 % por semana';
   else label = 'peso estable: ±0,25 % por semana';
   let recommended = null;
-  if (goal === 'lose' && (enduranceHigh || female)) {
+  if (goal === 'lose' && (enduranceHigh || female || senior)) {
     const [a, b] = TARGETS.lose.lowerHalf;
-    recommended = { minPct: a, maxPct: b, minKg: kgw(a), maxKg: kgw(b), label: `bajar ${pctRange(b, a)} % por semana`, reason: enduranceHigh ? 'endurance' : 'female' };
+    recommended = { minPct: a, maxPct: b, minKg: kgw(a), maxKg: kgw(b), label: `bajar ${pctRange(b, a)} % por semana`, reason: enduranceHigh ? 'endurance' : senior ? 'senior' : 'female' };
   }
   const expName = (female ? EXP_NAME_F : EXP_NAME)[experience];
   const basis = goal === 'gain' ? `${female ? 'mujer' : 'hombre'}, ${expName}${profile?.experience ? '' : ' (sin indicar)'}` : (female ? 'mujer' : 'hombre');
@@ -731,13 +769,124 @@ function methodRule(ctx) {
 
 function insight(o) {
   const data = (o.data || []).filter(Boolean);
+  // Al final de los datos: contexto tenido en cuenta y confianza (las filas de siempre no cambian de sitio).
+  if (o.context?.length) data.push({ label: 'Contexto tenido en cuenta', value: o.context.join(' · ') });
+  if (o.confidence) data.push(confidenceRow(o.confidence));
   const i = {
-    id: o.id, area: 'weight', level: o.level, priority: o.priority, title: o.title, text: o.text,
+    id: o.id, area: 'weight', level: o.level, priority: o.priority, title: o.title,
+    text: o.text || [o.parts?.observation, o.parts?.interpretation, o.parts?.recommendation].filter(Boolean).join(' '),
     why: { rule: o.rule, data: data.length ? data : [{ label: 'Datos', value: 'Sin datos' }] },
     sources: (o.sources || []).filter(Boolean),
   };
   if (o.action) i.action = o.action;
+  if (o.confidence) i.confidence = { level: o.confidence.level, label: o.confidence.label, short: o.confidence.short, reasons: o.confidence.reasons };
+  if (o.context?.length) i.context = o.context.slice();
+  if (o.parts) i.parts = { ...o.parts };
   return i;
+}
+
+// ===========================================================================
+// Contexto y confianza (ronda 6, fase C)
+// ===========================================================================
+
+const dayFull = (d, today) => fmtDate(d, d.slice(0, 4) === today.slice(0, 4) ? 'day' : 'full');
+const joinY = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
+
+/**
+ * ¿Recuperas peso perdido hace poco? Solo con el peso subiendo. Compara el peso de tendencia al empezar la ventana del
+ * ritmo con tu peso habitual apuntado (Tu contexto) o con el máximo de tu tendencia en los REGAIN_LOOKBACK_DAYS
+ * previos: si estaba ≥ REGAIN_PCT % por encima, vienes de una bajada.
+ * @returns {{ previousKg, lowKg, nowKg, source:'usual'|'history', previousDate:string|null, complete:boolean }|null}
+ *   complete: ya has vuelto a ese peso (la recuperación ya no explica que sigas subiendo).
+ */
+export function weightRegain(trend, { usualWeight = null } = {}) {
+  if (!trend?.ok || !(trend.ratePerWeekKg > 0) || !trend.from) return null;
+  const pts = trend.points || [];
+  const startPt = pts.find((p) => p.date >= trend.from);
+  if (!startPt || !isNum(startPt.trendKg)) return null;
+  const low = startPt.trendKg;
+  const now = trend.currentKg;
+  const thr = low * (1 + REGAIN_PCT / 100);
+  let out = null;
+  if (usualWeight && isNum(usualWeight.kg) && usualWeight.kg >= thr) {
+    out = { previousKg: usualWeight.kg, lowKg: r2(low), nowKg: now, source: 'usual', previousDate: null };
+  } else {
+    const lookFrom = addDays(trend.from, -REGAIN_LOOKBACK_DAYS);
+    let max = null;
+    for (const p of pts) {
+      if (p.date < lookFrom || p.date >= trend.from || !isNum(p.trendKg)) continue;
+      if (!max || p.trendKg > max.trendKg) max = p;
+    }
+    if (max && max.trendKg >= thr) out = { previousKg: r2(max.trendKg), lowKg: r2(low), nowKg: now, source: 'history', previousDate: max.date };
+  }
+  if (!out) return null;
+  out.complete = isNum(now) && now >= out.previousKg - 0.3;
+  return out;
+}
+
+/**
+ * Lo que puede explicar parte de un cambio de peso según el contexto. → { up:[{key, text, cause}], down:[…] }
+ *   up: recuperar peso previo, volver a entrenar (glucógeno y agua) y creatina (agua);
+ *   down: enfermedad, lesión o viaje recientes.
+ */
+function contextExplanations(ctx) {
+  const c = ctx.context;
+  const up = [];
+  const down = [];
+  const today = ctx.today;
+  if (ctx.regain && !ctx.regain.complete) {
+    up.push({
+      key: 'regain',
+      text: ctx.regain.source === 'usual'
+        ? `estás por debajo de tu peso habitual (${kgTxt(ctx.regain.previousKg)})`
+        : `vienes de una bajada de peso reciente (de ~${kgTxt(ctx.regain.previousKg)} a ~${kgTxt(ctx.regain.lowKg)})`,
+      cause: 'recuperar peso previo',
+    });
+  }
+  if (c?.training?.returning && c.training.since && diffDays(c.training.since, today) <= 56) {
+    up.push({ key: 'return', text: `has vuelto a entrenar (desde el ${dayFull(c.training.since, today)})`, cause: 'glucógeno y agua en el músculo al volver a entrenar' });
+  }
+  if (c?.creatine?.water) {
+    up.push({ key: 'creatine', text: `empezaste creatina el ${dayFull(c.creatine.start, today)}`, cause: 'agua por la creatina' });
+  }
+  const h = c?.health || {};
+  if (h.illness) down.push({ key: 'illness', text: 'has estado o estás enfermo', cause: 'la enfermedad (menos apetito, menos entrenamiento)' });
+  if (h.injury) down.push({ key: 'injury', text: 'tienes o has tenido una lesión', cause: 'entrenar menos por la lesión' });
+  if (c?.life?.travel) down.push({ key: 'travel', text: 'estás de viaje', cause: 'el viaje (otras comidas y horarios)' });
+  if (ctx.female) for (const x of down) x.text = x.text.replace('enfermo', 'enferma');
+  return { up, down };
+}
+
+/** Confianza del ritmo del peso: pesajes, días, ruido, claridad y cambios recientes del contexto. */
+function weightConfidence(ctx) {
+  const t = ctx.trend;
+  if (!t.ok) return confInsufficient(t.reason || 'faltan pesajes');
+  const today = ctx.today;
+  const f = [
+    byCount(t.n, CONF.count, pesajes, 'count'),
+    bySpan(t.spanDays, CONF.span),
+  ];
+  if (isNum(t.noiseKg) && t.currentKg > 0) {
+    f.push(byNoise((t.noiseKg / t.currentKg) * 100, CONF.noisePct, () => `variación diaria de ±${fmtNum(t.noiseKg, 1)} kg`));
+  }
+  if (!t.clear && !(Math.abs(t.ratePerWeekPct) < 0.15 || Math.abs(t.ratePerWeekKg) < 0.05)) f.push(capAt('medium', 'el margen del ritmo incluye el 0', 'clear'));
+  if (t.partialCycle) f.push(capAt('medium', 'aún sin un ciclo completo de pesajes', 'cycle'));
+  const c = ctx.context;
+  if (c?.creatine?.early) f.push(capAt('low', `empezaste creatina hace ${c.creatine.days} ${c.creatine.days === 1 ? 'día' : 'días'}: al principio suele subir el agua`, 'creatine'));
+  else if (c?.creatine?.water) f.push(capAt('medium', `empezaste creatina hace ${Math.max(1, Math.round(c.creatine.days / 7))} semanas`, 'creatine'));
+  if (c?.training?.returning && c.training.since && diffDays(c.training.since, today) <= RECENT_CONTEXT_DAYS) f.push(capAt('medium', 'has vuelto a entrenar hace poco', 'return'));
+  if (c?.health?.illness || c?.health?.injury) f.push(capAt('low', c.health.illness ? 'enfermedad reciente' : 'lesión reciente', 'health'));
+  if (c?.body && c.body.since && diffDays(c.body.since, today) <= RECENT_CONTEXT_DAYS) f.push(capAt('medium', 'cambiaste de fase hace poco', 'phase'));
+  if (ctx.regain && !ctx.regain.complete) f.push(capAt('medium', 'parte del cambio puede ser recuperar peso previo', 'regain'));
+  return combine(f);
+}
+
+/** Lo que se tuvo en cuenta del contexto (para la fila «Contexto tenido en cuenta» y la pantalla). */
+function contextNotes(ctx, expl) {
+  const out = [];
+  if (ctx.goalSource === 'phase' && ctx.context?.body) out.push(`fase actual: ${ctx.context.body.entry ? ctx.context.body.entry.type === 'deficit' ? 'déficit' : ctx.context.body.entry.type === 'gain' ? 'ganancia muscular' : ctx.context.body.entry.type === 'recomp' ? 'recomposición' : 'mantenimiento' : ''} (desde ${dayFull(ctx.context.body.since, ctx.today)})`);
+  for (const x of expl) out.push(x.text);
+  return out;
 }
 
 // ===========================================================================
@@ -771,7 +920,7 @@ function insufficientInsight(ctx) {
     text = `${have}: ${missing}. ${how} ${noise}${cyc}`;
   }
   return insight({
-    id: 'weight-insufficient', level: 'info', priority: 30, title, text,
+    id: 'weight-insufficient', level: 'info', priority: 30, title, text, confidence: ctx.conf,
     rule: `Para calcular un ritmo fiable hacen falta al menos ${MIN_POINTS} pesajes repartidos en ${MIN_SPAN_DAYS} días o más (ventana de hasta ${MAX_WINDOW_DAYS} días), el último de hace ${STALE_DAYS} días como mucho, y que el ruido deje ver una dirección (margen del ritmo ≤ ±${fmtNum(NOISY_HALF_PCT, 1)} % por semana si no hay una tendencia clara).`,
     data: trendRows(ctx),
     sources: ctx.female && !ctx.hormonal ? [SOURCES.white2011] : [],
@@ -783,7 +932,7 @@ function noGoalInsight(ctx) {
   const action = { label: 'Elegir objetivo', href: '#/settings/profile' };
   if (!t.ok) {
     return insight({
-      id: 'weight-no-goal', level: 'neutral', priority: 45, title: 'Elige tu objetivo',
+      id: 'weight-no-goal', level: 'neutral', priority: 45, title: 'Elige tu objetivo', confidence: ctx.conf,
       text: 'Elige en tu perfil si quieres ganar músculo, perder grasa, mantener o rendir: cuando haya pesajes suficientes te diré si vas a buen ritmo para ti.',
       rule: 'Sin objetivo en el perfil no hay rango con el que comparar tu ritmo.',
       data: [{ label: 'Objetivo', value: 'Sin elegir' }, ...trendRows(ctx)], sources: [], action,
@@ -792,7 +941,7 @@ function noGoalInsight(ctx) {
   const lead = leadTxt(t);
   const kcal = ctx.kcal?.estimate;
   return insight({
-    id: 'weight-no-goal', level: 'neutral', priority: 45, title: 'Elige tu objetivo para valorar tu peso',
+    id: 'weight-no-goal', level: 'neutral', priority: 45, title: 'Elige tu objetivo para valorar tu peso', confidence: ctx.conf,
     text: `${lead} en ${periodTxt(t.windowDays)}.${needsHedge(t) ? HEDGE : ''} Elige en tu perfil si quieres ganar músculo, perder grasa, mantener o rendir y te diré si es buen ritmo para ti.`,
     rule: `${methodRule(ctx)} Sin objetivo en el perfil no hay rango con el que compararlo.`,
     data: [
@@ -844,7 +993,7 @@ function rateInsight(ctx) {
     }
   } else if (goal === 'lose') {
     src = [SOURCES.helms2014, rec || status === 'below' ? SOURCES.garthe2011 : null];
-    const why = rec?.reason === 'endurance' ? 'con tanto entrenamiento de resistencia' : 'para cuidar tu energía y tu ciclo';
+    const why = rec?.reason === 'endurance' ? 'con tanto entrenamiento de resistencia' : rec?.reason === 'senior' ? 'para conservar músculo y fuerza' : 'para cuidar tu energía y tu ciclo';
     if (ctx.reds?.id === 'weight-reds-cycle' && status !== 'below') {
       // Con regla alterada + pérdida o mucha resistencia no se anima a seguir bajando (ni a comer menos).
       level = 'neutral'; priority = 60;
@@ -908,10 +1057,17 @@ function rateInsight(ctx) {
     }
   }
   if (partial) text += partial;
+  // Dentro del rango pero subiendo con algo de contexto que lo explique en parte: se dice (sin cambiar el consejo).
+  const expl = ctx.expl || { up: [], down: [] };
+  if (status === 'in' && t.direction === 'up' && expl.up.length) {
+    text += ` Ten en cuenta que ${joinY(expl.up.map((x) => x.text))}: parte de la subida podría ser ${joinY(expl.up.map((x) => x.cause))}.`;
+  }
+  if (rec?.reason === 'senior') src.push(SOURCES.fragala2019);
   const kc = kcal.estimate;
-  const rule = `${methodRule(ctx)} Rango para ${GOAL_NAME[goal]} (${target.basis}): ${target.label}${rec ? `; recomendado ${rec.label} (${rec.reason === 'endurance' ? 'mucha resistencia' : 'mujer'})` : ''}. Balance ≈ ritmo × 7700 / 7 kcal/día (aproximación); el ajuste lleva el ritmo del borde al centro del rango.`;
+  const rule = `${methodRule(ctx)} Rango para ${GOAL_NAME[goal]} (${target.basis}${ctx.goalSource === 'phase' ? '; objetivo según tu fase actual en «Tu contexto»' : ''}): ${target.label}${rec ? `; recomendado ${rec.label} (${rec.reason === 'endurance' ? 'mucha resistencia' : rec.reason === 'senior' ? '65 años o más' : 'mujer'})` : ''}. Balance ≈ ritmo × 7700 / 7 kcal/día (aproximación); el ajuste lleva el ritmo del borde al centro del rango.`;
   return insight({
     id: 'weight-rate', level, priority, title, text, rule,
+    confidence: ctx.conf, context: contextNotes(ctx, status === 'in' && t.direction === 'up' ? expl.up : []),
     data: [
       { label: 'Objetivo', value: `${cap(GOAL_NAME[goal])} (${target.basis})` },
       { label: 'Rango', value: `${target.label} = ${rangeKgTxt(target)} kg/sem` },
@@ -929,7 +1085,7 @@ function rateInsight(ctx) {
 function validStrength(s) {
   if (!s || !isNum(s.trendPctPerWeek)) return null;
   if (s.n != null && !(s.n >= 1)) return null;
-  return { trendPctPerWeek: s.trendPctPerWeek, n: s.n ?? null };
+  return { trendPctPerWeek: s.trendPctPerWeek, n: s.n ?? null, recoveryShare: isNum(s.recoveryShare) ? s.recoveryShare : null };
 }
 const STRENGTH_GOOD = { beginner: 0.75, intermediate: 0.25, advanced: 0.1 };
 
@@ -949,13 +1105,42 @@ function strengthInsight(ctx) {
     { label: 'Tendencia de la fuerza', value: `${sTxt}${strength.n ? ` (mediana de ${strength.n} ${strength.n === 1 ? 'ejercicio' : 'ejercicios'})` : ''}` },
     { label: 'Umbral «la fuerza sube»', value: `≥ ${fmtNum(STRENGTH_GOOD[exp], 2)} %/sem (${(female ? EXP_NAME_F : EXP_NAME)[exp]}) · baja ≤ −0,25 %/sem` },
   ];
-  const rule = `Cruce del ritmo del peso con la tendencia de la fuerza (mejor 1RM estimado de tus ejercicios principales). Peso ↑ y fuerza ↑ → sobre todo músculo; peso ↑ más rápido que ${fmtNum(gainMax, 2)} %/sem con la fuerza plana → probablemente más grasa; peso ↓ y fuerza ↓ → déficit demasiado agresivo. No se ve el espejo ni el % de grasa: son pistas.`;
-  const mk = (o) => insight({ id: 'weight-strength', rule, data: rows, ...o });
+  const rule = `Cruce del ritmo del peso con la tendencia de la fuerza (mejor 1RM estimado de tus ejercicios principales). Peso ↑ y fuerza ↑ → sobre todo músculo; peso ↑ más rápido que ${fmtNum(gainMax, 2)} %/sem con la fuerza plana → probablemente más grasa; peso ↓ y fuerza ↓ → déficit demasiado agresivo. No se ve el espejo ni el % de grasa: son pistas. Si vienes de una bajada, has vuelto a entrenar o empezaste creatina, parte de la subida puede ser peso recuperado, glucógeno o agua, y parte de la fuerza, marcas que recuperas.`;
+  const expl = (ctx.expl?.up || []);
+  const recov = isNum(strength.recoveryShare) && strength.recoveryShare >= 0.5;
+  const sConf = combine([...ctx.conf.factors, byCount(strength.n ?? 0, { low: 1, medium: 2, high: 3 }, (k) => `${k} ${k === 1 ? 'ejercicio' : 'ejercicios'} con tendencia`, 'exercises')]);
+  const mk = (o) => insight({ id: 'weight-strength', rule, data: rows, confidence: sConf, ...o });
+  if (up && sUp && (expl.length || recov)) {
+    // Con contexto (peso recuperado, vuelta a entrenar, creatina) o recuperando marcas, no se sabe aún cuánto es músculo.
+    const bits = [];
+    if (expl.length) bits.push(`${joinY(expl.map((x) => x.text))}: parte de la subida de peso puede ser ${joinY(expl.map((x) => x.cause))}`);
+    if (recov) bits.push('parte de la mejora de fuerza es recuperar marcas que ya tenías');
+    return mk({
+      level: 'neutral', priority: 40, title: 'Peso y fuerza suben juntos',
+      parts: {
+        observation: `Tu peso y tu fuerza suben a la vez (fuerza ${signedPctW(s)}).`,
+        interpretation: `Normalmente es buena señal, pero ${bits.join(', y ')}. Aún no se puede saber cuánto de lo que ganas es músculo.`,
+        recommendation: 'Sigue igual y reevalúa en 3–4 semanas.',
+      },
+      sources: [SOURCES.iraki2019, ctx.context?.creatine?.water ? SOURCES.kreider2017 : null], context: expl.map((x) => x.text),
+    });
+  }
   if (up && sUp) {
     return mk({
       level: 'good', priority: 40, title: 'Peso y fuerza suben juntos',
       text: `Tu fuerza también sube (${signedPctW(s)}): buena señal de que lo que ganas es sobre todo músculo.`,
       sources: [SOURCES.iraki2019],
+    });
+  }
+  if (up && !sUp && t.ratePerWeekPct > gainMax && expl.length) {
+    return mk({
+      level: 'neutral', priority: 44, title: 'Tu peso sube rápido y tu fuerza aún no',
+      parts: {
+        observation: `Tu peso sube ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza está ${sDown ? 'bajando' : 'estancada'} (${signedPctW(s)}).`,
+        interpretation: `Sin contexto apuntaría a más grasa que músculo, pero ${joinY(expl.map((x) => x.text))}: parte de la subida puede ser ${joinY(expl.map((x) => x.cause))}, y la fuerza suele tardar unas semanas en volver.`,
+        recommendation: 'Es pronto para concluir: mantén lo que haces y reevalúa en 3–4 semanas.',
+      },
+      sources: [SOURCES.iraki2019, ctx.context?.creatine?.water ? SOURCES.kreider2017 : null], context: expl.map((x) => x.text),
     });
   }
   if (up && !sUp && t.ratePerWeekPct > gainMax) {
@@ -1140,6 +1325,78 @@ function suggestGoal(ctx) {
   return null;
 }
 
+/**
+ * El ritmo se sale del rango, pero el contexto explica parte del cambio (recuperar peso previo, volver a entrenar o
+ * creatina si sube; enfermedad, lesión o viaje si baja): se dice, sin cambiar las calorías, y se reevalúa.
+ */
+function contextRateInsight(ctx, expl, dir) {
+  const { trend: t, target, goal } = ctx;
+  const up = dir === 'up';
+  const observation = `Tu tendencia ${up ? 'sube' : 'baja'} ${kgAbs(t.ratePerWeekKg)} kg por semana (${pctAbs(t.ratePerWeekPct)} % de tu peso) en ${periodTxt(t.windowDays)}.`;
+  let evalTxt;
+  if (up) {
+    evalTxt = goal === 'gain' ? `Ese ritmo sería elevado en una fase estable de ganancia muscular (${pctRange(target.minPct, target.maxPct)} % por semana)`
+      : goal === 'lose' ? 'Para perder grasa tu peso debería bajar'
+        : `Es más de lo que encaja con ${goal === 'performance' ? 'un peso estable para rendir' : 'mantener'} (±0,25 % por semana)`;
+  } else {
+    evalTxt = goal === 'lose' ? 'Es más rápido de lo recomendado para perder grasa conservando músculo'
+      : goal === 'gain' ? 'Para ganar músculo tu peso debería subir'
+        : `Es más de lo que encaja con ${goal === 'performance' ? 'un peso estable para rendir' : 'mantener'} (±0,25 % por semana)`;
+  }
+  const interpretation = `${evalTxt}, pero ${joinY(expl.map((x) => x.text))}. Parte ${up ? 'del aumento' : 'de la bajada'} podría corresponder a ${joinY(expl.map((x) => x.cause))}.`;
+  const recommendation = up
+    ? 'Mantén lo que haces y reevalúa en 3–4 semanas, cuando haya más datos estables.'
+    : 'Mientras te recuperas, come lo suficiente y no busques bajar más rápido; reevalúa cuando vuelvas a la normalidad.';
+  const keys = expl.map((x) => x.key);
+  return insight({
+    id: 'weight-rate', level: 'neutral', priority: 52,
+    title: up ? 'Subes rápido, pero hay contexto' : 'Bajas, pero hay contexto',
+    parts: { observation, interpretation, recommendation },
+    rule: `${methodRule(ctx)} Rango para ${GOAL_NAME[goal]} (${target.basis}): ${target.label}. Cuando el ritmo se sale del rango pero coincide con algo que puede explicar parte del cambio (recuperar peso previo, volver a entrenar o empezar creatina si sube; enfermedad, lesión o viaje si baja), no se sugiere cambiar lo que comes: se mantiene y se reevalúa con más datos.`,
+    data: [
+      { label: 'Objetivo', value: `${cap(GOAL_NAME[goal])} (${target.basis})` },
+      { label: 'Rango', value: `${target.label} = ${rangeKgTxt(target)} kg/sem` },
+      ...trendRows(ctx),
+      ctx.regain && keys.includes('regain') ? { label: 'Peso previo', value: ctx.regain.source === 'usual' ? `${kgTxt(ctx.regain.previousKg)} (peso habitual apuntado) · al empezar la ventana ${kgTxt(ctx.regain.lowKg)}` : `${kgTxt(ctx.regain.previousKg)} el ${dayFull(ctx.regain.previousDate, ctx.today)} → ${kgTxt(ctx.regain.lowKg)} al empezar la ventana` } : null,
+    ],
+    confidence: ctx.conf, context: contextNotes(ctx, expl),
+    sources: [goal === 'gain' ? SOURCES.iraki2019 : goal === 'lose' ? SOURCES.helms2014 : null, keys.includes('creatine') ? SOURCES.kreider2017 : null],
+  });
+}
+
+/** Ritmo fuera del rango con confianza baja: se describe, pero aún no se cambia lo que comes. */
+function earlyRateInsight(ctx) {
+  const { trend: t, target, goal, status } = ctx;
+  return insight({
+    id: 'weight-rate', level: 'neutral', priority: 48, title: 'Aún es pronto para ajustar',
+    parts: {
+      observation: `${leadTxt(t)} en ${periodTxt(t.windowDays)}.`,
+      interpretation: `Frente a tu rango (${target.label}): ${paceLabel(goal, status, t.direction).toLowerCase()}. Pero con ${pesajes(t.n)} en ${t.spanDays} días el ritmo aún puede cambiar bastante.`,
+      recommendation: 'Aún es pronto para cambiar lo que comes: sigue pesándote 3–4 veces por semana y revisa en 2–3 semanas.',
+    },
+    rule: `${methodRule(ctx)} Con confianza baja (pocos pesajes, pocos días o mucha variación) no se propone cambiar lo que comes, salvo si bajas demasiado rápido.`,
+    data: [{ label: 'Objetivo', value: `${cap(GOAL_NAME[goal])} (${target.basis})` }, { label: 'Rango', value: `${target.label} = ${rangeKgTxt(target)} kg/sem` }, ...trendRows(ctx)],
+    confidence: ctx.conf, context: contextNotes(ctx, []), sources: [],
+  });
+}
+
+/** Menores de 18: el peso se describe, sin calorías, sin ritmos de pérdida y con la prioridad en comer, dormir y la técnica. */
+function minorWeightInsight(ctx) {
+  const { trend: t, goal } = ctx;
+  return insight({
+    id: 'weight-rate', level: 'neutral', priority: 36, title: 'Tu peso, sin cifras de dieta',
+    parts: {
+      observation: `${leadTxt(t)} en ${periodTxt(t.windowDays)}.`,
+      interpretation: goal === 'lose'
+        ? 'Con menos de 18 años aquí no se marcan ritmos para bajar de peso ni calorías: tu cuerpo aún está creciendo.'
+        : 'Con menos de 18 años aquí no se calculan calorías ni ritmos exactos: tu cuerpo aún está creciendo y el peso también cambia por eso.',
+      recommendation: 'Lo importante es comer suficiente y variado, dormir bien y entrenar con buena técnica, mejor con supervisión. Si quieres cambiar tu peso o te preocupa, coméntalo con tu médico o con un dietista-nutricionista.',
+    },
+    rule: `${methodRule(ctx)} Menores de 18 años: sin calorías, sin déficits ni objetivos de peso propuestos; prioridad a la técnica, la constancia y la supervisión.`,
+    data: trendRows(ctx), confidence: ctx.conf, context: ['menos de 18 años'], sources: [SOURCES.lloyd2014],
+  });
+}
+
 // ===========================================================================
 // Análisis
 // ===========================================================================
@@ -1163,32 +1420,61 @@ export function analyzeWeight(input = {}) {
   const rawCycle = female && input.cycle && input.cycle.enabled !== false ? input.cycle : null;
   const hormonal = female && (isHormonal(profile) || !!rawCycle?.hormonal);
   const cycle = rawCycle && !hormonal ? rawCycle : null;
-  const goal = GOAL_IDS.includes(profile.goal) ? profile.goal : null;
+  const context = input.context || null;
+  const age = context?.age?.group || ageGroup(profile, today);
+  const minor = age === 'minor';
+  const senior = age === 'senior';
+  // La fase de composición vigente («Tu contexto») manda sobre el objetivo del perfil: es lo que estás haciendo ahora.
+  const goal = context?.body?.goal || (GOAL_IDS.includes(profile.goal) ? profile.goal : null);
+  const goalSource = context?.body?.goal ? 'phase' : 'profile';
   const trend = weightTrend(input.bodyweight, { today, profile, cycle });
   const minutes = isNum(input.endurance?.weeklyMinutes4w) && input.endurance.weeklyMinutes4w >= 0 ? input.endurance.weeklyMinutes4w : null;
   const endHigh = minutes != null && minutes >= HIGH_ENDURANCE_MIN[female ? 'female' : 'male'];
   const refKg = trend.currentKg ?? trend.lastKg ?? null;
-  const target = goal ? targetFor(profile, { currentKg: refKg, enduranceHigh: endHigh }) : null;
-  const deficit = goal === 'lose' || (trend.ok && trend.ratePerWeekPct <= -0.25);
+  const target = goal ? targetFor(profile, { currentKg: refKg, enduranceHigh: endHigh, senior, goal }) : null;
+  // Menores: sin mensajes de déficit (ni en la proteína).
+  const deficit = !minor && (goal === 'lose' || (trend.ok && trend.ratePerWeekPct <= -0.25));
   const ctx = {
-    today, profile, female, hormonal, cycle, goal, trend, target, minutes, endHigh,
+    today, profile, female, hormonal, cycle, goal, goalSource, trend, target, minutes, endHigh, context, age, minor, senior,
     proteinG: proteinFor(refKg, deficit), cyc: cycle ? cycleIrregularity(cycle, today) : null,
     strength: validStrength(input.strength), status: null, kcal: { estimate: null, suggestion: null },
   };
+  ctx.regain = weightRegain(trend, { usualWeight: context?.usualWeight });
+  ctx.conf = weightConfidence(ctx);
+  ctx.expl = contextExplanations(ctx);
   const insights = [];
   const reds = redsInsight(ctx);
   ctx.reds = reds;
   if (reds) insights.push(reds);
+  let early = false;
   if (!trend.ok) {
     ctx.status = 'insufficient';
     insights.push(insufficientInsight(ctx));
     if (!goal) insights.push(noGoalInsight(ctx));
   } else {
-    ctx.kcal.estimate = round((trend.ratePerWeekKg * KCAL_PER_KG) / 7, 10);
+    ctx.kcal.estimate = minor ? null : round((trend.ratePerWeekKg * KCAL_PER_KG) / 7, 10);
     if (goal) {
       ctx.status = classifyRate(trend.ratePerWeekPct, target);
-      ctx.kcal.suggestion = kcalSuggestion(trend.ratePerWeekKg, refKg, target.recommended || target);
-      insights.push(rateInsight(ctx));
+      ctx.kcal.suggestion = minor ? null : kcalSuggestion(trend.ratePerWeekKg, refKg, target.recommended || target);
+      // 65 o más: ajustes pequeños (como mucho SENIOR_MAX_KCAL al día).
+      if (senior && ctx.kcal.suggestion) ctx.kcal.suggestion = capKcal(ctx.kcal.suggestion, SENIOR_MAX_KCAL);
+      const dir = trend.direction;
+      const upCtx = dir === 'up' && ctx.status === 'above' && ctx.expl.up.length > 0;
+      const downCtx = dir === 'down' && ctx.status !== 'in' && ctx.expl.down.length > 0;
+      const tooFastLoss = goal === 'lose' && ctx.status === 'below';
+      if (minor) insights.push(minorWeightInsight(ctx));
+      else if (upCtx || downCtx) {
+        // El contexto explica parte del cambio: ni ajuste ni «balance» en kcal (darían una precisión que no hay).
+        ctx.kcal.suggestion = null;
+        ctx.kcal.estimate = null;
+        early = true;
+        insights.push(contextRateInsight(ctx, upCtx ? ctx.expl.up : ctx.expl.down, upCtx ? 'up' : 'down'));
+      } else if (ctx.conf.level === 'low' && ctx.status !== 'in' && !tooFastLoss) {
+        ctx.kcal.suggestion = null;
+        ctx.kcal.estimate = null;
+        early = true;
+        insights.push(earlyRateInsight(ctx));
+      } else insights.push(rateInsight(ctx));
     } else {
       ctx.status = 'no_goal';
       insights.push(noGoalInsight(ctx));
@@ -1206,9 +1492,12 @@ export function analyzeWeight(input = {}) {
   const out = {
     ok: trend.ok, trend, target, status: ctx.status, paceLabel: paceLabel(goal, ctx.status, trend.direction),
     kcalPerDay: ctx.kcal, proteinG: ctx.proteinG, insights,
+    confidence: ctx.conf, goal, goalSource, regain: ctx.regain, age,
+    // ¿Tiene sentido proyectar el peso? No en menores, con confianza baja ni cuando el contexto explica el cambio.
+    projectable: trend.ok && !minor && !early && ctx.conf.level !== 'low',
   };
   if (!trend.ok) { out.reason = trend.reason; out.reasonCode = trend.reasonCode; }
-  const gs = reds ? null : suggestGoal(ctx);
+  const gs = reds || minor || early || ctx.conf.level === 'low' ? null : suggestGoal(ctx);
   if (gs) out.goalSuggestion = gs;
   return out;
 }

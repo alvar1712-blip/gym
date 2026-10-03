@@ -67,6 +67,8 @@ const ALLOWED = [
   'Mountjoy et al., 2023', 'Schoenfeld et al., 2017', 'Roberts et al., 2020', 'Seiler, 2010', 'Schumann et al., 2022',
   'Eddens et al., 2018', 'Knowles et al., 2018', 'McNulty et al., 2020', 'Colenso-Semple et al., 2023', 'Elliott-Sale et al., 2020',
   'White et al., 2011', 'Munro et al., 2018', 'Fraser et al., 2018', 'Pedlar et al., 2018', 'Bruinvels et al., 2016',
+  // Ronda 6 (docs/MEJORAS6.md, plan aprobado): jóvenes, mayores y creatina
+  'Lloyd et al., 2014', 'Fragala et al., 2019', 'Kreider et al., 2017',
 ];
 const seen = [];
 /** Comprueba la forma de todos los Insight (y los guarda para la prueba de fuentes). */

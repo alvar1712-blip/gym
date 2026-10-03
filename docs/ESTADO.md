@@ -71,6 +71,12 @@
       (aperturas intercaladas antes/después, CPU ×4, mediana de 15: 1 año 670 → 674 ms, 2 años 679 → 681 ms hasta
       «Te toca hoy»; las rondas alternas daban saltos de ±200 ms por la carga de la máquina, no por el código).
 
+- [x] **Ronda 6 · fase C**: confianza común (`js/confidence.js`: insuficiente · baja · media · alta, con motivos),
+      contexto del análisis (`js/analysis-context.js`: vuelta a entrenar detectada o apuntada, creatina, fase vigente,
+      salud, edad), peso con contexto («mantén y reevalúa» en vez de recortar calorías cuando el contexto explica parte
+      del cambio), fuerza que distingue recuperación de marcas, ejercicio nuevo y mejor marca, reglas por edad (menores
+      y 65+) e Insight ampliado (confianza, contexto, observación/interpretación/recomendación) en la pantalla.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).
@@ -93,3 +99,8 @@
 - Ronda 6 · Marcas históricas: «ahora» = lo mejor de los últimos 28 días; la referencia es la mayor entre tus marcas y lo
   registrado en Entreno antes de esos días; sin RIR apuntado, la marca se cuenta como serie al fallo (igual que en las
   sesiones). La fecha empieza apagada («sin fecha») y «Anterior a Entreno», encendido.
+- Ronda 6 · Fase C: la fase de composición vigente de «Tu contexto» manda sobre el objetivo del perfil para el rango
+  de peso (se dice en el «¿Por qué?»). Una vuelta a entrenar se detecta sola tras ≥ 3 semanas sin sesiones (cuenta 8
+  semanas). La creatina se tiene en cuenta 6 semanas. Recuperación de fuerza: por debajo del 97 % de la referencia.
+- Ronda 6 · Fase C: con confianza baja no se proponen cambios de calorías (salvo si bajas demasiado rápido); menores sin
+  calorías; 65+ con ajustes ≤ 250 kcal.

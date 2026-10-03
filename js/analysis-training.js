@@ -24,6 +24,8 @@ import { getProfile, isFemale, g } from './profile.js';
 import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin } from './checkin-logic.js';
 import { defaultSettings, MUSCLE_LABEL } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
+import { exerciseRecovery, markLabel, markWhen } from './past-records-logic.js';
+import { combine, byCount, bySpan, byNoise, capAt, insufficient as confInsufficient, confidenceRow, minLevel } from './confidence.js';
 
 // ===========================================================================
 // Constantes
@@ -41,6 +43,9 @@ export const SOURCES = {
   knowles2018: { short: 'Knowles et al., 2018', detail: 'J Sci Med Sport · dormir poco reduce la fuerza en ejercicios compuestos' },
   mcnulty2020: { short: 'McNulty et al., 2020', detail: 'Sports Med · meta-análisis: la fase del ciclo afecta de forma trivial y variable al rendimiento; enfoque individual' },
   colensoSemple2023: { short: 'Colenso-Semple et al., 2023', detail: 'Front Sports Act Living · sin efecto claro de la fase del ciclo en la fuerza ni en las adaptaciones' },
+  // Ronda 6 (fase C; docs/MEJORAS6.md)
+  lloyd2014: { short: 'Lloyd et al., 2014', detail: 'Br J Sports Med · consenso sobre fuerza en jóvenes: técnica, progresión gradual y supervisión cualificada' },
+  fragala2019: { short: 'Fragala et al., 2019', detail: 'J Strength Cond Res · posición de la NSCA: fuerza en mayores, progresión individualizada y prudente' },
 };
 
 /** Ventanas posibles de la tendencia (semanas): la más corta con MIN_WINDOW_POINTS sesiones; si ninguna, 12. */
@@ -94,6 +99,16 @@ export const PATTERN_PCT = 3;
 export const PATTERN_D = 0.5;
 /** Rendimiento relativo: mejor 1RM estimado de la sesión / máximo de las 4 semanas previas del ejercicio. */
 export const REL_DAYS = 28;
+/**
+ * Ronda 6 (fase C): ¿qué clase de mejora es? Recuperación: el nivel actual está por debajo de RECOVERY_BELOW_PCT % de tu
+ * mejor referencia anterior (marca histórica o lo registrado antes de las últimas 4 semanas). Ejercicio nuevo: su primera
+ * sesión es de hace menos de NEW_EXERCISE_DAYS días y no tiene marca histórica (mejora rápida por técnica).
+ */
+export const RECOVERY_BELOW_PCT = 97;
+export const NEW_EXERCISE_DAYS = 42;
+/** Confianza de la tendencia de un ejercicio: sesiones, días cubiertos y ruido entre sesiones (% del nivel). */
+export const STRENGTH_CONF = { count: { low: MIN_SESSIONS, medium: 6, high: 8 }, span: { low: 14, medium: 28, high: 42 }, noisePct: { medium: 2.5, low: 4 } };
+const KIND_LABEL = { recovery: 'recuperando', new_exercise: 'ejercicio nuevo', new_best: 'mejor marca', progress: 'mejora' };
 
 const EPS = 1e-9;
 const EXPERIENCE_IDS = ['beginner', 'intermediate', 'advanced'];
@@ -202,17 +217,23 @@ const weeksTxt = (w) => plural(w, 'semana', 'semanas');
 /** Insight con why y sources siempre presentes. */
 function insight(o) {
   const data = (o.data || []).filter(Boolean);
+  // Al final de los datos: contexto tenido en cuenta y confianza (las filas de siempre no cambian de sitio).
+  if (o.context?.length) data.push({ label: 'Contexto tenido en cuenta', value: o.context.join(' · ') });
+  if (o.confidence) data.push(confidenceRow(o.confidence));
   const out = {
     id: o.id,
     area: o.area,
     level: o.level,
     priority: Math.max(0, Math.min(100, Math.round(o.priority))),
     title: o.title,
-    text: o.text,
+    text: o.text || [o.parts?.observation, o.parts?.interpretation, o.parts?.recommendation].filter(Boolean).join(' '),
     why: { rule: o.rule, data: data.length ? data : [{ label: 'Datos', value: 'sin datos en el periodo' }] },
     sources: (o.sources || []).filter(Boolean).map((s) => ({ short: s.short, detail: s.detail })),
   };
   if (o.action) out.action = o.action;
+  if (o.confidence) out.confidence = { level: o.confidence.level, label: o.confidence.label, short: o.confidence.short, reasons: o.confidence.reasons };
+  if (o.context?.length) out.context = o.context.slice();
+  if (o.parts) out.parts = { ...o.parts };
   if (o.extra) Object.assign(out, o.extra);
   return out;
 }
@@ -474,6 +495,40 @@ function proteinText(bwKg) {
 
 const STATUS_LABEL = { fast: 'rápido', good: 'bien', stalled: 'estancado', down: 'bajando', insufficient: 'sin datos suficientes' };
 
+/** Confianza de la tendencia de un ejercicio (sesiones, semanas y ruido) más factores extra. */
+export function trendConfidence(trend, extra = []) {
+  if (!trend || !trend.ok) return confInsufficient(trend?.reasonText || 'sin datos suficientes');
+  return combine([
+    byCount(trend.n, STRENGTH_CONF.count, (k) => plural(k, 'sesión', 'sesiones'), 'count'),
+    bySpan(trend.spanDays, STRENGTH_CONF.span),
+    byNoise(trend.residualPct, STRENGTH_CONF.noisePct, (r) => `variación entre sesiones de ±${fmtNum(r, 1)} %`),
+    ...extra,
+  ]);
+}
+
+/**
+ * Clase de mejora de un ejercicio que mejora (fast/good): 'recovery' (por debajo de tu mejor referencia anterior),
+ * 'new_exercise' (empezado hace < 6 semanas, sin marca histórica), 'new_best' (≥ 100 % de la referencia) o 'progress'.
+ * Sin tendencia → 'insufficient'; estancado o bajando → null.
+ */
+export function progressKind({ trend, status, recovery, firstDate, today }) {
+  if (!trend?.ok) return 'insufficient';
+  if (status !== 'fast' && status !== 'good') return null;
+  if (recovery?.status === 'ok' && recovery.pct < RECOVERY_BELOW_PCT) return 'recovery';
+  const hasMarks = (recovery?.marks || []).length > 0;
+  if (!hasMarks && firstDate && diffDays(firstDate, today) < NEW_EXERCISE_DAYS) return 'new_exercise';
+  if (recovery?.status === 'ok' && recovery.pct >= 100) return 'new_best';
+  return 'progress';
+}
+
+/** Referencia de la recuperación en texto: «100 kg × 5 · verano 2025 (marca histórica)» · «80 kg × 8 @2 · 12 mar (en Entreno)». */
+function referenceLabel(rec, ex, today) {
+  const ref = rec?.reference;
+  if (!ref) return null;
+  if (ref.source === 'mark') return `${markLabel(ref.mark.record, ex.logType)} · ${markWhen(ref.mark.record)} (marca histórica)`;
+  return `${formatSet(ref.entry.e1rmSet, ex.logType, { kg: true })} · ${dayTxt(ref.entry.date, today)} (en Entreno)`;
+}
+
 /**
  * Fuerza: ritmo de mejora por ejercicio, comparación con lo habitual para tu experiencia y previsión a 4 y 8 semanas.
  * @param {object} data  progress-ui.dataFromStore(today) + checkins
@@ -489,20 +544,31 @@ export function analyzeStrength(data, opts = {}) {
   const exp = experienceOf(p);
   const th = THRESHOLDS[exp.id];
   const settings = d.settings || {};
+  const context = opts.context || null;
+  const age = context?.age?.group || 'unknown';
+  const env = { bodyweight: d.bodyweight || [], context: d.context || [], fallbackKg: settings.bodyweightDefault ?? 75 };
+  const routineChange = (context?.changes || []).find((c) => c.type === 'routine_change' && diffDays(c.date, today) <= 28) || null;
   const exercises = [];
   const ctx = [];
   for (const it of exercisesWithHistory(d)) {
     const ex = it.exercise;
     if (!ex || ex.archived || !hasE1rm(ex)) continue;
-    const { points, lastPrDate } = exercisePoints(d, ex, today);
+    const { points, lastPrDate, hist } = exercisePoints(d, ex, today);
     if (!points.length) continue;
     if (diffDays(points[points.length - 1].date, today) >= WINDOW_STEPS[WINDOW_STEPS.length - 1] * 7) continue;
     const trend = exerciseTrend(points, { today });
     const main = isMainExercise(ex);
+    const recovery = exerciseRecovery({ exercise: ex, marks: d.pastRecords || [], history: hist, today, env });
     const row = {
       exerciseId: ex.id, name: ex.name || ex.id, sessions: trend.n, e1rmNow: null, ratePctPerWeek: null, status: 'insufficient',
       lastPrDate, forecast: [], main, slow: false, windowWeeks: trend.windowWeeks, logType: ex.logType,
+      firstDate: hist[0]?.date ?? null, kind: 'insufficient',
+      recovery: recovery.reference ? {
+        status: recovery.status, pct: recovery.pct, refSource: recovery.reference.source, refE1rm: round(recovery.reference.e1rm, 0.1),
+        refLabel: referenceLabel(recovery, ex, today), hasMarks: recovery.marks.length > 0,
+      } : null,
     };
+    row.confidence = trendConfidence(trend, routineChange ? [capAt('medium', 'cambiaste de rutina hace poco', 'routine')] : []);
     if (!trend.ok) {
       row.reason = trend.reasonText;
       exercises.push(row);
@@ -517,9 +583,22 @@ export function analyzeStrength(data, opts = {}) {
     row.status = st.status;
     row.slow = st.slow;
     row.stall = { bySessions: stall.bySessions, byWeeks: stall.byWeeks, byTrend: st.byTrend, best: stall.best, S: stall.S, W: stall.W };
-    row.forecast = forecastE1rm(trend, { today, experience: exp.id, status: st.status });
+    row.kind = progressKind({ trend, status: st.status, recovery, firstDate: row.firstDate, today });
+    // Previsión: sin cifras para menores; con el tope prudente de «avanzado» a partir de 65; recuperando, hasta tu referencia.
+    if (age !== 'minor') {
+      row.forecast = forecastE1rm(trend, { today, experience: age === 'senior' ? 'advanced' : exp.id, status: st.status });
+      if (row.kind === 'recovery' && row.recovery) {
+        const cap = Math.ceil(row.recovery.refE1rm * 2) / 2;
+        row.forecast = row.forecast.map((f) => {
+          if (f.high <= cap) return f;
+          const high = Math.max(cap, Math.ceil(row.e1rmNow * 2) / 2);
+          const mid = Math.min(f.mid, high);
+          return { ...f, high, mid, low: Math.min(f.low, mid), capped: true };
+        });
+      }
+    }
     exercises.push(row);
-    ctx.push({ row, ex, trend, stall, st });
+    ctx.push({ row, ex, trend, stall, st, recovery });
   }
   const order = { fast: 0, good: 1, stalled: 2, down: 3, insufficient: 4 };
   exercises.sort((a, b) => (a.status === 'insufficient') - (b.status === 'insufficient') || (b.main - a.main)
@@ -529,9 +608,14 @@ export function analyzeStrength(data, opts = {}) {
   const analyzed = exercises.filter((x) => x.status !== 'insufficient');
   const mains = analyzed.filter((x) => x.main);
   const base = mains.length ? mains : analyzed;
+  const improvingBase = base.filter((x) => x.status === 'fast' || x.status === 'good');
   const summary = {
     trendPctPerWeek: base.length ? round(median(base.map((x) => x.ratePctPerWeek)), 0.01) : null,
-    improving: base.filter((x) => x.status === 'fast' || x.status === 'good').length,
+    improving: improvingBase.length,
+    recovering: improvingBase.filter((x) => x.kind === 'recovery').length,
+    newExercises: improvingBase.filter((x) => x.kind === 'new_exercise').length,
+    newBest: improvingBase.filter((x) => x.kind === 'new_best').length,
+    recoveryShare: improvingBase.length ? round(improvingBase.filter((x) => x.kind === 'recovery').length / improvingBase.length, 0.01) : null,
     stalled: base.filter((x) => x.status === 'stalled').length,
     down: base.filter((x) => x.status === 'down').length,
     mainCount: base.length,
@@ -540,7 +624,7 @@ export function analyzeStrength(data, opts = {}) {
     experience: exp.id,
     experienceAssumed: exp.assumed,
   };
-  const insights = strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx });
+  const insights = strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context, age });
   return { exercises, summary, insights };
 }
 
@@ -554,8 +638,33 @@ function exRow(x, p) {
   return { label: x.name, value: `${rateText(x.ratePctPerWeek)} · 1RM est. ${kg(x.e1rmNow)} · ${plural(x.sessions, 'sesión', 'sesiones')} en ${weeksTxt(x.windowWeeks)} · ${tag}` };
 }
 
-function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx }) {
+/** Confianza de un grupo de ejercicios: la del más débil, con un mínimo de ejercicios para «alta». */
+function groupConfidence(rows, minHigh = 1) {
+  const fs = rows.flatMap((x) => x.confidence?.factors || []);
+  if (rows.length < minHigh) fs.push(capAt('medium', `solo ${plural(rows.length, 'ejercicio', 'ejercicios')}`, 'exercises'));
+  return combine(fs);
+}
+
+/** Calidad de la referencia de una recuperación (marca sin fecha o con fecha aproximada). */
+function referenceFactors(row, c) {
+  const ref = c?.recovery?.reference;
+  if (!ref || ref.source !== 'mark') return [];
+  const r = ref.mark.record;
+  if (!r.date) return [capAt('low', 'la marca histórica no tiene fecha', 'refdate')];
+  if (r.date.precision === 'year' || r.date.precision === 'season') return [capAt('medium', `fecha de la marca aproximada (${markWhen(r)})`, 'refdate')];
+  return [];
+}
+
+function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context = null, age = 'unknown' }) {
   const out = [];
+  const minor = age === 'minor';
+  const senior = age === 'senior';
+  const ctxNotes = [];
+  if (context?.training?.returning && context.training.since) ctxNotes.push(`vuelta a entrenar desde el ${dayTxt(context.training.since, today)}`);
+  const rc = (context?.changes || []).find((c) => c.type === 'routine_change' && diffDays(c.date, today) <= 28);
+  if (rc) ctxNotes.push(`cambio de rutina el ${dayTxt(rc.date, today)}`);
+  if (minor) ctxNotes.push('menos de 18 años');
+  else if (senior) ctxNotes.push('65 años o más');
   const lvl = expLabel(p, exp.id);
   const rule = strengthRule(p, exp, th);
   const female = isFemale(p);
@@ -569,6 +678,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     const allOld = exercises.every((x) => /^sin sesiones/.test(x.reason || ''));
     out.push(insight({
       id: 'strength-insufficient', area: 'strength', level: 'info', priority: 12,
+      confidence: confInsufficient(`ningún ejercicio con ${MIN_SESSIONS} sesiones en ${MIN_WEEKS} semanas distintas`),
       title: 'Aún faltan datos para ver tu ritmo en fuerza',
       text: allOld
         ? `Hace más de ${RECENT_DAYS / 7} semanas que no registras ejercicios con peso: cuando retomes, en ${MIN_WEEKS} semanas verás a qué ritmo mejoras.`
@@ -597,33 +707,88 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
   if (summary.stalled) bits.push(plural(summary.stalled, 'estancado', 'estancados'));
   if (summary.down) bits.push(`${fmtNum(summary.down, 0)} bajando`);
   if (bits.length) text += ` ${cap(joinList(bits))}: en cada uno tienes qué probar.`;
+  // Ronda 6: ¿qué clase de mejora es? Recuperar marcas anteriores o empezar un ejercicio no es tu ritmo de fondo.
+  const recN = summary.recovering || 0;
+  const newN = summary.newExercises || 0;
+  if (improving.length && recN) {
+    text += med != null && med >= th.fast - EPS && recN * 2 >= improving.length
+      ? ` No estás necesariamente progresando a ${rateText(med)} por encima de tu nivel: en ${recN === improving.length ? (recN === 1 ? 'ese ejercicio' : 'todos ellos') : plural(recN, 'ejercicio', 'ejercicios')} sigues por debajo de tu mejor marca anterior, así que estás recuperando rendimiento que ya habías alcanzado.`
+      : ` En ${plural(recN, 'ejercicio', 'ejercicios')} sigues por debajo de tu mejor marca anterior: es compatible con recuperar rendimiento que ya tenías.`;
+  }
+  if (improving.length && newN) text += ` ${newN === 1 ? 'Un ejercicio es nuevo' : `${fmtNum(newN, 0)} ejercicios son nuevos`} (menos de 6 semanas): al principio se mejora rápido por técnica.`;
+  if (minor) text += ' Con menos de 18 años lo importante es la técnica, la constancia y subir poco a poco, mejor con supervisión.';
+  else if (senior) text += ' A partir de los 65, mejor progresar con calma: técnica, constancia y recuperarte bien entre sesiones.';
   if (exp.assumed) text += ' Indica tu experiencia en el perfil para afinar la comparación.';
   const lvlSum = summary.down * 2 >= M && summary.down > 0 ? 'warn' : improving.length * 2 >= M ? 'good' : 'neutral';
   out.push(insight({
     id: 'strength-summary', area: 'strength', level: lvlSum, priority: lvlSum === 'warn' ? 70 : 62,
     title: improving.length ? `Mejoras en ${improving.length} de ${M} ${noun}` : `Sin mejoras claras en tus ${noun}`,
-    text, rule,
+    text, rule, confidence: groupConfidence(base, 2), context: ctxNotes,
     data: [
       { label: 'Nivel usado', value: exp.assumed ? g(p, 'Intermedio (sin experiencia en el perfil)', 'Intermedia (sin experiencia en el perfil)') : cap(lvl) },
       { label: 'Ritmo típico (mediana)', value: med != null ? rateText(med) : '—' },
       ...base.map((x) => exRow(x, p)),
     ],
-    sources: female ? [SOURCES.roberts2020] : [],
+    sources: [female ? SOURCES.roberts2020 : null, minor ? SOURCES.lloyd2014 : null, senior ? SOURCES.fragala2019 : null],
     action: profileAction,
   }));
+
+  // --- Recuperación de marcas anteriores (ronda 6) -------------------------------
+  const recList = analyzed.filter((x) => x.kind === 'recovery').sort((a, b) => (b.main - a.main) || a.recovery.pct - b.recovery.pct).slice(0, 3);
+  if (recList.length) {
+    const x0 = recList[0];
+    const one = recList.length === 1;
+    const conf = combine(recList.flatMap((x) => [...(x.confidence?.factors || []), ...referenceFactors(x, byId.get(x.exerciseId))]));
+    out.push(insight({
+      id: 'strength-recovery', area: 'strength', level: 'good', priority: 56,
+      title: one ? `${x0.name}: recuperando tu marca anterior` : 'Recuperando marcas anteriores',
+      parts: {
+        observation: one
+          ? `${x0.name} mejora ${rateText(x0.ratePctPerWeek)} (1RM est. ~${kg(x0.e1rmNow)}), pero todavía está al ${x0.recovery.pct} % de tu mejor referencia: ${x0.recovery.refLabel}.`
+          : `${joinList(recList.map((x) => `${x.name} mejora ${rateText(x.ratePctPerWeek)} y está al ${x.recovery.pct} % de su referencia`))}.`,
+        interpretation: 'Es compatible con recuperar rendimiento que ya habías alcanzado, que suele ir más rápido que mejorar por encima de tu mejor marca. No es un dato de tu músculo, solo de tu rendimiento.',
+        recommendation: 'Sigue subiendo poco a poco; al acercarte a tu marca anterior es normal que el ritmo se frene.',
+      },
+      rule: `Para cada ejercicio que mejora se compara su 1RM estimado actual (el mayor de las últimas ${RECENT_DAYS / 7} semanas) con tu mejor referencia anterior: la mayor entre tus marcas históricas (introducidas a mano) y lo registrado en Entreno antes de esas semanas. Por debajo del ${RECOVERY_BELOW_PCT} % se considera que recuperas rendimiento previo. 1RM estimado con Epley (reps + RIR, series de 1 a 12 repeticiones): es una estimación.`,
+      data: recList.map((x) => ({ label: x.name, value: `${x.recovery.pct} % · ahora ${kg(x.e1rmNow)} · referencia ${kg(x.recovery.refE1rm)}: ${x.recovery.refLabel}` })),
+      confidence: conf, context: ctxNotes,
+      sources: [],
+      action: one ? progAction(x0.exerciseId) : { label: 'Ver marcas históricas', href: '#/records/past' },
+    }));
+  }
+
+  // --- Ejercicios nuevos: adaptación inicial (ronda 6) -------------------------------
+  const newList = analyzed.filter((x) => x.kind === 'new_exercise').sort((a, b) => b.ratePctPerWeek - a.ratePctPerWeek).slice(0, 3);
+  if (newList.length) {
+    const one = newList.length === 1;
+    out.push(insight({
+      id: 'strength-new', area: 'strength', level: 'info', priority: 40,
+      title: one ? `${newList[0].name}: primeras semanas` : 'Ejercicios nuevos: primeras semanas',
+      parts: {
+        observation: `${joinList(newList.map((x) => `${x.name} (${rateText(x.ratePctPerWeek)})`))} ${one ? 'lleva' : 'llevan'} menos de ${NEW_EXERCISE_DAYS / 7} semanas en tu registro.`,
+        interpretation: 'Al empezar un ejercicio es normal mejorar rápido por técnica y coordinación (adaptación inicial): todavía no es tu ritmo de fondo.',
+        recommendation: 'Sube poco a poco y cuida la técnica; en unas semanas se verá tu ritmo real.',
+      },
+      rule: `Ejercicio nuevo: su primera sesión registrada es de hace menos de ${NEW_EXERCISE_DAYS / 7} semanas y no tiene marca histórica. Las primeras semanas la mejora es sobre todo técnica y coordinación.`,
+      data: newList.map((x) => ({ label: x.name, value: `desde el ${dayTxt(x.firstDate, today)} · ${rateText(x.ratePctPerWeek)} · ${plural(x.sessions, 'sesión', 'sesiones')}` })),
+      confidence: combine([...groupConfidence(newList).factors, capAt('low', `menos de ${NEW_EXERCISE_DAYS / 7} semanas de datos del ejercicio`, 'new')]),
+      sources: minor ? [SOURCES.lloyd2014] : [],
+    }));
+  }
 
   // --- Lo que más progresa -----------------------------------------------------
   const risers = analyzed.filter((x) => (x.status === 'fast' || x.status === 'good') && !x.slow).sort((a, b) => b.ratePctPerWeek - a.ratePctPerWeek).slice(0, 3);
   if (risers.length >= 2) {
     const parts = risers.map((x) => {
       const c = byId.get(x.exerciseId);
-      return `${x.name} ${rateText(x.ratePctPerWeek)} (de ~${kg(x.e1rmStart)} a ~${kg(x.e1rmNow)} en ${weeksTxt(Math.max(1, Math.round(c.trend.spanDays / 7)))}${x.status === 'fast' ? ', rápido para tu nivel' : ''})`;
+      const kindTxt = x.kind === 'recovery' ? ', recuperando una marca anterior' : x.kind === 'new_exercise' ? ', ejercicio nuevo' : x.kind === 'new_best' ? ', por encima de tu mejor marca anterior' : '';
+      return `${x.name} ${rateText(x.ratePctPerWeek)} (de ~${kg(x.e1rmStart)} a ~${kg(x.e1rmNow)} en ${weeksTxt(Math.max(1, Math.round(c.trend.spanDays / 7)))}${x.status === 'fast' && !kindTxt ? ', rápido para tu nivel' : ''}${kindTxt})`;
     });
     out.push(insight({
       id: 'strength-top', area: 'strength', level: 'good', priority: 48,
       title: 'Lo que más progresa',
       text: `${joinList(parts)}. Lo que funciona en esos ejercicios (series, repeticiones, frecuencia) es buena pista para los demás.`,
-      rule, data: risers.map((x) => exRow(x, p)),
+      rule, data: risers.map((x) => exRow(x, p)), confidence: groupConfidence(risers),
       sources: female ? [SOURCES.roberts2020] : [],
     }));
   }
@@ -657,13 +822,20 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
         tipRows.push({ label: `Series/sem de ${(MUSCLE_LABEL[m] || m).toLowerCase()}`, value: `${fmtNum(avg, 1)} de media (${plural(mus.weeks, 'semana', 'semanas')}) · rango ${t[0]}–${t[1]}` });
         if (avg < t[0] - EPS) below.push({ m, avg, t });
       }
-      if (below.length) {
+      if (minor) {
+        tips.push('revisar la técnica con alguien que sepa (entrenador o profesor) y subir el peso solo cuando todas las repeticiones salgan limpias');
+        srcs.push(SOURCES.lloyd2014);
+      } else if (senior) {
+        tips.push('cuidar la técnica y recuperarte bien entre sesiones antes de añadir más trabajo');
+        srcs.push(SOURCES.fragala2019);
+      }
+      if (below.length && !minor && !(senior && fat.any)) {
         const b = below[0];
         tips.push(`+1–2 series por semana de ${(MUSCLE_LABEL[b.m] || b.m).toLowerCase()} (haces ${fmtNum(b.avg, 1)} y tu rango es ${b.t[0]}–${b.t[1]})`);
         srcs.push(SOURCES.schoenfeld2017);
       }
       const reps = typicalReps(c.trend.era, c.ex);
-      tips.push(repRangeTip(reps));
+      if (!minor) tips.push(repRangeTip(reps));
       tipRows.push({ label: 'Repeticiones típicas', value: reps != null ? `~${fmtNum(reps, 0)} por serie (últimas 3 sesiones)` : '—' });
       tips.push(`cuida el sueño y la ${proteinText(bwKg)}`);
       srcs.push(SOURCES.knowles2018, SOURCES.morton2018);
@@ -675,6 +847,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
       else ruleTxt = `${x.stall.bySessions ? `Sus últimas ${plural(x.stall.S, 'sesión', 'sesiones')} no superan` : `En ${lastWeeks(x.stall.W)} no supera`} su mejor 1RM est. (${kg(best.e1rm)}, el ${dayTxt(best.date, today)}).`;
       out.push(insight({
         id: `strength-stalled-${x.exerciseId}`, area: 'strength', level: 'warn', priority: (x.main ? 64 : 52) - i * 2,
+        confidence: x.confidence, context: ctxNotes,
         title: `${x.name}: qué probar para desatascarlo`,
         text: `${ruleTxt} Qué probar, por este orden: ${tips.join('; ')}.${fat.any ? '' : g(p, ' Si te notas cansado, empieza por descansar.', ' Si te notas cansada, empieza por descansar.')}`,
         rule: `${rule} Qué probar ante un estancamiento: si hay fatiga (RPE medio de fuerza ≥ ${fmtNum(fat.rpeLimit, 1)} en ${lastWeeks(fat.W)} con 2 sesiones o más, o la mitad de los check-ins bajos), una semana de descarga; si su músculo principal hace menos series semanales que el mínimo de su rango (Ajustes › Umbrales), 1–2 series más (más volumen, más progreso hasta ~10–20 series); un cambio de rango de repeticiones unas semanas; y revisar sueño y proteína.`,
@@ -686,7 +859,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     if (stalledList.length > 3) {
       const rest = stalledList.slice(3);
       out.push(insight({
-        id: 'strength-stalled-more', area: 'strength', level: 'warn', priority: 46,
+        id: 'strength-stalled-more', area: 'strength', level: 'warn', priority: 46, confidence: groupConfidence(rest),
         title: `${plural(rest.length, 'ejercicio más estancado', 'ejercicios más estancados')}`,
         text: `${joinList(rest.map((x) => x.name))}: mismas ideas (descarga si hay fatiga, más series si su músculo va corto, otro rango de repeticiones, sueño y proteína).`,
         rule, data: rest.map((x) => exRow(x, p)),
@@ -715,6 +888,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
       else t += ` Mira el sueño, la comida y el cansancio acumulado; una semana más suave suele ayudar a recuperar el nivel${ctxBits.length ? '' : ', y si sigue bajando, revisa la técnica o cambia el ejercicio por una variante'}.`;
       out.push(insight({
         id: `strength-down-${x.exerciseId}`, area: 'strength', level: lose ? 'neutral' : 'warn', priority: lose ? 44 - i * 2 : (x.main ? 66 : 54) - i * 2,
+        confidence: x.confidence, context: ctxNotes,
         title: `${x.name} baja`,
         text: t, rule,
         data: [...rows, ...c.trend.points.slice(-6).map((q) => ({ label: dayTxt(q.date, today), value: kg(q.e1rm) }))],
@@ -732,10 +906,12 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     const [f4, f8] = x.forecast;
     const bw = x.logType === 'bodyweight' ? ' (con tu peso corporal)' : '';
     const capped = Math.abs(f4.rateUsed - x.ratePctPerWeek) > 0.005;
+    const refCap = x.forecast.some((f) => f.capped);
     out.push(insight({
       id: `forecast-${x.exerciseId}`, area: 'forecast', level: 'info', priority: 42 - i * 2,
+      confidence: combine([...(x.confidence?.factors || []), capAt('medium', 'es una proyección: el ritmo cambia', 'forecast')]),
       title: `${x.name}: 1RM est. ${kgRange(f4.low, f4.high)} en ${weeksTxt(f4.weeks)}`,
-      text: `Previsto hacia el ${dayTxt(f4.date, today)}${bw}, si sigues así${f8 ? `; ${kgRange(f8.low, f8.high)} hacia el ${dayTxt(f8.date, today)}` : ''} (ahora ~${kg(x.e1rmNow)}). Es una estimación: el progreso se frena con el tiempo y no es lineal.`,
+      text: `Previsto hacia el ${dayTxt(f4.date, today)}${bw}, si sigues así${f8 ? `; ${kgRange(f8.low, f8.high)} hacia el ${dayTxt(f8.date, today)}` : ''} (ahora ~${kg(x.e1rmNow)}). Es una estimación: el progreso se frena con el tiempo y no es lineal.${refCap ? ` Como estás recuperando una marca anterior, el tope de la previsión es esa marca (~${kg(x.recovery.refE1rm)}): superarla suele ir más despacio.` : ''}`,
       rule: `Previsión con rendimientos decrecientes: nivel actual (la tendencia el día de tu última sesión) × (1 + ritmo × τ × ln(1 + t/τ)), con τ = ${TAU_WEEKS} semanas y t = semanas desde tu última sesión; el ritmo es el de tu tendencia, con un tope prudente para tu nivel (${lvl}: ${rateText(th.cap)}). Rango: el ruido de tus sesiones respecto a la tendencia (mínimo ±${pctTxt(MIN_NOISE * 100)}), que crece al alejarse de tus datos, más media ganancia prevista por si el ritmo se frena antes. ${rule}`,
       data: [
         { label: 'Nivel actual (tendencia)', value: kg(x.e1rmNow) },

@@ -271,3 +271,36 @@
 .an-prompt-text { margin-top: 2px; font-size: 14px; line-height: 1.4; color: var(--text-2); }
 .an-prompt-actions { display: flex; gap: 8px; }
 .an-prompt-actions > .btn { flex: 1; min-height: 44px; }
+
+/* ---------- Ronda 6 (fase C): confianza, contexto y «Qué hacer» ---------- */
+.an-conf {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.an-conf-sm { padding: 1px 7px; font-size: 11px; }
+.an-conf-high { border-color: rgba(74, 222, 128, 0.5); color: var(--ok); }
+.an-conf-medium { border-color: var(--border-strong); color: var(--text-2); }
+.an-conf-low { border-color: rgba(255, 200, 87, 0.55); color: var(--warn); }
+.an-conf-insufficient { border-style: dashed; color: var(--muted); }
+.an-ins-head { flex-wrap: wrap; }
+.an-sum-top { flex-wrap: wrap; }
+.an-ins-ctx,
+.an-ins-rec { font-size: 14px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.an-ins-ctx b,
+.an-ins-rec b { color: var(--text); font-weight: 750; }
+.an-ins-rec { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.an-ctx { display: flex; flex-direction: column; gap: 8px; }
+.an-ctx-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.an-ctx-title { font-size: 17px; font-weight: 750; }
+.an-ctx-edit { min-height: 44px; }
+.an-ctx-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: var(--text); }
+.an-ctx-changes { font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.an-ctx-changes b { color: var(--text); }
+.an-ctx-why { font-size: 13px; color: var(--muted); }
