@@ -297,7 +297,8 @@ test('Hombre (390×844): Hoy y panel con «Tu análisis», #/analysis completo, 
     await page.waitForFunction(() => !!window.__copied);
     const txt = await page.evaluate(() => window.__copied);
     assert.match(txt, /^INFORME DE ENTRENAMIENTO · Entreno · 24 sep 2026/);
-    for (const k of ['PERFIL', 'PESO CORPORAL', 'FUERZA', 'RESISTENCIA', 'RECUPERACIÓN', 'PRÓXIMAS SEMANAS', 'PREGUNTA']) assert.ok(txt.includes(k), k);
+    // Ronda 6 (fase F): secciones del informe nuevo; las tres de contexto y confianza, siempre
+    for (const k of ['\nPERFIL\n', '\nOBJETIVO\n', '\nCONTEXTO DEL USUARIO', '\nCAMBIOS RECIENTES\n', '\nPESO\n', '\nFUERZA', '\nTENDENCIAS\n', '\nINSIGHTS', 'DATOS CON BAJA CONFIANZA', '\nPREGUNTA\n']) assert.ok(txt.includes(k), k);
     assert.ok(!/CICLO/.test(txt));
     await page.locator('.toast', { hasText: 'Informe copiado' }).waitFor();
     // El icono de la cabecera también copia

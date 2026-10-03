@@ -40,7 +40,7 @@ reescritura de registros: los campos nuevos son opcionales y se completan al lee
   ```
   Fase:  { id:'ctx_…', kind:'phase', type, start:DateApprox, end:DateApprox|null, title?, text, goalIds:[], sports:[],
            notes, createdAt, updatedAt }
-  Hecho: { id:'ctx_…', kind:'event', type, date:DateApprox, text, value?:{ kg? }, notes, createdAt, updatedAt }
+  Hecho: { id:'ctx_…', kind:'event', type, date:DateApprox, text, kg:number|null, notes, createdAt, updatedAt }
   DateApprox = { date:'YYYY-MM-DD', precision:'day'|'month'|'season'|'year' }
   ```
   `date` es el primer día del periodo indicado (mes → día 1; estación → primer día de la estación; año → 1 ene);
@@ -48,7 +48,8 @@ reescritura de registros: los campos nuevos son opcionales y se completan al lee
   vigente. Tipos de fase: `gain`, `deficit`, `maintain`, `recomp`, `return` (vuelta tras parón), `recondition`,
   `prep_5k`, `prep_10k`, `prep_half`, `prep_marathon`, `prep_cycling`, `hybrid`, `deload`, `illness`, `injury`,
   `travel`, `stress`, `custom`. Tipos de hecho: `creatine_start`, `creatine_stop`, `gym_return`, `holidays`, `illness`,
-  `routine_change`, `nutrition_change`, `injury`, `usual_weight` (con `value.kg`), `weight_note` (con `value.kg`), `other`.
+  `routine_change`, `nutrition_change`, `injury`, `usual_weight` (con `kg`), `weight` (peso en esa fecha, con `kg`), `other`.
+  (Corregido en la fase F: el texto decía `value.kg` y `weight_note`; el código y las pruebas usan `kg` y `weight`.)
 - `pastRecords` — marcas históricas manuales (fase B): `{ id, exerciseId, weight, reps, date:DateApprox|null, note,
   createdAt, updatedAt }`. Separadas de los récords calculados (`stats.js`).
 - `races` — eventos deportivos (fase E): `{ id, name, type, date, distanceKm, targetSec|null, priority, note,
@@ -302,3 +303,44 @@ textos); salen en «Tu contexto» de Análisis y los usará el informe (fase F).
   históricas: con solo marcas decía «tus registros». Ahora cuenta marcas y eventos (prueba en
   `tests/e2e/races.test.cjs`: falla sin el arreglo, pasa con él). Ajustes › Copias y datos tiene la fila «Eventos
   deportivos».
+
+## Fase F — informe para tu IA (`js/analysis-report.js`)
+
+Objetivo: que otra IA (o un entrenador) interprete los datos sin equivocarse por falta de contexto, sin un texto
+absurdamente largo (escenario completo de las pruebas: ~105 líneas, < 10.000 caracteres; límite en la prueba: 140 y
+14.000).
+
+### Secciones (en este orden; solo si tienen algo útil)
+PERFIL (sexo, edad en años —nunca la fecha—, experiencia, deportes, días por semana, limitaciones indicadas) ·
+OBJETIVO (principal, otros, fase vigente si manda sobre el perfil, rango de peso, objetivos apuntados, evento A) ·
+**CONTEXTO DEL USUARIO** · **CAMBIOS RECIENTES** · PESO · FUERZA (con «recuperando una marca anterior», «ejercicio
+nuevo», «mejor marca» y la confianza de cada ejercicio) · MARCAS HISTÓRICAS · VOLUMEN (series por músculo frente a su
+rango y la decisión: mantener, añadir, reducir) · RUNNING · BICI · NATACIÓN · SENDERISMO · OTRAS ACTIVIDADES (4 semanas
+completas: sesiones, km, min/semana, carga y su cambio, sesiones sin RPE; en carrera, el reparto de intensidad y el 5 km
+por bloques) · CARGA (total, reparto por deporte, picos) · RECUPERACIÓN (asociaciones personales) · SUEÑO · ENERGÍA ·
+ESTRÉS (recuentos de las 4 últimas semanas y su relación con el rendimiento) · AGUJETAS/MOLESTIAS (generales, zonas
+—agujetas y molestias— y asociaciones) · CICLO MENSTRUAL (solo con permiso) · EVENTOS FUTUROS (con el tiempo previsto
+de race-predict) · TENDENCIAS (peso, fuerza, 5 km, carga y las previsiones completas) · INSIGHTS (todas las
+valoraciones con su nivel y su confianza, salvo las que ya están en su sección: proteína y reparto de carga) ·
+**CONFIANZA — DATOS CON BAJA CONFIANZA** (qué significan los niveles, las valoraciones de confianza baja o insuficiente
+con sus motivos, y los datos que faltan) · PREGUNTA (pide leer el contexto y los cambios antes de concluir).
+
+- «CONTEXTO DEL USUARIO», «CAMBIOS RECIENTES» y «DATOS CON BAJA CONFIANZA» salen siempre: si no hay nada, lo dicen
+  («Nada apuntado ni detectado», «Ninguno en las últimas 6 semanas»), porque la ausencia de contexto también informa.
+- Lo que no hay no se rellena: sin pesajes, sin «Rango»; sin bici, sin BICI; asociaciones sin datos suficientes en una
+  sola línea («Aún sin datos suficientes para relacionar…»).
+- Edad: menores sin kcal, ajustes, rango ni «déficit», y la pregunta pide alimentación general sin dietas ni calorías.
+- Privacidad: como antes, nada del ciclo sin permiso; no salen notas (del contexto, del evento, de sesiones) ni nombres
+  de rutinas ni la fecha de nacimiento. Sí salen el nombre de un evento y las limitaciones del perfil (los escribió el
+  usuario para esto).
+
+### Datos nuevos de `buildAnalysis` para el informe
+`wellbeing` (`wellbeingSummary`: check-ins de 28 días por nivel y zonas con días, media y máximo), `events` (eventos
+próximos con `racePrediction`) y `goals` (objetivos activos: id, tipo y título; `analysisData()` añade `goals`). En
+`hybrid.sportLoad.rows`, `km4w`.
+
+### Arreglos encontrados de paso
+- Las previsiones del informe perdían su rango a 4 semanas: se imprimía solo el sujeto del título («Press banca:») y el
+  texto, que continúa el título. Ahora van título y texto completos.
+- `docs/MEJORAS6.md` (fase A) describía los hechos de peso con `value.kg` y el tipo `weight_note`; el código usa `kg` y
+  `weight`. Corregido el documento (el código y sus pruebas no cambian).

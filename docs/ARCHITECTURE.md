@@ -472,6 +472,9 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   (analista). `races-progress.js` (puro): `racePrediction` (race-predict) y `linkedGoalProgress` (goalProgress).
   Rutas `#/races`, `#/races/new`, `#/races/:id` (pestaña Progreso). `analysisData()` añade `races`;
   `analysisContext` devuelve `events`. `backup.dataCounts` cuenta `races`.
+- **Informe** (fase F): `reportText(analysis, { includeCycle })` (puro) con las secciones de `docs/MEJORAS6.md` › Fase F;
+  `SHOWN_IN_SECTIONS(i)` = Insights que ya salen en su sección. `buildAnalysis` añade `wellbeing`
+  (`wellbeingSummary(checkins, today, 28)`), `events` (eventos próximos + `racePrediction`) y `goals` (activos).
 - **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
   `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
   compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.

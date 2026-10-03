@@ -19,7 +19,9 @@
 //   keyPoints: Insight[] (hasta 3, los de mayor prioridad y de áreas distintas; ver pickKeyPoints)
 //   all      : Insight[] (todos, sin repetir id, por prioridad), errors: [{ area, message }],
 //   context  : analysis-context.analysisContext(...) (ronda 6: lo que se tuvo en cuenta del contexto),
-//   hybrid   : analysis-hybrid.analyzeHybrid(...) (ronda 6, fase D: carga por deporte, volumen, asociaciones, agujetas) }
+//   hybrid   : analysis-hybrid.analyzeHybrid(...) (ronda 6, fase D: carga por deporte, volumen, asociaciones, agujetas),
+//   wellbeing: wellbeingSummary(...) (fase F: check-ins de las 4 últimas semanas), events: eventos próximos con su tiempo
+//              previsto (fase F), goals: objetivos activos { id, kind, title } (fase F; data.goals) }
 // Ronda 6 (fase C): los Insights pueden llevar `confidence` (confidence.js), `context` y `parts`; ver analysis-weight.js.
 // Un fallo en un análisis no tumba los demás: su parte queda vacía y se anota en `errors`.
 import { addDays, isDateStr, todayStr, fmtNum, fmtDate } from './util.js';
@@ -30,6 +32,9 @@ import { analyzeStrength, analyzeEndurance, analyzeRecovery, ENDURANCE_KINDS } f
 import { cycleInfo, fmtRange, LIMITS as CYCLE_LIMITS } from './cycle-logic.js';
 import { analysisContext } from './analysis-context.js';
 import { analyzeHybrid, personalInterference } from './analysis-hybrid.js';
+import { checkinsBetween, areasOf, areaName, level as ckLevel } from './checkin-logic.js';
+import { racePrediction } from './races-progress.js';
+import { splitGoals } from './goals-logic.js';
 
 /** Orden de las áreas (desempates y orden de las tarjetas). */
 export const AREAS = ['weight', 'strength', 'endurance', 'recovery', 'cycle', 'forecast'];
@@ -159,6 +164,43 @@ export function weightForecast(weight, { today, female = false } = {}) {
   };
 }
 
+/**
+ * Check-ins de los últimos `days` días (fase F, para el informe): cuántos, sueño / energía / estrés / agujetas por nivel
+ * y las zonas apuntadas (días distintos, media y máximo). Nada se interpreta aquí.
+ * @returns {{ days, from, count, daysWith, sleep, energy, stress, soreness:{n, low, normal, high}, areas:[{ kind, zone, name, times, avg, max, last }] }}
+ */
+export function wellbeingSummary(checkins, today, days = 28) {
+  const from = addDays(today, -(days - 1));
+  const list = checkinsBetween(checkins, from, today);
+  const count = (key) => {
+    const o = { n: 0, low: 0, normal: 0, high: 0 };
+    for (const c of list) {
+      const v = ckLevel(c[key]);
+      if (v == null) continue;
+      o.n++;
+      o[v === 1 ? 'low' : v === 2 ? 'normal' : 'high']++;
+    }
+    return o;
+  };
+  const zones = new Map();
+  for (const c of list) {
+    for (const a of areasOf(c)) {
+      const k = `${a.kind}:${a.zone}`;
+      const z = zones.get(k) || { kind: a.kind, zone: a.zone, name: areaName(a), dates: new Map() };
+      z.dates.set(c.date, Math.max(z.dates.get(c.date) ?? 0, a.level));
+      zones.set(k, z);
+    }
+  }
+  const areas = [...zones.values()].map((z) => {
+    const lv = [...z.dates.values()];
+    return { kind: z.kind, zone: z.zone, name: z.name, times: lv.length, avg: r1(lv.reduce((t, v) => t + v, 0) / lv.length), max: Math.max(...lv), last: [...z.dates.keys()].sort().pop() };
+  }).sort((a, b) => b.times - a.times || b.max - a.max || a.name.localeCompare(b.name, 'es'));
+  return {
+    days, from, count: list.length, daysWith: new Set(list.map((c) => c.date)).size,
+    sleep: count('sleep'), energy: count('energy'), stress: count('stress'), soreness: count('soreness'), areas,
+  };
+}
+
 /** Orden común: prioridad (de mayor a menor), área y id. */
 export function sortInsights(list) {
   return [...list].sort((a, b) => (b.priority - a.priority) || (AREAS.indexOf(a.area) - AREAS.indexOf(b.area)) || String(a.id).localeCompare(String(b.id)));
@@ -256,6 +298,11 @@ export function buildAnalysis(data = {}, today) {
     cycle = { info, hormonal: !!info.hormonal, ...cycleSummary(info), insights: cycleInsights };
   }
 
+  // Fase F (informe): check-ins recientes, eventos próximos con su tiempo previsto y objetivos activos
+  const wellbeing = attempt(errors, 'wellbeing', () => wellbeingSummary(d.checkins || [], t), null);
+  const events = attempt(errors, 'events', () => (context?.events?.upcoming || []).map((x) => ({ ...x, prediction: racePrediction(d, x.race, { today: t }) })), []);
+  const goals = attempt(errors, 'goals', () => splitGoals(toArr(d.goals)).active.map((x) => ({ id: x.id, kind: x.kind, title: x.title })), []);
+
   const wf = attempt(errors, 'forecast', () => weightForecast(weight, { today: t, female }), null);
   const forecast = sortInsights([
     ...(strength.insights || []).filter((i) => i.area === 'forecast'),
@@ -274,7 +321,7 @@ export function buildAnalysis(data = {}, today) {
 
   return {
     today: t, profile, profileIncomplete: profileIncomplete(profile), female, hasData,
-    weight, strength, endurance, recovery, cycle, forecast, hybrid,
+    weight, strength, endurance, recovery, cycle, forecast, hybrid, wellbeing, events, goals,
     keyPoints: pickKeyPoints(all, 3), all, errors, context,
   };
 }

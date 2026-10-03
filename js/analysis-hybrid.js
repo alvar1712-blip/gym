@@ -2,7 +2,7 @@
 // interferencia con datos PERSONALES y agujetas por ejercicio. PURO (sin store ni DOM; «hoy» inyectable).
 //
 //   analyzeHybrid(data, { today, profile, context, strength }) → {
-//     sportLoad:   { weeks, rows:[{ kind, label, minutes4w, load4w, sessions4w, noRpe4w, prevLoad4w, changePct, lastWeekLoad, spike }] },
+//     sportLoad:   { weeks, rows:[{ kind, label, minutes4w, km4w, load4w, sessions4w, noRpe4w, prevLoad4w, changePct, lastWeekLoad, spike }] },
 //     volume:      { muscles:[{ muscleId, name, avgSets, target, decision:'keep'|'add'|'reduce'|'none', reasons }] },
 //     associations:[{ id, kind, …, n1, n2, diff, effect, pattern:'worse'|'better'|'none'|'insufficient', confidence }],
 //     doms:        [{ exerciseId, name, muscleId, withEx, without, n1, n2, diff, pattern, byDay, peakDay, dose }],
@@ -155,6 +155,7 @@ export function sportLoad(d, today) {
     return {
       kind: k, label: SPORT_LABEL[k],
       minutes4w: round(sum(last4, (r) => r.minutes[k]) / 4, 1),
+      km4w: round(sum(last4, (r) => r.km?.[k]), 0.1),
       load4w: round(avgWeek, 1),
       sessions4w: sum(last4, (r) => r.count[k]),
       noRpe4w: noRpe.get(k),

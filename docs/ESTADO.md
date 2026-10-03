@@ -89,6 +89,11 @@
       con race-predict y goalProgress; una línea en Hoy («🏁 10K · 73 días · objetivo <50:00»); contexto del analista.
       Sin planificador. Arreglo: «Borrar todos los datos» no contaba las marcas históricas.
 
+- [x] **Ronda 6 · fase F**: informe para tu IA con PERFIL, OBJETIVO, CONTEXTO DEL USUARIO, CAMBIOS RECIENTES, PESO,
+      FUERZA, MARCAS HISTÓRICAS, VOLUMEN, cada deporte, CARGA, RECUPERACIÓN, SUEÑO, ENERGÍA, ESTRÉS, AGUJETAS/MOLESTIAS,
+      EVENTOS FUTUROS, TENDENCIAS, INSIGHTS (con su confianza) y DATOS CON BAJA CONFIANZA; sin secciones vacías,
+      ~100 líneas con todos los datos. Arreglo: las previsiones del informe perdían el rango a 4 semanas.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).

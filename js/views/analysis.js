@@ -51,6 +51,7 @@ export function analysisData(today = todayStr(), base = null) {
   if (!d.context) d.context = store.all('context');
   if (!d.pastRecords) d.pastRecords = store.all('pastRecords');
   if (!d.races) d.races = store.all('races');
+  if (!d.goals) d.goals = store.all('goals');
   return d;
 }
 

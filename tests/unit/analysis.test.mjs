@@ -7,7 +7,7 @@ import {
   buildAnalysis, pickKeyPoints, isPlaceholder, enduranceMinutesPerWeek, weightForecast, cycleSummary, areaInsights,
   sortInsights, AREAS, DISCLAIMER,
 } from '../../js/analysis.js';
-import { reportText, reportable, CYCLE_WEIGHT_IDS } from '../../js/analysis-report.js';
+import { reportText, reportable, CYCLE_WEIGHT_IDS, SHOWN_IN_SECTIONS } from '../../js/analysis-report.js';
 import { defaultSettings, SEED_EXERCISES } from '../../js/seed.js';
 import { addDays, tsFromDate } from '../../js/util.js';
 
@@ -285,26 +285,29 @@ test('cycleSummary: regla en curso, retraso y sin reglas', () => {
 // reportText
 // ---------------------------------------------------------------------------
 
-test('reportText (hombre): perfil, peso, fuerza, resistencia, recuperación, previsiones y pregunta final; sin ciclo', () => {
+test('reportText (hombre): perfil, objetivo, contexto, peso, fuerza, tendencias, insights, confianza y pregunta final; sin ciclo', () => {
   const a = buildAnalysis(maleData(), TODAY);
   const txt = reportText(a);
   assert.ok(clean(txt), 'sin huecos');
-  for (const s of ['INFORME DE ENTRENAMIENTO', 'PERFIL', 'PESO CORPORAL', 'FUERZA', 'RESISTENCIA', 'RECUPERACIÓN', 'PRÓXIMAS SEMANAS', 'PREGUNTA']) {
+  for (const s of ['INFORME DE ENTRENAMIENTO', '\nPERFIL\n', '\nOBJETIVO\n', '\nCONTEXTO DEL USUARIO', '\nCAMBIOS RECIENTES\n', '\nPESO\n', '\nFUERZA', '\nTENDENCIAS\n', '\nINSIGHTS', 'DATOS CON BAJA CONFIANZA', '\nPREGUNTA\n']) {
     assert.ok(txt.includes(s), `sección ${s}`);
   }
   assert.ok(txt.includes(DISCLAIMER));
-  assert.match(txt, /- Sexo: Hombre\n- Objetivo: Ganar músculo\n- Experiencia en fuerza: Intermedio \(1–3 años\)/);
+  assert.match(txt, /- Sexo: Hombre\n- Edad: sin indicar\n- Experiencia en fuerza: Intermedio \(1–3 años\)/);
+  assert.match(txt, /OBJETIVO\n- Objetivo principal: Ganar músculo/);
   assert.match(txt, /Press banca: 1RM est\. \d+,\d kg · \+0,\d+ %\/sem · (bien|rápido)/);
   assert.match(txt, /Peso muerto rumano: .* estancado/);
   assert.match(txt, /Ritmo: \+0,\d+ kg\/semana/);
   assert.match(txt, /Proteína orientativa: \d+–\d+ g\/día/);
   assert.match(txt, /Soy hombre, con experiencia intermedia en fuerza \(1–3 años\) y mi objetivo es ganar músculo\./);
   assert.ok(!/CICLO|\bregla\b|Anticonceptivo/.test(txt));
-  // Previsiones sin repetir el título: «Press banca: 1RM est. …»
-  assert.match(txt, /\n- Press banca: 1RM est\./);
-  assert.match(txt, /\n- Peso: Si sigues/);
-  // Todas las valoraciones que no son del ciclo están
-  for (const i of a.all.filter((x) => x.area !== 'forecast')) assert.ok(txt.includes(i.title), `valoración ${i.id}`);
+  // Previsiones con su título completo (el texto lo continúa): «Press banca: 1RM est. 80–85 kg en 4 semanas. Previsto…»
+  assert.match(txt, /\n- Si sigo así · Press banca: 1RM est\. [\d,]+–[\d,]+ kg en 4 semanas\. Previsto hacia el /);
+  assert.match(txt, /\n- Si sigo así · Peso: [\d,]+–[\d,]+ kg hacia el .*\. Si sigues/);
+  // Todas las valoraciones que no son del ciclo están (salvo las que ya salen en su sección: proteína, reparto de carga)
+  for (const i of a.all.filter((x) => x.area !== 'forecast' && !SHOWN_IN_SECTIONS(x))) assert.ok(txt.includes(i.title), `valoración ${i.id}`);
+  // Cada valoración lleva su confianza
+  assert.match(txt, /• \[(Bien|Nota|Atención|Info) · confianza (alta|media|baja)\] /);
   assert.ok(txt.endsWith('\n'));
 });
 
@@ -322,6 +325,7 @@ test('reportText (mujer): sin permiso no sale nada del ciclo; con permiso, secci
   assert.match(on, /CICLO MENSTRUAL\n- Anticonceptivo: Ninguno hormonal/);
   assert.match(on, /- Hoy: Día 12 · .* · Próxima regla ~/);
   assert.match(on, /Duración de los últimos ciclos: 29, 29, 29, 29 días/);
+  assert.ok(on.indexOf('CICLO MENSTRUAL') < on.indexOf('INSIGHTS'));
   for (const t of cycleTitles) assert.ok(on.includes(t), `con «${t}»`);
   // includeCycle no hace nada en modo hombre
   const m = buildAnalysis(maleData(), TODAY);
@@ -335,6 +339,11 @@ test('reportText sin datos ni perfil y reportable()', () => {
   assert.match(txt, /Sin ritmo fiable todavía: Aún no hay pesajes\./);
   assert.match(txt, /Aún no hay ejercicios con datos suficientes/);
   assert.match(txt, /PREGUNTA\nEntreno fuerza y resistencia\. Con estos datos/);
+  // Las tres secciones de siempre dicen que no hay nada (también es información); el resto no se rellena con ruido
+  assert.match(txt, /CONTEXTO DEL USUARIO \(.*\)\n- Nada apuntado ni detectado/);
+  assert.match(txt, /CAMBIOS RECIENTES\n- Ninguno en las últimas 6 semanas\./);
+  assert.match(txt, /DATOS CON BAJA CONFIANZA .*\n- Niveles: /);
+  for (const s of ['MARCAS HISTÓRICAS', 'VOLUMEN', 'RUNNING', 'BICI', 'NATACIÓN', 'SENDERISMO', 'OTRAS ACTIVIDADES', 'CARGA', 'SUEÑO', 'ENERGÍA', 'ESTRÉS', 'AGUJETAS', 'EVENTOS FUTUROS']) assert.ok(!txt.includes(`\n${s}`), `sin «${s}» vacía`);
   assert.doesNotThrow(() => reportText(null));
   assert.equal(reportable(ins('cycle-late', 'cycle', 80), false), false);
   assert.equal(reportable(ins('weight-cycle-retention', 'weight', 42), false), false);
