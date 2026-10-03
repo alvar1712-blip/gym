@@ -11,6 +11,7 @@ import { bwStats } from '../activity-logic.js';
 import { e1rm } from '../calc.js';
 import { uid, todayStr, fmtNum, numToInput, fmtPace, fmtSigned, round, diffDays, parseNum } from '../util.js';
 import * as G from '../goals-logic.js';
+import { racesLink } from './races.js';
 
 const DRAFT_KEY = 'entreno.goalDraft';
 const KINDS = G.GOAL_KINDS.map((k) => k.value);
@@ -202,6 +203,8 @@ export function mountGoals(root) {
       nodes.push(foldSection('achieved', 'Conseguidos', achieved, card));
       nodes.push(foldSection('archived', 'Archivados', archived, card));
     }
+    // Ronda 6 (fase E): eventos deportivos (carreras, marchas, rutas), enlazables con un objetivo de resistencia
+    nodes.push(h('div.list.goal-races', racesLink()));
     c.replaceChildren(...nodes.filter(Boolean));
     for (const id of openWhy) c.querySelector(`.goal-card[data-goal="${CSS.escape(id)}"] .why-btn`)?.click();
   }

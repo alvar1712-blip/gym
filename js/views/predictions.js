@@ -7,6 +7,7 @@ import { navigate } from '../router.js';
 import { h, icon, screen, segmented, durationInput, numInput, field, emptyState, whyBox } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
+import { racesLink } from './races.js';
 import {
   predictRaces, checkTarget, analyzeRuns, predictDistance, raceFor, rangeText, paceRangeText, fmtGap, fmtGapPerKm,
   RACES, MIN_KM, MIN_VALID, WINDOW_WEEKS, VOLUME_WEEKS, TOP_N, VOLUME,
@@ -49,6 +50,7 @@ export function mountPredictions(root) {
     h('h2.section-title', { id: 'prd-races-title' }, 'Por distancia'),
     RACES.map((race) => raceCard(r.predictions[race.id]))));
   c.appendChild(checker(data, r));
+  c.appendChild(h('div.list.prd-races-link', racesLink()));
   c.appendChild(basisView(r));
   return undefined;
 }

@@ -41,6 +41,8 @@ function countsText(c, { all = false, sep = ', ' } = {}) {
     [c.checkins, 'check-in', 'check-ins', false],
     [c.goals, 'objetivo', 'objetivos', false],
     [c.context, 'apunte de contexto', 'apuntes de contexto', false],
+    [c.pastRecords, 'marca histórica', 'marcas históricas', false],
+    [c.races, 'evento deportivo', 'eventos deportivos', false],
   ];
   return parts.filter(([n, , , main]) => n > 0 || (all && main)).map(([n, one, many]) => plural(n, one, many)).join(sep);
 }
@@ -646,6 +648,7 @@ export function mountData(root) {
     ['Objetivos', counts.goals, 'goals'],
     ['Contexto (fases y hechos)', counts.context, 'context'],
     ['Marcas históricas', counts.pastRecords, 'pastRecords'],
+    ['Eventos deportivos', counts.races, 'races'],
   ].map(([label, n, id]) => kv(label, h('span.cfg-kv-value.tnum', String(n)), { dataset: { count: id } }));
 
   // ---------- borrar todo ----------

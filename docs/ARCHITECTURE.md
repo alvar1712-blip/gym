@@ -36,6 +36,7 @@ Este documento es el **contrato**. Los requisitos completos del usuario están e
 | `js/past-records-logic.js`, `js/views/past-records.js` (estilos `.pr-*` en `css/progress.css`) | Ronda 6: marcas históricas | progreso |
 | `js/confidence.js`, `js/analysis-context.js` | Ronda 6: confianza común y contexto del análisis | analista |
 | `js/analysis-hybrid.js` | Ronda 6: carga por deporte, volumen con contexto, asociaciones personales, agujetas por ejercicio | analista |
+| `js/races-logic.js`, `js/races-progress.js`, `js/views/races.js` (estilos `.rc-*` en `css/progress.css`) | Ronda 6: eventos deportivos | progreso |
 
 **Regla de propiedad:** cada módulo solo edita SUS archivos. Los archivos del núcleo son de solo lectura para
 los módulos; si necesitas un cambio en el núcleo, impleméntalo localmente en tu módulo y descríbelo en tu
@@ -466,6 +467,11 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   quita `endurance-interference` (`endurance.interferenceBasis = 'personal'`). `areaInsights` mezcla los Insights
   híbridos en fuerza, resistencia y recuperación. `stats.weekPlanOf(data, ws)` = `plan.weekPlan` con el contexto
   cacheado de la adherencia. Vista: tabla `[data-block="sport-load"]` en la tarjeta de Resistencia.
+- **Eventos** (fase E): `races-logic.js` (puro, solo util): `RACE_TYPES`, `PRIORITIES`, `normalizeRace(s)`,
+  `validateRace`, `raceRecord`, `linkableGoals`, `splitRaces`, `nextRelevant` (Hoy), `todayLine`, `racesContext`
+  (analista). `races-progress.js` (puro): `racePrediction` (race-predict) y `linkedGoalProgress` (goalProgress).
+  Rutas `#/races`, `#/races/new`, `#/races/:id` (pestaña Progreso). `analysisData()` añade `races`;
+  `analysisContext` devuelve `events`. `backup.dataCounts` cuenta `races`.
 - **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
   `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
   compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.

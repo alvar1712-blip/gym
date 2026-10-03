@@ -57,6 +57,7 @@ export function dataCounts(data = {}) {
     goals: (data.goals || []).length,
     context: (data.context || []).length,
     pastRecords: (data.pastRecords || []).length,
+    races: (data.races || []).length,
   };
 }
 

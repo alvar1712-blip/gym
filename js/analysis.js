@@ -4,7 +4,8 @@
 // y el informe para pegar en una IA (analysis-report.js). Pruebas: tests/unit/analysis.test.mjs.
 //
 // ENTRADA `data` = progress-ui.dataFromStore(today) + `checkins` (store 'checkins') + `cycleDays` (store 'cycle') y, desde la
-// ronda 6, `context` (store 'context') y `pastRecords` (store 'pastRecords'); sin ellos, el análisis es el de siempre.
+// ronda 6, `context` (store 'context'), `pastRecords` (store 'pastRecords') y `races` (store 'races', fase E: solo como
+// contexto); sin ellos, el análisis es el de siempre.
 // El envoltorio que la construye desde el store vive en la vista (views/analysis.js · analysisData()).
 //
 // SALIDA buildAnalysis(data, today) → {
@@ -218,7 +219,7 @@ export function buildAnalysis(data = {}, today) {
   const profile = getProfile(d.settings);
   const female = isFemale(profile);
   const errors = [];
-  const context = attempt(errors, 'context', () => analysisContext({ context: d.context || [], sessions: d.sessions, today: t, profile }), null);
+  const context = attempt(errors, 'context', () => analysisContext({ context: d.context || [], sessions: d.sessions, today: t, profile, races: d.races || [] }), null);
   const opts = { profile, today: t, context };
 
   const info = cycleEnabled(profile) ? attempt(errors, 'cycle', () => cycleInfo(d.cycleDays || [], profile, t), null) : null;

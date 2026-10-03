@@ -50,6 +50,7 @@ export function analysisData(today = todayStr(), base = null) {
   // Ronda 6: tu contexto y tus marcas históricas (el análisis los usa para interpretar y para la confianza)
   if (!d.context) d.context = store.all('context');
   if (!d.pastRecords) d.pastRecords = store.all('pastRecords');
+  if (!d.races) d.races = store.all('races');
   return d;
 }
 

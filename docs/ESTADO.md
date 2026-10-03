@@ -84,6 +84,11 @@
       general cuando hay datos) y agujetas por ejercicio (24/48/72 h, series, RIR y carga). Arreglo: «Tu análisis» no se
       abría con objetivo y sin pesajes.
 
+- [x] **Ronda 6 · fase E**: eventos deportivos (`races`): 5K, 10K, media, maratón, ciclismo, senderismo, triatlón y
+      otro, con fecha, distancia, tiempo objetivo, prioridad A/B/C, nota y objetivo de resistencia enlazado. «Cómo vas»
+      con race-predict y goalProgress; una línea en Hoy («🏁 10K · 73 días · objetivo <50:00»); contexto del analista.
+      Sin planificador. Arreglo: «Borrar todos los datos» no contaba las marcas históricas.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).
@@ -116,3 +121,6 @@
   Pico de carga de un deporte: +50 % sobre su media de 4 semanas. Constancia baja: < 70 % de lo planificado. Cambio de
   volumen: ≥ 25 % y ≥ 2 series/sem entre bloques de 6 semanas. El análisis de energía del peso sigue con los minutos
   totales de resistencia (gasto), no con la carga.
+- Ronda 6 · Fase E: Hoy enseña el evento A o B más cercano del próximo año (o uno C si es en ≤ 30 días); la fecha de un
+  evento es un día concreto; triatlón y «otro» admiten no poner distancia; solo las carreras a pie tienen tiempo
+  previsto.

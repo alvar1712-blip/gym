@@ -1,7 +1,8 @@
 // today.js — pantalla «Hoy»: aviso de copia, sesión en curso, lo que toca hoy (1 toque para
 // empezar), accesos rápidos, peso corporal y mini semana; al final (Fase 3) el check-in de hoy, el resumen del
 // panel semanal y los objetivos. Ronda 5: tras «Te toca hoy», la tarjeta del ciclo (modo mujer, views/cycle.js) y
-// «Completa tu perfil (30 s)»; al final, «Tu análisis» (views/analysis.js).
+// «Completa tu perfil (30 s)»; al final, «Tu análisis» (views/analysis.js). Ronda 6: «Ahora: …» (tu contexto) y, como
+// mucho, una línea con el próximo evento deportivo.
 // PROPIETARIO: módulo de calendario (el hueco .today-extra lo rellena la integración de la Fase 3).
 import * as store from '../store.js';
 import { navigate, refresh } from '../router.js';
@@ -17,6 +18,7 @@ import {
 import { bodyweightQuickEntry } from './bodyweight.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
 import { currentLabel } from '../context-logic.js';
+import { nextRelevant, todayLine, raceTitle } from '../races-logic.js';
 
 const QUICK = [
   { kind: 'run', emoji: '🏃', label: 'Carrera' },
@@ -49,6 +51,9 @@ export async function mountToday(root) {
     content.appendChild(h('button.cal-link-btn.today-context', { type: 'button', onClick: () => navigate('#/context') },
       h('span.today-context-text', h('span.today-context-kicker', 'Ahora: '), ctxNow), icon('chevron-right', 18)));
   }
+  // Ronda 6 (fase E): como mucho una línea con el próximo evento deportivo relevante («🏁 10K · 73 días · objetivo <50:00»).
+  const race = nextRelevant(store.all('races'), today);
+  if (race) content.appendChild(raceLine(race, today));
 
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
@@ -194,6 +199,17 @@ function profilePrompt(isNew = false) {
         },
       }, 'Ahora no')));
   return card;
+}
+
+/** Próximo evento deportivo (races-logic.nextRelevant) → su ficha. Una línea, como «Ahora: …». */
+function raceLine(race, today) {
+  const line = todayLine(race, today);
+  return h('button.cal-link-btn.today-race', {
+    type: 'button',
+    dataset: { race: race.id },
+    'aria-label': `Próximo evento: ${raceTitle(race)}, ${fmtDate(race.date, 'long')}. ${line}`,
+    onClick: () => navigate(`#/races/${encodeURIComponent(race.id)}`),
+  }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁 '), line), icon('chevron-right', 18));
 }
 
 /** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */

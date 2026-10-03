@@ -476,3 +476,46 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .pr-preview { margin: 0; font-size: 14px; color: var(--text-2); }
 .pr-preview:empty { display: none; }
 .pr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+
+/* ---------- Ronda 6 (fase E): eventos deportivos (#/races) ---------- */
+.rc-intro { margin: 0 0 4px; color: var(--text-2); font-size: 15px; line-height: 1.4; }
+.rc-group { display: flex; flex-direction: column; gap: 8px; }
+.rc-group .card-title { margin: 0; }
+.rc-list { border-radius: var(--radius-sm); }
+.rc-none { margin: 0; }
+.rc-fold { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0; background: none; border: 0; color: var(--text); text-align: left; }
+.rc-row { min-height: 64px; }
+.rc-row .list-item-title { white-space: normal; overflow-wrap: anywhere; }
+.rc-row-type { font-weight: 600; color: var(--text-2); }
+.rc-row-meta, .rc-row-pred { line-height: 1.35; white-space: normal; }
+.rc-prio {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%;
+  font-size: 14px; font-weight: 800; background: var(--surface-3); color: var(--text-2);
+}
+.rc-row[data-priority="A"] .rc-prio { background: var(--accent); color: var(--accent-ink); }
+.rc-row[data-priority="B"] .rc-prio { background: var(--surface-3); color: var(--text); }
+.rc-verdict { font-weight: 750; }
+.rc-verdict-ok { color: var(--ok); }
+.rc-verdict-warn { color: var(--warn); }
+.rc-verdict-danger { color: var(--danger); }
+.rc-verdict-info { color: var(--info); }
+.rc-new { margin-top: 4px; }
+.rc-form { display: flex; flex-direction: column; gap: 12px; }
+.rc-block { display: flex; flex-direction: column; gap: 10px; }
+.rc-block .card-title { margin: 0; }
+.rc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rc-field .seg-btn { min-height: 44px; font-size: 15px; }
+.rc-types { gap: 6px; }
+.rc-types .chip { min-height: 44px; }
+.rc-goals .chip { min-height: 44px; max-width: 100%; white-space: normal; text-align: left; }
+.rc-fixed-km { margin: 0; color: var(--text-2); }
+.rc-no-goals { margin: 0; }
+.rc-how-pred, .rc-how-goal { display: flex; flex-direction: column; gap: 4px; }
+.rc-how-line { margin: 0; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+.rc-how-text { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.rc-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.rc-link > .rc-link-emoji { flex: none; font-size: 22px; line-height: 1; }
+.goal-races, .prd-races-link { margin-top: 12px; }
+/* Hoy: una sola línea (como «Ahora: …») */
+.today-race { max-width: 100%; text-align: left; line-height: 1.3; }
+.today-race-text { min-width: 0; }

@@ -756,7 +756,7 @@ test('almacenamiento: persistente, espacio usado y recuento por tipo', async () 
     // El botón de volver a pedirlo solo aparece si no está concedido.
     assert.strictEqual(await page.locator('.cfg-persist-btn').isVisible(), !status.persisted && status.supported);
     const counts = Object.fromEntries(await page.locator('.cfg-counts .cfg-kv').evaluateAll((els) => els.map((e) => [e.dataset.count, e.querySelector('.cfg-kv-value').textContent])));
-    assert.deepStrictEqual({ ...counts, exercises: undefined }, { strength: '3', activities: '4', bodyweight: '3', templates: '5', plan: '1', checkins: '1', goals: '1', context: '0', pastRecords: '0', exercises: undefined });
+    assert.deepStrictEqual({ ...counts, exercises: undefined }, { strength: '3', activities: '4', bodyweight: '3', templates: '5', plan: '1', checkins: '1', goals: '1', context: '0', pastRecords: '0', races: '0', exercises: undefined });
     assert.match(counts.exercises, /^\d+ \(1 propio\)$/);
     await page.locator('.cfg-block[data-block="storage"]').scrollIntoViewIfNeeded();
     await shot(page, 'settings-data-storage');

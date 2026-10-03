@@ -22,6 +22,7 @@
 |---|---|---|
 | C | `analysis-context.test.mjs` | `analysis-context.test.cjs` (Chromium 375 px, WebKit, menor de edad) |
 | D | `analysis-hybrid.test.mjs` | `analysis-hybrid.test.cjs` (Chromium 375 px, WebKit, objetivo sin pesajes) |
+| E | `races.test.mjs` | `races.test.cjs` (Chromium 375 px, WebKit, validación, «Borrar todo» con marcas y eventos) |
 
 Esperas: nunca pausas fijas. Tras navegar, `go()` / `settle()` (espera a `router.settled()` y a dos fotogramas); para
 estados con transición CSS, `page.waitForFunction` con la condición (p. ej. la opacidad del mapa corporal, fase D).

@@ -268,3 +268,37 @@ Con datos suficientes y SIN diferencia también se dice («Tu pierna tolera la r
 ### Coste
 `buildAnalysis` en Node con los historiales del medidor (mediana de 7, intercalado): 3 meses 11 → 15 ms, 1 año
 21 → 30 ms, 2 años 27 → 37 ms, 5 años 58 → 68 ms. Lo resuelve la caché de la fase G (no recalcular si nada cambió).
+
+## Fase E — eventos deportivos (`races`)
+
+### Datos (`js/races-logic.js`, puro y ligero)
+- Almacén propio `races` (fase A, ya en la copia de formato 2), enlazable con un objetivo (`goalId`); el modelo de
+  objetivos no cambia. Registro: `{ id, name, type, date, distanceKm|null, targetSec|null, priority, note, goalId|null,
+  createdAt, updatedAt }`.
+- Tipos: 5K · 10K · media maratón · maratón (carrera; distancia fija) · ciclismo · senderismo (distancia obligatoria) ·
+  triatlón · otro (distancia opcional; «otro» necesita nombre). Prioridad A (principal) · B (importante) · C (de
+  preparación). Objetivo enlazable: de resistencia, activo y del mismo deporte (triatlón y «otro»: cualquiera de
+  resistencia).
+- Decisión: la fecha es un día concreto (un evento futuro tiene fecha); se admiten fechas pasadas (eventos ya hechos,
+  en «Pasados»).
+
+### Pantallas
+- `#/races` (Próximos y Pasados plegados), `#/races/new`, `#/races/:id` (editar, borrar con deshacer). Entradas:
+  Objetivos y Predicciones (fila «Eventos deportivos» con el próximo) y la línea de Hoy.
+- «Cómo vas» (`js/races-progress.js`): en carreras a pie, el veredicto de `race-predict.checkTarget` con el tiempo
+  objetivo (probable · ajustado · hoy no, con su «¿Por qué?») o el rango previsto sin él; y el objetivo enlazado con
+  `goals-logic.goalProgress`. Nada de lógica duplicada. Ciclismo, senderismo y triatlón: sin previsión.
+- **Hoy**: como mucho UNA línea, tras «Ahora: …»: «🏁 10K · 73 días · objetivo <50:00» → la ficha. Se elige el evento
+  A o B más cercano de los próximos 365 días; si no hay, uno C de los próximos 30. Hoy importa solo `races-logic.js`
+  (ligero): la previsión (`races-progress.js` → race-predict) no entra en el arranque.
+- Sin planificador: apuntar un evento no cambia la semana tipo ni el plan.
+
+### Contexto del analista
+`analysisContext({ …, races })` añade `events` (`racesContext`: los de las próximas 26 semanas, el más relevante y sus
+textos); salen en «Tu contexto» de Análisis y los usará el informe (fase F). No cambian ninguna regla.
+
+### Arreglo encontrado de paso
+- La confirmación de «Borrar todos los datos» (y el resumen de una copia al importarla) no contaban las marcas
+  históricas: con solo marcas decía «tus registros». Ahora cuenta marcas y eventos (prueba en
+  `tests/e2e/races.test.cjs`: falla sin el arreglo, pasa con él). Ajustes › Copias y datos tiene la fila «Eventos
+  deportivos».

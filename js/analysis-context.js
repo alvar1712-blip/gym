@@ -12,12 +12,14 @@
 //     life: { stress, travel } (vigentes), sports: [fases de preparación vigentes],
 //     usualWeight: { kg, date } | null, weights (weightReferences),
 //     age: { group:'minor'|'adult'|'senior'|'unknown', years:number|null },
+//     events: races-logic.racesContext (fase E: eventos de las próximas 26 semanas y el más relevante),
 //     changes: [{ text, date }] (cambios recientes legibles), labels: [{ key, text }] (lo vigente, para la pantalla)
 //   }
 // Nada de esto es una conclusión: son hechos con fecha que cada análisis usa para interpretar y para la confianza.
 import { addDays, diffDays, isDateStr, todayStr, fmtDate } from './util.js';
 import { contextSummary, recentChanges, weightReferences, entryRange, entryTitle, entryWhen, normalizeAll, approxFrom } from './context-logic.js';
 import { ageGroup, ageOn } from './profile.js';
+import { racesContext } from './races-logic.js';
 
 /** Parón detectado: este tiempo o más sin ninguna sesión terminada (de cualquier tipo). */
 export const BREAK_DAYS = 21;
@@ -70,7 +72,7 @@ function changeText(c, today) {
  * Contexto para el análisis de un día. `context` = almacén 'context' (se sanea aquí), `sessions` = las sesiones,
  * `profile` = getProfile(settings).
  */
-export function analysisContext({ context = [], sessions = [], today = todayStr(), profile = {} } = {}) {
+export function analysisContext({ context = [], sessions = [], today = todayStr(), profile = {}, races = [] } = {}) {
   const t = isDateStr(today) ? today : todayStr();
   const list = normalizeAll(context);
   const summary = contextSummary(list, t);
@@ -130,15 +132,18 @@ export function analysisContext({ context = [], sessions = [], today = todayStr(
     if (e && e.kind === 'event') labels.push({ key: `health:${k}`, text: `${entryTitle(e)} · ${entryWhen(e)}` });
   }
   const changes = recent.map((c) => ({ text: changeText(c, t), date: c.date, type: c.entry.type, what: c.what }));
+  // Fase E: los eventos deportivos próximos (contexto; no cambian ninguna regla)
+  const events = racesContext(races, t);
+  labels.push(...events.labels);
 
   return {
     today: t, summary, recent, training, creatine, body, health, life,
     sports: summary.byAspect.sport, usualWeight: summary.usualWeight, weights: weightReferences(list, t),
-    age, labels, changes,
+    age, labels, changes, events,
   };
 }
 
 /** Contexto vacío (sin nada apuntado ni detectado) para los análisis llamados sin contexto. */
 export function emptyContext(today = todayStr(), profile = {}) {
-  return analysisContext({ context: [], sessions: [], today, profile });
+  return analysisContext({ context: [], sessions: [], today, profile, races: [] });
 }
