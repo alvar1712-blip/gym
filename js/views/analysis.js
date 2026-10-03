@@ -306,9 +306,8 @@ function weightCard(a, charts) {
     }
   }
   if (w.ok && w.target && t && !minor) el.appendChild(paceGauge(w));
-  el.appendChild(nutritionRow(w));
-  if (w.goalSuggestion) el.appendChild(goalBox(w.goalSuggestion));
-  el.append(...[insightList(areaInsights(a, 'weight')), linkRow('scale', 'Peso corporal: registrar y ver la gráfica', '#/bodyweight')].filter(Boolean));
+  // nutritionRow es null con objetivo elegido y ningún pesaje (sin proteína ni ajuste que mostrar)
+  el.append(...[nutritionRow(w), w.goalSuggestion ? goalBox(w.goalSuggestion) : null, insightList(areaInsights(a, 'weight')), linkRow('scale', 'Peso corporal: registrar y ver la gráfica', '#/bodyweight')].filter(Boolean));
   return el;
 }
 
@@ -465,14 +464,34 @@ function enduranceCard(a) {
   const last = (e.fitness || []).at(-1);
   if (last && isNum(last.pred5kSec)) tiles.push(kpi('5 km previsto', fmtDuration(last.pred5kSec), 'bloque de 4 semanas', 'fivek'));
   const list = areaInsights(a, 'endurance');
+  const loadTable = sportLoadTable(a.hybrid?.sportLoad);
   if (!e.weeklyMinutes4w && !list.length && !last) {
     el.appendChild(note('Sin carreras, bici, natación ni rutas en las últimas semanas. Cuando las registres verás aquí tu forma y tu reparto suave / intenso.'));
+    if (loadTable) el.appendChild(loadTable);
     return el;
   }
   el.appendChild(h(`div.kpis.an-kpis${tiles.length === 2 ? '.kpis-2' : ''}`, tiles));
+  if (loadTable) el.appendChild(loadTable);
   const l = insightList(list);
   if (l) el.appendChild(l);
   return el;
+}
+
+/**
+ * Ronda 6 (fase D): carga por deporte de las 4 últimas semanas completas (minutos × esfuerzo), con su cambio frente a las
+ * 4 anteriores. Cada deporte por separado: 3 h de senderismo suave no pesan como 3 h de carrera. null si no hay nada.
+ */
+function sportLoadTable(sl) {
+  const rows = (sl?.rows || []).filter((r) => r.sessions4w > 0);
+  if (!rows.length) return null;
+  return h('div.an-load', { dataset: { block: 'sport-load' } },
+    h('p.an-load-title', 'Carga por deporte · media semanal de las 4 últimas semanas completas'),
+    h('ul.an-load-list', rows.map((r) => h('li.an-load-row', { dataset: { sport: r.kind } },
+      h('span.an-load-name', r.label),
+      h('span.an-load-val.tnum', `${fmtNum(r.minutes4w, 0)}${NB}min · carga ${fmtNum(r.load4w, 0)}`),
+      h(`span.an-load-chg.tnum${r.changePct == null ? '' : r.changePct >= 25 ? '.up' : r.changePct <= -25 ? '.down' : ''}`,
+        r.changePct == null ? 'nuevo' : `${Math.round(Math.abs(r.changePct)) === 0 ? '' : r.changePct > 0 ? '+' : '−'}${fmtNum(Math.abs(r.changePct), 0)}${NB}%`)))),
+    h('p.an-load-why', 'Carga = minutos × esfuerzo (RPE). Cada deporte se mide aparte; el % compara con las 4 semanas anteriores.'));
 }
 
 // ---------- Recuperación ----------
@@ -480,7 +499,7 @@ function recoveryCard(a) {
   const el = card('recovery', cardHead('refresh', 'Recuperación', 'Sueño y energía frente a tu rendimiento'));
   const list = areaInsights(a, 'recovery');
   el.appendChild(list.length ? insightList(list) : note('Sin datos de recuperación todavía.'));
-  el.appendChild(h('p.an-hint', 'Haz el check-in (sueño y energía) al empezar tus sesiones de fuerza: son 3 toques.'));
+  el.appendChild(h('p.an-hint', 'Haz el check-in (sueño, energía, estrés y agujetas, y si quieres las zonas con agujetas o molestias) al empezar tus sesiones de fuerza: son 4 toques.'));
   return el;
 }
 

@@ -77,6 +77,13 @@
       del cambio), fuerza que distingue recuperación de marcas, ejercicio nuevo y mejor marca, reglas por edad (menores
       y 65+) e Insight ampliado (confianza, contexto, observación/interpretación/recomendación) en la pantalla.
 
+- [x] **Ronda 6 · fase D**: `js/analysis-hybrid.js`: carga por deporte (minutos × RPE, tabla en Resistencia y aviso de
+      pico), volumen con contexto (mantener si progresas aunque estés por debajo del rango; reducir con agujetas fuertes o
+      fatiga; añadir solo sin progreso, sin fatiga y con constancia; cambios de volumen antes/después), interferencia y
+      recuperación con datos personales (≥ 6 y 6 en ≥ 4 semanas; «aparece asociado», nunca «causa»; sustituye a la regla
+      general cuando hay datos) y agujetas por ejercicio (24/48/72 h, series, RIR y carga). Arreglo: «Tu análisis» no se
+      abría con objetivo y sin pesajes.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).
@@ -104,3 +111,8 @@
   semanas). La creatina se tiene en cuenta 6 semanas. Recuperación de fuerza: por debajo del 97 % de la referencia.
 - Ronda 6 · Fase C: con confianza baja no se proponen cambios de calorías (salvo si bajas demasiado rápido); menores sin
   calorías; 65+ con ajustes ≤ 250 kcal.
+- Ronda 6 · Fase D: asociaciones personales con ≥ 6 veces con y ≥ 6 sin, en ≥ 4 semanas (últimas 26) y d ≥ 0,5;
+  diferencias apreciables: rendimiento 3 %, ritmo 2 %, agujetas 1,5/10, sesiones saltadas o a medias 15 puntos.
+  Pico de carga de un deporte: +50 % sobre su media de 4 semanas. Constancia baja: < 70 % de lo planificado. Cambio de
+  volumen: ≥ 25 % y ≥ 2 series/sem entre bloques de 6 semanas. El análisis de energía del peso sigue con los minutos
+  totales de resistencia (gasto), no con la carga.

@@ -18,10 +18,10 @@
 // (5 km previsto con Riegel), checkin-logic.js y profile.js; los umbrales de estancamiento y descarga salen de settings.
 import { addDays, diffDays, weekStart, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtPace, round } from './util.js';
 import { isWorkSet, setMetrics, sessionDurationMin, pace } from './calc.js';
-import { exercisesWithHistory, exerciseHistory, weeklySeries, runPaceSeries, dataRange } from './stats.js';
+import { exercisesWithHistory, exerciseHistory, weeklySeries, runPaceSeries, dataRange, adherenceSeries, adherenceTotals } from './stats.js';
 import { analyzeRuns, predictDistance, raceFor, MIN_KM as RUN_MIN_KM, MIN_PACE, MIN_VALID } from './race-predict.js';
 import { getProfile, isFemale, g } from './profile.js';
-import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin } from './checkin-logic.js';
+import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin, areasOf } from './checkin-logic.js';
 import { defaultSettings, MUSCLE_LABEL } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
 import { exerciseRecovery, markLabel, markWhen } from './past-records-logic.js';
@@ -473,6 +473,22 @@ function lastBodyweight(d, today) {
   return best ? best.kg : null;
 }
 
+/** Ronda 6 (fase D): veces con agujetas fuertes (≥ level/10) por músculo en los check-ins de los últimos `days` días. */
+export function strongDomsByMuscle(d, today, { level = 7, days = 14 } = {}) {
+  const out = new Map();
+  for (const c of checkinsBetween(d.checkins, addDays(today, -(days - 1)), today)) {
+    for (const a of areasOf(c)) if (a.kind === 'muscle' && a.level >= level) out.set(a.zone, (out.get(a.zone) || 0) + 1);
+  }
+  return out;
+}
+
+/** Ronda 6 (fase D): constancia de las 4 semanas completas anteriores (planificado frente a hecho). low: < 70 % con ≥ 4 planificadas. */
+export function adherence4w(d, today) {
+  const ws = weekStart(today);
+  const t = adherenceTotals(adherenceSeries(d, addDays(ws, -28), addDays(ws, -1)));
+  return { ...t, low: t.pctPast != null && t.planned >= 4 && t.pctPast < 70 };
+}
+
 /** Repeticiones típicas (mediana) de las series de trabajo de las últimas 3 sesiones. */
 function typicalReps(pointsEra, ex) {
   const reps = [];
@@ -800,6 +816,8 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     const targets = targetsOf(d.settings);
     const fat = fatigueSignals(d, today);
     const bwKg = lastBodyweight(d, today);
+    const sore = strongDomsByMuscle(d, today);
+    const adh = adherence4w(d, today);
     stalledList.slice(0, 3).forEach((x, i) => {
       const c = byId.get(x.exerciseId);
       const tips = [];
@@ -829,7 +847,16 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
         tips.push('cuidar la técnica y recuperarte bien entre sesiones antes de añadir más trabajo');
         srcs.push(SOURCES.fragala2019);
       }
-      if (below.length && !minor && !(senior && fat.any)) {
+      // Ronda 6 (fase D): más volumen solo si no hay agujetas fuertes repetidas en ese músculo ni poca constancia; con
+      // agujetas fuertes, al revés: quitar algo.
+      const soreM = (c.ex.primary || []).find((m) => (sore.get(m) || 0) >= 2);
+      if (soreM) {
+        tips.push(`quitar 2–4 series por semana de ${(MUSCLE_LABEL[soreM] || soreM).toLowerCase()} 1–2 semanas, porque has tenido agujetas fuertes ahí ${sore.get(soreM)} veces en 2 semanas`);
+        tipRows.push({ label: 'Agujetas fuertes', value: `${(MUSCLE_LABEL[soreM] || soreM).toLowerCase()}: ${sore.get(soreM)} veces ≥ 7/10 en 14 días → menos volumen, no más` });
+      } else if (below.length && adh.low) {
+        tipRows.push({ label: 'Constancia', value: `${adh.completed} de ${adh.planned - adh.pending} sesiones planificadas (${adh.pctPast} %) → antes que más series, constancia` });
+        tips.push(`antes que más series, constancia: en 4 semanas hiciste el ${adh.pctPast} % de lo planificado`);
+      } else if (below.length && !minor && !(senior && fat.any)) {
         const b = below[0];
         tips.push(`+1–2 series por semana de ${(MUSCLE_LABEL[b.m] || b.m).toLowerCase()} (haces ${fmtNum(b.avg, 1)} y tu rango es ${b.t[0]}–${b.t[1]})`);
         srcs.push(SOURCES.schoenfeld2017);
@@ -1120,6 +1147,10 @@ export function analyzeEndurance(data, opts = {}) {
     }
     insights.push(insight({
       id: 'endurance-fitness', area: 'endurance', level: lvl, priority: prio, title, text, rule, data: rows, sources: [],
+      confidence: combine([
+        byCount(fitness.length, { low: 2, medium: 3, high: 4 }, (k) => `${k} bloques de ${BLOCK_WEEKS} semanas con previsión`, 'blocks'),
+        byCount(last.runs, { low: 2, medium: 3, high: 5 }, (k) => `${k} carreras en el último bloque`, 'runs'),
+      ]),
       action: { label: 'Tiempos previstos', href: '#/predictions' },
     }));
 
@@ -1137,6 +1168,7 @@ export function analyzeEndurance(data, opts = {}) {
         const date = addDays(today, BLOCK_WEEKS * 7);
         insights.push(insight({
           id: 'forecast-5k', area: 'forecast', level: 'info', priority: 36,
+          confidence: combine([byCount(fitness.length, { low: 3, medium: 4, high: 6 }, (k) => `${k} bloques`, 'blocks'), capAt('medium', 'es una proyección: el ritmo cambia', 'forecast')]),
           title: `5 km: ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)}`,
           text: `Si sigues así, tu 5 km previsto podría estar en ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)} (ahora ~${timeTxt(last.pred5kSec)}). Es una estimación.`,
           rule: `Pendiente robusta (Theil–Sen) del 5 km previsto de tus bloques de ${BLOCK_WEEKS} semanas, en % por semana, con un tope prudente de 0,75 %/sem y rendimientos decrecientes (τ = ${TAU_WEEKS} semanas); rango ±3 % como mínimo (o la dispersión de los bloques si es mayor), redondeado a 5 s.`,
@@ -1187,7 +1219,13 @@ export function analyzeEndurance(data, opts = {}) {
         text: `El ${shareTxt} de tus minutos de resistencia fue suave${unk}: en línea con el ~80/20 que se recomienda.`,
       };
     }
-    insights.push(insight({ id: 'endurance-intensity', area: 'endurance', rule, data: rows, sources: [SOURCES.seiler2010], ...o }));
+    insights.push(insight({
+      id: 'endurance-intensity', area: 'endurance', rule, data: rows, sources: [SOURCES.seiler2010], ...o,
+      confidence: combine([
+        byCount(intensity.easyCount + intensity.hardCount, { low: 4, medium: 6, high: 10 }, (k) => `${k} sesiones con tipo o esfuerzo`, 'count'),
+        intensity.unknownCount ? capAt('medium', `${plural(intensity.unknownCount, 'sesión sin tipo ni esfuerzo', 'sesiones sin tipo ni esfuerzo')}`, 'unknown') : null,
+      ]),
+    }));
   }
 
   // --- Interferencia -----------------------------------------------------------
@@ -1211,6 +1249,10 @@ export function analyzeEndurance(data, opts = {}) {
     if (impact) rows.push({ label: 'Rendimiento de pierna (esos días / resto)', value: `${pctTxt(impact.affected * 100, 1)} / ${pctTxt(impact.others * 100, 1)} de tu máximo de 4 semanas (${impact.nAffected} y ${impact.nOthers} sesiones)` });
     insights.push(insight({
       id: 'endurance-interference', area: 'endurance', level: interference.length >= 4 ? 'warn' : 'info', priority: interference.length >= 4 ? 50 : 44,
+      confidence: combine([
+        byCount(interference.length, { low: 2, medium: 3, high: 5 }, (k) => `${k} veces en ${INTERFERENCE_WEEKS} semanas`, 'count'),
+        impact ? byCount(Math.min(impact.nAffected, impact.nOthers), { low: 2, medium: 4, high: 6 }, (k) => `${k} sesiones en el grupo más pequeño para comparar el rendimiento`, 'impact') : capAt('medium', 'es un recuento: sin sesiones suficientes para comparar tu rendimiento', 'impact'),
+      ]),
       title: 'Resistencia intensa pegada a la pierna',
       text,
       rule: `Sesiones de fuerza con pierna (3 series o más de ejercicios de cuádriceps, isquiotibiales o glúteos) de las últimas ${INTERFERENCE_WEEKS} semanas con carrera, bici o senderismo exigente (series, tempo, competición, RPE 6 o más, 150 min o más, o una ruta con 700 m de desnivel o más) el día antes, o el mismo día y terminada menos de ${SAME_DAY_HOURS} h antes de la fuerza. Solo se comenta si se repite (${INTERFERENCE_MIN} veces o más) y la última es de las últimas ${RECENT_DAYS / 7} semanas.${impact ? ' Rendimiento de pierna: mejor 1RM estimado de cada ejercicio de pierna frente a su máximo de las 4 semanas previas.' : ''}`,
@@ -1224,6 +1266,7 @@ export function analyzeEndurance(data, opts = {}) {
   if (easyPace && easyPace.pct >= 2) {
     insights.push(insight({
       id: 'endurance-easy-pace', area: 'endurance', level: 'good', priority: 30,
+      confidence: combine([byCount(Math.min(easyPace.nCur, easyPace.nPrev), { low: 2, medium: 3, high: 5 }, (k) => `${k} carreras suaves en el tramo más corto`, 'count'), capAt('medium', 'el terreno y el calor también cambian el ritmo', 'terrain')]),
       title: 'Tus rodajes suaves van más rápidos',
       text: `Mediana de ${fmtPace(easyPace.cur)} en las últimas 4 semanas frente a ${fmtPace(easyPace.prev)} antes (un ${pctTxt(easyPace.pct, 1)} más rápido). Si el esfuerzo es el mismo, es señal de mejor base aeróbica.`,
       rule: `Ritmo mediano de las carreras suaves (rodaje/Z2, tirada larga o RPE 5 o menos) de ${RUN_MIN_KM} km o más: últimas 4 semanas frente a las 8 anteriores, con al menos 2 en cada tramo. Se comenta si es un 2 % o más rápido. El terreno y el calor también cuentan.`,
@@ -1402,6 +1445,7 @@ export function analyzeRecovery(data, opts = {}) {
   if (pairs.length < MIN_LINKED) {
     insights.push(insight({
       id: 'recovery-insufficient', area: 'recovery', level: 'info', priority: 8,
+      confidence: confInsufficient(`${pairs.length} de ${MIN_LINKED} sesiones con check-in`),
       title: 'Check-ins: aún pocos para ver patrones',
       text: `Llevas ${plural(pairs.length, 'sesión', 'sesiones')} de fuerza con check-in (sueño o energía). Con ${MIN_LINKED} o más podré decirte si dormir mal o llegar con poca energía cambia tu rendimiento.`,
       rule, data: [{ label: 'Sesiones con check-in y rendimiento', value: `${pairs.length} de ${MIN_LINKED}` }],
@@ -1410,6 +1454,11 @@ export function analyzeRecovery(data, opts = {}) {
   } else {
     sleep = compareByCheckin(pairs, 'sleep');
     energy = compareByCheckin(pairs, 'energy');
+    const groupConf = (c) => combine([
+      byCount(Math.min(c.nLow, c.nOther), { low: MIN_GROUP, medium: 5, high: 8 }, (k) => `${k} sesiones en el grupo más pequeño`, 'count'),
+      Number.isFinite(c.d) && c.d < 0.8 ? capAt('medium', 'diferencia moderada', 'effect') : null,
+      capAt('medium', 'es una asociación en tus datos, no una causa demostrada', 'assoc'),
+    ]);
     const pairRows = pairs.slice(-12).map((x) => ({ label: dayTxt(x.date, today), value: `${pctTxt(x.ratio * 100, 1)} de tu máximo · sueño ${word(x.checkin.sleep, 'sleep')} · energía ${word(x.checkin.energy, 'energy')}` }));
     const groupRows = (c, noun, lowW) => [
       { label: `${cap(noun)} ${lowW}`, value: c.nLow ? `${pctTxt(c.low * 100, 1)} de media · ${plural(c.nLow, 'sesión', 'sesiones')}` : 'ninguna sesión' },
@@ -1418,7 +1467,7 @@ export function analyzeRecovery(data, opts = {}) {
     if (sleep.pattern) {
       const pr = Math.round(sleep.pct);
       insights.push(insight({
-        id: 'recovery-sleep', area: 'recovery', level: pr >= 5 ? 'warn' : 'info', priority: 56,
+        id: 'recovery-sleep', area: 'recovery', level: pr >= 5 ? 'warn' : 'info', priority: 56, confidence: groupConf(sleep),
         title: 'Dormir mal te resta fuerza',
         text: `Los días que dormiste mal rendiste un ${pctTxt(pr)} menos (${plural(sleep.nLow, 'sesión', 'sesiones')} con sueño bajo frente a ${fmtNum(sleep.nOther, 0)} con sueño normal o bueno). Esos días, prioriza la técnica y no busques récords; si se repite a menudo, cuidar el horario de sueño es de lo que más te puede aportar.`,
         rule, data: [...groupRows(sleep, 'sueño', 'bajo'), ...pairRows], sources: [SOURCES.knowles2018],
@@ -1427,7 +1476,7 @@ export function analyzeRecovery(data, opts = {}) {
     if (energy.pattern) {
       const pr = Math.round(energy.pct);
       insights.push(insight({
-        id: 'recovery-energy', area: 'recovery', level: 'info', priority: 50,
+        id: 'recovery-energy', area: 'recovery', level: 'info', priority: 50, confidence: groupConf(energy),
         title: 'Con poca energía rindes menos',
         text: `Los días que llegaste ${g(p, 'cansado', 'cansada')} (energía baja) rendiste un ${pctTxt(pr)} menos (${plural(energy.nLow, 'sesión', 'sesiones')} frente a ${fmtNum(energy.nOther, 0)}). Si pasa a menudo, mira el descanso, la comida antes de entrenar y el total de carga de la semana.`,
         rule, data: [...groupRows(energy, 'energía', 'baja'), ...pairRows], sources: [SOURCES.knowles2018],
@@ -1440,6 +1489,7 @@ export function analyzeRecovery(data, opts = {}) {
       const diffs = [sleep, energy].filter((c) => c.pct != null).map((c) => `${c.key === 'sleep' ? 'sueño' : 'energía'} ${Math.abs(c.pct) < 0.5 ? '±0' : `${c.pct > 0 ? '−' : '+'}${fmtNum(Math.abs(c.pct), 1)}`} %`);
       insights.push(insight({
         id: 'recovery-no-pattern', area: 'recovery', level: 'neutral', priority: 15,
+        confidence: combine([byCount(pairs.length, { low: MIN_LINKED, medium: 12, high: 20 }, (k) => `${k} sesiones con check-in`, 'count')]),
         title: 'Sin un patrón claro con el sueño y la energía',
         text: `Con ${plural(pairs.length, 'sesión', 'sesiones')} con check-in, tu rendimiento no cambia de forma clara según cómo duermes o llegas${diffs.length ? ` (${diffs.join(', ')} los días bajos)` : ''}.${few.length ? ` Aún hay pocos ${joinList(few)} para compararlo bien.` : ''}`,
         rule, data: [...groupRows(sleep, 'sueño', 'bajo'), ...groupRows(energy, 'energía', 'baja'), ...pairRows], sources: [SOURCES.knowles2018],
@@ -1490,6 +1540,15 @@ function phaseAnalysis({ perf, checkins, cycle, today, from }) {
   return { ok: true, cycles: cyclesWith.size, rows, best, worst, pct, pattern: pct >= PATTERN_PCT - EPS };
 }
 
+/** Confianza del análisis por fases: ciclos con sesiones y sesiones de la fase con menos datos; fases estimadas → media como mucho. */
+function phaseConf(ph) {
+  return combine([
+    byCount(ph.cycles, { low: 2, medium: 3, high: 4 }, (k) => `${k} ciclos completos con sesiones`, 'cycles'),
+    byCount(Math.min(...ph.rows.map((r) => r.n)), { low: MIN_GROUP, medium: 5, high: 8 }, (k) => `${k} sesiones en la fase con menos datos`, 'count'),
+    capAt('medium', 'las fases son estimaciones', 'phase'),
+  ]);
+}
+
 function phaseInsight(ph, today, p) {
   const rows = ph.rows.map((r) => ({
     label: cap(PHASE_LABEL[r.phase]),
@@ -1499,16 +1558,19 @@ function phaseInsight(ph, today, p) {
   const rule = `Solo tu historial: fase estimada de cada sesión con tus ciclos completos (regla, folicular con la ovulación aproximada, lútea y premenstrual, los 5 últimos días) y, en cada fase con ${MIN_GROUP} sesiones o más, la media del rendimiento relativo (mejor 1RM estimado frente al máximo de las 4 semanas previas) y de la energía del check-in. Hace falta haber entrenado en 2 ciclos completos o más. Se habla de diferencia si la mejor y la peor fase se separan un ${PATTERN_PCT} % o más. Las fases son estimaciones y con pocos datos una diferencia puede ser casualidad.`;
   if (ph.pattern) {
     return insight({
-      id: 'cycle-performance', area: 'cycle', level: 'info', priority: 38,
+      id: 'cycle-performance', area: 'cycle', level: 'info', priority: 38, confidence: phaseConf(ph),
       title: `En tu historial, ${PHASE_LABEL[ph.worst.phase]} es tu fase más floja`,
       text: `En ${PHASE_LABEL[ph.worst.phase]} rindes un ${pctTxt(Math.round(ph.pct))} menos que en ${PHASE_LABEL[ph.best.phase]} (${plural(ph.worst.n, 'sesión', 'sesiones')} y ${fmtNum(ph.best.n, 0)}). Es lo que dicen tus datos, no una regla: en promedio la fase afecta poco y de forma distinta a cada mujer. Si esos días te notas peor, baja un poco la carga sin culpa; si te sientes bien, entrena normal.`,
       rule, data: rows, sources: [SOURCES.mcnulty2020],
     });
   }
   return insight({
-    id: 'cycle-performance', area: 'cycle', level: 'neutral', priority: 24,
+    id: 'cycle-performance', area: 'cycle', level: 'neutral', priority: 24, confidence: phaseConf(ph),
     title: 'Tu rendimiento apenas cambia con el ciclo',
     text: `En tu historial no se ve una diferencia clara de rendimiento entre fases (como mucho un ${pctTxt(ph.pct, 1)}). Coincide con la evidencia: en promedio la fase afecta poco. Entrena según cómo te sientas cada día${g(p, '.', '; si algún día estás cansada, ajusta sin culpa.')}`,
     rule, data: rows, sources: [SOURCES.mcnulty2020, SOURCES.colensoSemple2023],
   });
 }
+
+// Ronda 6 (fase D): piezas que usa analysis-hybrid.js (carga por deporte, volumen, interferencia personal).
+export { legSets as legSetsOf, demanding as demandingEndurance, muscleAverages, fatigueSignals, LEG_MUSCLES };

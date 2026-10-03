@@ -6,7 +6,7 @@
 // de rutinas. Pruebas: tests/unit/analysis.test.mjs.
 import { fmtNum, fmtDate, fmtDuration } from './util.js';
 import { SEXES, GOALS, EXPERIENCES, CONTRACEPTION, label, g, isFemale } from './profile.js';
-import { LEVEL_LABEL, DISCLAIMER } from './analysis.js';
+import { LEVEL_LABEL, DISCLAIMER, areaInsights } from './analysis.js';
 
 /** Insights de peso que revelan datos del ciclo (fuera del informe sin permiso). */
 export const CYCLE_WEIGHT_IDS = ['weight-cycle-retention', 'weight-reds-cycle'];
@@ -91,7 +91,7 @@ function strengthSection(a, includeCycle) {
     }
     if (analyzed.length > MAX_EXERCISES) out.push(`- (${analyzed.length - MAX_EXERCISES} ejercicios más con datos)`);
   }
-  out.push(...observations((s.insights || []).filter((i) => i.area === 'strength'), includeCycle));
+  out.push(...observations(areaInsights(a, 'strength'), includeCycle));
   return out;
 }
 
@@ -107,7 +107,7 @@ function enduranceSection(a, includeCycle) {
   if (fit.length) {
     out.push(`- 5 km previsto por bloques de 4 semanas: ${fit.map((b) => `${fmtDuration(b.pred5kSec)} (${day(b.weekStart, a.today)}–${day(b.weekEnd, a.today)})`).join(' → ')}`);
   }
-  out.push(...observations((e.insights || []).filter((i) => i.area === 'endurance'), includeCycle));
+  out.push(...observations(areaInsights(a, 'endurance'), includeCycle));
   return out;
 }
 
@@ -115,7 +115,7 @@ function recoverySection(a, includeCycle) {
   const r = a.recovery || {};
   const out = ['RECUPERACIÓN (sueño y energía del check-in frente al rendimiento de la sesión)'];
   if (isNum(r.linked)) out.push(`- Sesiones de fuerza con check-in: ${r.linked}`);
-  out.push(...observations((r.insights || []).filter((i) => i.area !== 'cycle'), includeCycle));
+  out.push(...observations(areaInsights(a, 'recovery'), includeCycle));
   return out;
 }
 

@@ -35,6 +35,7 @@ Este documento es el **contrato**. Los requisitos completos del usuario están e
 | `js/context-logic.js`, `js/views/context.js`, `js/approx-input.js`, `css/context.css` | Ronda 6: tu contexto y el campo de fecha aproximada | contexto |
 | `js/past-records-logic.js`, `js/views/past-records.js` (estilos `.pr-*` en `css/progress.css`) | Ronda 6: marcas históricas | progreso |
 | `js/confidence.js`, `js/analysis-context.js` | Ronda 6: confianza común y contexto del análisis | analista |
+| `js/analysis-hybrid.js` | Ronda 6: carga por deporte, volumen con contexto, asociaciones personales, agujetas por ejercicio | analista |
 
 **Regla de propiedad:** cada módulo solo edita SUS archivos. Los archivos del núcleo son de solo lectura para
 los módulos; si necesitas un cambio en el núcleo, impleméntalo localmente en tu módulo y descríbelo en tu
@@ -458,6 +459,13 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   recommendation }); `text` = texto completo (compatibilidad). `analyzeWeight` devuelve además `confidence`, `goal`,
   `goalSource` ('profile'|'phase'), `regain`, `age` y `projectable`; cada fila de `analyzeStrength().exercises` lleva
   `kind` ('recovery'|'new_exercise'|'new_best'|'progress'|'insufficient'), `recovery` y `confidence`.
+- **Híbrido** (`analysis-hybrid.js`, puro; fase D): `analyzeHybrid(data, { today, profile, context, strength, endurance })`
+  → `{ sportLoad:{rows}, volume:{muscles}, volumeChanges, associations, doms, insights }`; piezas exportadas
+  `sportLoad`, `volumeReview`, `volumeChanges`, `personalAssociations`, `domsByExercise`, `compareGroups`,
+  `associationConfidence`, `personalInterference`. `buildAnalysis` devuelve `hybrid` y, si `personalInterference`,
+  quita `endurance-interference` (`endurance.interferenceBasis = 'personal'`). `areaInsights` mezcla los Insights
+  híbridos en fuerza, resistencia y recuperación. `stats.weekPlanOf(data, ws)` = `plan.weekPlan` con el contexto
+  cacheado de la adherencia. Vista: tabla `[data-block="sport-load"]` en la tarjeta de Resistencia.
 - **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
   `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
   compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.

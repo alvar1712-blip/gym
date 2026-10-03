@@ -30,7 +30,7 @@ import {
   detectPRs,
 } from './calc.js';
 import { bwPoints, bwTrend } from './activity-logic.js';
-import { makeCtx, adherence, adherenceText, trackingSince } from './plan.js';
+import { makeCtx, adherence, adherenceText, trackingSince, weekPlan } from './plan.js';
 import { formatSet, fmtLastre, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
 import { MUSCLES, MUSCLE_LABEL } from './seed.js';
 
@@ -1064,6 +1064,14 @@ function planCtxOf(idx) {
     today: idx.today, since,
   });
   return idx.planCtx;
+}
+
+/**
+ * Los 7 días de la semana `ws` con su plan y su estado (plan.weekPlan, con el mismo contexto que adherenceSeries).
+ * Ronda 6 (fase D): para separar los días de fuerza planificados de los de resistencia.
+ */
+export function weekPlanOf(data, ws) {
+  return weekPlan(ws, planCtxOf(getIndex(data)));
 }
 
 /**

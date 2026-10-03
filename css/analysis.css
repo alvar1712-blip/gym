@@ -304,3 +304,15 @@
 .an-ctx-changes { font-size: 14px; line-height: 1.45; color: var(--text-2); }
 .an-ctx-changes b { color: var(--text); }
 .an-ctx-why { font-size: 13px; color: var(--muted); }
+
+/* ---------- Ronda 6 (fase D): carga por deporte ---------- */
+.an-load { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.an-load-title { font-size: 13px; font-weight: 750; color: var(--muted); }
+.an-load-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.an-load-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 54px; gap: 8px; align-items: baseline; font-size: 14px; }
+.an-load-name { font-weight: 700; overflow-wrap: anywhere; }
+.an-load-val { color: var(--text-2); white-space: nowrap; }
+.an-load-chg { text-align: right; color: var(--muted); white-space: nowrap; }
+.an-load-chg.up { color: var(--warn); }
+.an-load-chg.down { color: var(--info); }
+.an-load-why { font-size: 12px; color: var(--muted); }

@@ -17,6 +17,15 @@
   (standalone), el gesto de atrás del borde, el teclado real, las zonas seguras ni el almacenamiento de iOS. Esos
   puntos van en la lista de comprobación manual en iPhone (fase H de `docs/MEJORAS6.md`).
 
+## Ronda 6: pruebas por fase
+| Fase | Unitarias | E2E |
+|---|---|---|
+| C | `analysis-context.test.mjs` | `analysis-context.test.cjs` (Chromium 375 px, WebKit, menor de edad) |
+| D | `analysis-hybrid.test.mjs` | `analysis-hybrid.test.cjs` (Chromium 375 px, WebKit, objetivo sin pesajes) |
+
+Esperas: nunca pausas fijas. Tras navegar, `go()` / `settle()` (espera a `router.settled()` y a dos fotogramas); para
+estados con transición CSS, `page.waitForFunction` con la condición (p. ej. la opacidad del mapa corporal, fase D).
+
 ## Medición de arranque (`npm run perf`)
 - `hoy`: ms hasta ver «Te toca hoy» · `listo`: hasta completar las tarjetas del final de Hoy · `bloqTot` y `bloqMax`:
   tareas largas (> 50 ms) del arranque, total y la mayor (lo que se nota como «no responde»).

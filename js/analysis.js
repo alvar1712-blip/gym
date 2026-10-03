@@ -17,7 +17,8 @@
 //   forecast : Insight[] (área 'forecast': fuerza, 5 km y la proyección del peso de aquí)
 //   keyPoints: Insight[] (hasta 3, los de mayor prioridad y de áreas distintas; ver pickKeyPoints)
 //   all      : Insight[] (todos, sin repetir id, por prioridad), errors: [{ area, message }],
-//   context  : analysis-context.analysisContext(...) (ronda 6: lo que se tuvo en cuenta del contexto) }
+//   context  : analysis-context.analysisContext(...) (ronda 6: lo que se tuvo en cuenta del contexto),
+//   hybrid   : analysis-hybrid.analyzeHybrid(...) (ronda 6, fase D: carga por deporte, volumen, asociaciones, agujetas) }
 // Ronda 6 (fase C): los Insights pueden llevar `confidence` (confidence.js), `context` y `parts`; ver analysis-weight.js.
 // Un fallo en un análisis no tumba los demás: su parte queda vacía y se anota en `errors`.
 import { addDays, isDateStr, todayStr, fmtNum, fmtDate } from './util.js';
@@ -27,6 +28,7 @@ import { analyzeWeight } from './analysis-weight.js';
 import { analyzeStrength, analyzeEndurance, analyzeRecovery, ENDURANCE_KINDS } from './analysis-training.js';
 import { cycleInfo, fmtRange, LIMITS as CYCLE_LIMITS } from './cycle-logic.js';
 import { analysisContext } from './analysis-context.js';
+import { analyzeHybrid, personalInterference } from './analysis-hybrid.js';
 
 /** Orden de las áreas (desempates y orden de las tarjetas). */
 export const AREAS = ['weight', 'strength', 'endurance', 'recovery', 'cycle', 'forecast'];
@@ -237,6 +239,15 @@ export function buildAnalysis(data = {}, today) {
     context,
   }), { ok: false, trend: null, target: null, status: 'insufficient', insights: [] });
   const recovery = attempt(errors, 'recovery', () => analyzeRecovery(d, { ...opts, cycle: info }), { insights: [] });
+  // Ronda 6 (fase D): carga por deporte, volumen con contexto, asociaciones personales y agujetas por ejercicio
+  const hybrid = attempt(errors, 'hybrid', () => analyzeHybrid(d, { today: t, profile, context, strength, endurance }),
+    { sportLoad: { rows: [] }, volume: { muscles: [] }, volumeChanges: [], associations: [], doms: [], insights: [] });
+  // findInterference evoluciona: con datos personales suficientes, la asociación personal sustituye a la regla general
+  // («Resistencia intensa pegada a la pierna»), para no decir dos cosas distintas sobre lo mismo.
+  if (personalInterference(hybrid)) {
+    endurance.insights = (endurance.insights || []).filter((i) => i.id !== 'endurance-interference');
+    endurance.interferenceBasis = 'personal';
+  }
 
   let cycle = null;
   if (info) {
@@ -254,7 +265,7 @@ export function buildAnalysis(data = {}, today) {
   const byId = new Map();
   const pool = [
     ...(weight.insights || []), ...(strength.insights || []), ...(endurance.insights || []), ...(recovery.insights || []),
-    ...(cycle ? cycle.insights : []), ...forecast,
+    ...(hybrid.insights || []), ...(cycle ? cycle.insights : []), ...forecast,
   ];
   for (const i of pool) if (i && i.id && !byId.has(i.id)) byId.set(i.id, i);
   const all = sortInsights([...byId.values()]);
@@ -262,7 +273,7 @@ export function buildAnalysis(data = {}, today) {
 
   return {
     today: t, profile, profileIncomplete: profileIncomplete(profile), female, hasData,
-    weight, strength, endurance, recovery, cycle, forecast,
+    weight, strength, endurance, recovery, cycle, forecast, hybrid,
     keyPoints: pickKeyPoints(all, 3), all, errors, context,
   };
 }
@@ -270,10 +281,11 @@ export function buildAnalysis(data = {}, today) {
 /** Insights de un área para su tarjeta (la recuperación sin los del ciclo, que van en «Ciclo»). */
 export function areaInsights(analysis, area) {
   if (!analysis) return [];
+  const hy = (analysis.hybrid?.insights || []).filter((i) => i.area === area);
   if (area === 'weight') return (analysis.weight?.insights || []).slice();
-  if (area === 'strength') return (analysis.strength?.insights || []).filter((i) => i.area === 'strength');
-  if (area === 'endurance') return (analysis.endurance?.insights || []).filter((i) => i.area === 'endurance');
-  if (area === 'recovery') return (analysis.recovery?.insights || []).filter((i) => i.area !== 'cycle');
+  if (area === 'strength') return sortInsights([...(analysis.strength?.insights || []).filter((i) => i.area === 'strength'), ...hy]);
+  if (area === 'endurance') return sortInsights([...(analysis.endurance?.insights || []).filter((i) => i.area === 'endurance'), ...hy]);
+  if (area === 'recovery') return sortInsights([...(analysis.recovery?.insights || []).filter((i) => i.area !== 'cycle'), ...hy]);
   if (area === 'cycle') return analysis.cycle ? analysis.cycle.insights.slice() : [];
   if (area === 'forecast') return (analysis.forecast || []).slice();
   return [];

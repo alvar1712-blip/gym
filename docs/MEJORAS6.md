@@ -196,3 +196,75 @@ volumen. Las marcas manuales siguen separadas de los récords de Entreno (solo s
   `tests/e2e/analysis-context.test.cjs`: falla sin el arreglo, pasa con él).
 - La tarjeta del peso decía «Calorías: sin cambios · estás en tu rango» cuando no se proponía ajuste por el contexto o
   por confianza baja (sin estar en el rango): ahora dice «por ahora: reevalúa en unas semanas».
+
+## Fase D — entrenamiento híbrido, volumen y recuperación (`js/analysis-hybrid.js`)
+
+Módulo PURO nuevo: `analyzeHybrid(data, { today, profile, context, strength, endurance })` → `{ sportLoad, volume,
+volumeChanges, associations, doms, insights }`. `buildAnalysis` lo llama después de fuerza y resistencia; sus Insights
+van a las tarjetas de Fuerza, Resistencia y Recuperación y al resumen como los demás, todos con su confianza.
+
+### Carga por deporte
+- La carga total de Progreso no cambia. Aquí se reparte con lo que ya calcula `weekAgg` (`stats.weeklySeries`): carga =
+  minutos × esfuerzo (RPE 1–10) por deporte (fuerza, carrera, bici, natación, senderismo, otras). 3 h de ruta suave
+  (RPE 3) son 540; 3 h de carrera a RPE 7, 1.260. Una sesión sin RPE no tiene carga (se cuenta y baja la confianza).
+- Tabla «Carga por deporte» en Resistencia: media semanal de las 4 últimas semanas completas y su cambio frente a las
+  4 anteriores. Pico de un deporte («Pico de carga en carrera»): la semana en curso ≥ 50 % por encima de su media de
+  las 4 anteriores (≥ 3 semanas con carga y ≥ 120 de diferencia).
+- Decisión: el análisis de energía del peso (REDs) sigue usando los minutos totales de resistencia (es gasto, no carga).
+
+### Volumen con contexto
+- Por músculo (media de series de las 4 semanas completas frente a su rango): **mantener** si sus ejercicios progresan
+  aunque esté por debajo del rango («Estás progresando con el volumen actual. No hay una razón clara para aumentarlo.»);
+  **reducir** (2–4 series/sem, 1–2 semanas) si hay agujetas fuertes repetidas (≥ 7/10 dos veces en 14 días) o señales
+  de fatiga con ejercicios estancados o bajando, aunque esté dentro del rango; **añadir** 1–2 series solo si está por
+  debajo, sin progreso, sin fatiga ni agujetas fuertes y con constancia (≥ 70 % de lo planificado en 4 semanas).
+- Menores: nunca «añadir» (técnica y constancia primero). 65+: no se añade si hay fatiga o molestias.
+- El consejo de estancamiento de la fuerza ya no propone «+1–2 series» si ese músculo debe reducir o si la constancia
+  es baja.
+- **Cambios de volumen** (`volumeChanges`): si el volumen de un músculo cambió de forma clara entre las 6 semanas
+  completas anteriores y las 6 de antes (≥ 25 % y ≥ 2 series/sem), se compara el ritmo del 1RM estimado de sus
+  ejercicios en cada bloque (≥ 6 sesiones en cada uno; ≥ 0,5 %/sem de diferencia): «Press banca progresa más desde que
+  bajaste el volumen de pecho… Coincide en el tiempo, pero no demuestra que sea por el volumen». Antes / después →
+  confianza media como mucho; baja si vuelves de un parón o hubo cambios recientes en tu contexto.
+
+### Híbrido / interferencia con datos PERSONALES
+Reglas comunes: ≥ 6 veces con el factor y ≥ 6 sin él, repartidas en ≥ 4 semanas (últimas 26), y diferencia apreciable
+con efecto moderado (d de Cohen ≥ 0,5). Lenguaje: «en tus registros… aparece asociado a / coincide con», nunca «causa».
+Con datos suficientes y SIN diferencia también se dice («Tu pierna tolera la resistencia del día antes»).
+
+| id | Compara | Diferencia apreciable |
+|---|---|---|
+| `legs-after-endurance` | rendimiento de pierna con resistencia exigente el día antes vs. el resto | ≥ 3 % |
+| `run-after-legs` | ritmo de los rodajes suaves al día siguiente de pierna vs. el resto | ≥ 2 % |
+| `doms-after-leg-volume` | agujetas de pierna (24–72 h) con ≥ la mediana de series de pierna vs. menos | ≥ 1,5 / 10 |
+| `perf-with-doms` | rendimiento con agujetas fuertes antes (general «altas» o una zona ≥ 6) vs. sin ellas | ≥ 3 % |
+| `perf-with-stress` | rendimiento con estrés alto en el check-in vs. normal o bajo | ≥ 3 % |
+| `skips-with-endurance` | % de días de fuerza planificados saltados o a medias en semanas con más carga de resistencia vs. el resto | ≥ 15 puntos |
+
+- Rendimiento de una sesión: su mejor 1RM estimado por ejercicio frente al máximo de las 4 semanas previas (el mismo
+  de Recuperación). Saltados o a medias: la adherencia del Calendario (`plan.weekPlan`, días de rutina).
+- **findInterference evoluciona**: sigue siendo la regla general (cuenta las veces: «Resistencia intensa pegada a la
+  pierna»); cuando hay datos personales suficientes para `legs-after-endurance`, `buildAnalysis` quita la regla general
+  y enseña la asociación personal (con las últimas veces en su «¿Por qué?»), para no decir dos cosas sobre lo mismo.
+
+### Agujetas por ejercicio (zonas de la fase B)
+- Para cada ejercicio y su músculo principal: agujetas de ese músculo en los check-ins de 1 a 3 días después (24–72 h)
+  tras las sesiones CON el ejercicio frente a las que trabajan ese músculo SIN él (≥ 6 y 6, ≥ 4 semanas, ≥ 1,5 puntos).
+- Dentro de las sesiones con el ejercicio: series (mediana), RIR (0–1 frente a 2 o más) y carga (Σ peso × reps,
+  mediana) frente a las agujetas; se enseña el factor con más diferencia («Más agujetas de cuádriceps con más series en
+  Sentadilla»). Varias comparaciones a la vez → confianza media como mucho.
+- Curva 24 / 48 / 72 h: media de cada día con ≥ 6 check-ins ese día; «Suelen notarse más a las 48 h».
+- El rendimiento posterior con agujetas se mide en `perf-with-doms` (sesión con agujetas fuertes en el check-in previo).
+- Sin check-ins con zonas, o con menos de 6 sesiones en cada grupo, no se concluye nada.
+
+### Arreglos encontrados de paso
+- **«Tu análisis» no se abría** con un objetivo elegido y ningún pesaje (fallo anterior a la ronda 6): la tarjeta del
+  peso añadía un bloque de proteína/calorías vacío (`appendChild(null)`). Prueba: `tests/e2e/analysis-hybrid.test.cjs`
+  (falla sin el arreglo, pasa con él).
+- Prueba inestable del mapa corporal (`tests/e2e/bodymap.test.cjs`): leía la opacidad justo tras el toque y la
+  atenuación tiene una transición de 160 ms; ahora espera a la condición (sin pausas fijas).
+- El d de Cohen sin variación en un grupo salía como un número enorme en el «¿Por qué?»: ahora «más de 10».
+
+### Coste
+`buildAnalysis` en Node con los historiales del medidor (mediana de 7, intercalado): 3 meses 11 → 15 ms, 1 año
+21 → 30 ms, 2 años 27 → 37 ms, 5 años 58 → 68 ms. Lo resuelve la caché de la fase G (no recalcular si nada cambió).

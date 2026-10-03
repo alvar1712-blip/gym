@@ -110,6 +110,9 @@ test('tocar una zona la resalta, escribe el detalle y llama a onSelect', async (
     assert.strictEqual(await page.locator(`${MAIN} .bm`).getAttribute('data-selected'), 'chest');
     // Resaltado: contorno claro sobre sus dos formas; el resto, atenuado.
     assert.strictEqual(await page.locator(`${MAIN} .bm-hl path`).count(), await zone(page, 'chest').locator('path').count());
+    // La atenuación tiene una transición de 160 ms: se espera a la condición (leerla una vez justo tras el toque
+    // podía dar 1 con la máquina cargada).
+    await page.waitForFunction((sel) => Number(getComputedStyle(document.querySelector(sel)).opacity) < 1, `${MAIN} .bm-zone[data-muscle="back"]`, { timeout: 5000 });
     const op = await zone(page, 'back').evaluate((g) => getComputedStyle(g).opacity);
     assert.ok(Number(op) < 1, `las demás zonas se atenúan (${op})`);
     assert.strictEqual(await zone(page, 'chest').evaluate((g) => getComputedStyle(g).opacity), '1');

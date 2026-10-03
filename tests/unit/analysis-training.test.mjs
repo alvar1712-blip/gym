@@ -300,7 +300,8 @@ test('fuerza: resumen global de los principales («Vas mejorando en X de Y…»)
 
 test('fuerza: estancado con músculo por debajo de su rango y fatiga → descarga y +1–2 series (Schoenfeld)', () => {
   const flat = [100, 101, 102, 100, 101, 100.5, 101, 100, 101.5, 100.5, 101, 100.5, 101, 100.5];
-  const data = mk({ sessions: strengthSessions({ press_banca: (i) => flat[i] }, { sets: 2, rpe: (i) => (i >= 10 ? 9 : 7) }), bodyweight: [{ id: ago(3), kg: 80 }] });
+  // Sin semana tipo (nada planificado): no hay datos de constancia que frenen el «+1–2 series».
+  const data = mk({ sessions: strengthSessions({ press_banca: (i) => flat[i] }, { sets: 2, rpe: (i) => (i >= 10 ? 9 : 7) }), bodyweight: [{ id: ago(3), kg: 80 }], settings: { ...defaultSettings(), weekPatterns: [] } });
   const r = analyzeStrength(data, { today: TODAY, profile: prof({ experience: 'intermediate' }) });
   checkInsights(r.insights);
   const st = byId(r.insights, 'strength-stalled-press_banca');
@@ -312,6 +313,11 @@ test('fuerza: estancado con músculo por debajo de su rango y fatiga → descarg
   assert.ok(shorts.includes('Morton et al., 2018'));
   assert.ok(shorts.includes('Knowles et al., 2018'));
   assert.ok(st.why.data.some((d) => /Series\/sem de pecho/.test(d.label)));
+  // Ronda 6 (fase D): con la semana tipo por defecto (5 días) y una sesión cada 4 días, la constancia va antes que más series
+  const planned = mk({ ...data, settings: defaultSettings() });
+  const st2 = byId(analyzeStrength(planned, { today: TODAY, profile: prof({ experience: 'intermediate' }) }).insights, 'strength-stalled-press_banca');
+  assert.match(st2.text, /antes que más series, constancia: en 4 semanas hiciste el \d+ % de lo planificado/);
+  assert.doesNotMatch(st2.text, /\+1–2 series/);
 });
 
 test('fuerza: peso corporal — si solo sube la báscula no hay tendencia al alza', () => {
