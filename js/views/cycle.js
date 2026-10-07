@@ -709,7 +709,8 @@ export function cycleTodayCard({ today = todayStr() } = {}) {
   else quick = { label: 'Registrar síntomas', act: 'log', icon: 'edit', onClick: () => openDaySheet(today, { onChange: repaint }) };
 
   const mini = h('span.cyc-today-ring', cycleRing(info, { size: 60, stroke: 7, marker: false }), h('span.cyc-today-day.tnum', cur ? String(cur.day) : '—'));
-  card.append(
+  // append nativo escribiría «null» como texto (sin consejo): solo los nodos que existen
+  card.append(...[
     h('button.cyc-today-main', { type: 'button', 'aria-label': `Ciclo: ${stateLine(info)}${next ? `. ${next}` : ''}. Ver ciclo`, onClick: () => navigate('#/cycle') },
       mini,
       h('span.cyc-today-texts',
@@ -720,6 +721,7 @@ export function cycleTodayCard({ today = todayStr() } = {}) {
     tip ? h('p.cyc-today-tip', tip.short) : null,
     h('div.cyc-today-actions',
       h('button.btn.btn-secondary.cyc-today-quick', { type: 'button', dataset: { act: quick.act }, onClick: quick.onClick }, icon(quick.icon, 18), quick.label),
-      h('button.cal-link-btn.cyc-today-link', { type: 'button', onClick: () => navigate('#/cycle') }, 'Ver ciclo', icon('chevron-right', 18))));
+      h('button.cal-link-btn.cyc-today-link', { type: 'button', onClick: () => navigate('#/cycle') }, 'Ver ciclo', icon('chevron-right', 18))),
+  ].filter(Boolean));
   return card;
 }

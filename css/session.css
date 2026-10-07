@@ -219,7 +219,6 @@
 .ses-editor-links .btn { min-height: 44px; border-color: transparent; }
 
 .ses-card-actions { gap: 8px; flex-wrap: wrap; }
-.ses-card-actions .btn-sm { min-height: 44px; }
 .ses-card-actions .btn { flex: 1; }
 
 /* ---------- Cardio dentro de la sesión ---------- */
@@ -333,7 +332,7 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
    Holgura lateral (sin mover nada) para las letras que sobresalen de su caja, como el pie de la «A» de «Alta». */
 .ci-mini-k,
 .ci-mini-v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-inline: 2px; margin-inline: -2px; }
-.ci-mini-k { padding-top: 3px; font-size: 11px; font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.ci-mini-k { padding-top: 3px; font-size: var(--fs-xs); font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .ci-mini-v { font-size: 14px; font-weight: 750; line-height: 1.25; color: var(--text); }
 .ci-skip {
   flex: none;

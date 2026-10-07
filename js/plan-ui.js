@@ -32,12 +32,15 @@ export function summaryOpts() {
 /** Fila de sesión (emoji, nombre, fecha/duración/carga y dato clave) → abre la sesión. */
 export function sessionRow(s, opts, { showDate = false, note = '' } = {}) {
   const sum = sessionSummary(s, opts);
-  const sub = [showDate ? fmtDate(s.date) : null, sum.duration, sum.load].filter(Boolean).join(' · ');
+  // En curso: la insignia va en la línea de detalle (no dentro del título, donde el «…» la escondía) y sin repetir
+  // «en curso» en texto. El nombre de la rutina ocupa hasta dos líneas en vez de cortarse.
+  const sub = [showDate ? fmtDate(s.date) : null, sum.active ? null : sum.duration, sum.load].filter(Boolean).join(' · ');
+  const live = sum.active ? h('span.badge.badge-accent.cal-live-badge', 'En curso') : null;
   return h('button.list-item.cal-ses-row', { type: 'button', dataset: { id: s.id, kind: s.kind }, onClick: () => navigate(sum.href) },
     h(`span.cal-emoji.cal-emoji-${s.kind}`, { 'aria-hidden': 'true' }, sum.emoji),
     h('span.list-item-main',
-      h('span.list-item-title', sum.title, sum.active ? h('span.badge.badge-accent.cal-live-badge', 'En curso') : null),
-      sub ? h('span.list-item-sub', sub) : null,
+      h('span.list-item-title.lines-2', sum.title),
+      sub || live ? h('span.list-item-sub', sub, live) : null,
       sum.key ? h('span.cal-ses-key.tnum', sum.key) : null,
       note ? h('span.cal-ses-note', note) : null),
     icon('chevron-right', 20, 'chev'));

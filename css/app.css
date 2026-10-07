@@ -83,6 +83,15 @@
   --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.025) 42%, rgba(255, 255, 255, 0) 62%);
   --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.34), 0 1px 3px rgba(0, 0, 0, 0.22);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+
+  /* Escala tipográfica (docs/PULIDO.md). 12 px es el mínimo para texto dentro de las pantallas (la etiqueta de la
+     barra de pestañas, 11 px, es la de iOS). Los tamaños sueltos con medio píxel se han llevado a esta escala. */
+  --fs-xs: 12px;   /* etiquetas en mayúsculas, insignias pequeñas, sufijos de unidad */
+  --fs-sm: 13px;   /* notas, subtítulos de fila, insignias */
+  --fs-md: 15px;   /* texto secundario de tarjetas y filas */
+  --fs-body: 17px; /* cuerpo (iOS) */
+  --fs-title: 20px;
+  --fs-display: 28px;
 }
 
 /* Muelles de verdad (masa-muelle muestreado) donde hay linear(); si no, se quedan las curvas de arriba. */
@@ -328,6 +337,17 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 .list-item-title { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item-sub { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item-sub.wrap { white-space: normal; }
+/* Nombres largos (rutinas, carreras): hasta dos líneas antes de recortar */
+.list-item-title.lines-2 {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.list-item-sub > .badge { margin-left: 6px; vertical-align: 1px; }
+.list-item-sub > .badge:first-child { margin-left: 0; }
 .list-item .chev { color: var(--muted); flex: none; }
 
 /* ---------- Botones ---------- */
@@ -350,7 +370,7 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 .btn:disabled { opacity: 0.45; pointer-events: none; }
 .btn-block { width: 100%; }
 .btn-lg { min-height: var(--tap-lg); font-size: 18px; border-radius: 14px; }
-.btn-sm { min-height: 38px; padding: 0 12px; font-size: 15px; border-radius: 10px; }
+.btn-sm { min-height: 44px; padding: 0 12px; font-size: 15px; border-radius: 10px; } /* compacto, pero 44 px de alto: objetivo táctil mínimo */
 .btn-primary { background: var(--accent); color: var(--accent-ink); }
 .btn-secondary { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
 .btn-ghost { background: transparent; color: var(--text-2); border-color: var(--border); }
@@ -560,7 +580,7 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   appearance: none;
 }
 .stepper-input:focus { border-color: var(--accent); }
-.stepper-suffix { position: absolute; right: 8px; bottom: 5px; font-size: 11px; color: var(--muted); pointer-events: none; }
+.stepper-suffix { position: absolute; right: 8px; bottom: 5px; font-size: var(--fs-xs); color: var(--muted); pointer-events: none; }
 .stepper-md .stepper-btn { width: 44px; min-height: 46px; }
 .stepper-md .stepper-input { min-height: 46px; font-size: 20px; }
 .stepper-sm .stepper-btn { width: 38px; min-height: 40px; }
@@ -842,6 +862,7 @@ body:has(.update-bar:not([hidden])) .view { padding-bottom: calc(var(--tabbar-h)
 .kpi { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; min-width: 0; }
 .kpi-label { font-size: 12px; color: var(--muted); font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kpi-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-unit { font-size: var(--fs-sm); font-weight: 700; color: var(--text-2); }
 .kpi-sub { font-size: 12px; color: var(--muted); }
 
 @media (min-width: 700px) {

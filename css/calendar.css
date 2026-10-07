@@ -56,7 +56,7 @@
 .cal-emoji-other { background: rgba(232, 121, 249, 0.16); }
 .cal-ses-key { font-size: 14px; color: var(--text-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-ses-note { font-size: 13px; color: var(--info); }
-.cal-live-badge { margin-left: 8px; vertical-align: 2px; }
+.cal-live-badge { vertical-align: 1px; }
 
 /* Lista breve de ejercicios de una plantilla */
 .cal-tpl { display: flex; flex-direction: column; gap: 2px; }

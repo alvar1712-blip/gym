@@ -139,7 +139,7 @@ section.cyc-ins { gap: 8px; }
 .cyc-cal-nav { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
 .cyc-cal-btn { color: var(--accent); flex: none; }
 .cyc-cal-title { flex: 1; min-width: 0; text-align: center; font-size: 18px; font-weight: 800; }
-.cyc-cal-today { flex: none; min-height: 40px; margin-left: 2px; }
+.cyc-cal-today { flex: none; margin-left: 2px; }
 .cyc-cal-grid { display: flex; flex-direction: column; gap: 2px; }
 .cyc-cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; }
 .cyc-cal-dow { text-align: center; font-size: 12px; font-weight: 750; color: var(--muted); padding: 2px 0 4px; }
@@ -196,7 +196,7 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 .cyc-hist-empty { font-size: 15px; }
 .cyc-hist-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .cyc-hist-kpis .cyc-kpi { padding: 9px 9px; }
-.cyc-hist-kpis .cyc-kpi-label { font-size: 11px; letter-spacing: -0.01em; }
+.cyc-hist-kpis .cyc-kpi-label { font-size: var(--fs-xs); letter-spacing: -0.01em; }
 .cyc-hist-chart { margin: 2px -4px 0; }
 .cyc-chart-note { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .cyc-cycles { background: var(--surface-2); }
@@ -219,7 +219,7 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 .cyc-eff { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
 .cyc-eff-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 0 8px; }
 .cyc-eff-head { padding-top: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.cyc-eff-th { font-size: 11px; font-weight: 750; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cyc-eff-th { font-size: var(--fs-xs); font-weight: 750; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cyc-eff-phase { padding: 7px 0 8px; border-bottom: 1px solid var(--border); }
 .cyc-eff-phase:last-of-type { border-bottom: 0; }
 .cyc-eff-name { display: flex; align-items: center; gap: 6px; padding: 0 10px 3px; font-size: 13px; font-weight: 750; color: var(--text); }

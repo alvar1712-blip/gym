@@ -31,7 +31,7 @@
 .chart-band-fill { fill-opacity: 0.1; stroke: none; }
 .chart-band-edge { fill: none; stroke-opacity: 0.4; stroke-width: 1; shape-rendering: crispEdges; }
 .chart-svg .chart-band-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 650;
   fill: var(--text-2);
   paint-order: stroke;
@@ -99,10 +99,10 @@
 
 /* Selector de periodo: 5 opciones en una fila también a 320–375 px */
 .chart-period { min-width: 0; }
-.chart-period .seg-btn { flex: 1 1 auto; min-width: 0; padding: 0 5px; font-size: 13.5px; letter-spacing: -0.01em; }
+.chart-period .seg-btn { flex: 1 1 auto; min-width: 0; padding: 0 5px; font-size: var(--fs-sm); letter-spacing: -0.01em; }
 /* 320 px (Zoom de pantalla en SE/mini): dentro de una tarjeta quedan ~256 px; «3 meses» cabe entero */
 @media (max-width: 359px) {
-  .chart-period .seg-btn { padding: 0 2px; font-size: 12.5px; letter-spacing: -0.02em; }
+  .chart-period .seg-btn { padding: 0 2px; font-size: var(--fs-xs); letter-spacing: -0.02em; }
 }
 /* ---------- fin charts ---------- */
 
@@ -148,7 +148,7 @@
 .prg-link-full .prg-link-emoji { font-size: 24px; }
 .prg-link-texts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .prg-link-full .prg-link-label { font-size: 16px; }
-.prg-link-sub { max-width: 100%; font-size: 13px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-link-sub { max-width: 100%; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
 .prg-link-chev { flex: none; color: var(--muted); }
 /* 320 px: como las demás (emoji encima), para que «Panel semanal» quepa entero */
 @media (max-width: 359px) {
@@ -308,7 +308,7 @@
 .prg-badge-inline { margin-left: 8px; vertical-align: 2px; }
 .prg-best { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .prg-best-v { font-size: 16px; font-weight: 800; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.prg-best-l { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.prg-best-l { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 
 /* Progreso de un ejercicio */
 .prg-kpis .kpi { display: flex; flex-direction: column; gap: 1px; }
@@ -418,7 +418,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
   .prg-stats { column-gap: 8px; }
   .prg-stat-value { font-size: 15px; white-space: normal; overflow-wrap: anywhere; }
   .prg-kpis .kpi-label { white-space: normal; }
-  .prg-seg .seg-btn { padding: 0; font-size: 12.5px; }
+  .prg-seg .seg-btn { padding: 0; font-size: var(--fs-xs); }
   /* Tabla por músculo: el nombre en su línea; debajo, las series y el estado */
   .prg-mrow-top { flex-wrap: wrap; row-gap: 2px; }
   .prg-mrow-name { flex: 1 0 100%; }

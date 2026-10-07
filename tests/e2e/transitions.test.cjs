@@ -273,6 +273,9 @@ test('hojas: curva de iOS al abrir y cerrar, cierre animado antes de quitarse, s
     await page.locator('#opener').click();
     await page.locator('.action-item', { hasText: 'Primera' }).click();
     await page.locator('#opener').click();
+    // El botón abre la hoja tras un import() (asíncrono): se cuenta cuando la nueva ya está abierta. Contar antes
+    // fallaba con la máquina cargada (la vieja ya se había ido y la nueva aún no había llegado: 0).
+    await page.locator('.sheet-overlay.open .action-item', { hasText: 'Segunda' }).waitFor();
     assert.strictEqual(await page.locator('.action-item', { hasText: 'Segunda' }).count(), 1, 'la hoja que se cerraba ya no está');
     await page.locator('.action-item', { hasText: 'Segunda' }).click();
     await page.waitForFunction(() => window.__picked === 'Segunda', null, { timeout: 3000 });

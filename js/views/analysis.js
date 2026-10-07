@@ -148,10 +148,16 @@ function cardHead(ic, title, sub = null, right = null) {
 
 const card = (area, ...children) => h(`section.card.an-card.an-card-${area}`, { dataset: { area } }, ...children);
 
+/** «+0,03 kg» → la cifra grande y la unidad pequeña (el mismo texto): cabe en la casilla sin «…» a 375 px. */
+function kpiValue(value) {
+  const m = typeof value === 'string' ? /^(.*\d)([\u00a0\u202f ])(kg|g|kcal|%|km|h|min)$/.exec(value) : null;
+  return m ? h('div.kpi-value', m[1], h('span.kpi-unit', `${m[2]}${m[3]}`)) : h('div.kpi-value', value);
+}
+
 function kpi(label, value, sub = null, key = null) {
   return h('div.kpi.an-kpi', { dataset: key ? { kpi: key } : {} },
     h('div.kpi-label', label),
-    h('div.kpi-value', value),
+    kpiValue(value),
     sub ? h('div.kpi-sub', sub) : null);
 }
 

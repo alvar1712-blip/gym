@@ -65,7 +65,7 @@
 .sum-card-title { font-size: 18px; font-weight: 750; }
 .sum-card-sub { margin-top: 2px; font-size: 13px; line-height: 1.35; color: var(--muted); }
 .sum-sub-title { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.sum-note { font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.sum-note { font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
 .sum-none { font-size: 14px; line-height: 1.45; color: var(--muted); }
 
 /* Diferencia con el periodo anterior: flecha + texto (+3, %), con color de apoyo. Sin juicio: subir no es «bien». */
@@ -79,12 +79,12 @@
   border-radius: 9px;
   background: var(--surface-3);
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
 }
-.sum-delta-arrow { flex: none; font-size: 10px; }
+.sum-delta-arrow { flex: none; font-size: var(--fs-xs); }
 .sum-delta-text { min-width: 0; }
 .sum-delta-part { white-space: nowrap; }
 .sum-delta-up { background: var(--info-soft); color: var(--info); }
@@ -105,7 +105,7 @@
   border: 1px solid var(--border);
   background: var(--surface-2);
 }
-.sum-kpi-label { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.sum-kpi-label { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); }
 .sum-kpi-value { font-size: 20px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .sum-kpi-sub { font-size: 12px; line-height: 1.3; color: var(--muted); }
 .sum-kpi .sum-delta { margin-top: 3px; }
@@ -184,7 +184,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-mbar-val { min-height: 16px; font-size: 12px; font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums; }
 .sum-mbar-track { position: relative; display: flex; align-items: flex-end; width: 100%; max-width: 20px; height: 96px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
 .sum-mbar-fill { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--accent); }
-.sum-mbar-label { font-size: 11px; font-weight: 650; color: var(--muted); }
+.sum-mbar-label { font-size: var(--fs-xs); font-weight: 650; color: var(--muted); }
 .sum-mbar-cur .sum-mbar-label { color: var(--accent); font-weight: 800; }
 
 /* Fuerza: series por músculo */
@@ -193,8 +193,8 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-mrow { display: flex; flex-direction: column; gap: 5px; padding: 7px 0 8px; border-bottom: 1px solid var(--border); }
 .sum-mrow:last-child { border-bottom: 0; }
 .sum-mrow-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
-.sum-mrow-name { flex: 1 1 auto; min-width: 0; font-size: 14.5px; font-weight: 650; overflow-wrap: anywhere; }
-.sum-mrow-val { flex: none; margin-left: auto; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sum-mrow-name { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); font-weight: 650; overflow-wrap: anywhere; }
+.sum-mrow-val { flex: none; margin-left: auto; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sum-mrow-val b { font-size: 15px; font-weight: 800; color: var(--text); }
 .sum-mbar-h { display: block; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .sum-mbar-h-fill { display: block; height: 100%; border-radius: 4px; background: var(--kc); }
@@ -244,7 +244,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-rec-detail { font-size: 13px; line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
 .sum-rec-date { flex: none; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .sum-prog-vals { font-size: 14px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
-.sum-prog-basis { font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.sum-prog-basis { font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
 .sum-prog-btn .sum-delta { flex: none; align-self: center; max-width: 44%; }
 /* Solo subidas: en «más progresan» el chip va en verde (sí es una mejora de la marca). */
 .sum-prog-btn .sum-delta-up { background: var(--ok-soft); color: var(--ok); }
@@ -271,7 +271,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-cmp-row[style] { padding-left: 10px; box-shadow: inset 3px 0 0 var(--kc); }
 .sum-cmp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .sum-cmp-label { font-size: 15px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
-.sum-cmp-prev { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sum-cmp-prev { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sum-cmp-right { flex: none; max-width: 58%; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .sum-cmp-cur { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
 .sum-cmp-right .sum-delta { align-self: flex-end; }

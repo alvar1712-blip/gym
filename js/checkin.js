@@ -200,14 +200,16 @@ function zonesBlock({ date, timing, sessionId, onChange }) {
   function paint() {
     const list = areasOf(current(date, timing));
     el.dataset.count = String(list.length);
-    el.replaceChildren(
+    // replaceChildren nativo escribiría «null» como texto: solo los nodos que existen
+    el.replaceChildren(...[
       h('div.ci-zones-head', h('span.ci-zones-title', 'Agujetas o molestias por zona'), h('span.ci-copt', 'Opcional')),
       list.length ? h('div.ci-zone-list', list.map((a) => h(`button.ci-zone.ci-band-${levelBand(a.level)}`, {
         type: 'button', dataset: { zone: a.zone, kind: a.kind }, 'aria-label': `Editar ${areaText(a)}`,
         onClick: () => areaSheet({ date, timing, sessionId, area: a, onDone: done }),
       }, areaShort(a)))) : null,
       h('button.btn.btn-ghost.btn-sm.ci-zone-add', { type: 'button', onClick: () => areaSheet({ date, timing, sessionId, onDone: done }) },
-        icon('plus', 18), list.length ? 'Otra zona' : 'Añadir zona'));
+        icon('plus', 18), list.length ? 'Otra zona' : 'Añadir zona'),
+    ].filter(Boolean));
   }
   function done(rec) {
     paint();

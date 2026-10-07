@@ -74,7 +74,7 @@
 .an-level-warn { background: var(--warn-soft); color: var(--warn); }
 .an-level-neutral { background: var(--surface-3); color: var(--text-2); }
 .an-level-info { background: var(--info-soft); color: var(--info); }
-.an-level-sm { padding: 2px 8px 2px 6px; font-size: 11px; }
+.an-level-sm { padding: 2px 8px 2px 6px; font-size: var(--fs-xs); }
 .an-area { font-size: 12px; font-weight: 750; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
 
 /* Insight */
@@ -201,7 +201,7 @@
 .an-ex .list-item-sub { font-size: 13px; white-space: normal; line-height: 1.3; }
 .an-ex-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .an-ex-rate { font-size: 14px; font-weight: 750; white-space: nowrap; }
-.an-ex-status { font-size: 11px; padding: 2px 7px; }
+.an-ex-status { font-size: var(--fs-xs); padding: 2px 7px; }
 .an-more { margin-top: 4px; }
 
 /* ---------- Ciclo ---------- */
@@ -284,7 +284,7 @@
   color: var(--text-2);
   white-space: nowrap;
 }
-.an-conf-sm { padding: 1px 7px; font-size: 11px; }
+.an-conf-sm { padding: 1px 7px; font-size: var(--fs-xs); }
 .an-conf-high { border-color: rgba(74, 222, 128, 0.5); color: var(--ok); }
 .an-conf-medium { border-color: var(--border-strong); color: var(--text-2); }
 .an-conf-low { border-color: rgba(255, 200, 87, 0.55); color: var(--warn); }

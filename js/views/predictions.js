@@ -360,7 +360,7 @@ function effortItem(e) {
   },
     h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, ctx ? '🏁' : '🏃'),
     h('span.list-item-main',
-      h('span.list-item-title', keep(`${e.name ? `${e.name} · ` : ''}${fmtNum(e.km, 2)} km en ${timeTxt(e.sec)}`)),
+      h('span.list-item-title.lines-2', keep(`${e.name ? `${e.name} · ` : ''}${fmtNum(e.km, 2)} km en ${timeTxt(e.sec)}`)),
       h('span.list-item-sub.wrap', keep([e.when, paceTxt(e.pace), ...tags].join(' · ')))),
     icon('chevron-right', 20, 'chev'));
 }
