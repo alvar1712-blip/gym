@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emptyForm, formFromRecord, validate, isValid, missingText, hasContent, buildRecord, cleanField,
-  primaryMetric, loadInfo, activityLoad, activityTitle, subtypeLabel, subtypeFromNotes, targetText,
+  primaryMetric, paceWarning, loadInfo, activityLoad, activityTitle, subtypeLabel, subtypeFromNotes, targetText,
   bwStats, bwTrend, bwWithDeltas, bwPoints, roundKg, trendWord, KIND_FIELDS, fieldsLostOnKindChange, joinList,
 } from '../../js/activity-logic.js';
 import { movingAverage } from '../../js/calc.js';
@@ -331,4 +331,15 @@ test('bwWithDeltas: lista descendente con variación respecto al anterior', () =
   const out = bwWithDeltas([{ id: '2026-09-21', kg: 75.2 }, { id: '2026-09-20', kg: 75 }, { id: '2026-09-23', kg: 75.4 }]);
   assert.deepEqual(out.map((e) => e.id), ['2026-09-23', '2026-09-21', '2026-09-20']);
   assert.deepEqual(out.map((e) => e.delta), [0.2, 0.2, null]);
+});
+
+test('paceWarning: avisa (sin bloquear) de un ritmo de carrera imposible, como 31 min escritos en la casilla de las horas', () => {
+  const f = (kind, km, sec) => ({ ...emptyForm(kind, { date: D }), distanceKm: km, movingSec: sec });
+  assert.match(paceWarning(f('run', 5, 31 * 3600)), /^Ritmo de 6:12:00 \/km: más lento que caminar\. ¿Escribiste los minutos en la casilla de las horas\?$/);
+  assert.match(paceWarning(f('run', 10, 600)), /demasiado rápido para ser real/);
+  assert.equal(paceWarning(f('run', 5, 31 * 60)), null);
+  assert.equal(paceWarning(f('run', 5, 5 * 1200)), null, '20:00 /km justo aún cuenta');
+  assert.equal(paceWarning(f('run', null, 31 * 3600)), null, 'sin distancia no hay ritmo');
+  assert.equal(paceWarning(f('hike', 5, 3 * 3600)), null, 'solo carrera: en montaña 30 min/km es normal');
+  assert.ok(isValid(f('run', 5, 31 * 3600)), 'se puede guardar igualmente');
 });

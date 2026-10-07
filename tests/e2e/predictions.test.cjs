@@ -1,7 +1,9 @@
 // E2E de #/predictions (tiempos previstos y «¿Puedo hacerlo?», docs/MEJORAS.md §4). Fecha fijada: jueves 24 sep
 // 2026. Estado vacío (sin carreras y con 1 válida), tarjetas de 5 km / 10 km / media / maratón con los mismos números
-// que js/race-predict.js, «¿Por qué?», base del cálculo (el senderismo no cuenta) y el comprobador en sus tres
-// veredictos y con «Otra» distancia. Deja capturas a 390 px en test-results/.
+// que js/race-predict.js (estimación actual en grande, rango probable y ritmo), «¿Por qué?», base del cálculo (el
+// senderismo no cuenta) y el comprobador en sus tres veredictos y con «Otra» distancia. Regresión del iPhone (un tiempo
+// de 31 h; poco volumen → media y maratón «todavía poco fiable») con la maquetación comprobada a 375, 390 y 430 px.
+// Deja capturas en test-results/.
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/predictions.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
@@ -81,9 +83,13 @@ async function expected(page) {
     const { dataFromStore } = await import('./js/progress-ui.js');
     const r = rp.predictRaces(dataFromStore());
     if (!r.ok) return { ok: false, valid: r.valid };
+    const u = await import('./js/util.js');
     const out = {};
     for (const [id, p] of Object.entries(r.predictions)) {
-      out[id] = { low: p.low, mid: p.mid, high: p.high, range: rp.rangeText(p), confidence: p.confidence, adjusted: p.adjusted, k: p.k };
+      out[id] = {
+        low: p.low, mid: p.mid, high: p.high, range: rp.rangeText(p), confidence: p.confidence, adjusted: p.adjusted, k: p.k,
+        status: p.status, time: u.fmtRaceTime(p.mid), pace: u.fmtPaceKm(p.pace), note: p.advice.note,
+      };
     }
     return { ok: true, predictions: out, basis: r.basis.map((e) => ({ id: e.sessionId, km: e.km })), weeklyKm: r.weeklyKm, longestRecentKm: r.longestRecentKm };
   });
@@ -97,6 +103,20 @@ async function setTarget(page, sec) {
   await page.fill('.prd-check input[aria-label="Tiempo objetivo: s"]', String(ss));
   await page.waitForTimeout(60);
 }
+const TIME = /^\d{1,2}:\d{2}(:\d{2})?$/;
+const RANGE = /^\d{1,2}:\d{2}(:\d{2})?–\d{1,2}:\d{2}(:\d{2})?$/;
+/** Lo que enseña cada tarjeta (texto limpio). */
+const cardsOf = (page) => page.locator('.prd-race').evaluateAll((els) => els.map((el) => {
+  const t = (sel) => { const x = el.querySelector(sel); return x ? x.textContent.replace(/\u00a0/g, ' ').replace(/\u2060/g, '') : null; };
+  return {
+    race: el.dataset.race, confidence: el.dataset.confidence, status: el.dataset.status, name: t('.prd-race-name'),
+    badge: t('.prd-conf'), time: t('.prd-race-time'), caption: t('.prd-race-caption'), range: t('.prd-race-range'),
+    pace: t('.prd-race-pace'), labels: [...el.querySelectorAll('.prd-fact dt')].map((d) => d.textContent),
+    note: t('.prd-race-note'), state: t('.prd-race-state'), explain: t('.prd-race-explain'),
+    vol: [...el.querySelectorAll('.prd-vol-row')].map((r) => [...r.children].map((x) => x.textContent.replace(/\u00a0/g, ' '))),
+    estHidden: el.querySelector('.prd-est') ? el.querySelector('.prd-est').hidden : null,
+  };
+}));
 const verdict = (page) => page.locator('.prd-verdict').evaluate((el) => ({
   verdict: el.dataset.verdict,
   label: el.querySelector('.prd-v-label').textContent,
@@ -173,30 +193,36 @@ test('con carreras: tarjetas de las 4 distancias, «¿Por qué?», base (sin sen
     assert.equal(exp.ok, true);
 
     // --- Tarjetas: mismos números que la lógica ---
-    const cards = await page.locator('.prd-race').evaluateAll((els) => els.map((el) => ({
-      race: el.dataset.race,
-      confidence: el.dataset.confidence,
-      name: el.querySelector('.prd-race-name').textContent,
-      range: el.querySelector('.prd-race-range').textContent,
-      pace: el.querySelector('.prd-race-pace').textContent.replace(/\u00a0/g, ' ').replace(/\u2060/g, ''),
-      badge: el.querySelector('.prd-conf').textContent,
-      note: el.querySelector('.prd-race-note')?.textContent || null,
-    })));
+    const cards = await cardsOf(page);
     assert.deepEqual(cards.map((c) => c.race), ['5k', '10k', 'half', 'marathon']);
     assert.deepEqual(cards.map((c) => c.name), ['5 km', '10 km', 'Media maratón', 'Maratón']);
     for (const c of cards) {
       const e = exp.predictions[c.race];
-      assert.equal(c.range, e.range, c.race);
-      assert.match(c.range, /^\d{1,2}:\d{2}(:\d{2})?–\d{1,2}:\d{2}(:\d{2})?$/);
+      assert.equal(c.status, e.status, c.race);
       assert.equal(c.confidence, e.confidence);
       assert.equal(c.badge, `Confianza ${e.confidence}`);
-      assert.match(c.pace, /^\d:\d{2}–\d:\d{2}\s\/km$/);
-      assert.equal(!!c.note, e.adjusted, `nota de volumen en ${c.race}`);
+      if (e.status !== 'ok') continue;
+      // Jerarquía: estimación actual grande; rango probable y ritmo debajo
+      assert.equal(c.time, e.time, c.race);
+      assert.match(c.time, TIME);
+      assert.equal(c.caption, 'estimación actual');
+      assert.equal(c.range, e.range, c.race);
+      assert.match(c.range, RANGE);
+      assert.equal(c.pace, e.pace);
+      assert.match(c.pace, /^\d{1,2}:\d{2}\/km$/);
+      assert.deepEqual(c.labels, ['Rango probable', 'Ritmo estimado']);
+      assert.equal(c.note, e.note, `aviso de ${c.race}`);
     }
-    // Poco volumen para maratón: k mayor, confianza baja y nota.
-    assert.ok(exp.predictions.marathon.k > 1.06);
-    assert.equal(exp.predictions.marathon.confidence, 'baja');
-    assert.match(cards[3].note, /Más prudente por volumen/);
+    // Media y maratón con ≈ 9 km/sem (menos de la mitad de la referencia): k mayor, confianza baja y «todavía poco
+    // fiable» (la cifra, a un toque).
+    for (const [i, id] of [[2, 'half'], [3, 'marathon']]) {
+      assert.ok(exp.predictions[id].k > 1.06);
+      assert.equal(exp.predictions[id].confidence, 'baja');
+      assert.equal(cards[i].status, 'tentative');
+      assert.equal(cards[i].state, 'Predicción todavía poco fiable');
+      assert.equal(cards[i].estHidden, true);
+      assert.match(cards[i].explain, /demasiado bajo para estimar/);
+    }
 
     // --- El senderismo y la bici no cuentan ---
     assert.ok(!exp.basis.some((b) => b.id === 'hike_fast' || b.id === 'bike_1'));
@@ -284,7 +310,8 @@ test('con carreras: tarjetas de las 4 distancias, «¿Por qué?», base (sin sen
     await setTarget(page, 2 * 3600);
     const vo = await verdict(page);
     assert.equal(vo.verdict, 'probable');
-    assert.match(clean(await check.locator('.prd-check-hint').textContent()), /Previsto en 15 km: /);
+    // 15 km usa el perfil de la media: con este volumen, orientativo (y lo dice)
+    assert.match(clean(await check.locator('.prd-check-hint').textContent()), /^Orientativo en 15 km: \d:\d{2}:\d{2}–\d:\d{2}:\d{2} \(\d:\d{2}–\d:\d{2}\/km\)$/);
     assert.ok(await noHScroll(page));
     await check.evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(() => window.scrollBy(0, -70));
@@ -306,6 +333,183 @@ test('con carreras: tarjetas de las 4 distancias, «¿Por qué?», base (sin sen
     await page.locator('.prd-effort').first().click();
     await page.waitForFunction(() => location.hash.startsWith('#/activity/'));
     assert.equal(await page.evaluate(() => location.hash), `#/activity/${exp.basis[0].id}`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Regresión del iPhone (docs/MEJORAS6.md, corrección de tiempos previstos)
+// ---------------------------------------------------------------------------
+
+/** Problemas de maquetación en las tarjetas: se sale, se corta, se superpone o letra de menos de 12 px. */
+async function layoutIssues(page) {
+  return page.evaluate(() => {
+    const issues = [];
+    const vw = window.innerWidth;
+    if (document.documentElement.scrollWidth > vw) issues.push(`scroll horizontal: ${document.documentElement.scrollWidth} > ${vw}`);
+    const visible = (el) => !el.closest('[hidden]') && el.getClientRects().length > 0;
+    const hit = (a, b) => !(a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5);
+    const ATOMS = '.prd-race-name, .prd-conf, .prd-race-time, .prd-race-caption, .prd-fact, .prd-race-note, .prd-race-state, .prd-race-explain, .prd-vol th, .prd-vol td, .prd-reveal, .why-btn, .prd-suspect-title, .prd-suspect-text, .prd-suspect-item';
+    for (const card of document.querySelectorAll('.prd-race, .prd-suspect')) {
+      const tag = card.dataset.race || 'avisos';
+      const cr = card.getBoundingClientRect();
+      for (const el of card.querySelectorAll('*')) {
+        if (!visible(el) || el.closest('.why-body')) continue;
+        const r = el.getBoundingClientRect();
+        if (r.right > cr.right + 0.5 || r.left < cr.left - 0.5) issues.push(`${tag}: .${el.className} se sale de la tarjeta`);
+        const cs = getComputedStyle(el);
+        if (cs.whiteSpace === 'nowrap' && el.scrollWidth > el.clientWidth + 1) issues.push(`${tag}: .${el.className} se corta`);
+        if ([...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && parseFloat(cs.fontSize) < 12) issues.push(`${tag}: .${el.className} a ${cs.fontSize}`);
+      }
+      const atoms = [...card.querySelectorAll(ATOMS)].filter((el) => visible(el) && !el.closest('.why-body'));
+      for (let i = 0; i < atoms.length; i++) {
+        for (let j = i + 1; j < atoms.length; j++) {
+          if (atoms[i].contains(atoms[j]) || atoms[j].contains(atoms[i])) continue;
+          if (hit(atoms[i].getBoundingClientRect(), atoms[j].getBoundingClientRect())) issues.push(`${tag}: .${atoms[i].className} se superpone a .${atoms[j].className}`);
+        }
+      }
+    }
+    return issues;
+  });
+}
+
+// 5 km en 28:55 (hace 4 días), 4 km en 24:30 (hace 12) y 5 km con «31:00» escrito en la casilla de las horas (31 h).
+const IPHONE = [
+  activity('run_ok1', 'run', ago(4), 5, 28 * 60 + 55),
+  activity('run_ok2', 'run', ago(12), 4, 24 * 60 + 30),
+  activity('run_bad', 'run', ago(30), 5, 31 * 3600),
+];
+/** Lo que se veía en el iPhone y nunca debe volver: negativos, «:-», ritmos h:mm:ss/km, NaN… */
+const GARBAGE = /[-−]\d|:-|\d+:\d{2}:\d{2}\s?\/km|NaN|Infinity|undefined/;
+
+test('iPhone: un tiempo de 31 h no rompe la pantalla; media y maratón «todavía poco fiable»; 375, 390 y 430 px', async () => {
+  const app = await launch({ width: 375, height: 812 });
+  const { page, errors } = app;
+  try {
+    await seed(page, IPHONE);
+    await open(page, '#/predictions');
+    assert.equal(await page.locator('.content.prd').getAttribute('data-ok'), '1');
+    const cardsText = clean(await page.locator('.prd-races').textContent());
+    assert.ok(!GARBAGE.test(cardsText), cardsText.match(GARBAGE)?.[0]);
+    assert.ok(!/14:25:40|29:37:50|61:46/.test(cardsText));
+
+    // La carrera de 31 h no cuenta y se puede revisar
+    const sus = page.locator('.prd-suspect');
+    assert.equal(clean(await sus.locator('.prd-suspect-title').textContent()), '1 carrera no cuenta por su ritmo');
+    assert.match(await sus.locator('.prd-suspect-text').textContent(), /minutos escritos en la casilla de las horas/);
+    const item = sus.locator('.prd-suspect-item');
+    assert.equal(await item.count(), 1);
+    assert.equal(await item.getAttribute('data-session'), 'run_bad');
+    assert.equal(await item.getAttribute('aria-label'), 'Revisar 5 km en 31:00:00');
+    assert.equal(clean(await item.locator('.list-item-title').textContent()), '5 km en 31:00:00');
+    assert.match(clean(await item.locator('.list-item-sub').textContent()), /más lenta de 20:00\/km$/);
+
+    // 5 km y 10 km: estimación, rango y ritmo bien formados; confianza media (2 carreras) explicada sin parecer un error
+    const exp = await expected(page);
+    const cards = await cardsOf(page);
+    for (const c of cards.slice(0, 2)) {
+      const e = exp.predictions[c.race];
+      assert.equal(c.status, 'ok', c.race);
+      assert.equal(c.time, e.time);
+      assert.match(c.time, TIME);
+      assert.match(c.range, RANGE);
+      assert.match(c.pace, /^\d{1,2}:\d{2}\/km$/);
+      assert.equal(c.badge, 'Confianza media');
+      assert.equal(c.note, 'Solo tienes 2 carreras válidas recientes, así que este rango es orientativo. La precisión mejorará cuando registres más.');
+    }
+    assert.equal(cards[0].time, '29:55');
+    assert.equal(cards[0].range, '28:50–31:00');
+    assert.equal(cards[0].pace, '5:59/km');
+
+    // Media y maratón: lo que falta primero; la cifra, a un toque y marcada como orientativa
+    for (const [i, noun, long, weekly] of [[2, 'la media maratón', 14, 25], [3, 'el maratón', 24, 40]]) {
+      const c = cards[i];
+      assert.equal(c.status, 'tentative');
+      assert.equal(c.badge, 'Confianza baja');
+      assert.equal(c.state, 'Predicción todavía poco fiable');
+      assert.equal(c.explain, `Tu volumen actual todavía es demasiado bajo para estimar ${noun} con precisión.`);
+      assert.deepEqual(c.vol, [['Tirada más larga', '5 km', `≥ ${long} km`], ['Km por semana', '2,3 km', `≥ ${weekly} km`]]);
+      assert.equal(c.estHidden, true);
+      assert.equal(c.time, exp.predictions[c.race].time, 'la cifra existe (oculta)');
+    }
+    const half = page.locator('.prd-race[data-race="half"]');
+    await half.locator('.prd-reveal').click();
+    assert.equal(await half.locator('.prd-reveal').getAttribute('aria-expanded'), 'true');
+    assert.ok(await half.locator('.prd-est').isVisible());
+    assert.equal(await half.locator('.prd-race-caption').textContent(), 'estimación orientativa');
+    assert.match(clean(await half.locator('.prd-race-time').textContent()), /^\d:\d{2}:\d{2}$/);
+    assert.equal(clean(await half.locator('.prd-reveal').textContent()), 'Ocultar estimación orientativa');
+
+    // «¿Por qué?» del 5 km: qué carreras, cuál pesa más, fórmula, confianza, volumen y qué falta
+    const five = page.locator('.prd-race[data-race="5k"]');
+    await five.locator('.why-btn').click();
+    const why = clean(await five.locator('.why-body').textContent());
+    for (const re of [/Fórmula de Riegel/, /\(la que más\)/, /Estimación actual \(media ponderada\)29:55 · 5:59\/km/, /Km por semana/, /Tirada más larga/, /ConfianzaMedia — solo 2 esfuerzos válidos/, /Para mejorarlaRegistra otra carrera de 3 km o más/, /más lento de 20:00\/km/]) {
+      assert.match(why, re);
+    }
+    assert.ok(!GARBAGE.test(why), why.match(GARBAGE)?.[0]);
+    await five.locator('.why-btn').click();
+
+    // Maquetación a 375, 390 y 430 px (con la estimación orientativa de la media abierta y cerrada). Para las capturas
+    // de elemento la barra superior y la de pestañas (fijas) no se pintan encima.
+    const bars = (on) => page.evaluate((v) => { for (const el of document.querySelectorAll('.topbar, .tabbar')) el.style.visibility = v ? '' : 'hidden'; }, on);
+    for (const width of [375, 390, 430]) {
+      await page.setViewportSize({ width, height: 812 });
+      await open(page, '#/today');
+      await open(page, '#/predictions');
+      assert.deepEqual(await layoutIssues(page), [], `${width} px`);
+      await shot(page, `predictions-iphone-${width}-top`);
+      await bars(false);
+      await page.locator('.prd-races').screenshot({ path: path.join(RESULTS, `predictions-iphone-${width}.png`) });
+      await bars(true);
+      await page.locator('.prd-race[data-race="half"] .prd-reveal').click();
+      await page.locator('.prd-race[data-race="half"] .prd-est').waitFor({ state: 'visible' });
+      await page.waitForFunction(() => document.querySelector('.prd-race[data-race="half"] .prd-reveal .icon').getAnimations().length === 0);
+      assert.deepEqual(await layoutIssues(page), [], `${width} px con la estimación orientativa`);
+      await bars(false);
+      await page.locator('.prd-race[data-race="half"]').screenshot({ path: path.join(RESULTS, `predictions-iphone-${width}-half-open.png`) });
+      await bars(true);
+    }
+    await page.setViewportSize({ width: 375, height: 812 });
+
+    // «Revisar» abre la carrera, y el formulario avisa del ritmo imposible
+    await page.locator('.prd-suspect-item').click();
+    await page.waitForFunction(() => location.hash === '#/activity/run_bad');
+    await page.locator('.act-dur-hint').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.act-dur-hint').textContent(), 'Ritmo de 6:12:00 /km: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?');
+    assert.ok(await page.locator('.act-dur-hint').evaluate((el) => el.classList.contains('warn')));
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('carreras que se contradicen: sin cifras, explicando por qué; «¿Puedo hacerlo?» no compara', async () => {
+  const app = await launch({ width: 375, height: 812 });
+  const { page, errors } = app;
+  try {
+    // 5 km a 2:31 /km y un maratón a 19:59 /km: creíbles por separado, imposibles a la vez (dispersión > ±25 %).
+    await seed(page, [activity('fast', 'run', ago(0), 5, 5 * 151), activity('slow', 'run', ago(80), 42.2, Math.round(42.2 * 1199))]);
+    await open(page, '#/predictions');
+    const cards = await cardsOf(page);
+    for (const c of cards) {
+      assert.equal(c.status, 'incoherent', c.race);
+      assert.equal(c.state, 'Predicción todavía poco fiable');
+      assert.match(c.explain, /^Tus carreras recientes no coinciden entre sí \(±[\d,]+ %\): puede que alguna tenga mal apuntado el tiempo o la distancia\.$/);
+      assert.equal(c.time, null, 'sin cifra');
+      assert.equal(c.range, null);
+    }
+    assert.ok(!GARBAGE.test(clean(await page.locator('.prd-races').textContent())));
+    const check = page.locator('.prd-check');
+    await check.getByRole('button', { name: '5 km', exact: true }).click();
+    assert.equal(clean(await check.locator('.prd-check-hint').textContent()), 'Sin una previsión útil en 5 km.');
+    await setTarget(page, 20 * 60);
+    const v = await verdict(page);
+    assert.equal(v.verdict, 'insuficiente');
+    assert.match(clean(v.text), /^No hay una previsión útil para los 5 km\./);
+    assert.deepEqual(await layoutIssues(page), []);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

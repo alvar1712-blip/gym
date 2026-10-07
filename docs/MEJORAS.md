@@ -57,6 +57,10 @@ de calentamiento pendientes al principio). No cambia el registro de 1 toque ni o
   semanas) o la tirada más larga reciente se quedan cortos (p. ej. maratón: < 40 km/sem o tirada < 24 km; media:
   < 25 km/sem o tirada < 14 km), k sube hasta 1,10 y la confianza baja, explicándolo en `why`. Menos de 2 carreras
   válidas → `ok:false` («datos insuficientes»).
+  Corrección de la ronda 6 (docs/MEJORAS6.md): solo cuentan ritmos de 2:30 a 20:00 /km (las demás, en `suspect`); el
+  margen del rango tiene un tope de ±25 %; cada predicción lleva `status` ('ok' | 'tentative' | 'incoherent' |
+  'invalid'), `usable` y `advice {note, improve}`. `mid` = estimación actual (media ponderada). Formato solo con
+  `util.fmtRaceTime` / `fmtPaceKm` / `fmtRaceRange` / `fmtPaceRange` (null si el dato no vale).
 - `checkTarget(data, distanceKm, targetSec)` → `{ verdict:'probable'|'ajustado'|'hoy_no'|'insuficiente', prediction,
   gapSec, why }`: objetivo ≥ `high` → probable; dentro del rango → ajustado; < `low` → hoy no (con cuánto falta).
 - Vista: tabla de las 4 distancias (rango, ritmo, confianza, «¿Por qué?»), comprobador (distancia: 5k/10k/media/

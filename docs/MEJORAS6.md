@@ -485,3 +485,96 @@ Misma medición intercalada (CPU ×4, 7 rondas, ms):
   misma dirección y es plausible (en frío el análisis, ahora más completo, se calcula una vez). No se maquilla: es el
   candidato a mejorar si en el iPhone se nota (p. ej., calcular la tarjeta «Tu análisis» de Hoy cuando la pantalla esté
   quieta).
+
+## Corrección tras la fase H — tiempos previstos (`#/predictions`)
+Visto en un iPhone real en Progreso › Tiempos previstos: 5 km `-47:-35–29:37:50`, ritmo `-10:-19–5:55:34 /km`,
+`previsto ≈ 14:25:40`; 10 km hasta `61:46:35`; formatos igual de imposibles en la media.
+
+### Diagnóstico (el dato seguido de extremo a extremo)
+Valores internos justo antes de formatear, reconstruidos con datos que reproducen EXACTAMENTE esas cifras (5 km en
+28:55 hace 4 días y otra carrera de 5 km con «31:00» escrito en la casilla de las horas, es decir 31 h 00 min, hace 30):
+
+| | antes | qué era |
+|---|---|---|
+| esfuerzo 2 | 5 km en 111 600 s (31:00:00; 6:12:00 /km) | dato mal apuntado, aceptado como esfuerzo válido |
+| 5 km `midExact` | 51 939 s | media ponderada de 1735 s y 111 600 s (la de 31 h pesa un 46 %) |
+| dispersión / margen | ±105 % / ±105 % | `margen = máx(3 %, dispersión)` sin tope |
+| `low` / `mid` / `high` | −2795 / 51 940 / 106 670 s | `previsto × (1 − 1,05)` < 0 |
+| `paceLow` / `paceHigh` | −559 / 21 334 s/km | |
+| 10 km `high` | 222 395 s | → `61:46:35` |
+
+Cuatro fallos encadenados, ninguno de unidades (segundos en todo el recorrido; nada de concatenar cadenas):
+1. **Validación (motor):** solo se descartaban los ritmos demasiado rápidos (< 2:30 /km). Un ritmo de 6:12:00 /km
+   contaba como esfuerzo y, con pocas carreras, entraba en la base de todas las distancias.
+2. **Matemático (motor):** el rango `previsto × (1 ± margen)` no tenía tope; con dispersión ≥ 100 % el extremo rápido
+   sale negativo. Pasa también con ritmos creíbles que se contradicen (5 km a 2:31 /km y un maratón a 19:59 /km:
+   dispersión ±112 %). Riegel, los pesos y la media ponderada estaban bien: no se tocan.
+3. **Formato:** `fmtDuration` con negativos daba `-47:-35` (signo en cada parte) y `fmtPace` aceptaba ritmos de más de
+   1 h/km (`5:55:34 /km`).
+4. **Mismo patrón en el análisis:** la previsión de 5 km a 4 semanas (`analysis-training.js`) usaba
+   `mid × (1 ± margen)` sin tope: con bloques muy dispares daba «5 km: −9:50–39:10».
+La causa del dato en sí: en el formulario de actividad la primera casilla de la duración es la de las horas.
+
+### Arreglo
+- **Motor (`js/race-predict.js`):** esfuerzos válidos con ritmo entre 2:30 y 20:00 /km (`calc.RUN_PACE_MIN/MAX`); las
+  carreras que no cuentan por el ritmo salen en `suspect` (para revisarlas). Margen como mucho ±25 % (`MAX_SPREAD`): por
+  encima, los esfuerzos se contradicen y la predicción es `status: 'incoherent'` (sin cifras en pantalla;
+  `checkTarget` → 'insuficiente'). Invariante comprobado: low, mid y high finitos, > 0 y `low ≤ mid ≤ high`.
+- **Estado de cada predicción** (`status`, `usable`, `advice {note, improve}`, `confidenceCodes`): 'ok';
+  'tentative' («todavía poco fiable»: a la media o al maratón les falta más de la mitad de un umbral de volumen; la
+  fórmula lo calcula pero no es una predicción útil; confianza baja); 'incoherent'; 'invalid' (defensivo).
+- **Estimación central:** ya existía y es válida: la media ponderada de las predicciones de Riegel de tus 3 mejores
+  carreras recientes (pesan más las recientes y las de distancia parecida), redondeada a 5/10/30 s. Ahora se llama
+  «estimación actual» y es el número grande; el rango (de la mejor estimación a la más prudente) va debajo.
+- **Formato (`js/util.js`):** `fmtRaceTime` («29:37», «1:45:08»), `fmtPaceKm` («5:55/km»; null desde 1 h/km),
+  `fmtRaceRange` y `fmtPaceRange` (siempre de menor a mayor; iguales → uno). Devuelven null con null, undefined, NaN,
+  ±Infinity, ≤ 0 o lo que no es un número, y quien llama enseña «Datos insuficientes» o nada. `fmtDuration` con
+  negativos: un solo signo («−46:35»).
+- **Análisis:** la «Forma en carrera» y el ritmo de rodaje usan el mismo filtro de ritmo; la previsión a 4 semanas no se
+  da con una dispersión de más de ±25 % entre bloques.
+- **Formulario de actividad:** aviso (no bloquea) bajo la duración si el ritmo de una carrera es imposible: «Ritmo de
+  6:12:00 /km: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?».
+- **Eventos (`races-progress.js`):** mismos formateadores; con una predicción no útil, «Datos insuficientes»; con una
+  «todavía poco fiable», «Orientativo» y el motivo.
+
+### Diseño de la tarjeta
+```
+5 km                               Confianza media
+29:55  estimación actual
+Rango probable      Ritmo estimado
+28:50–31:00         5:59/km
+⚠ Solo tienes 2 carreras válidas recientes, así que este rango es orientativo. …
+[ ¿Por qué? ]
+```
+Media o maratón con poco volumen: «Predicción todavía poco fiable», la frase de por qué («Tu volumen actual todavía es
+demasiado bajo para estimar la media maratón con precisión.»), una minitabla Ahora / Referencia (tirada más larga y km
+por semana) y «Ver estimación orientativa» (la cifra, atenuada y marcada como orientativa). Carreras que se
+contradicen: la frase y «¿Por qué?», sin cifras. Arriba, si alguna carrera no cuenta por su ritmo, un aviso con la
+carrera («5 km en 31:00:00 · más lenta de 20:00/km») que abre su ficha. «¿Por qué?»: carreras usadas y cuánto pesa
+cada una («la que más»), fórmula, confianza y sus motivos, km por semana, tirada más larga y «Para mejorarla».
+Comprobado sin cortes, solapes ni letra < 12 px a 375, 390 y 430 px (E2E, Chromium y WebKit).
+
+### Decisiones (se pueden cambiar)
+- 20:00 /km como ritmo más lento de un esfuerzo de carrera (3 km/h: más lento que caminar). Detecta el error de horas
+  por minutos (× 60) y un reloj olvidado en marcha; un trote con paseos de 12–15 min/km sigue contando.
+- ±25 % de dispersión como límite de una predicción útil (la confianza ya bajaba desde ±8 %).
+- «Todavía poco fiable» si falta más de la mitad de un umbral de volumen (media: < 12,5 km/sem o tirada < 7 km;
+  maratón: < 20 km/sem o tirada < 12 km). Fuerza confianza baja.
+- Ritmos en esta pantalla como «5:55/km» (sin espacio), como se pidió; el resto de la app mantiene «5:55 /km».
+- Los km de la carrera mal apuntada siguen contando para el volumen (la distancia suele estar bien) y no se corrige
+  ningún dato guardado: la app lo señala y lo corriges tú.
+
+### Pruebas
+- `tests/unit/time-format.test.mjs` (nuevo): 5:03, 29:37, 59:59, 1:00:00, 1:45:08, 355 s/km → 5:55/km, 359,6 → 6:00/km,
+  negativos, null, undefined, NaN, ±Infinity, cadenas; rangos ordenados; barrido sin signos ni «::».
+- `tests/unit/race-predict-iphone.test.mjs` (nuevo; solo API anterior): con el código anterior FALLA con
+  `{"estimación":"14:25:40","rango":"-47:-35–29:37:50","ritmo":"-10:-19–5:55:34 /km"}`; con el arreglo pasa.
+- `tests/unit/race-predict.test.mjs`: regresión iPhone (la de 31 h no cuenta, `suspect`, 1 válida → insuficiente; con
+  otra carrera, 29:55 · 28:50–31:00 · 5:59/km), ritmos 2:30–20:00 en los extremos, dispersión > 100 % con ritmos
+  creíbles, propiedad con 300 conjuntos aleatorios (también × 60 y ÷ 60), «todavía poco fiable», estimación central y
+  «¿Por qué?».
+- `tests/unit/analysis-training.test.mjs`: previsión a 4 semanas con bloques que se contradicen (falla con el código
+  anterior). `activity.test.mjs`: aviso de ritmo. `races.test.mjs`: «Previsto» y «Orientativo».
+- `tests/e2e/predictions.test.cjs`: tarjeta nueva; caso iPhone a 375/390/430 px (sin scroll horizontal, sin cortes,
+  sin solapes, letra ≥ 12 px; capturas `test-results/predictions-iphone-*.png`), «Revisar» abre la carrera y el
+  formulario avisa; carreras que se contradicen sin cifras.

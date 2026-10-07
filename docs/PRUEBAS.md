@@ -31,6 +31,7 @@
 | F | `analysis-report.test.mjs` (secciones y orden, contexto, privacidad, menores, longitud) y `analysis.test.mjs` | `analysis.test.cjs` (copiar el informe) |
 | G | `analysis-cache.test.mjs` (invalidación por fecha, versión, epoch y cada almacén) | `analysis-cache.test.cjs` (cada escritura real del store = calcular desde cero; Chromium y WebKit) |
 | H | — | toda la batería en WebKit (`npm run e2e:webkit`); `transitions.test.cjs` (hoja que se cierra mientras se abre) |
+| Corrección tiempos previstos | `time-format.test.mjs`, `race-predict-iphone.test.mjs` (falla con el código anterior), `race-predict.test.mjs` (regresión, propiedad con 300 conjuntos aleatorios, estados), `analysis-training.test.mjs` (previsión con bloques que se contradicen), `activity.test.mjs` (aviso de ritmo) | `predictions.test.cjs` (caso iPhone a 375/390/430 px sin cortes ni solapes; carreras que se contradicen; Chromium y WebKit) |
 
 Esperas: nunca pausas fijas. Tras navegar, `go()` / `settle()` (espera a `router.settled()` y a dos fotogramas); para
 estados con transición CSS, `page.waitForFunction` con la condición (p. ej. la opacidad del mapa corporal, fase D).
@@ -95,7 +96,7 @@ Antes: exporta una copia (Ajustes › Copias y datos).
 7. **Borrar y deshacer.** Abre la marca › Borrar › «Deshacer» en el aviso: vuelve a la lista sin salir de la pantalla.
 8. **Cerrar y reabrir** la app desde el selector: check-ins, zonas y marcas siguen ahí. Exporta una copia nueva.
 
-## Comprobación manual en iPhone (cierre de la ronda 6, ~10 min)
+## Comprobación manual en iPhone (cierre de la ronda 6, ~11 min)
 Lo que ni Chromium ni WebKit de Playwright reproducen: la app instalada en la pantalla de inicio, el teclado y las
 ruedas de iOS, el gesto de atrás, las zonas seguras, el almacenamiento real y el modo sin conexión de verdad.
 Antes: Ajustes › Copias y datos › «Exportar copia» (guárdala en Archivos).
@@ -117,5 +118,10 @@ Antes: Ajustes › Copias y datos › «Exportar copia» (guárdala en Archivos)
    Vuelve a Hoy y otra vez a Análisis: debe abrir al instante (caché).
 7. **Sin conexión (1 min).** Modo avión › cierra y abre la app desde la pantalla de inicio: Hoy, Calendario, Progreso y
    Análisis se abren; registra un pesaje. Quita el modo avión.
-8. **Copia (1 min).** Exporta una copia nueva y comprueba que se guarda en Archivos. Si algo fue mal en los pasos
+8. **Tiempos previstos (1 min).** Progreso › Tiempos previstos: cada distancia con un tiempo grande («29:55»), debajo
+   «Rango probable» y «Ritmo estimado» («5:59/km»); ningún número negativo ni «h:mm:ss/km». Si una carrera tiene un
+   tiempo imposible, arriba sale «1 carrera no cuenta por su ritmo»: tócala, corrige la duración (la primera casilla
+   son las horas) y vuelve. Con poco volumen, media y maratón dicen «Predicción todavía poco fiable» y «Ver estimación
+   orientativa» enseña la cifra.
+9. **Copia (1 min).** Exporta una copia nueva y comprueba que se guarda en Archivos. Si algo fue mal en los pasos
    anteriores, importa la copia del principio (Ajustes › Copias y datos › Importar).

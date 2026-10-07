@@ -1,16 +1,20 @@
-// predictions.js — tiempos previstos (#/predictions): rango para 5 km, 10 km, media y maratón con ritmo, confianza
-// y «¿Por qué?»; comprobador «¿Puedo hacerlo?» (distancia + tiempo objetivo → veredicto) y la base del cálculo
-// (esfuerzos usados, km por semana, tirada más larga). Estado vacío si no hay datos suficientes.
+// predictions.js — tiempos previstos (#/predictions): por cada distancia (5 km, 10 km, media y maratón) la estimación
+// actual en grande, el rango probable y el ritmo debajo, la confianza, un aviso si procede y «¿Por qué?»; si la
+// predicción todavía no es útil (poco volumen para media/maratón, carreras que se contradicen) lo dice en vez de
+// enseñar cifras (la estimación orientativa, a un toque). Comprobador «¿Puedo hacerlo?» (distancia + tiempo objetivo →
+// veredicto), carreras que no cuentan por un ritmo imposible (para revisarlas) y la base del cálculo (esfuerzos usados,
+// km por semana, tirada más larga). Estado vacío si no hay datos suficientes. Tiempos y ritmos SOLO con los
+// formateadores estrictos de util.js (fmtRaceTime, fmtPaceKm, fmtRaceRange): nunca negativos ni «h:mm:ss/km».
 // PROPIETARIO: módulo de predicciones. Los cálculos salen de js/race-predict.js (puro); aquí solo DOM.
 // Tono prudente: siempre estimación, nunca promesa.
 import { navigate } from '../router.js';
 import { h, icon, screen, segmented, durationInput, numInput, field, emptyState, whyBox } from '../ui.js';
-import { fmtDate, fmtNum, fmtDuration, fmtPace } from '../util.js';
+import { fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
 import { racesLink } from './races.js';
 import {
   predictRaces, checkTarget, analyzeRuns, predictDistance, raceFor, rangeText, paceRangeText, fmtGap, fmtGapPerKm,
-  RACES, MIN_KM, MIN_VALID, WINDOW_WEEKS, VOLUME_WEEKS, TOP_N, VOLUME,
+  RACES, MIN_KM, MIN_VALID, WINDOW_WEEKS, VOLUME_WEEKS, TOP_N, VOLUME, MAX_PACE, MIN_PACE,
 } from '../race-predict.js';
 
 /** Límites de «Otra» distancia (km). */
@@ -31,6 +35,10 @@ const keep = (s) => String(s ?? '')
   .replace(/(\d{1,2}) (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/g, `$1${NB}$2`);
 const km1 = (v) => `${fmtNum(v, 1)}${NB}km`;
 const dayTxt = (d) => fmtDate(d, 'day');
+/** Tiempo «29:37» / «1:42:16»; '—' si no vale (nunca basura). */
+const timeTxt = (s) => fmtRaceTime(s) ?? '—';
+/** Ritmo «5:55/km»; '—' si no vale. */
+const paceTxt = (s) => fmtPaceKm(s) ?? '—';
 
 export function mountPredictions(root) {
   const c = screen(root, { title: 'Tiempos previstos', subtitle: 'Estimación con tus carreras', back: '#/progress' });
@@ -46,6 +54,7 @@ export function mountPredictions(root) {
 
   c.appendChild(h('p.prd-intro', icon('info', 16),
     h('span', 'Estimación a partir de tus mejores carreras recientes. No es una promesa: el recorrido, el calor, el descanso y cómo repartas el esfuerzo cuentan.')));
+  if (r.suspect.length) c.appendChild(suspectView(r.suspect));
   c.appendChild(h('section.prd-races', { 'aria-labelledby': 'prd-races-title' },
     h('h2.section-title', { id: 'prd-races-title' }, 'Por distancia'),
     RACES.map((race) => raceCard(r.predictions[race.id]))));
@@ -74,8 +83,37 @@ function emptyView(r) {
       Array.from({ length: MIN_VALID }, (_, i) => h('span.prd-dot', { class: i < r.valid ? 'on' : '' })),
       h('span', `${r.valid} de ${MIN_VALID} carreras válidas`)),
     r.notCounted ? h('p.prd-empty-msg', keep(r.notCounted)) : null,
+    r.suspect.length ? suspectList(r.suspect) : null,
     whyBox(whyContent(r.why), '¿Qué cuenta?'),
     h('p.prd-note', 'Solo cuenta la carrera: el senderismo y otros deportes no. Si importas o registras tus carreras con su tiempo en movimiento, la estimación es más fiel.'));
+}
+
+// ===========================================================================
+// Carreras que no cuentan por un ritmo imposible (para revisarlas)
+// ===========================================================================
+
+function suspectList(list) {
+  return h('div.list.prd-suspect-list', list.map((x) => h('button.list-item.prd-suspect-item', {
+    type: 'button', dataset: { session: x.sessionId, why: x.why }, 'aria-label': `Revisar ${x.label.replace(/\s+/g, ' ')}`,
+    onClick: () => navigate(`#/activity/${x.sessionId}`),
+  },
+    h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, '🏃'),
+    h('span.list-item-main',
+      h('span.list-item-title', keep(x.label)),
+      h('span.list-item-sub', keep(`${dayTxt(x.date)} · ${x.why === 'slow' ? `más lenta de ${paceTxt(MAX_PACE)}` : `más rápida de ${paceTxt(MIN_PACE)}`}`))),
+    icon('chevron-right', 20, 'chev'))));
+}
+
+function suspectView(list) {
+  const n = list.length;
+  const slow = list.some((x) => x.why === 'slow');
+  return h('section.card.prd-suspect', { 'aria-labelledby': 'prd-suspect-title' },
+    h('h2.prd-suspect-title', { id: 'prd-suspect-title' }, icon('alert', 16),
+      h('span', n === 1 ? '1 carrera no cuenta por su ritmo' : `${n} carreras no cuentan por su ritmo`)),
+    h('p.prd-suspect-text', slow
+      ? 'Un ritmo así no es de carrera: suele ser un tiempo mal apuntado (por ejemplo, minutos escritos en la casilla de las horas). Si lo corriges, contará.'
+      : 'Un ritmo así no es creíble para una carrera: revisa la distancia y el tiempo. Si lo corriges, contará.'),
+    suspectList(list));
 }
 
 // ===========================================================================
@@ -86,25 +124,74 @@ function confBadge(p) {
   return h(`span.badge.prd-conf.prd-conf-${p.confidence}`, { class: CONF_BADGE[p.confidence] }, `Confianza ${p.confidence}`);
 }
 
-function raceCard(p) {
+/** Estimación actual en grande, y debajo el rango probable y el ritmo. null si algún número no vale. */
+function estimateView(p, { tentative = false } = {}) {
+  const time = fmtRaceTime(p.mid);
+  const range = fmtRaceRange(p.low, p.high);
+  const pace = fmtPaceKm(p.pace);
+  if (!time || !range || !pace) return null;
+  return h(`div.prd-est${tentative ? '.prd-est-tentative' : ''}`,
+    h('div.prd-race-main',
+      h('span.prd-race-time', { 'aria-label': `Estimación ${tentative ? 'orientativa' : 'actual'}: ${time}` }, time),
+      h('span.prd-race-caption', tentative ? 'estimación orientativa' : 'estimación actual')),
+    h('dl.prd-race-facts',
+      h('div.prd-fact', h('dt', 'Rango probable'), h('dd.prd-race-range', { 'aria-label': `Entre ${range.replace('–', ' y ')}` }, keep(range))),
+      h('div.prd-fact', h('dt', 'Ritmo estimado'), h('dd.prd-race-pace', pace))));
+}
+
+function noteView(text) {
+  return text ? h('p.prd-race-note', icon('alert', 14), h('span', keep(text))) : null;
+}
+
+/** Lo que falta de volumen (media/maratón): minitabla «Ahora · Referencia» con los criterios que no se cumplen. */
+function volumeFacts(p) {
   const v = p.volume;
-  let note = null;
-  if (p.adjusted) {
-    const miss = [];
-    if (!v.weeklyOk) miss.push(`${km1(v.weeklyKm)}/sem (umbral ${v.weeklyTarget})`);
-    if (!v.longOk) miss.push(`tirada de ${km1(v.longKm)} (umbral ${v.longTarget})`);
-    note = h('p.prd-race-note', icon('alert', 14), h('span', `Más prudente por volumen: ${miss.join(' y ')}.`));
-  }
-  return h('article.card.prd-race', { dataset: { race: p.id, confidence: p.confidence } },
+  if (!v) return null;
+  const rows = [];
+  if (!v.longOk) rows.push(['Tirada más larga', km1(v.longKm), `≥${NB}${v.longTarget}${NB}km`]);
+  if (!v.weeklyOk) rows.push(['Km por semana', km1(v.weeklyKm), `≥${NB}${v.weeklyTarget}${NB}km`]);
+  if (!rows.length) return null;
+  return h('table.prd-vol',
+    h('thead', h('tr', h('td'), h('th', { scope: 'col' }, 'Ahora'), h('th', { scope: 'col' }, 'Referencia'))),
+    h('tbody', rows.map(([label, now, ref]) => h('tr.prd-vol-row', h('th', { scope: 'row' }, label), h('td.prd-vol-now', now), h('td.prd-vol-ref', ref)))));
+}
+
+function raceCard(p) {
+  const el = h('article.card.prd-race', { dataset: { race: p.id, confidence: p.confidence, status: p.status } },
     h('div.prd-race-head',
       h('h3.prd-race-name', p.label),
-      confBadge(p)),
-    h('div.prd-race-range', { 'aria-label': `Entre ${fmtDuration(p.low)} y ${fmtDuration(p.high)}` }, rangeText(p)),
-    h('div.prd-race-meta',
-      h('span.prd-race-pace', keep(paceRangeText(p))),
-      h('span.prd-race-mid', `previsto ≈${NB}${fmtDuration(p.mid)}`)),
-    note,
-    whyBox(whyContent(p.why)));
+      confBadge(p)));
+  const est = p.usable ? estimateView(p, { tentative: p.status === 'tentative' }) : null;
+  if (p.status === 'ok' && est) {
+    el.append(est);
+    const note = noteView(p.advice.note);
+    if (note) el.append(note);
+  } else if (p.status === 'tentative' && est) {
+    // «La fórmula puede calcularlo» ≠ «hay datos para una predicción útil»: primero lo que falta; la cifra, a un toque.
+    est.hidden = true;
+    est.id = `prd-est-${p.id}`;
+    const btn = h('button.prd-reveal', {
+      type: 'button', 'aria-expanded': 'false', 'aria-controls': est.id,
+      onClick: () => {
+        est.hidden = !est.hidden;
+        btn.setAttribute('aria-expanded', String(!est.hidden));
+        btn.lastChild.textContent = est.hidden ? 'Ver estimación orientativa' : 'Ocultar estimación orientativa';
+      },
+    }, icon('chevron-down', 16), h('span', 'Ver estimación orientativa'));
+    el.append(...[
+      h('p.prd-race-state', 'Predicción todavía poco fiable'),
+      h('p.prd-race-explain', keep(p.advice.note)),
+      volumeFacts(p),
+      btn,
+      est,
+    ].filter(Boolean));
+  } else {
+    el.append(
+      h('p.prd-race-state', p.status === 'incoherent' ? 'Predicción todavía poco fiable' : 'Datos insuficientes'),
+      h('p.prd-race-explain', keep(p.advice.note || 'Aún no hay datos para estimar esta distancia.')));
+  }
+  el.append(whyBox(whyContent(p.why)));
+  return el;
 }
 
 // ===========================================================================
@@ -187,7 +274,9 @@ function checker(data, r) {
       return;
     }
     const p = predictionFor(km);
-    hint.textContent = keep(`Previsto ${p.phrase}: ${rangeText(p)} (${paceRangeText(p)})`);
+    hint.textContent = !p.usable
+      ? `Sin una previsión útil ${p.phrase}.`
+      : keep(`${p.status === 'tentative' ? 'Orientativo' : 'Previsto'} ${p.phrase}: ${rangeText(p)} (${paceRangeText(p)})`);
     if (!(mem.target > 0)) {
       result.replaceChildren(h('p.prd-verdict-empty', 'Escribe tu tiempo objetivo para ver si es probable, ajustado o si hoy aún no.'));
       return;
@@ -227,7 +316,7 @@ function verdictView(res) {
         h('div.prd-v-line',
           h('span.prd-v-label', res.label),
           p ? h('span.badge.prd-conf', { class: CONF_BADGE[p.confidence] }, `Confianza ${p.confidence}`) : null),
-        h('span.prd-v-sub', keep(`${res.distanceLabel} en ${fmtDuration(res.targetSec)}${p ? ` · ${fmtPace(res.targetSec / p.km)}` : ''}`)))),
+        h('span.prd-v-sub', keep(`${res.distanceLabel} en ${timeTxt(res.targetSec)}${p ? ` · ${paceTxt(res.targetSec / p.km)}` : ''}`)))),
     gap ? h('div.prd-v-gap',
       h('span.prd-v-gap-label', gap.label),
       h('span.prd-v-gap-value', gap.value),
@@ -255,8 +344,8 @@ function basisView(r) {
     },
       h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, '🏃'),
       h('span.list-item-main',
-        h('span.list-item-title', keep(`${fmtNum(e.km, 2)} km en ${fmtDuration(e.sec)}`)),
-        h('span.list-item-sub', keep(`${dayTxt(e.date)} · ${fmtPace(e.pace)}`))),
+        h('span.list-item-title', keep(`${fmtNum(e.km, 2)} km en ${timeTxt(e.sec)}`)),
+        h('span.list-item-sub', keep(`${dayTxt(e.date)} · ${paceTxt(e.pace)}`))),
       icon('chevron-right', 20, 'chev')))),
     h('p.prd-note', `Se usan tus ${TOP_N} mejores carreras de ${MIN_KM} km o más de las últimas ${WINDOW_WEEKS} semanas, con su tiempo en movimiento; las más recientes y de distancia más parecida pesan más. Solo cuenta la carrera: el senderismo y otros deportes no.`),
     h('p.prd-note', `Media y maratón dependen también del volumen: con menos de ${VOLUME.half.weeklyKm} km/sem o una tirada de menos de ${VOLUME.half.longKm} km (media), o de ${VOLUME.marathon.weeklyKm} km/sem y ${VOLUME.marathon.longKm} km (maratón), la estimación sale más lenta y con menos confianza.`));

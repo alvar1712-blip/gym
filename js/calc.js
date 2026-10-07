@@ -188,6 +188,13 @@ export function sessionLoad(session) {
 export function pace(sec, km) {
   return km > 0 && sec > 0 ? sec / km : null;
 }
+/**
+ * Ritmos de carrera creíbles (s/km): de 2:30 /km (más rápido es un error de datos) a 20:00 /km (3 km/h, más lento que
+ * caminar: casi siempre un tiempo mal apuntado, p. ej. 31 min escritos en la casilla de las horas). Los usan
+ * race-predict (qué esfuerzos cuentan) y el aviso del formulario de actividad.
+ */
+export const RUN_PACE_MIN = 150;
+export const RUN_PACE_MAX = 1200;
 /** km/h */
 export function speed(sec, km) {
   return km > 0 && sec > 0 ? km / (sec / 3600) : null;

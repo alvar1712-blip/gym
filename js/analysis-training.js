@@ -19,7 +19,7 @@
 import { addDays, diffDays, weekStart, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtPace, round } from './util.js';
 import { isWorkSet, setMetrics, sessionDurationMin, pace } from './calc.js';
 import { exercisesWithHistory, exerciseHistory, weeklySeries, runPaceSeries, dataRange, adherenceSeries, adherenceTotals } from './stats.js';
-import { analyzeRuns, predictDistance, raceFor, MIN_KM as RUN_MIN_KM, MIN_PACE, MIN_VALID } from './race-predict.js';
+import { analyzeRuns, predictDistance, raceFor, MIN_KM as RUN_MIN_KM, MIN_VALID, MAX_SPREAD, plausibleRunPace } from './race-predict.js';
 import { getProfile, isFemale, g } from './profile.js';
 import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin, areasOf } from './checkin-logic.js';
 import { defaultSettings, MUSCLE_LABEL } from './seed.js';
@@ -1082,12 +1082,16 @@ export function findInterference(d, { today, weeks = INTERFERENCE_WEEKS } = {}) 
   return out;
 }
 
-/** 5 km previsto de un bloque [from, to] con race-predict (solo carreras de ese bloque; ≥ 2 válidas). */
+/**
+ * 5 km previsto de un bloque [from, to] con race-predict (solo carreras de ese bloque; ≥ 2 válidas). null también si
+ * la predicción no es útil (carreras del bloque que se contradicen: dispersión > ±25 %).
+ */
 function blockPrediction(d, from, to) {
   const ctx = analyzeRuns(d, { today: to });
   const valid = ctx.valid.filter((e) => e.date >= from);
   if (valid.length < MIN_VALID) return null;
   const p = predictDistance({ ...ctx, valid, basis: valid.slice(0, 3) }, 5, raceFor(5));
+  if (!p.usable) return null;
   return { pred5kSec: p.mid, low: p.low, high: p.high, runs: valid.length, efforts: p.efforts.map((e) => e.label) };
 }
 
@@ -1154,15 +1158,17 @@ export function analyzeEndurance(data, opts = {}) {
       action: { label: 'Tiempos previstos', href: '#/predictions' },
     }));
 
-    // Previsión a 4 semanas (solo si mejora con ≥ 3 bloques)
+    // Previsión a 4 semanas (solo si mejora con ≥ 3 bloques y los bloques no se contradicen: con una dispersión de
+    // más de ±25 % —el mismo tope que race-predict— el rango mid × (1 ± margen) no significa nada y podía salir negativo).
     if (fitness.length >= 3 && pct > 0) {
       const xy = fitness.map((b) => ({ x: diffDays(fitness[0].weekStart, b.weekStart) / 7, y: b.pred5kSec }));
       const fit = theilSen(xy);
-      if (fit && fit.slope < 0) {
+      const disp = fit ? (fit.sd / last.pred5kSec) || 0 : 0;
+      if (fit && fit.slope < 0 && disp <= MAX_SPREAD) {
         const rPct = Math.min((-fit.slope / last.pred5kSec) * 100, 0.75);
         const decay = TAU_WEEKS * Math.log(1 + BLOCK_WEEKS / TAU_WEEKS);
         const mid = last.pred5kSec * (1 - (rPct / 100) * decay);
-        const margin = Math.max(0.03, (fit.sd / last.pred5kSec) || 0);
+        const margin = Math.max(0.03, disp);
         const lo = Math.floor((mid * (1 - margin)) / 5) * 5;
         const hi = Math.ceil((mid * (1 + margin)) / 5) * 5;
         const date = addDays(today, BLOCK_WEEKS * 7);
@@ -1171,7 +1177,7 @@ export function analyzeEndurance(data, opts = {}) {
           confidence: combine([byCount(fitness.length, { low: 3, medium: 4, high: 6 }, (k) => `${k} bloques`, 'blocks'), capAt('medium', 'es una proyección: el ritmo cambia', 'forecast')]),
           title: `5 km: ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)}`,
           text: `Si sigues así, tu 5 km previsto podría estar en ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)} (ahora ~${timeTxt(last.pred5kSec)}). Es una estimación.`,
-          rule: `Pendiente robusta (Theil–Sen) del 5 km previsto de tus bloques de ${BLOCK_WEEKS} semanas, en % por semana, con un tope prudente de 0,75 %/sem y rendimientos decrecientes (τ = ${TAU_WEEKS} semanas); rango ±3 % como mínimo (o la dispersión de los bloques si es mayor), redondeado a 5 s.`,
+          rule: `Pendiente robusta (Theil–Sen) del 5 km previsto de tus bloques de ${BLOCK_WEEKS} semanas, en % por semana, con un tope prudente de 0,75 %/sem y rendimientos decrecientes (τ = ${TAU_WEEKS} semanas); rango ±3 % como mínimo (o la dispersión de los bloques si es mayor), redondeado a 5 s. Con una dispersión de más de ±${Math.round(MAX_SPREAD * 100)} % entre bloques no se da previsión.`,
           data: [...rows, { label: 'Mejora usada', value: `${fmtNum(rPct, 2)} %/sem` }],
           sources: [],
           action: { label: 'Tiempos previstos', href: '#/predictions' },
@@ -1287,7 +1293,7 @@ function easyRunPace(d, today) {
   const byId = new Map(toArr(d.sessions).filter(Boolean).map((s) => [s.id, s]));
   const cur = []; const prev = [];
   for (const a of runPaceSeries(d)) {
-    if (a.x > today || a.x < prevFrom || !(a.km >= RUN_MIN_KM) || !(a.sec / a.km >= MIN_PACE)) continue;
+    if (a.x > today || a.x < prevFrom || !(a.km >= RUN_MIN_KM) || !plausibleRunPace(a.sec / a.km)) continue;
     const s = byId.get(a.sessionId);
     if (classifyIntensity(s) !== 'easy') continue;
     (a.x >= from ? cur : prev).push(pace(a.sec, a.km));

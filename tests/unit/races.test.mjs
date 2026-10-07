@@ -83,9 +83,18 @@ test('cómo vas: reutiliza race-predict (veredicto con objetivo, rango sin él) 
   const p = racePrediction(runs, race({ type: '10k', targetSec: 3000 }), { today: TODAY });
   assert.ok(['probable', 'ajustado', 'hoy_no'].includes(p.verdict), p.verdict);
   assert.match(p.range, /^\d+:\d\d–\d+:\d\d$/);
-  const noTarget = racePrediction(runs, race({ type: 'half' }), { today: TODAY });
+  // Sin objetivo: el rango previsto (10 km, con datos suficientes)…
+  const noTarget = racePrediction(runs, race({ type: '10k' }), { today: TODAY });
   assert.equal(noTarget.verdict, 'prevision');
-  assert.match(noTarget.text, /^Tiempo previsto hoy: /);
+  assert.equal(noTarget.label, 'Previsto');
+  assert.equal(noTarget.status, 'ok');
+  assert.match(noTarget.text, /^Tiempo previsto hoy: \d+:\d\d–\d+:\d\d \(\d+:\d\d\)\. /);
+  // …y en la media, con ≈ 5,8 km/sem (menos de la mitad de los 25 de referencia), solo orientativo y diciéndolo.
+  const half = racePrediction(runs, race({ type: 'half' }), { today: TODAY });
+  assert.equal(half.verdict, 'prevision');
+  assert.equal(half.label, 'Orientativo');
+  assert.equal(half.status, 'tentative');
+  assert.match(half.text, /^Estimación orientativa hoy: \d:\d\d:\d\d–\d:\d\d:\d\d \(\d:\d\d:\d\d\)\. Tu volumen actual todavía es demasiado bajo para estimar la media maratón con precisión\.$/);
   assert.equal(racePrediction(data([]), race(), { today: TODAY }).verdict, 'insuficiente');
   assert.equal(racePrediction(runs, race({ type: 'cycling', distanceKm: 100 }), { today: TODAY }), null, 'solo carreras a pie');
   const goal = { id: 'g1', kind: 'endurance', sport: 'run', distanceKm: 10, timeSec: 3000, title: '10 km en menos de 50 min', createdAt: tsFromDate(addDays(TODAY, -60), 9), archived: false, achievedAt: null };

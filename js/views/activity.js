@@ -520,8 +520,11 @@ function mountForm(root, ctx) {
     const bits = [];
     if (parentSe && L.targetText(parentSe.target)) bits.push(`Objetivo: ${L.targetText(parentSe.target)}`);
     if (record && !(form.movingSec > 0)) bits.push(`Sin duración se mantiene la guardada (${fmtDuration(record.movingSec)}).`);
+    const paceWarn = L.paceWarning(form);
+    if (paceWarn) bits.push(paceWarn);
     refs.durHint.textContent = bits.join(' · ');
     refs.durHint.hidden = !bits.length;
+    refs.durHint.classList.toggle('warn', !!paceWarn);
     if (refs.elapsedHint) {
       const bad = form.elapsedSec > 0 && form.movingSec > 0 && form.elapsedSec < form.movingSec;
       refs.elapsedHint.textContent = bad ? 'El tiempo total suele ser mayor o igual que el tiempo en movimiento.' : 'Incluye paradas (opcional).';

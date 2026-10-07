@@ -1,7 +1,7 @@
 // activity-logic.js — lógica PURA del módulo de actividades (carrera, bici, natación, senderismo, otras)
 // y del peso corporal. Sin DOM ni store: se prueba en Node (tests/unit/activity.test.mjs).
 import { isDateStr, round, fmtPace, fmtSpeed, fmtNum, fmtDuration, addDays, diffDays, sortBy, normalize } from './util.js';
-import { pace, speed, pace100, sessionLoad, movingAverage, linearRegression, dayIndex } from './calc.js';
+import { pace, speed, pace100, sessionLoad, movingAverage, linearRegression, dayIndex, RUN_PACE_MIN, RUN_PACE_MAX } from './calc.js';
 import { RUN_TYPES, BIKE_TYPES, SWIM_STROKES, OTHER_TYPES, ACTIVITY_LABEL } from './seed.js';
 import { targetText as itemTargetText } from './library-logic.js';
 
@@ -290,6 +290,20 @@ export function primaryMetric(form) {
     const gain = form.elevationM > 0 ? ` · +${fmtNum(Math.round(form.elevationM), 0)} m` : '';
     return out('Ritmo medio', v, fmtPace(v), v && fmtDuration(v), '/km', v && `${fmtNum(km, 2)} km a ${fmtSpeed(speed(sec, km))}${gain}`);
   }
+  return null;
+}
+
+/**
+ * Aviso (no bloquea guardar) si el ritmo de una carrera es imposible: más lento de 20:00 /km (suele ser un tiempo mal
+ * apuntado, p. ej. los minutos en la casilla de las horas) o más rápido de 2:30 /km. null si no hay nada que avisar.
+ * Una carrera así no cuenta para los tiempos previstos.
+ */
+export function paceWarning(form) {
+  if (!form || form.kind !== 'run') return null;
+  const v = pace(form.movingSec, form.distanceKm);
+  if (v == null) return null;
+  if (v > RUN_PACE_MAX) return `Ritmo de ${fmtDuration(v)} /km: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?`;
+  if (v < RUN_PACE_MIN) return `Ritmo de ${fmtDuration(v)} /km: demasiado rápido para ser real. Revisa la distancia y el tiempo.`;
   return null;
 }
 

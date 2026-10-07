@@ -106,6 +106,14 @@
       en iPhone (~10 min) en `docs/PRUEBAS.md`. Baterías finales: unitarias 517/517; Chromium 193/193 en 4 pasadas
       (dos con un fallo de una prueba inestable, ya corregida); WebKit 0 fallos en las 2 últimas pasadas.
 
+- [x] **Corrección · tiempos previstos** (visto en un iPhone: «-47:-35–29:37:50», «5:55:34 /km», «14:25:40»): una carrera
+      con los minutos escritos en la casilla de las horas (31 h en 5 km) contaba como esfuerzo y el rango
+      `previsto × (1 ± margen)` no tenía tope. Ahora: ritmos de 2:30 a 20:00 /km (la otra se señala para revisarla),
+      margen como mucho ±25 %, formateadores estrictos (`fmtRaceTime`, `fmtPaceKm`, `fmtRaceRange`), tarjeta con la
+      estimación actual en grande y el rango y el ritmo debajo, media y maratón «todavía poco fiable» con poco volumen,
+      aviso en el formulario de actividad. Mismo tope en la previsión de 5 km del análisis. Detalle en
+      `docs/MEJORAS6.md`.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).

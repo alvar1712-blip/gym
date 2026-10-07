@@ -4,9 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   predictRaces, checkTarget, analyzeRuns, predictDistance, volumeAdjust, volumeProfile, recencyWeight, distanceWeight,
-  stepFor, raceFor, fmtGap, fmtGapPerKm, rangeText, RACES, K, K_MAX, MIN_KM, MIN_MARGIN, WINDOW_DAYS, VOLUME_DAYS,
-  RECENCY_DAYS, INSUFFICIENT, VERDICT_LABEL,
+  stepFor, raceFor, fmtGap, fmtGapPerKm, rangeText, paceRangeText, RACES, K, K_MAX, MIN_KM, MIN_MARGIN, WINDOW_DAYS,
+  VOLUME_DAYS, RECENCY_DAYS, INSUFFICIENT, VERDICT_LABEL, MAX_PACE, MIN_PACE, MAX_SPREAD, STATUSES,
 } from '../../js/race-predict.js';
+import { fmtRaceTime, fmtPaceKm } from '../../js/util.js';
 import { addDays, tsFromDate } from '../../js/util.js';
 
 const TODAY = '2026-09-24';
@@ -43,7 +44,7 @@ test('insuficiente: sin carreras, con 1 válida (más cortas, antiguas y senderi
   ]));
   assert.equal(r.ok, false);
   assert.equal(r.valid, 1);
-  assert.deepEqual(r.excluded, { old: 1, short: 1, implausible: 1 });
+  assert.deepEqual(r.excluded, { old: 1, short: 1, implausible: 1, slow: 0 });
   assert.match(r.message, /Solo hay 1 carrera válida/);
   assert.match(r.message, /1 carrera de menos de 3 km/);
   assert.match(r.message, /1 carrera de hace más de 12 semanas/);
@@ -331,7 +332,7 @@ test('formato de diferencias', () => {
   assert.equal(fmtGap(3752), '1 h 02 min 30 s');
   assert.equal(fmtGapPerKm(0.2), 'menos de 1 s/km');
   assert.equal(fmtGapPerKm(-8.4), '8 s/km');
-  assert.equal(fmtGapPerKm(65), '1:05 /km');
+  assert.equal(fmtGapPerKm(65), '1:05/km');
 });
 
 test('predictDistance por debajo de 1,5 km → confianza baja', () => {
@@ -339,4 +340,176 @@ test('predictDistance por debajo de 1,5 km → confianza baja', () => {
   const p = predictDistance(ctx, 1);
   assert.equal(p.confidence, 'baja');
   assert.ok(p.mid > 0);
+});
+
+// ---------------------------------------------------------------------------
+// Corrección de tiempos previstos (docs/MEJORAS6.md): lo que se vio en un iPhone real
+// ---------------------------------------------------------------------------
+
+/** Forma de lo que enseña la pantalla: «29:37» / «1:42:16», rango ordenado y ritmo «m:ss/km». */
+const TIME = /^\d{1,2}:\d{2}(:\d{2})?$/;
+const RANGE = /^\d{1,2}:\d{2}(:\d{2})?–\d{1,2}:\d{2}(:\d{2})?$/;
+const PACE_RANGE = /^\d{1,2}:\d{2}–\d{1,2}:\d{2}\/km$/;
+/** Invariantes de una predicción usable: números finitos > 0, low ≤ mid ≤ high y textos bien formados. */
+function assertSane(p, tag) {
+  assert.ok(STATUSES.includes(p.status), `${tag}: estado ${p.status}`);
+  for (const k of ['low', 'mid', 'high', 'lowExact', 'midExact', 'highExact', 'pace', 'paceLow', 'paceHigh']) {
+    assert.ok(Number.isFinite(p[k]) && p[k] > 0, `${tag}: ${k} = ${p[k]}`);
+  }
+  assert.ok(p.low <= p.mid && p.mid <= p.high, `${tag}: ${p.low} ≤ ${p.mid} ≤ ${p.high}`);
+  assert.ok(p.margin >= MIN_MARGIN && p.margin <= MAX_SPREAD + 1e-12, `${tag}: margen ${p.margin}`);
+  if (!p.usable) return;
+  assert.match(fmtRaceTime(p.mid), TIME, tag);
+  assert.match(rangeText(p), RANGE, tag);
+  assert.match(paceRangeText(p), PACE_RANGE, tag);
+  assert.match(fmtPaceKm(p.pace), /^\d{1,2}:\d{2}\/km$/, tag);
+  for (const d of p.why.data) assert.ok(!/[-−]\d|:-|NaN|Infinity|\d+:\d{2}:\d{2}\/km/.test(d.value), `${tag}: ${d.label} = ${d.value}`);
+}
+
+// Dos carreras de 5 km: una de 28:55 hace 4 días y otra de «31:00» guardada como 31 h 00 min hace 30 días (los minutos
+// escritos en la casilla de las horas). Con el código anterior daba EXACTAMENTE lo visto en el iPhone:
+//   5 km   low −2795 s, mid 51 940 s, high 106 670 s → «-47:-35–29:37:50», «-10:-19–5:55:34 /km», «previsto ≈ 14:25:40»
+//   10 km  high 222 395 s → «…–61:46:35»
+const IPHONE = [run(ago(4), 5, 1735), run(ago(30), 5, 31 * 3600)];
+
+test('regresión iPhone: un tiempo de 31 h en 5 km ya no envenena las predicciones (ni rango negativo ni h:mm:ss/km)', () => {
+  const r = predictRaces(data(IPHONE));
+  // La carrera de 31 h (6:12:00 /km) no es un esfuerzo de carrera: no cuenta y queda señalada para revisarla.
+  assert.equal(r.excluded.slow, 1);
+  assert.equal(r.suspect.length, 1);
+  assert.deepEqual({ km: r.suspect[0].km, sec: r.suspect[0].sec, why: r.suspect[0].why }, { km: 5, sec: 111600, why: 'slow' });
+  assert.equal(r.suspect[0].sessionId, IPHONE[1].id);
+  // Queda 1 sola válida → datos insuficientes, diciendo por qué la otra no cuenta (nunca cifras absurdas).
+  assert.equal(r.ok, false);
+  assert.match(r.message, /1 carrera con un ritmo más lento de 20:00\/km/);
+  assert.deepEqual(r.predictions, {});
+
+  // Con una carrera normal más, las 4 distancias salen bien formadas.
+  const r2 = predictRaces(data([...IPHONE, run(ago(12), 4, 24 * 60 + 30)]));
+  assert.equal(r2.ok, true);
+  assert.equal(r2.excluded.slow, 1);
+  for (const race of RACES) assertSane(r2.predictions[race.id], race.id);
+  const p5 = r2.predictions['5k'];
+  assert.equal(p5.status, 'ok');
+  assert.equal(rangeText(p5), '28:50–31:00');
+  assert.equal(fmtRaceTime(p5.mid), '29:55');
+  assert.equal(paceRangeText(p5), '5:46–6:12/km');
+  assert.equal(fmtPaceKm(p5.pace), '5:59/km');
+  // checkTarget con esos datos tampoco compara contra números absurdos
+  const c = checkTarget(data([...IPHONE, run(ago(12), 4, 24 * 60 + 30)]), 10, 50 * 60);
+  assert.ok(['probable', 'ajustado', 'hoy_no'].includes(c.verdict));
+  assert.ok(!/[-−]\d|:-/.test(c.text), c.text);
+});
+
+test('ritmo creíble: de 2:30 a 20:00 /km (los extremos cuentan); más lento, a revisar', () => {
+  const ctx = analyzeRuns(data([run(ago(1), 5, 5 * MAX_PACE), run(ago(2), 5, 5 * MAX_PACE + 5), run(ago(3), 5, 5 * MIN_PACE), run(ago(4), 5, 5 * MIN_PACE - 5)]));
+  assert.deepEqual(ctx.valid.map((e) => e.sec).sort((a, b) => a - b), [5 * MIN_PACE, 5 * MAX_PACE]);
+  assert.deepEqual(ctx.excluded, { old: 0, short: 0, implausible: 1, slow: 1 });
+  assert.deepEqual(ctx.suspect.map((x) => x.why), ['slow', 'fast'], 'de más reciente a más antigua');
+  assert.match(ctx.suspect[0].label, /^5 km en 1:40:05$/);
+});
+
+test('rango: con ritmos creíbles pero contradictorios (dispersión > 100 %) nunca sale negativo; la predicción no es útil', () => {
+  // 5 km a 2:31 /km hoy y un maratón a 19:59 /km hace 80 días: para 5 km la dispersión es de ±112 %.
+  // Con el código anterior: low = previsto × (1 − 1,12) < 0.
+  const d = data([run(ago(0), 5, 5 * 151), run(ago(80), 42.2, Math.round(42.2 * 1199))]);
+  const r = predictRaces(d);
+  assert.equal(r.ok, true);
+  const p = r.predictions['5k'];
+  assert.ok(p.spread > 1, String(p.spread));
+  assert.equal(p.margin, MAX_SPREAD, 'el margen se acota');
+  assert.equal(p.status, 'incoherent');
+  assert.equal(p.usable, false);
+  assert.equal(p.confidence, 'baja');
+  assert.ok(p.confidenceCodes.includes('incoherent'));
+  assert.match(p.advice.note, /no coinciden entre sí/);
+  assertSane(p, '5k incoherente');
+  for (const race of RACES) assertSane(r.predictions[race.id], race.id);
+  // ¿Puedo hacerlo? no compara con una predicción que no es útil
+  const c = checkTarget(d, 5, 20 * 60);
+  assert.equal(c.verdict, 'insuficiente');
+  assert.equal(c.reason, 'incoherent');
+  assert.equal(c.prediction, null);
+  assert.equal(c.gapSec, null);
+  assert.match(c.text, /No hay una previsión útil para los 5 km/);
+});
+
+test('propiedad: con cualquier mezcla de carreras (también absurdas) los números y textos son siempre válidos', () => {
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  for (let i = 0; i < 300; i++) {
+    const n = 2 + Math.floor(rnd() * 6);
+    const sessions = [];
+    for (let j = 0; j < n; j++) {
+      const km = pick([3, 3.5, 4, 5, 6, 8, 10, 12, 15, 21.1, 30, 42.2]) * (0.9 + rnd() * 0.2);
+      // ritmos de 2:00 a 30:00 /km y, a veces, el error de horas por minutos (× 60) o de segundos por minutos (÷ 60)
+      let sec = km * (120 + rnd() * 1680);
+      const r = rnd();
+      if (r < 0.1) sec *= 60; else if (r < 0.15) sec /= 60;
+      sessions.push(run(ago(Math.floor(rnd() * 120)), Math.round(km * 100) / 100, Math.round(sec)));
+    }
+    const d = data(sessions);
+    const res = predictRaces(d);
+    if (!res.ok) { assert.deepEqual(res.predictions, {}); continue; }
+    for (const race of RACES) assertSane(res.predictions[race.id], `#${i} ${race.id}`);
+    const km = pick([1, 5, 10, 15, 21.0975, 42.195, 60]);
+    const c = checkTarget(d, km, 3600);
+    assert.ok(['probable', 'ajustado', 'hoy_no', 'insuficiente'].includes(c.verdict));
+    if (c.prediction) assertSane(c.prediction, `#${i} checkTarget ${km}`);
+    assert.ok(!/[-−]\d|:-|NaN|Infinity/.test(c.text), c.text);
+  }
+});
+
+test('estado «todavía poco fiable»: media y maratón con mucho menos volumen del de referencia (la fórmula sí lo calcula)', () => {
+  // Poco volumen: dos carreras de 5 km y una de 4 km en 6 semanas (≈ 2,3 km/sem, tirada de 5 km).
+  const d = data([run(ago(3), 5, 1780), run(ago(10), 4, 1460), run(ago(24), 5, 1800)]);
+  const r = predictRaces(d);
+  const { '5k': p5, half, marathon } = r.predictions;
+  assert.equal(p5.status, 'ok');
+  for (const p of [half, marathon]) {
+    assert.equal(p.status, 'tentative');
+    assert.equal(p.usable, true, 'los números existen y son válidos');
+    assert.equal(p.confidence, 'baja');
+    assert.ok(p.confidenceCodes.includes('tentative'));
+    assert.match(p.advice.note, new RegExp(`demasiado bajo para estimar ${p.noun}`));
+    assert.match(p.advice.improve, /^Acercarte a \d+ km por semana y a una tirada de \d+ km \(ahora [\d,]+ km\/sem y una tirada de [\d,]+ km\)\.$/);
+    assertSane(p, p.id);
+  }
+  // Con algo más de la mitad del volumen de referencia ya no es «poco fiable» (sí más prudente y con menos confianza).
+  const mid = data([run(ago(2), 10, 3000), run(ago(6), 8, 2400), run(ago(9), 15, 4700), run(ago(16), 12, 3700), run(ago(23), 10, 3050), run(ago(30), 14, 4400), run(ago(37), 9, 2750)]);
+  const h2 = predictRaces(mid).predictions.half;
+  assert.ok(h2.volume.short > 0 && h2.volume.short < 0.5, String(h2.volume.short));
+  assert.equal(h2.status, 'ok');
+  assert.equal(h2.adjusted, true);
+  assert.match(h2.advice.note, /Más prudente por volumen/);
+  // ¿Puedo hacerlo? con una media «poco fiable»: sí da un veredicto, avisando de que es orientativo
+  const c = checkTarget(d, 21.0975, 2 * 3600);
+  assert.ok(['probable', 'ajustado', 'hoy_no'].includes(c.verdict));
+  assert.match(c.text, /confianza de esta estimación es baja\. Tu volumen actual todavía es demasiado bajo/);
+});
+
+test('estimación central = media ponderada de las predicciones de Riegel; «¿Por qué?» dice qué carreras pesan y qué la mejoraría', () => {
+  const d = data([run(ago(2), 5, 1500), run(ago(20), 10, 3150)]);
+  const p = predictRaces(d).predictions['10k'];
+  const w = p.efforts.map((e) => e.weight);
+  approx(p.midExact, (w[0] * riegelT(1500, 5, 10) + w[1] * riegelT(3150, 10, 10)) / (w[0] + w[1]));
+  assert.equal(p.mid, Math.round(p.midExact / 5) * 5);
+  assert.equal(p.efforts.filter((e) => e.top).length, 1, 'una sola «la que más»');
+  const top = p.efforts.find((e) => e.top);
+  assert.ok(p.efforts.every((e) => e.share <= top.share));
+  const rows = Object.fromEntries(p.why.data.map((x) => [x.label, x.value]));
+  assert.ok(p.why.data.some((x) => /\(la que más\)$/.test(x.value)));
+  assert.equal(rows['Estimación actual (media ponderada)'], `${fmtRaceTime(p.mid)} · ${fmtPaceKm(p.pace)}`);
+  assert.equal(rows['Rango probable'], `${rangeText(p)} (${paceRangeText(p)})`);
+  assert.match(rows['Para mejorarla'], /^Registra otra carrera de 3 km o más, con su tiempo en movimiento \(lo ideal son 3\)\.$/);
+  assert.match(p.why.rule, /Estimación actual \(el número grande\): la media ponderada/);
+  assert.match(p.why.rule, /más lento de 20:00\/km/);
+  // Solo 2 carreras: confianza media y el aviso lo explica sin parecer un error
+  assert.equal(p.confidence, 'media');
+  assert.match(p.advice.note, /^Solo tienes 2 carreras válidas recientes, así que este rango es orientativo\./);
+  // Con confianza alta, sin aviso
+  const hi = predictRaces(data([run(ago(1), 10, 3000), run(ago(8), 10, 3010), run(ago(15), 8, 2380)])).predictions['10k'];
+  assert.equal(hi.confidence, 'alta');
+  assert.deepEqual(hi.advice, { note: null, improve: null });
 });

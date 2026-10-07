@@ -202,14 +202,52 @@ export function clamp(n, min, max) {
 }
 
 // ---------- Duraciones y ritmos ----------
-/** 3930 → '1:05:30' ; 330 → '5:30' */
+/** 3930 → '1:05:30' ; 330 → '5:30' ; −2795 → '−46:35' (un solo signo delante, nunca «-47:-35»). */
 export function fmtDuration(sec) {
   if (sec == null || !Number.isFinite(sec)) return '—';
   sec = Math.round(sec);
+  if (sec < 0) return `−${fmtDuration(-sec)}`;
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// Tiempos de carrera y ritmos (tiempos previstos, eventos): formato estricto. Devuelven null si el dato no vale
+// (null, undefined, no número, NaN, ±Infinity, ≤ 0): quien llama decide qué enseñar («Datos insuficientes»), nunca
+// basura como «-47:-35» o «5:55:34 /km».
+/** Ritmo más lento que se escribe como ritmo de carrera (1 h/km): a partir de ahí no es un ritmo, es un error de datos. */
+export const PACE_FMT_MAX = 3600;
+const posSec = (v) => (typeof v === 'number' && Number.isFinite(v) && Math.round(v) > 0 ? Math.round(v) : null);
+/** Tiempo de carrera redondeado al segundo: '5:03', '29:37', '59:59' (< 1 h) o '1:00:00', '1:45:08' (sin 0 delante). */
+export function fmtRaceTime(sec) {
+  const s = posSec(sec);
+  return s == null ? null : fmtDuration(s);
+}
+/** Ritmo por km redondeado al segundo: 355 → '5:55/km', 359,6 → '6:00/km'. null si no vale o si llega a 1 h/km. */
+export function fmtPaceKm(secPerKm) {
+  const s = posSec(secPerKm);
+  if (s == null || s >= PACE_FMT_MAX) return null;
+  return `${Math.floor(s / 60)}:${pad(s % 60)}/km`;
+}
+/**
+ * Rango de tiempos, siempre de la mejor estimación (menor) a la más prudente (mayor): '29:38–34:10'. Si al redondear
+ * coinciden, un solo tiempo. null si alguno no vale.
+ */
+export function fmtRaceRange(a, b) {
+  const x = posSec(a);
+  const y = posSec(b);
+  if (x == null || y == null) return null;
+  return x === y ? fmtDuration(x) : `${fmtDuration(Math.min(x, y))}–${fmtDuration(Math.max(x, y))}`;
+}
+/** Rango de ritmos: '5:55–6:20/km' (de más rápido a más lento). null si alguno no vale. */
+export function fmtPaceRange(a, b) {
+  const x = posSec(a);
+  const y = posSec(b);
+  if (x == null || y == null || Math.max(x, y) >= PACE_FMT_MAX) return null;
+  if (x === y) return fmtPaceKm(x);
+  const t = (s) => `${Math.floor(s / 60)}:${pad(s % 60)}`;
+  return `${t(Math.min(x, y))}–${t(Math.max(x, y))}/km`;
 }
 /** 65 → '1 h 05 min' ; 45 → '45 min' */
 export function fmtMinutes(min) {

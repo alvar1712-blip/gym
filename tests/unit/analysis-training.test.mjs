@@ -9,7 +9,7 @@ import {
 } from '../../js/analysis-training.js';
 import { getProfile } from '../../js/profile.js';
 import { defaultSettings, SEED_EXERCISES } from '../../js/seed.js';
-import { addDays, tsFromDate, fmtDate } from '../../js/util.js';
+import { addDays, tsFromDate, fmtDate, weekStart } from '../../js/util.js';
 
 const TODAY = '2026-09-24';
 const ago = (n) => addDays(TODAY, -n);
@@ -467,6 +467,22 @@ test('resistencia: forma (5 km previsto por bloques de 4 semanas) mejora y previ
   // Solo la bici y el senderismo → sin forma de carrera
   const rn = analyzeEndurance(mk({ sessions: [act('bike', ago(2), { km: 40, min: 90, subtype: 'route' })] }), { today: TODAY });
   assert.deepEqual(rn.fitness, []);
+});
+
+test('previsión a 4 semanas: con bloques que se contradicen (dispersión > ±25 %) no se da (antes «5 km: −9:50–39:10»)', () => {
+  // 6 bloques de 4 semanas, coherentes por dentro pero muy distintos entre sí, y el último el más rápido.
+  const preds = [3000, 1000, 3000, 1000, 3000, 900];
+  const ws = weekStart(TODAY);
+  const runs = [];
+  preds.forEach((t, i) => {
+    const start = addDays(ws, -7 * (4 * (6 - i) - 1));
+    for (const d of [2, 9]) runs.push(act('run', addDays(start, d), { km: 5, min: t / 60, movingSec: t, subtype: 'tempo' }));
+  });
+  const r = analyzeEndurance(mk({ sessions: runs }), { today: TODAY });
+  assert.deepEqual(r.fitness.map((b) => b.pred5kSec), preds);
+  assert.equal(byId(r.insights, 'forecast-5k'), undefined);
+  checkInsights(r.insights);
+  for (const i of r.insights) assert.ok(!/[-−]\d|:-/.test(`${i.title} ${i.text}`), i.title);
 });
 
 // ---------------------------------------------------------------------------

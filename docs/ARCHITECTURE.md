@@ -89,7 +89,7 @@ función de limpieza (se llama al salir). Puede ser `async`.
 | `#/goals` | goals · `mountGoals` | Objetivos activos (barra, rango de fechas, «¿Por qué?»); conseguidos y archivados plegados |
 | `#/goal/new?kind=&exercise=`, `#/goal/:id` | goals · `mountGoalEdit` | Crear (con borrador) / editar al instante, archivar, borrar con confirmación + deshacer |
 | `#/import` | import · `mountImport` | Ronda 4: importar actividades desde GPX, TCX, FIT (.gz, .zip), vista previa editable y duplicados |
-| `#/predictions` | predictions · `mountPredictions` | Ronda 4: tiempos previstos 5k/10k/media/maratón (rangos) y «¿Puedo hacerlo?» (back `#/progress`) |
+| `#/predictions` | predictions · `mountPredictions` | Ronda 4: tiempos previstos 5k/10k/media/maratón (estimación actual, rango probable y ritmo; «todavía poco fiable» sin datos suficientes) y «¿Puedo hacerlo?» (back `#/progress`) |
 | `#/summary?p=month\|year&d=YYYY-MM-DD` | summary · `mountSummary` | Ronda 4: resumen mensual / anual con comparación con el periodo anterior |
 | `#/analysis` | analysis · `mountAnalysis` | Ronda 5: «tu analista» (peso, fuerza, resistencia, recuperación, ciclo, próximas semanas) + «Copiar informe para tu IA» |
 | `#/cycle` | cycle · `mountCycle` | Ronda 5 (modo mujer): anillo del ciclo, registro de días y síntomas, calendario, historial, «Cómo te afecta», alertas |
@@ -404,7 +404,11 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   reps }]`, `suggestedWarmup(se, exercise, settings, last)`, `warmupSetsFromPlan(plan, se, logType)`,
   `warmupIncrement`, `warmupReference`. UI plegada al final de la tarjeta del ejercicio (`session-view-card.js`).
 - **Tiempos previstos** (`race-predict.js`, puro): `predictRaces(data, { today }?)`, `checkTarget(data, km, sec)`,
-  `analyzeRuns`; Riegel k = 1,06 (hasta 1,10 con poco volumen en media/maratón), rango mínimo ±3 %.
+  `analyzeRuns`; Riegel k = 1,06 (hasta 1,10 con poco volumen en media/maratón), rango mínimo ±3 % y máximo ±25 %;
+  esfuerzos con ritmo de 2:30 a 20:00 /km (`calc.RUN_PACE_MIN/MAX`; las demás en `suspect`); cada predicción con
+  `status` ('ok' | 'tentative' | 'incoherent' | 'invalid'), `usable` y `advice`. Formato estricto en `util.js`:
+  `fmtRaceTime`, `fmtPaceKm`, `fmtRaceRange`, `fmtPaceRange` (null si el dato no vale: la vista nunca pinta
+  negativos ni «h:mm:ss/km»). `activity-logic.paceWarning` avisa en el formulario de un ritmo de carrera imposible.
 - **Resúmenes** (`summary-logic.js`, puro): `periodSummary(data, { unit:'week'|'month'|'year', start, today? })`,
   `summaryHref`, `kindInfo`, `fmtValue`, `fmtKm`; bloque «Resumen de la semana» arriba de `#/weekly`.
 - **Mapa corporal** (`bodymap.js`): `bodyMap({ muscles, onSelect?, selected?, label?, compact?, inProgress? })` →
