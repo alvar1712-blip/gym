@@ -188,10 +188,14 @@ async function flow(page, tag) {
     const r = await import('./js/analysis-report.js');
     return r.reportText(v.analysisFor(today));
   }, TODAY);
-  const sec = report.split('\n\n').find((b) => b.startsWith('REFERENCIAS HISTÓRICAS DE RUNNING'));
-  assert.ok(sec, report);
-  assert.match(sec, /\n- 10 km — 58:00 — mayo 2026 \(hace 5 meses\)/);
-  assert.match(sec, /1 resultado coincide con una carrera registrada: se cuenta una sola vez/);
+  // Récords (la mejor de siempre) separados de lo que usa la predicción actual (con antigüedad y peso)
+  const recs = report.split('\n\n').find((b) => b.startsWith('RÉCORDS DE RUNNING'));
+  const pred = report.split('\n\n').find((b) => b.startsWith('REFERENCIAS PARA LA PREDICCIÓN ACTUAL'));
+  assert.ok(recs && pred, report);
+  assert.match(recs, /\n- 10 km — 58:00 — may 2026 — marca histórica\n/);
+  assert.match(pred, /\n- 10 km — 58:00 — mayo 2026 \(hace 5 meses; marca histórica, pesa menos por antigua\)/);
+  assert.match(pred, /\n- 7,62 km — 40:30 — 15 sep 2026 \(hace 3 semanas; carrera registrada\)/);
+  assert.match(pred, /1 resultado apuntado coincide con una carrera registrada: se cuenta una sola vez/);
   assert.ok(!report.includes('Carrera popular'), 'sin nombres');
 
   // --- 9) Copia de seguridad: exportar, borrar todo, importar ---
