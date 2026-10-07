@@ -119,3 +119,23 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
 | Evento | Algo FUTURO apuntado en Eventos (una carrera, una marcha) | para hechos pasados (eso es contexto) |
 | Actividad | Carrera, bici, natación, senderismo u otra (no fuerza) | |
 | Sesión | Un entrenamiento de fuerza (o cualquier registro, en el historial) | |
+
+## 10. Sesión en curso (session-view-card.js) y resumen (session-view-summary.js)
+
+- «Última vez · 5 oct» con las series más grandes (16 px, negrita), cada serie entera en su línea.
+- Siguiente paso de la doble progresión **en la línea del objetivo** (no añade altura: en un iPhone SE «Registrar
+  serie» sigue a la vista sin desplazar, lo vigila session.test «una mano en iPhone SE»):
+  «Objetivo 3×4–6 · ↑ Sube a 82,5 kg» o «Objetivo 3×4–6 · ◎ 6/6/6 → +2,5 kg» (al completar 6/6/6, +2,5 kg). Es la
+  MISMA regla e incrementos que el panel semanal (js/progression.js, que el panel reexporta) y lleva la frase entera
+  para VoiceOver («Siguiente paso: +2,5 kg cuando completes 6/6/6»).
+- Resumen: tres cifras protagonistas (duración, series de trabajo, récords) y una línea con esfuerzo, volumen y
+  carga. «Frente a la anterior» (js/session-compare.js): la sesión terminada anterior de la MISMA rutina; por
+  ejercicio, la serie más pesada («+2,5 kg», «+2 reps», «Igual», «−1 rep»), como mucho 5 filas (primero lo que
+  mejora) y los totales (series, volumen, duración). Solo datos reales; sesión libre o sin anterior → no sale.
+
+## 11. Navegación: «atrás» y enseguida otra pantalla
+
+`router.back()` usa `history.back()`, que es asíncrono. Si mientras tanto se navegaba (tocar una pestaña justo
+después de «atrás», o la propia app tras borrar algo), la vuelta llegaba después y deshacía esa navegación: se
+acababa en otra pantalla. Ahora una navegación pedida con un «atrás» en camino espera a que llegue (popstate /
+hashchange; red de seguridad de 4 s). Pruebas: transitions.test «“atrás” y enseguida otra pantalla».

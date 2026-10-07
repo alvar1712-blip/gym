@@ -20,14 +20,18 @@
 //     fila anterior (p. ej. las series de un ejercicio). tag = texto corto opcional para la etiqueta de nivel.
 //   - Todos los umbrales salen de `settings` (Ajustes › Umbrales); si falta alguno, el de defaultSettings().
 import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtPct, fmtWeekRange } from './util.js';
-import { isWorkSet, rirValue, muscleContrib, workSetCount, setMetrics } from './calc.js';
+import { isWorkSet, muscleContrib, workSetCount, setMetrics } from './calc.js';
 import {
-  weeklySeries, muscleTable, exerciseHistory, exercisesWithHistory, dataRange, fmtMetric, fmtNumFast, weightLabel, KINDS,
+  weeklySeries, muscleTable, exerciseHistory, exercisesWithHistory, dataRange, fmtMetric, fmtNumFast, KINDS,
 } from './stats.js';
-import { PATTERNS, PATTERN_LABEL, SET_TYPE_LABEL, defaultSettings } from './seed.js';
+import { PATTERNS, PATTERN_LABEL, defaultSettings } from './seed.js';
 import { formatSet, targetText, LOAD_REP_TYPES } from './session-logic.js';
 import { joinList } from './activity-logic.js';
 import { checkinsBetween, isLowCheckin, valueText, areasText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
+import { incrementFor, upAction, progressionCheck } from './progression.js';
+
+// Doble progresión: la regla vive en progression.js (la usa también la sesión en curso); se reexporta aquí.
+export { incrementFor, progressionCheck, progressionHint } from './progression.js';
 
 // ===========================================================================
 // Constantes y formato
@@ -49,7 +53,6 @@ const SPORT_LABEL = { run: 'Carrera', bike: 'Bici', swim: 'Natación', hike: 'Se
 const GROUP_OF = Object.fromEntries(PATTERNS.map((p) => [p.id, p.group]));
 const PUSH_PATTERNS = PATTERNS.filter((p) => p.group === 'push');
 const PULL_PATTERNS = PATTERNS.filter((p) => p.group === 'pull');
-const LEG_PATTERNS = PATTERNS.filter((p) => p.group === 'legs').map((p) => p.id);
 
 const num = fmtNumFast;
 const n1 = (v) => num(v, 1);
@@ -779,33 +782,6 @@ function progressMessages(ctx) {
 // SUGERENCIA 1 · Doble progresión
 // ===========================================================================
 
-/**
- * Incremento de la doble progresión para un ejercicio: aislamiento/core → isolation; compuesto de tren inferior
- * (región lower, o patrón de pierna si la región no es upper) → lowerCompound; resto de compuestos → upperCompound.
- * @returns {{kind:'upperCompound'|'lowerCompound'|'isolation', kg:number, label:string, text:string}}
- *  text: «2,5 kg»; aislamiento con 1 kg → «1–2 kg».
- */
-export function incrementFor(exercise, increments) {
-  const inc = { ...defaultSettings().increments, ...(increments || {}) };
-  const ex = exercise || {};
-  const iso = ex.category === 'isolation' || ex.region === 'core' || ex.pattern === 'core' || (!ex.category && ex.pattern === 'isolation');
-  let kind;
-  if (iso) kind = 'isolation';
-  else if (ex.region === 'lower' || (ex.region !== 'upper' && LEG_PATTERNS.includes(ex.pattern))) kind = 'lowerCompound';
-  else kind = 'upperCompound';
-  const v = Number(inc[kind]) || 0;
-  const label = { isolation: 'aislamiento o core', lowerCompound: 'compuesto de tren inferior', upperCompound: 'compuesto de tren superior' }[kind];
-  return { kind, kg: v, label, text: kind === 'isolation' && v === 1 ? '1–2 kg' : kg(v) };
-}
-
-/** Repeticiones de una serie para la doble progresión (unilateral: el lado con menos). */
-function repsOf(set, logType) {
-  const a = typeof set.reps === 'number' ? set.reps : null;
-  if (logType !== 'unilateral') return a;
-  const b = typeof set.repsR === 'number' ? set.repsR : null;
-  return a != null && b != null ? Math.min(a, b) : a ?? b;
-}
-
 /** Evaluación de la última sesión de cada ejercicio con rango de repeticiones (esta semana o la anterior). */
 function dpEvaluations(ctx) {
   const minRir = Number(ctx.cfg.progression.minRir) || 0;
@@ -820,63 +796,15 @@ function dpEvaluations(ctx) {
     const s = ctx.byId.get(last.sessionId);
     const se = (s?.exercises || []).find((x) => x.exerciseId === ex.id && x.target && (x.target.repMax != null || x.target.repMin != null));
     if (!se) continue;
-    const top = se.target.repMax ?? se.target.repMin;
-    if (!(top >= 1)) continue;
-    const lt = ex.logType;
-    const sets = last.sets.filter(isWorkSet);
-    if (!sets.length) continue;
-    const weights = sets.map((st) => (lt === 'bodyweight' ? (typeof st.weight === 'number' ? st.weight : 0) : st.weight)).filter((w) => typeof w === 'number');
-    if (!weights.length) continue;
-    const checks = sets.map((st) => {
-      const reps = repsOf(st, lt);
-      const rir = rirValue(st.rir);
-      const repsOk = reps != null && reps >= top;
-      const rirOk = rir != null ? rir >= minRir : minRir <= 0;
-      let note;
-      if (repsOk && rirOk) note = '✓ tope y RIR';
-      else if (!repsOk) { const k = top - (reps ?? 0); note = `${k === 1 ? 'falta' : 'faltan'} ${plural(k, 'rep', 'reps')}`; }
-      else note = rir == null ? 'sin RIR registrado' : `RIR ${num(rir, 0)} < ${num(minRir, 0)}`;
-      const type = st.type && st.type !== 'effective' ? ` (${SET_TYPE_LABEL[st.type]?.toLowerCase() || st.type})` : '';
-      return { set: st, reps, rir, repsOk, rirOk, ok: repsOk && rirOk, note, type, text: formatSet(st, lt, { kg: true }) };
-    });
-    // Series que pide el objetivo (target.sets): si se hicieron menos, no se sube aunque las hechas lleguen al tope.
-    const reqSets = Number.isFinite(se.target.sets) && se.target.sets >= 1 ? se.target.sets : null;
-    const setsOk = reqSets == null || checks.length >= reqSets;
-    const nTop = checks.filter((c) => c.repsOk).length;
-    const allOk = checks.every((c) => c.ok);
+    const pc = progressionCheck({ logType: ex.logType, target: se.target, sets: last.sets, minRir });
+    if (!pc) continue;
     out.push({
-      exercise: ex, exerciseId: ex.id, name: ex.name || ex.id, logType: lt, date: last.date, sessionId: last.sessionId,
-      templateName: s?.templateName || 'Sesión libre', target: se.target, targetLabel: targetText(se.target, lt), top, minRir,
-      checks, reqSets, setsOk, up: setsOk && allOk, nTop,
-      nRirLow: checks.filter((c) => c.repsOk && !c.rirOk).length, weight: Math.max(...weights),
-      // Motivo de mantener: faltan series del objetivo · faltan reps hasta el tope · solo falla el RIR
-      hold: setsOk && allOk ? null : !setsOk ? 'sets' : nTop < checks.length ? 'reps' : 'rir',
+      exercise: ex, exerciseId: ex.id, name: ex.name || ex.id, logType: ex.logType, date: last.date, sessionId: last.sessionId,
+      templateName: s?.templateName || 'Sesión libre', target: se.target, targetLabel: targetText(se.target, ex.logType), ...pc,
     });
   }
   out.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name, 'es') : a.date < b.date ? 1 : -1));
   return out;
-}
-
-/** Texto de la acción de subir: título corto y «de … a …». */
-function upAction(ev, inc) {
-  const w = ev.weight;
-  const next = (x) => (inc.text === '1–2 kg' ? `${num(x + 1, 2)}–${num(x + 2, 2)}` : num(x + inc.kg, 2));
-  if (ev.logType === 'bodyweight') {
-    if (w < 0) {
-      const after = w + (inc.text === '1–2 kg' ? 1 : inc.kg);
-      return {
-        // Con menos asistencia que el incremento, no se puede «reducir 2,5 kg»: se quita.
-        short: after >= 0 ? 'quita la asistencia' : `reduce ${inc.text} la asistencia`,
-        detail: after >= 0 ? `quita la asistencia (ahora ${weightLabel('bodyweight', w)})` : `asistencia de ${num(-w, 2)} a ${inc.text === '1–2 kg' ? `${num(-w - 2, 2)}–${num(-w - 1, 2)}` : num(-after, 2)} kg`,
-      };
-    }
-    return {
-      short: `añade ${inc.text} de lastre`,
-      detail: w > 0 ? `lastre de +${num(w, 2)} a +${next(w)} kg` : `+${inc.text === '1–2 kg' ? '1–2' : num(inc.kg, 2)} kg de lastre (ahora sin lastre)`,
-    };
-  }
-  const side = ev.logType === 'unilateral' ? ' por lado' : '';
-  return { short: `sube ${inc.text}${side}`, detail: `de ${num(w, 2)} a ${next(w)} kg${side}` };
 }
 
 function dpRule(ctx) {

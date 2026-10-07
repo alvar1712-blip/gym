@@ -1041,6 +1041,17 @@ export function numInput({ value = null, placeholder = '', decimals = 2, inputmo
   return wrap;
 }
 
+/**
+ * Cifra de una casilla (KPI) con las unidades pequeñas: «1 h 10 min», «+0,03 kg», «64–69 kg» → los números grandes
+ * y «h», «min», «kg»… en .kpi-unit. El texto es el mismo (textContent no cambia). Sin cifras, tal cual.
+ */
+export function kpiValue(value, tag = 'div.kpi-value') {
+  const txt = value == null ? '—' : String(value);
+  if (!/\d/.test(txt)) return h(tag, txt);
+  const parts = txt.split(/([+−-]?\d[\d.,:]*)/).filter((p) => p !== '');
+  return h(tag, parts.map((p) => (/^[+−-]?\d/.test(p) ? p : h('span.kpi-unit', p))));
+}
+
 /** Estado vacío. */
 export function emptyState({ emoji = '', title = '', text = '', action = null } = {}) {
   return h('div.empty',

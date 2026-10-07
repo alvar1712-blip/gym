@@ -385,7 +385,8 @@ test('alternativas, cardio enlazado y cursor al volver', async () => {
     await page.waitForSelector('.ses-kpi-total');
     const kpis = await page.locator('.ses-sum-hero .kpis').innerText();
     assert.match(kpis, /Duración total\n1 h 40 min\nfuerza 25 min/);
-    assert.match(kpis, /Carga total\n125\nfuerza 125/);
+    // La carga va en la línea secundaria del resumen (las tres cifras grandes: duración, series y récords)
+    assert.match(await page.locator('.ses-sum-meta').innerText(), /Carga total 125 \(fuerza 125\)/);
     await shot(page, 'session-summary-cardio');
     // se borra luego la bici enlazada: la duración automática de la fuerza se recalcula (100 − 35)
     await page.evaluate(async () => { await window.__app.store.remove('sessions', 'act_1'); });

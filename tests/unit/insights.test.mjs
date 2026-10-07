@@ -1186,3 +1186,42 @@ test('pureza: weeklyInsights no muta los datos de entrada', () => {
   const r2 = weeklyInsights({ ...d, settings: deepClone(d.settings) }, W.w4);
   assert.deepEqual(ids(all(r1)), ids(all(r2)));
 });
+
+// ---------------------------------------------------------------------------
+// Pulido (docs/PULIDO.md §10): «Siguiente paso» de la sesión en curso = la misma regla que el panel semanal
+// ---------------------------------------------------------------------------
+test('progressionHint: «Sube a …» / cuánto y cuándo se sube; peso corporal y unilateral; sin rango → nada', async () => {
+  const { progressionHint, progressionCheck } = await import('../../js/insights.js');
+  const { defaultSettings } = await import('../../js/seed.js');
+  const settings = defaultSettings(); // minRir 1; compuesto superior +2,5 kg, inferior +5 kg, aislamiento 1–2 kg
+  const set = (weight, reps, rir = 2, extra = {}) => ({ id: `x${Math.random()}`, type: 'effective', done: true, weight, reps, rir, ...extra });
+  const bench = { id: 'press_banca', logType: 'weight_reps', category: 'compound', region: 'upper', pattern: 'horizontal_push' };
+  const target = { sets: 3, repMin: 4, repMax: 6 };
+  // Las tres al tope (6) con RIR ≥ 1 → sube 2,5 kg
+  assert.deepEqual(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 6), set(80, 6, 1)], settings }),
+    { kind: 'up', text: 'Sube a 82,5 kg', label: 'Siguiente paso: sube a 82,5 kg' });
+  // Falta una rep → mantener, y cuándo se sube
+  assert.deepEqual(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 5), set(80, 5)], settings }),
+    { kind: 'hold', text: '6/6/6 → +2,5 kg', label: 'Siguiente paso: +2,5 kg cuando completes 6/6/6' });
+  // Todas al tope pero una con RIR 0 → «con RIR ≥ 1»
+  assert.match(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 6), set(80, 6, 0)], settings }).text, /^6\/6\/6 con RIR ≥ 1 → \+2,5 kg$/);
+  // Los calentamientos no cuentan
+  assert.equal(progressionHint({ exercise: bench, target, lastSets: [set(40, 10, 5, { type: 'warmup' }), set(80, 6), set(80, 6), set(80, 6)], settings }).kind, 'up');
+  // Dominadas con lastre / con asistencia
+  const pull = { id: 'dominadas', logType: 'bodyweight', category: 'compound', region: 'upper', pattern: 'vertical_pull' };
+  const t8 = { sets: 3, repMin: 6, repMax: 8 };
+  assert.equal(progressionHint({ exercise: pull, target: t8, lastSets: [set(10, 8), set(10, 7), set(10, 7)], settings }).text, '8/8/8 → +2,5 kg de lastre');
+  assert.equal(progressionHint({ exercise: pull, target: t8, lastSets: [set(-20, 8), set(-20, 8), set(-20, 8)], settings }).text, 'Asistencia 17,5 kg');
+  assert.equal(progressionHint({ exercise: pull, target: t8, lastSets: [set(10, 8), set(10, 8), set(10, 8)], settings }).text, 'Lastre +12,5 kg');
+  assert.equal(progressionHint({ exercise: pull, target: t8, lastSets: [set(-20, 7), set(-20, 8), set(-20, 8)], settings }).text, '8/8/8 → −2,5 kg de asistencia');
+  assert.equal(progressionHint({ exercise: pull, target: t8, lastSets: [set(-2.5, 7), set(-2.5, 8), set(-2.5, 8)], settings }).text, '8/8/8 → sin asistencia');
+  // Unilateral: por lado
+  const bulg = { id: 'bulgara', logType: 'unilateral', category: 'compound', region: 'lower', pattern: 'lunge' };
+  assert.match(progressionHint({ exercise: bulg, target: { sets: 2, repMin: 8, repMax: 10 }, lastSets: [set(20, 10, 2, { repsR: 9 }), set(20, 10, 2, { repsR: 10 })], settings }).text, /^10\/10 → \+5 kg por lado$/);
+  // Sin rango de repeticiones, sin última vez o de otro tipo → nada
+  assert.equal(progressionHint({ exercise: bench, target: { sets: 3 }, lastSets: [set(80, 6)], settings }), null);
+  assert.equal(progressionHint({ exercise: bench, target, lastSets: [], settings }), null);
+  assert.equal(progressionHint({ exercise: { ...bench, logType: 'time' }, target, lastSets: [set(null, null)], settings }), null);
+  // La comprobación es la misma que la del panel: nunca NaN en el peso
+  assert.equal(progressionCheck({ logType: 'weight_reps', target, sets: [set(NaN, 6)], minRir: 1 }), null);
+});

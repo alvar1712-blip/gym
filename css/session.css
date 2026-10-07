@@ -57,7 +57,7 @@
 .ses-alt-chips::-webkit-scrollbar { display: none; }
 .ses-alt-chips .chip { min-height: 44px; font-size: 15px; }
 
-.ses-target { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 15px; color: var(--text-2); }
+.ses-target { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 15px; color: var(--text-2); }
 .ses-target-txt { font-weight: 700; color: var(--text); }
 .ses-tnote { color: var(--muted); }
 .ses-enote { font-size: 15px; color: var(--text-2); background: var(--surface-2); border-radius: 10px; padding: 6px 10px; overflow-wrap: anywhere; }
@@ -103,10 +103,20 @@
   .ses-warm-chev { transition: none; }
 }
 
-.ses-last { font-size: 15px; line-height: 1.45; color: var(--text-2); }
-.ses-last-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.ses-last-sets { color: var(--text); font-weight: 600; }
-.ses-last-none { color: var(--muted); font-style: italic; }
+/* «Última vez»: lo que más se mira entre series (docs/PULIDO.md §10) → la etiqueta pequeña y las series grandes */
+.ses-last { line-height: 1.3; color: var(--text-2); overflow-wrap: anywhere; }
+.ses-last-label { font-size: var(--fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.ses-last-date { font-size: var(--fs-xs); font-weight: 650; color: var(--muted); }
+.ses-last-sets { font-size: 16px; font-weight: 750; color: var(--text); }
+.ses-last-sets .ses-warm { font-weight: 500; color: var(--text-2); }
+/* Cada serie entera en su línea: el salto, solo en los « · » */
+.ses-last-sets > span { white-space: nowrap; }
+.ses-last-none { font-size: var(--fs-md); color: var(--muted); font-style: italic; }
+/* Siguiente paso: discreto (no es una orden), junto al objetivo; «Sube a …» con el color de progreso */
+.ses-next { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); font-weight: 600; line-height: 1.35; color: var(--text-2); }
+.ses-next .icon { flex: none; color: var(--muted); }
+.ses-next[data-kind="up"] { color: var(--text); font-weight: 650; }
+.ses-next[data-kind="up"] .icon { color: var(--ok); }
 .ses-warm { color: var(--muted); font-weight: 500; }
 
 /* ---------- Filas de series ---------- */
@@ -277,6 +287,25 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 /* ---------- Resumen ---------- */
 .ses-sum-hero h2 { font-size: 21px; }
 .ses-sum-hero .kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Tres cifras protagonistas y, debajo, una línea con el resto (docs/PULIDO.md §9) */
+.ses-sum-kpis .kpi-value { font-size: 22px; white-space: normal; }
+.ses-sum-kpis .kpi-label, .ses-sum-kpis .kpi-sub { white-space: normal; overflow: visible; line-height: 1.25; }
+.ses-sum-meta { font-size: 14px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+/* Frente a la anterior (misma rutina): filas con separador, no tarjetas */
+.ses-sum-cmp { gap: 6px; }
+.ses-cmp-head { display: flex; flex-direction: column; gap: 2px; }
+.ses-cmp-title { font-size: 18px; font-weight: 750; }
+.ses-cmp-sub { font-size: var(--fs-sm); color: var(--muted); line-height: 1.35; }
+.ses-cmp-list { list-style: none; margin: 4px 0 0; padding: 0; border-top: 1px solid var(--border); }
+.ses-cmp-row { display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px solid var(--border); }
+.ses-cmp-icon { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-3); color: var(--muted); }
+.ses-cmp-row[data-dir="up"] .ses-cmp-icon { background: var(--ok-soft); color: var(--ok); }
+.ses-cmp-row[data-dir="down"] .ses-cmp-icon { background: var(--warn-soft); color: var(--warn); }
+.ses-cmp-name { flex: 1; min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
+.ses-cmp-val { flex: none; font-weight: 750; }
+.ses-cmp-row[data-dir="same"] .ses-cmp-val { color: var(--text-2); font-weight: 650; }
+.ses-cmp-more { font-size: var(--fs-sm); color: var(--muted); }
+.ses-cmp-totals { font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
 .ses-kpi-pr { border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); }
 .ses-kpi-pr .kpi-value { color: var(--pr); }
 .ses-sum-emoji { font-size: 22px; flex: none; }

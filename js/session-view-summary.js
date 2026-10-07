@@ -1,7 +1,7 @@
 // session-view-summary.js — resumen de una sesión de fuerza (al terminar o al consultarla).
 // PROPIETARIO: módulo de sesión.
 import * as store from './store.js';
-import { h, icon, screen, header, emptyState, RPE_HINTS } from './ui.js';
+import { h, icon, screen, header, emptyState, kpiValue, RPE_HINTS } from './ui.js';
 import { fmtDate, fmtMinutes, fmtNum, fmtKm, fmtDuration, sum } from './util.js';
 import {
   sessionVolume, sessionMuscleSets, sessionPRs, sessionLoad, sessionDurationMin, bestSet, setMetrics,
@@ -10,6 +10,7 @@ import {
 import { MUSCLE_LABEL, ACTIVITY_EMOJI, ACTIVITY_LABEL } from './seed.js';
 import { navigate } from './router.js';
 import { formatSet, prLabel, linkedActivities, syncAutoDuration } from './session-logic.js';
+import { previousEquivalent, compareSessions } from './session-compare.js';
 import { checkinSummary } from './checkin.js';
 
 export function renderSummary(root, id) {
@@ -43,31 +44,38 @@ export function renderSummary(root, id) {
   const prs = sessionPRs(session, all, exMap, bwFn);
   const muscles = Object.entries(sessionMuscleSets(session, exMap, settings)).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
 
-  const kpi = (label, value, subTxt = null, cls = '') => h(`div.kpi${cls}`, h('div.kpi-label', label), h('div.kpi-value', value), subTxt ? h('div.kpi-sub', subTxt) : null);
+  const kpi = (label, value, subTxt = null, cls = '') => h(`div.kpi${cls}`, h('div.kpi-label', label), kpiValue(value), subTxt ? h('div.kpi-sub', subTxt) : null);
 
   // Con cardio enlazado (Día 3), la duración y la carga de la fuerza son solo una parte: también el total.
   // (La carga guardada no cambia: la de cada actividad cuenta por su lado y no se suma dos veces.)
   const actsMin = sum(acts, (a) => sessionDurationMin(a) || 0);
   const actsLoad = sum(acts, (a) => sessionLoad(a) || 0);
-  const totals = acts.length ? [
-    kpi('Duración total', fmtMinutes((dur || 0) + actsMin), `fuerza ${dur != null ? fmtMinutes(dur) : '—'}`, '.ses-kpi-total'),
-    kpi('Carga total', fmtNum((load || 0) + actsLoad, 0), `fuerza ${load != null ? fmtNum(load, 0) : '—'}`, '.ses-kpi-total'),
-  ] : [];
 
+  // Pulido (docs/PULIDO.md §9): tres cifras protagonistas (duración, series de trabajo, récords) y, en una línea
+  // aparte, el esfuerzo, el volumen y la carga (antes, seis casillas con el mismo peso).
+  const meta = [
+    session.rpe ? `Esfuerzo ${session.rpe}/10 · ${RPE_HINTS[session.rpe]}` : 'Esfuerzo sin indicar',
+    vol > 0 ? `Volumen ${fmtNum(vol, 0)} kg` : null,
+    acts.length ? `Carga total ${fmtNum((load || 0) + actsLoad, 0)} (fuerza ${load != null ? fmtNum(load, 0) : '—'})` : load != null ? `Carga ${fmtNum(load, 0)}` : null,
+  ].filter(Boolean);
   c.appendChild(h('div.card.card-accent.ses-sum-hero',
     h('div.row-between',
       h('div.grow',
         h('h2', session.templateName || 'Sesión de fuerza'),
         h('div.card-sub', fmtDate(session.date, 'longy'))),
       session.status === 'active' ? h('span.badge.badge-warn', 'En curso') : h('span.badge.badge-ok', 'Terminada')),
-    h('div.kpis.kpis-2',
-      totals,
-      totals.length ? null : kpi('Duración', dur != null ? fmtMinutes(dur) : '—'),
-      kpi('Esfuerzo', session.rpe ? `${session.rpe}/10` : '—', session.rpe ? RPE_HINTS[session.rpe] : 'sin indicar'),
-      totals.length ? null : kpi('Carga', load != null ? fmtNum(load, 0) : '—', 'min × esfuerzo'),
-      kpi('Volumen', vol > 0 ? `${fmtNum(vol, 0)} kg` : '—', 'sin calentamientos'),
-      kpi('Series de trabajo', String(work), 'sin calentamientos'),
-      kpi('Récords', String(prs.size), prs.size ? '🏆 en esta sesión' : 'ninguno esta vez', prs.size ? '.ses-kpi-pr' : ''))));
+    h('div.kpis.ses-sum-kpis',
+      acts.length
+        ? kpi('Duración total', fmtMinutes((dur || 0) + actsMin), `fuerza ${dur != null ? fmtMinutes(dur) : '—'}`, '.ses-kpi-total')
+        : kpi('Duración', dur != null ? fmtMinutes(dur) : '—'),
+      kpi('Series de trabajo', String(work)), // «de trabajo» = sin calentamientos (docs/PULIDO.md §9, términos)
+      kpi('Récords', String(prs.size), prs.size ? '🏆 en esta sesión' : 'ninguno esta vez', prs.size ? '.ses-kpi-pr' : '')),
+    h('p.ses-sum-meta.tnum', meta.join(' · '))));
+
+  // Frente a la anterior de la misma rutina: solo datos reales y solo si es comparable
+  const prev = session.status === 'done' ? previousEquivalent(session, all) : null;
+  const cmp = prev ? compareSessions(session, prev, exMap, bwFn) : null;
+  if (cmp) c.appendChild(compareCard(cmp, dur));
 
   // Récords
   if (prs.size) {
@@ -143,4 +151,29 @@ export function renderSummary(root, id) {
     h('button.btn.btn-secondary.btn-lg.btn-block.ses-sum-edit', { type: 'button', onClick: () => navigate(`#/session/${session.id}`, { replace: true }) }, icon('edit', 20), 'Ver / editar sesión'),
     h('button.btn.btn-primary.btn-lg.btn-block.ses-sum-today', { type: 'button', onClick: () => navigate('#/today', { replace: true }) }, icon('home', 20), 'Ir a Hoy')));
   return undefined;
+}
+
+const DIR_ICON = { up: 'arrow-up', down: 'arrow-down', same: 'minus' };
+const DIR_LABEL = { up: 'Mejora', down: 'Baja', same: 'Igual' };
+
+/** «Frente a la anterior» (la misma rutina): una fila por ejercicio con la serie más pesada, y los totales. */
+function compareCard(cmp, dur) {
+  const pct = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
+  const signed = (v) => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '±0');
+  const vp = pct(cmp.volume.cur, cmp.volume.prev);
+  const totals = [
+    `Series de trabajo ${cmp.sets.cur} (antes ${cmp.sets.prev})`,
+    vp != null && cmp.volume.cur > 0 ? `volumen ${signed(vp)} %` : null,
+    dur != null && cmp.duration.prev != null ? `duración ${fmtMinutes(dur)} (antes ${fmtMinutes(cmp.duration.prev)})` : null,
+  ].filter(Boolean);
+  return h('section.card.ses-sum-cmp', { dataset: { prev: cmp.prevId } },
+    h('div.ses-cmp-head',
+      h('h2.ses-cmp-title', 'Frente a la anterior'),
+      h('p.ses-cmp-sub', `La misma rutina, el ${fmtDate(cmp.prevDate, 'day')} · serie más pesada de cada ejercicio`)),
+    h('ul.ses-cmp-list', cmp.rows.map((r) => h('li.ses-cmp-row', { dataset: { dir: r.dir, ex: r.exerciseId } },
+      h('span.ses-cmp-icon', { 'aria-label': DIR_LABEL[r.dir], role: 'img' }, icon(DIR_ICON[r.dir], 16)),
+      h('span.ses-cmp-name', r.name),
+      h('span.ses-cmp-val.tnum', r.text)))),
+    cmp.more ? h('p.ses-cmp-more', `y ${cmp.more} ${cmp.more === 1 ? 'ejercicio más' : 'ejercicios más'}`) : null,
+    h('p.ses-cmp-totals.tnum', totals.join(' · ')));
 }

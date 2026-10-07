@@ -12,7 +12,7 @@
 //   mountAnalysis(root) → pantalla completa (back '#/progress').
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, emptyState, toast, sheet, stateTag } from '../ui.js';
+import { h, icon, screen, emptyState, toast, sheet, stateTag, kpiValue } from '../ui.js';
 import { todayStr, addDays, fmtNum, fmtDuration, clamp } from '../util.js';
 import { dataFromStore, chartHeight } from '../progress-ui.js';
 import { lineChart, COLORS } from '../charts.js';
@@ -148,12 +148,6 @@ function cardHead(ic, title, sub = null, right = null) {
 }
 
 const card = (area, ...children) => h(`section.card.an-card.an-card-${area}`, { dataset: { area } }, ...children);
-
-/** «+0,03 kg» → la cifra grande y la unidad pequeña (el mismo texto): cabe en la casilla sin «…» a 375 px. */
-function kpiValue(value) {
-  const m = typeof value === 'string' ? /^(.*\d)([\u00a0\u202f ])(kg|g|kcal|%|km|h|min)$/.exec(value) : null;
-  return m ? h('div.kpi-value', m[1], h('span.kpi-unit', `${m[2]}${m[3]}`)) : h('div.kpi-value', value);
-}
 
 function kpi(label, value, sub = null, key = null) {
   return h('div.kpi.an-kpi', { dataset: key ? { kpi: key } : {} },

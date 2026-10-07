@@ -201,7 +201,9 @@ export function back(fallback = '#/today') {
     pendingNav = { kind: 'pop', replace: false };
     backInFlight = true;
     clearTimeout(backTimer);
-    backTimer = setTimeout(landBack, 1500); // por si el navegador no llega a recorrer el historial
+    // Red de seguridad por si el navegador no llegara a recorrer el historial. Lo normal es aterrizar con la popstate
+    // y el hashchange de esa vuelta (con la máquina cargada pueden tardar más de un segundo: no se adelanta).
+    backTimer = setTimeout(landBack, 4000);
     history.back();
   } else {
     navigate(fallback, { replace: true, transition: 'pop' });
@@ -479,6 +481,8 @@ function applyPendingReplace() {
 }
 
 function onPopState(e) {
+  // La vuelta de back() ya llegó: su hashchange va justo detrás (lo normal es aterrizar ahí); si no llegara, poco después.
+  if (backInFlight) { clearTimeout(backTimer); backTimer = setTimeout(landBack, 250); }
   const st = history.state;
   const onOverlay = st && st.__ov;
   // Vuelta a la entrada de la pantalla con un replaceUrl() pendiente: se aplica ya (sin volver a montar).

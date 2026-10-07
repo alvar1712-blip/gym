@@ -10,6 +10,7 @@ import {
   LOAD_REP_TYPES, formatSet, targetText, prMessage, inheritWeight, validateSet, missingField,
   extraSet, warmupSet, switchExercise, suggestedWarmup, warmupSetsFromPlan,
 } from './session-logic.js';
+import { progressionHint } from './progression.js';
 
 const TYPE_OPTS = [
   { value: 'warmup', label: 'Calent.' },
@@ -58,9 +59,16 @@ export function renderCard(ctx, se) {
   }
 
   const tgt = targetText(se.target, logType);
-  if (tgt || se.notes) {
+  // Siguiente paso (doble progresión, la misma regla que el panel semanal): discreto, no una orden; en la línea del
+  // objetivo (no añade altura: en un iPhone SE «Registrar serie» sigue a la vista sin desplazar)
+  const last = logType === 'cardio' ? null : ctx.lastFor(se);
+  const hint = last && ctx.session.status === 'active'
+    ? progressionHint({ exercise: ex, target: se.target, lastSets: last.sets, settings: ctx.settings?.() }) : null;
+  const next = hint ? h('span.ses-next', { dataset: { kind: hint.kind }, role: 'note', 'aria-label': hint.label }, icon(hint.kind === 'up' ? 'arrow-up' : 'target', 14), h('span', { 'aria-hidden': 'true' }, hint.text)) : null;
+  if (tgt || se.notes || next) {
     card.appendChild(h('div.ses-target',
       tgt ? h('span.ses-target-txt', `Objetivo ${tgt}`) : null,
+      next,
       se.notes ? h('span.ses-tnote', se.notes) : null));
   }
   if (se.note) card.appendChild(h('div.ses-enote', h('span', { 'aria-hidden': 'true' }, '📝 '), se.note));
@@ -70,16 +78,16 @@ export function renderCard(ctx, se) {
     return card;
   }
 
-  // Última vez (de ESTE ejercicio de la sesión: distingue los repetidos, p. ej. Sprint 20 m / 30 m)
-  const last = ctx.lastFor(se);
+  // Última vez (de ESTE ejercicio de la sesión: distingue los repetidos, p. ej. Sprint 20 m / 30 m). Pulido: la
+  // etiqueta pequeña y las series más grandes («80×8 @2 · 80×7 @1»): lo que más se mira entre series.
   if (last) {
     const parts = [];
     last.sets.forEach((s, i) => {
       if (i) parts.push(' · ');
       parts.push(h(s.type === 'warmup' ? 'span.ses-warm' : 'span', (s.type === 'warmup' ? 'C ' : '') + formatSet(s, logType)));
     });
-    card.appendChild(h('div.ses-last',
-      h('span.ses-last-label', `Última vez (${fmtDate(last.session.date, 'day')}): `),
+    card.appendChild(h('p.ses-last',
+      h('span.ses-last-label', 'Última vez'), h('span.ses-last-date', ` · ${fmtDate(last.session.date, 'day')} `),
       h('span.ses-last-sets.tnum', parts)));
   } else {
     card.appendChild(h('div.ses-last.ses-last-none', 'Primera vez con este ejercicio'));
