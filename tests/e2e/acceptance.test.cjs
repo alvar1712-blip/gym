@@ -1197,13 +1197,13 @@ test('CRITERIO 6: cada sugerencia del panel semanal abre su «¿Por qué?» con 
     assert.match(changed['load-warn'].rule, /más de un 20 % \(aviso suave\) o de un 70 % \(aviso\)/);
     assert.strictEqual(row(changed['load-warn'], 'Umbrales'), '+20 % aviso suave · +70 % aviso');
 
-    // Tarjeta resumen de Hoy: las sugerencias que destaca también llevan su «¿Por qué?» con datos.
+    // «Lo importante esta semana» (Hoy; junta el panel y el analista): lo que destaca también lleva su «¿Por qué?» con datos.
     await freshView(page, () => tab(page, 'today').click());
-    await page.waitForSelector('.today-extra[data-ready="1"] .wk-summary');
-    const summary = await page.locator('.wk-summary-item[data-section="suggestion"]').evaluateAll((els) => els.map((el) => el.dataset.id));
-    assert.ok(summary.length >= 1, `la tarjeta de Hoy destaca alguna sugerencia: ${summary}`);
+    await page.waitForSelector('.today-extra[data-ready="1"] .focus');
+    const summary = await page.locator('.focus-item').evaluateAll((els) => els.map((el) => el.dataset.id));
+    assert.ok(summary.length >= 1, `la tarjeta de Hoy destaca algo: ${summary}`);
     for (const id of summary) {
-      const w = await tapWhy(page, '.wk-summary-item', id);
+      const w = await tapWhy(page, '.focus-item', id);
       assert.ok(w.rule.startsWith('Regla. ') && w.rule.length > 120, `${id}: regla`);
       assert.ok(w.rows.length >= 3 && w.rows.filter((r) => /\d/.test(r.value)).length >= 3, `${id}: datos con cifras`);
     }

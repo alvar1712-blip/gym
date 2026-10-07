@@ -203,18 +203,20 @@ test('Hombre (390×844): Hoy y panel con «Tu análisis», #/analysis completo, 
   try {
     await seed(page, maleSeed());
 
-    // Hoy: «Te toca hoy» y «Empezar» siguen arriba; perfil completo → sin invitación; sin ciclo; «Tu análisis» al final
+    // Hoy: «Te toca hoy» y «Empezar» siguen arriba; perfil completo → sin invitación; sin ciclo. El analista y el panel
+    // semanal van juntos en «Lo importante esta semana»: una tarjeta, 1–3 puntos de temas distintos, un «Qué hacer» cada uno
     await open(page, '#/today');
     assert.strictEqual(await page.locator('.today-profile').count(), 0);
     assert.strictEqual(await page.locator('.cyc-today, .today-cycle-slot').count(), 0);
-    const sum = page.locator('.today-extra .an-sum');
+    const sum = page.locator('.today-extra .focus');
     assert.strictEqual(await sum.count(), 1);
-    assert.strictEqual(await page.evaluate(() => document.querySelector('.today-extra').lastElementChild.classList.contains('an-sum')), true, 'la última del hueco');
-    const n = await sum.locator('.an-sum-item').count();
-    assert.ok(n >= 2 && n <= 3, `2–3 puntos (${n})`);
-    const areas = await sum.locator('.an-sum-item').evaluateAll((els) => els.map((e) => e.dataset.area));
-    assert.strictEqual(new Set(areas).size, areas.length, `áreas distintas: ${areas}`);
-    await shotAt(page, '.today-extra .an-sum', 'analysis-today-male');
+    assert.strictEqual(await page.locator('.today-extra .an-sum, .today-extra .wk-summary').count(), 0, 'una sola tarjeta de lectura');
+    const items = await sum.locator('.focus-item').evaluateAll((els) => els.map((e) => ({ topic: e.dataset.topic, source: e.dataset.source, steps: e.querySelectorAll('.focus-step').length })));
+    assert.ok(items.length >= 1 && items.length <= 3, `1–3 puntos (${items.length})`);
+    assert.strictEqual(new Set(items.map((i) => i.topic)).size, items.length, `temas distintos: ${items.map((i) => i.topic)}`);
+    assert.ok(items.every((i) => i.steps === 1), 'un único «Qué hacer» por punto');
+    assert.ok(items.some((i) => i.source === 'analysis'), 'el analista está en la tarjeta');
+    await shotAt(page, '.today-extra .focus', 'analysis-today-male');
 
     // Panel semanal: bloque compacto tras el resumen de la semana
     await open(page, '#/weekly');
@@ -238,8 +240,14 @@ test('Hombre (390×844): Hoy y panel con «Tu análisis», #/analysis completo, 
     assert.match(await page.locator('.an-note').innerText(), /Estimaciones orientativas basadas en estudios; no sustituyen a un profesional/);
     const cards = await page.locator('.an-card').evaluateAll((els) => els.map((e) => e.dataset.area));
     assert.deepStrictEqual(cards, ['summary', 'weight', 'strength', 'endurance', 'recovery', 'forecast', 'report']);
+    // Resumen: uno principal (o «Todo evoluciona dentro de lo esperado…») y hasta dos más, cada uno con su «Qué hacer»;
+    // lo informativo no ocupa hueco (sigue en su tarjeta)
     const keys = page.locator('.an-card-summary .an-key');
-    assert.strictEqual(await keys.count(), 3);
+    const nk = await keys.count();
+    assert.ok(nk >= 1 && nk <= 3, `1–3 puntos (${nk})`);
+    assert.strictEqual(await page.locator('.an-card-summary .an-key-step').count(), nk);
+    assert.strictEqual(await page.locator('.an-card-summary .an-key-main').count() + await page.locator('.an-card-summary .an-allgood').count(), 1, 'un principal o el «todo va bien»');
+    assert.deepStrictEqual(await keys.evaluateAll((els) => els.filter((e) => !['warn', 'good'].includes(e.dataset.level)).map((e) => e.dataset.insight)), [], 'nada solo informativo');
     assert.ok(await noHScroll(page));
     await shot(page, 'analysis-top-male');
 
@@ -351,9 +359,9 @@ test('Mujer (390×844): ciclo en Hoy y en #/analysis, textos en femenino, «Incl
     const next = await page.evaluate(() => document.querySelector('.today-plan').nextElementSibling?.className || '');
     assert.match(next, /cyc-today/);
     assert.match(await page.locator('.cyc-today').innerText(), /Día 12/);
-    assert.strictEqual(await page.locator('.today-extra .an-sum').count(), 1);
+    assert.strictEqual(await page.locator('.today-extra .focus').count(), 1);
     await shot(page, 'analysis-today-female-top');
-    await shotAt(page, '.today-extra .an-sum', 'analysis-today-female');
+    await shotAt(page, '.today-extra .focus', 'analysis-today-female');
 
     await open(page, '#/analysis');
     const cards = await page.locator('.an-card').evaluateAll((els) => els.map((e) => e.dataset.area));
@@ -416,9 +424,9 @@ test('375×667: sin datos → estado vacío útil (y al perfil); con datos, sin 
     await shot(page, 'analysis-empty-375');
     await clickAndWait(page, page.locator('.an-profile'));
     assert.strictEqual(await hashOf(page), '#/settings/profile');
-    // Hoy sin datos: sin «Tu análisis» (solo diría «faltan datos»)
+    // Hoy sin datos: sin «Lo importante esta semana» (solo diría «faltan datos»)
     await open(page, '#/today');
-    assert.strictEqual(await page.locator('.an-sum').count(), 0);
+    assert.strictEqual(await page.locator('.an-sum, .focus').count(), 0);
 
     await seed(page, maleSeed());
     await open(page, '#/analysis');

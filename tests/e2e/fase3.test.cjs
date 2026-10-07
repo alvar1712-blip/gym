@@ -223,10 +223,11 @@ async function seed(page, { goals = true } = {}) {
   return s;
 }
 
-/** Hijos del hueco de la Fase 3 en Hoy, en orden (ronda 5: «Tu análisis» al final → 'analysis'). */
+/** Hijos del hueco de la Fase 3 en Hoy, en orden (pulido: el panel semanal y «Tu análisis» van juntos en «Lo
+ * importante esta semana» → 'focus'). */
 const extraKinds = (page) => page.locator('.today-extra > *').evaluateAll((els) => els.filter((e) => !e.hidden).map((e) => (
-  e.classList.contains('today-checkin') ? `checkin:${e.dataset.checkin}` : e.classList.contains('wk-summary') ? 'weekly' : e.classList.contains('goal-sum') ? 'goals'
-    : e.classList.contains('an-sum') ? 'analysis' : e.className)));
+  e.classList.contains('today-checkin') ? `checkin:${e.dataset.checkin}` : e.classList.contains('focus') ? 'focus' : e.classList.contains('goal-sum') ? 'goals'
+    : e.className)));
 const pick = (root, field, label) => root.locator(`.ci-row[data-field="${field}"] .seg-btn`, { hasText: new RegExp(`^${label}$`) });
 /** «Empezar» (y todo «Te toca hoy») a la vista sin hacer scroll, por encima de la barra de pestañas. */
 const startVisible = (page) => page.evaluate(() => {
@@ -239,7 +240,7 @@ const startVisible = (page) => page.evaluate(() => {
 // Pruebas
 // ===========================================================================
 
-test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y objetivos al final; «Empezar» sigue arriba', async () => {
+test('Hoy con datos (390×844): check-in de hoy, «Lo importante esta semana» y objetivos al final; «Empezar» sigue arriba', async () => {
   const app = await launch();
   const { page } = app;
   try {
@@ -247,8 +248,8 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     await open(page, '#/today');
     assert.strictEqual(await page.locator('.today-plan .today-plan-name').innerText(), 'Día 4 — Upper hipertrofia');
     assert.ok(await startVisible(page), '«Empezar» a la vista sin scroll');
-    // El hueco va después de la mini semana, con el check-in, el panel, los objetivos y «Tu análisis» (en ese orden)
-    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'goals', 'analysis']);
+    // Antes de entrenar, el hueco va después de la mini semana: check-in, «Lo importante esta semana» y objetivos
+    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'focus', 'goals']);
     const order = await page.evaluate(() => {
       const y = (s) => document.querySelector(s).getBoundingClientRect().top;
       return [y('.today-plan'), y('.today-quick'), y('.today-weekcard'), y('.today-extra')];
@@ -262,12 +263,13 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     assert.strictEqual(await ci.locator('.ci-skip').count(), 1);
     for (const b of await ci.locator('.ci-row .seg-btn, .ci-skip, .ci-zone-add').all()) assert.ok((await b.boundingBox()).height >= 44, 'botones ≥ 44 px');
 
-    // Panel semanal: 2–3 mensajes clave + «Ver panel semanal»
-    const wk = page.locator('.today-extra .wk-summary');
-    assert.strictEqual(await wk.locator('.wk-summary-title').innerText(), 'Panel semanal');
-    assert.match(await wk.locator('.wk-summary-sub').innerText(), /21–27 sep · quedan 4 días/);
-    const n = await wk.locator('.wk-summary-item').count();
-    assert.ok(n >= 2 && n <= 3, `2–3 mensajes clave (${n})`);
+    // «Lo importante esta semana»: 1–3 puntos (uno principal), cada uno con su «Qué hacer», y los accesos al panel
+    const wk = page.locator('.today-extra .focus');
+    assert.strictEqual(await wk.locator('.focus-heading').innerText(), 'Lo importante esta semana');
+    assert.match(await wk.locator('.focus-sub').innerText(), /21–27 sep · quedan 4 días/);
+    const n = await wk.locator('.focus-item').count();
+    assert.ok(n >= 1 && n <= 3, `1–3 puntos (${n})`);
+    assert.strictEqual(await wk.locator('.focus-step').count(), n);
     // Objetivos: los dos activos
     assert.deepStrictEqual(await page.locator('.today-extra .goal-sum .goal-sum-row').evaluateAll((els) => els.map((e) => e.dataset.goal)), ['g_bw', 'g_press']);
     // La cifra «actual / objetivo» dice qué mide (sin la ficha al lado, «107,7 kg / 105 kg» no se entiende)
@@ -291,11 +293,11 @@ test('Hoy con datos (390×844): check-in de hoy, resumen del panel semanal y obj
     // Ya hecho hoy: al volver a Hoy ya no se ofrece
     await open(page, '#/calendar');
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals', 'analysis']);
+    assert.deepStrictEqual(await extraKinds(page), ['focus', 'goals']);
 
-    // «Ver panel semanal» → #/weekly de esta semana; atrás vuelve a Hoy
-    await page.locator('.wk-summary-btn').scrollIntoViewIfNeeded();
-    await clickAndWait(page, page.locator('.wk-summary-btn'));
+    // «Panel semanal» → #/weekly de esta semana; atrás vuelve a Hoy
+    await page.locator('.focus-link[data-go="weekly"]').scrollIntoViewIfNeeded();
+    await clickAndWait(page, page.locator('.focus-link[data-go="weekly"]'));
     assert.strictEqual(await hashOf(page), '#/weekly?week=2026-09-21');
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Semana 21–27 sep');
     assert.ok(await page.locator('.wk-block[data-section="info"]').count() === 1 && await page.locator('.wk-block[data-section="suggestion"]').count() === 1);
@@ -336,12 +338,12 @@ test('Hoy y Progreso a 375×667: «Empezar» a la vista, «Omitir» el check-in 
     assert.strictEqual((await idbAll(page, 'checkins')).filter((c) => c.date === TODAY).length, 0, 'omitir no guarda nada');
     await open(page, '#/calendar');
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals', 'analysis']);
+    assert.deepStrictEqual(await extraKinds(page), ['focus', 'goals']);
 
-    // Progreso: accesos (panel semanal y objetivos junto a Récords/Peso/Ejercicios) y las dos tarjetas resumen
+    // Progreso: «Cómo vas», accesos (panel semanal y objetivos junto a Récords/Peso/Ejercicios) y objetivos
     await open(page, '#/progress');
     assert.ok(await noHScroll(page));
-    const small = await page.locator('.prg-links button, .wk-summary-btn, .goal-sum-link, .goal-sum-row').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height < 44).length);
+    const small = await page.locator('.prg-links button, .prg-ov-row, .goal-sum-link, .goal-sum-row').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height < 44).length);
     assert.strictEqual(small, 0, 'botones de al menos 44 px');
     const labels = await page.locator('.prg-link-label').evaluateAll((els) => els.map((e) => ({ t: e.textContent, cut: e.scrollWidth > e.clientWidth + 1 })));
     assert.deepStrictEqual(labels.map((l) => l.t), ['Análisis', 'Panel semanal', 'Objetivos', 'Resúmenes', 'Predicciones', 'Récords', 'Peso', 'Ejercicios']);
@@ -359,12 +361,14 @@ test('Progreso con datos (390×844): accesos y tarjetas; #/weekly, #/goals, #/go
   try {
     await seed(page);
     await open(page, '#/progress');
-    // Accesos arriba y, debajo, el resumen del panel semanal y los objetivos; después, las gráficas
-    const y = await page.evaluate(() => ['.prg-links', '.progress-extra .wk-summary', '.progress-extra .goal-sum', '.prg-charts']
+    // Arriba «Cómo vas» (fuerza, resistencia, cuerpo, recuperación); debajo, accesos y objetivos; después, las gráficas
+    const y = await page.evaluate(() => ['.prg-ov', '.prg-links', '.progress-extra .goal-sum', '.prg-charts']
       .map((s) => document.querySelector(s)?.getBoundingClientRect().top ?? null));
     assert.ok(y.every((v) => v != null), `todo presente: ${y}`);
-    assert.deepStrictEqual([...y].sort((a, b) => a - b), y, 'accesos → panel → objetivos → gráficas');
-    assert.strictEqual(await page.locator('.progress-extra .wk-summary-title').innerText(), 'Panel semanal');
+    assert.deepStrictEqual([...y].sort((a, b) => a - b), y, 'cómo vas → accesos → objetivos → gráficas');
+    assert.strictEqual(await page.locator('.prg-ov-title').innerText(), 'Cómo vas');
+    assert.deepStrictEqual(await page.locator('.prg-ov-row').evaluateAll((els) => els.map((e) => e.dataset.area)), ['strength', 'endurance', 'body', 'recovery']);
+    assert.strictEqual(await page.locator('.progress-extra .wk-summary').count(), 0, 'el resumen del panel ya no se repite aquí');
     assert.ok(await noHScroll(page));
     await scrollShots(page, 'fase3-progress-390', 3);
 
@@ -376,9 +380,13 @@ test('Progreso con datos (390×844): accesos y tarjetas; #/weekly, #/goals, #/go
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Semana 14–20 sep');
     await clickAndWait(page, page.locator('.back-btn'));
     assert.strictEqual(await hashOf(page), '#/progress');
-    // «Ver panel semanal» de la tarjeta
-    await clickAndWait(page, page.locator('.progress-extra .wk-summary-btn'));
-    assert.strictEqual(await hashOf(page), '#/weekly?week=2026-09-21');
+    // Una fila de «Cómo vas» abre su detalle; atrás → Progreso
+    await clickAndWait(page, page.locator('.prg-ov-row[data-area="strength"]'));
+    assert.strictEqual(await hashOf(page), '#/analysis?area=strength');
+    await clickAndWait(page, page.locator('.back-btn'));
+    assert.strictEqual(await hashOf(page), '#/progress');
+    await clickAndWait(page, page.locator('.prg-ov-row[data-area="body"]'));
+    assert.strictEqual(await hashOf(page), '#/bodyweight');
     await clickAndWait(page, page.locator('.back-btn'));
     assert.strictEqual(await hashOf(page), '#/progress');
 
@@ -424,6 +432,7 @@ test('Sin datos: Hoy solo ofrece el check-in; Progreso sin tarjetas pero con acc
     assert.deepStrictEqual(await extraKinds(page), ['checkin:pre']);
     assert.ok(await startVisible(page));
     await open(page, '#/progress');
+    assert.strictEqual(await page.locator('.prg-ov').count(), 0, 'sin datos, sin «Cómo vas» (el estado vacío lo explica)');
     assert.strictEqual(await page.locator('.progress-extra > *').count(), 0);
     assert.ok(await page.locator('.progress-extra').isHidden(), 'hueco vacío oculto (sin hueco en blanco)');
     assert.strictEqual(await page.locator('.prg-links [data-link="weekly"]').count(), 1);
@@ -435,13 +444,13 @@ test('Sin datos: Hoy solo ofrece el check-in; Progreso sin tarjetas pero con acc
     await clickAndWait(page, page.locator('.prg-links [data-link="weekly"]'));
     assert.strictEqual(await page.locator('.wk-empty .empty-title').innerText(), 'Aún no hay datos');
 
-    // Con sesiones pero sin objetivos: panel sí, objetivos no
+    // Con sesiones pero sin objetivos: «Cómo vas» sí, objetivos no
     await seed(page, { goals: false });
     await open(page, '#/progress');
-    assert.strictEqual(await page.locator('.progress-extra .wk-summary').count(), 1);
+    assert.strictEqual(await page.locator('.prg-ov').count(), 1);
     assert.strictEqual(await page.locator('.progress-extra .goal-sum').count(), 0);
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'analysis']);
+    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'focus']);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -459,7 +468,7 @@ test('Hoy: con la sesión de hoy en curso el check-in se enlaza a ella; tras ter
     assert.match(await hashOf(page), /^#\/session\//);
     const sid = (await hashOf(page)).split('/')[2];
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'weekly', 'goals', 'analysis']);
+    assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'focus', 'goals']);
     await pick(page.locator('.today-checkin'), 'energy', 'Normal').click();
     await page.waitForTimeout(250);
     const rec = (await idbAll(page, 'checkins')).find((c) => c.date === TODAY);
@@ -480,7 +489,9 @@ test('Hoy: con la sesión de hoy en curso el check-in se enlaza a ella; tras ter
       await store.save('sessions', s);
     }, sid);
     await open(page, '#/today');
-    assert.deepStrictEqual(await extraKinds(page), ['weekly', 'goals', 'analysis']);
+    assert.deepStrictEqual(await extraKinds(page), ['focus', 'goals']);
+    // Ya entrenado: no queda nada que empezar → «Lo importante esta semana» sube por encima de «Registrar»
+    assert.ok(await page.evaluate(() => document.querySelector('.today-extra').getBoundingClientRect().top < document.querySelector('.today-quick').getBoundingClientRect().top));
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

@@ -8,7 +8,7 @@
 // PROPIETARIO: módulo de predicciones. Los cálculos salen de js/race-predict.js (puro); aquí solo DOM.
 // Tono prudente: siempre estimación, nunca promesa.
 import { navigate } from '../router.js';
-import { h, icon, screen, segmented, durationInput, numInput, field, emptyState, whyBox } from '../ui.js';
+import { h, icon, screen, segmented, durationInput, numInput, field, emptyState, whyBox, stateTag } from '../ui.js';
 import { fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
 import { racesLink } from './races.js';
@@ -20,7 +20,7 @@ import {
 /** Límites de «Otra» distancia (km). */
 const CUSTOM_MIN = 1;
 const CUSTOM_MAX = 100;
-const CONF_BADGE = { alta: 'badge-ok', media: 'badge-info', baja: 'badge-warn' };
+const CONF_LEVEL = { alta: 'high', media: 'medium', baja: 'low' };
 const VERDICT_ICON = { probable: 'check', ajustado: 'target', hoy_no: 'clock', insuficiente: 'info' };
 /** Lo último elegido en el comprobador (se conserva mientras la app está abierta). */
 const mem = { dist: '10k', customKm: null, target: null };
@@ -126,8 +126,9 @@ function suspectView(list) {
 // Tarjeta de una distancia
 // ===========================================================================
 
+/** Confianza con el mismo componente que el analista (ui.stateTag, contorno): «Confianza baja». */
 function confBadge(p) {
-  return h(`span.badge.prd-conf.prd-conf-${p.confidence}`, { class: CONF_BADGE[p.confidence] }, `Confianza ${p.confidence}`);
+  return stateTag(`conf-${CONF_LEVEL[p.confidence] || 'medium'}`, `Confianza ${p.confidence}`, { className: `prd-conf prd-conf-${p.confidence}` });
 }
 
 /** Estimación actual en grande, y debajo el rango probable y el ritmo. null si algún número no vale. */
@@ -334,7 +335,7 @@ function verdictView(res) {
       h('div.prd-v-titles',
         h('div.prd-v-line',
           h('span.prd-v-label', res.label),
-          p ? h('span.badge.prd-conf', { class: CONF_BADGE[p.confidence] }, `Confianza ${p.confidence}`) : null),
+          p ? confBadge(p) : null),
         h('span.prd-v-sub', keep(`${res.distanceLabel} en ${timeTxt(res.targetSec)}${p ? ` · ${paceTxt(res.targetSec / p.km)}` : ''}`)))),
     gap ? h('div.prd-v-gap',
       h('span.prd-v-gap-label', gap.label),

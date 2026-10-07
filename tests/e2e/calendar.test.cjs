@@ -139,15 +139,18 @@ test('Empezar crea una sesión activa con UN toque; con sesión en curso se ofre
     assert.strictEqual(await hash(page), `#/session/${s.id}`);
     assert.deepStrictEqual([s.kind, s.status, s.templateId, s.date, s.planDate], ['strength', 'active', 'tpl_d1', MON, MON]);
 
-    // De vuelta en Hoy: tarjeta de sesión en curso con «Continuar»; la del plan dice «En curso» sin repetir
-    // la vista previa ni el botón (ni «Pendiente»).
+    // De vuelta en Hoy: la tarjeta de la sesión en curso manda (nombre, cronómetro, series y «Continuar»); «Te toca
+    // hoy» no la repite debajo (ni la vista previa, ni «Empezar», ni «Pendiente»).
     await go(page, '#/today');
-    assert.match(await page.locator('.today-active').innerText(), /Sesión en curso: Día 1 — Upper pesado · \d+:\d\d/);
+    const live = page.locator('.today-active');
+    assert.strictEqual(await live.getAttribute('data-live'), '1');
+    assert.strictEqual(await live.locator('.today-active-name').innerText(), 'Día 1 — Upper pesado');
+    assert.match(await live.locator('.today-clock').innerText(), /^\d+:\d\d$/);
+    assert.match(await live.locator('.today-active-sub').innerText(), /^0 de \d+ series$/, 'es lo planificado: sin «En lugar de»');
     assert.strictEqual(await page.locator('.today-start').count(), 0);
     assert.strictEqual(await page.getByRole('button', { name: /Continuar/ }).count(), 1);
-    assert.strictEqual(await page.locator('.today-plan .today-live').innerText(), 'En curso');
-    assert.strictEqual(await page.locator('.today-plan .status').count(), 0);
-    assert.strictEqual(await page.locator('.today-plan .cal-tpl-item').count(), 0);
+    assert.strictEqual(await page.locator('.today-plan').count(), 0);
+    assert.strictEqual(await page.locator('.cal-tpl-item').count(), 0);
     await shot(page, 'calendar-today-active');
     // Fuerza libre con una sesión en curso → aviso, sin crear otra.
     await page.locator('.today-quick-btn[data-kind="strength"]').click();

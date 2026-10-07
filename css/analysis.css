@@ -20,7 +20,7 @@
 .an-profile .banner-text { display: block; }
 
 /* ---------- Tarjetas ---------- */
-.an-card { gap: 12px; min-width: 0; }
+.an-card { gap: 12px; min-width: 0; scroll-margin-top: calc(var(--sat) + 64px); }
 .an-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .an-card-icon {
   flex: none;
@@ -57,24 +57,7 @@
 .an-link > .icon:first-child { flex: none; color: var(--accent); }
 .an-link .list-item-title { font-size: 15px; white-space: normal; }
 
-/* Nivel (Bien / Nota / Atención / Info) y área */
-.an-level {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px 3px 7px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-.an-level .icon { flex: none; }
-.an-level-good { background: var(--ok-soft); color: var(--ok); }
-.an-level-warn { background: var(--warn-soft); color: var(--warn); }
-.an-level-neutral { background: var(--surface-3); color: var(--text-2); }
-.an-level-info { background: var(--info-soft); color: var(--info); }
-.an-level-sm { padding: 2px 8px 2px 6px; font-size: var(--fs-xs); }
+/* Nivel (Bien / Nota / Atención / Info): .state (css/app.css). Área: */
 .an-area { font-size: 12px; font-weight: 750; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
 
 /* Insight */
@@ -145,6 +128,15 @@
   overflow: hidden;
 }
 .an-key-more { display: inline-flex; align-items: center; gap: 3px; min-height: 24px; font-size: 13px; font-weight: 700; color: var(--accent); }
+.an-key-top { flex-wrap: wrap; row-gap: 4px; }
+/* El principal, más grande; los secundarios, en dos líneas */
+.an-key-main .an-key-title { font-size: 18px; }
+.an-key-main .an-key-text { font-size: var(--fs-md); -webkit-line-clamp: 4; }
+.an-key:not(.an-key-main) .an-key-text { -webkit-line-clamp: 2; }
+.an-key-step { font-size: 14px; line-height: 1.35; color: var(--text-2); }
+.an-key-step b { color: var(--text); }
+.an-allgood { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); line-height: 1.4; }
+.an-allgood .icon { flex: none; margin-top: 1px; color: var(--ok); }
 
 /* ---------- Peso ---------- */
 .an-chart-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -273,22 +265,7 @@
 .an-prompt-actions > .btn { flex: 1; min-height: 44px; }
 
 /* ---------- Ronda 6 (fase C): confianza, contexto y «Qué hacer» ---------- */
-.an-conf {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.an-conf-sm { padding: 1px 7px; font-size: var(--fs-xs); }
-.an-conf-high { border-color: rgba(74, 222, 128, 0.5); color: var(--ok); }
-.an-conf-medium { border-color: var(--border-strong); color: var(--text-2); }
-.an-conf-low { border-color: rgba(255, 200, 87, 0.55); color: var(--warn); }
-.an-conf-insufficient { border-style: dashed; color: var(--muted); }
+/* Confianza: .state-conf-* (css/app.css) */
 .an-ins-head { flex-wrap: wrap; }
 .an-sum-top { flex-wrap: wrap; }
 .an-ins-ctx,

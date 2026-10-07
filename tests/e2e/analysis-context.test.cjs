@@ -74,11 +74,11 @@ async function flow(page, { shots = false } = {}) {
     .evaluateAll((els) => els.filter((e) => !e.dataset.confidence && !/protein|retention/.test(e.dataset.insight)).map((e) => e.dataset.insight));
   assert.deepStrictEqual(missing, [], 'sin confianza');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'sin desplazamiento horizontal');
-  // Hoy: la tarjeta «Tu análisis» con la confianza junto a cada punto
+  // Hoy: «Lo importante esta semana» (panel + analista) con la confianza junto a cada punto del analista
   await go(page, '#/today');
-  const sum = page.locator('.an-sum');
+  const sum = page.locator('.focus');
   await sum.waitFor();
-  const confs = await sum.locator('.an-sum-item .an-conf').allInnerTexts();
+  const confs = await sum.locator('.focus-item[data-source="analysis"]').evaluateAll((els) => els.map((e) => e.querySelector('.state[class*="state-conf-"]')?.textContent ?? 'sin confianza'));
   assert.ok(confs.length >= 1 && confs.every((t) => /^(Confianza (alta|media|baja)|Datos insuficientes)$/.test(t)), confs.join(' | '));
   if (shots) { await sum.scrollIntoViewIfNeeded(); await settle(page); await shot(page, 'analysis-context-today'); }
 }

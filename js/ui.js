@@ -1050,6 +1050,22 @@ export function emptyState({ emoji = '', title = '', text = '', action = null } 
     action ? h('button.btn.btn-primary', { type: 'button', onClick: action.onClick }, action.label) : null);
 }
 
+/**
+ * Estados (docs/PULIDO.md §5): el MISMO componente en toda la app, siempre icono + texto (nunca solo color).
+ *   ok · warn · info · neutral · insufficient · progress · stalled · pr · error
+ * Confianza: stateTag('conf-high' | 'conf-medium' | 'conf-low' | 'conf-insufficient', «Confianza media»): contorno.
+ */
+export const STATE_ICON = {
+  ok: 'check', warn: 'alert', info: 'info', neutral: 'info', insufficient: 'clock', progress: 'arrow-up', stalled: 'minus',
+  pr: 'trophy', error: 'x',
+};
+export function stateTag(kind, label, { small = false, className = '', title = null } = {}) {
+  const conf = kind.startsWith('conf-');
+  const ic = conf ? null : icon(STATE_ICON[kind] || 'info', small ? 13 : 14);
+  return h(`span.state.state-${kind}${small ? '.state-sm' : ''}${className ? `.${className.trim().split(/\s+/).join('.')}` : ''}`,
+    title ? { title } : {}, ic, label);
+}
+
 /** Bloque desplegable «¿Por qué?» */
 export function whyBox(content, label = '¿Por qué?') {
   const body = h('div.why-body', { hidden: true }, content);

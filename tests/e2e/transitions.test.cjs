@@ -139,6 +139,33 @@ test('pantallas: push desde la derecha, atrás hacia la derecha, pestaña con fu
   }
 });
 
+test('«atrás» y enseguida otra pantalla: se acaba en la pedida (el paso atrás, asíncrono, ya no la deshace)', async () => {
+  // Regresión (pulido): history.back() llega tarde; navegar mientras tanto acababa en la pantalla anterior a la del
+  // «atrás» (aquí, Progreso en vez de Ajustes). En un iPhone lento basta con tocar una pestaña justo tras «atrás».
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await go(page, '#/today');
+    await go(page, '#/progress');
+    await go(page, '#/records');
+    await page.evaluate(async () => {
+      const r = await import('./js/router.js');
+      r.back('#/today');
+      r.navigate('#/settings', { transition: 'tab' });
+      await r.settled();
+    });
+    await page.waitForFunction(() => location.hash === '#/settings');
+    await go(page, '#/settings'); // quieta
+    assert.match(await page.locator('.view-inner .topbar h1').innerText(), /Ajustes/);
+    // Y el historial sigue en orden: «atrás» desde Ajustes vuelve a Progreso (la pantalla a la que llevó el «atrás»)
+    await page.evaluate(async () => { (await import('./js/router.js')).back('#/today'); });
+    await page.waitForFunction(() => location.hash === '#/progress');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('toques durante la animación: el clic justo tras navegar llega a la pantalla nueva; otra navegación salta la transición', async () => {
   const app = await openApp();
   const { page } = app;

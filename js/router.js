@@ -88,7 +88,7 @@ export function navInfo() {
  * curso, sin vueltas del historial en camino y sin transición animándose (como mucho ~3 s). Para pruebas.
  */
 export async function settled() {
-  for (let i = 0; i < 150 && (navPending || rendering > 0 || activeVT || entering || awaitingPops > 0 || queued.length); i++) {
+  for (let i = 0; i < 150 && (navPending || rendering > 0 || activeVT || entering || awaitingPops > 0 || queued.length || backInFlight || afterBack); i++) {
     if (activeVT && !navPending && !rendering) await activeVT.finished.catch(ignore);
     else await new Promise((r) => setTimeout(r, 20));
   }
@@ -162,6 +162,10 @@ export function currentRoute() {
 export function navigate(hash, { replace = false, transition = null } = {}) {
   if (!hash.startsWith('#')) hash = '#' + hash;
   if (deferForOverlays(() => navigate(hash, { replace, transition }))) return;
+  // Un «atrás» de back() aún en camino (history.back() es asíncrono): si se navegara ya, ese paso atrás llegaría
+  // después y desharía esta navegación (pulsar «atrás» y enseguida una pestaña acababa en otra pantalla). Se espera
+  // a que llegue; si se pide más de una, vale la última.
+  if (backInFlight) { afterBack = () => navigate(hash, { replace, transition }); return; }
   if (hash === location.hash) { refresh({ keepScroll: false }); return; }
   navPending = true;
   pendingNav = { kind: NAV_KINDS.has(transition) ? transition : (replace ? 'none' : 'push'), replace };
@@ -195,10 +199,23 @@ export function back(fallback = '#/today') {
     depth--;
     navPending = true;
     pendingNav = { kind: 'pop', replace: false };
+    backInFlight = true;
+    clearTimeout(backTimer);
+    backTimer = setTimeout(landBack, 1500); // por si el navegador no llega a recorrer el historial
     history.back();
   } else {
     navigate(fallback, { replace: true, transition: 'pop' });
   }
+}
+
+/** El «atrás» de back() ya llegó (o no llegará): la navegación que esperaba, si la hay, sigue. */
+function landBack() {
+  clearTimeout(backTimer);
+  if (!backInFlight) return;
+  backInFlight = false;
+  const fn = afterBack;
+  afterBack = null;
+  if (fn) setTimeout(fn, 0);
 }
 
 /** Vuelve a montar la vista actual (por defecto conservando el scroll). Sin animación. */
@@ -244,6 +261,7 @@ function onHashChange(e) {
   }
   fixedHash = null;
   seq++;
+  if (backInFlight) landBack();
   const requested = navPending ? pendingNav : null;
   navPending = false;
   pendingNav = null;
@@ -345,6 +363,9 @@ let overlays = []; // [{ id, onPop, committed, released }] de abajo arriba
 let ovSeq = 0;
 const ovBase = Date.now(); // ids distintos de los de antes de una recarga
 let awaitingPops = 0; // history.back()/go() pedidos por la app cuya popstate aún no ha llegado
+let backInFlight = false; // history.back() de back() cuyo cambio de pantalla aún no ha llegado
+let backTimer = null;
+let afterBack = null; // navegación pedida mientras tanto (la última)
 let popTimer = null;
 let queued = []; // navegaciones que esperan a esas popstate
 let pendingReplace = null; // replaceUrl() pendiente de aplicar a la entrada de la pantalla

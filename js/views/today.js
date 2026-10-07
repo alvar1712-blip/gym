@@ -1,13 +1,13 @@
 // today.js — pantalla «Hoy»: aviso de copia, sesión en curso, lo que toca hoy (1 toque para
-// empezar), accesos rápidos, peso corporal y mini semana; al final (Fase 3) el check-in de hoy, el resumen del
-// panel semanal y los objetivos. Ronda 5: tras «Te toca hoy», la tarjeta del ciclo (modo mujer, views/cycle.js) y
-// «Completa tu perfil (30 s)»; al final, «Tu análisis» (views/analysis.js). Ronda 6: «Ahora: …» (tu contexto) y, como
-// mucho, una línea con el próximo evento deportivo.
+// empezar), accesos rápidos, peso corporal y mini semana; (Fase 3) el check-in de hoy, «Lo importante esta semana»
+// (panel semanal + analista en una tarjeta, views/focus.js) y los objetivos. Ronda 5: tras «Te toca hoy», la tarjeta
+// del ciclo (modo mujer, views/cycle.js) y «Completa tu perfil (30 s)». Ronda 6: «Ahora: …» (tu contexto) y el
+// próximo evento deportivo. Pulido (docs/PULIDO.md §8): el orden se adapta al momento del día (ver mountToday).
 // PROPIETARIO: módulo de calendario (el hueco .today-extra lo rellena la integración de la Fase 3).
 import * as store from '../store.js';
 import { navigate, refresh } from '../router.js';
 import { h, icon, screen } from '../ui.js';
-import { todayStr, fmtDate, fmtDuration, addDays, weekStart, parseDate, DAY_LETTER } from '../util.js';
+import { todayStr, fmtDate, fmtDuration, addDays, diffDays, weekStart, parseDate, DAY_LETTER } from '../util.js';
 import {
   ctxFromStore, dayStatus, weekPlan, effectiveDay, adherence, adherenceText, planEmoji, planLabel, STATUS_LABEL,
 } from '../plan.js';
@@ -18,7 +18,10 @@ import {
 import { bodyweightQuickEntry } from './bodyweight.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
 import { currentLabel } from '../context-logic.js';
-import { nextRelevant, todayLine, raceTitle } from '../races-logic.js';
+import { nextRelevant, todayLine, raceTitle, raceShortLabel, targetText } from '../races-logic.js';
+
+/** Un evento a 14 días o menos pasa de línea a tarjeta, justo debajo de «Te toca hoy». */
+const RACE_NEAR_DAYS = 14;
 
 const QUICK = [
   { kind: 'run', emoji: '🏃', label: 'Carrera' },
@@ -36,10 +39,20 @@ export async function mountToday(root) {
   content.classList.add('today');
   const timers = [];
 
+  // Orden adaptativo (docs/PULIDO.md §8): lo que toca hacer ahora, arriba; lo demás, después.
+  //  · Sesión abierta → «Continuar» manda (y «Te toca hoy» no la repite debajo).
+  //  · Antes de entrenar → «Te toca hoy» con «Empezar»; «Lo importante esta semana» y el check-in, al final.
+  //  · Hecho o descanso → no queda nada que empezar: «Lo importante esta semana» sube por encima de «Registrar».
+  //  · Evento en las próximas 2 semanas → tarjeta justo debajo de «Te toca hoy»; más lejos, una línea.
   if (store.backupOverdue()) content.appendChild(backupBanner());
   const active = store.activeSession();
-  if (active) content.appendChild(activeCard(active, timers));
-  content.appendChild(planCard(today, ctx, active));
+  const st = dayStatus(today, ctx);
+  const live = !!active && (active.planDate ?? active.date) === today && !st.sessions.length && !st.manual;
+  if (active) content.appendChild(activeCard(active, timers, live ? st.plan : null));
+  if (!live) content.appendChild(planCard(today, ctx, active, st));
+  const race = nextRelevant(store.all('races'), today);
+  const raceNear = race && diffDays(today, race.date) <= RACE_NEAR_DAYS;
+  if (raceNear) content.appendChild(raceCard(race, today));
   // Ronda 5, tras «Te toca hoy» (no lo empujan): el ciclo (se carga aparte) y la invitación a completar el perfil.
   const profile = getProfile(store.settings());
   const cycleSlot = cycleEnabled(profile) ? h('div.today-cycle-slot') : null;
@@ -52,18 +65,22 @@ export async function mountToday(root) {
       h('span.today-context-text', h('span.today-context-kicker', 'Ahora: '), ctxNow), icon('chevron-right', 18)));
   }
   // Ronda 6 (fase E): como mucho una línea con el próximo evento deportivo relevante («🏁 10K · 73 días · objetivo <50:00»).
-  const race = nextRelevant(store.all('races'), today);
-  if (race) content.appendChild(raceLine(race, today));
+  if (race && !raceNear) content.appendChild(raceLine(race, today));
 
+  // Fase 3 (check-in, «Lo importante esta semana» y objetivos): se rellena después del montaje.
+  const extra = h('div.today-extra');
+  // Nada que empezar: hecho, saltado, descanso o la rutina de hoy ya terminada (aunque quede «parcial»)
+  const ownDone = st.plan.kind === 'template' && st.sessions.some((s) => s.kind === 'strength' && s.status === 'done' && s.templateId === st.plan.templateId);
+  const settled = !active && (st.status === 'done' || st.status === 'skipped' || ownDone || (st.plan.kind === 'rest' && !st.sessions.length));
+  if (settled) content.appendChild(extra);
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
   content.appendChild(h('button.cal-link-btn.today-import', { type: 'button', onClick: () => navigate('#/import') },
     'Importar desde un archivo', icon('chevron-right', 18)));
   content.appendChild(bodyweightQuickEntry({}));
   content.appendChild(weekCard(today, ctx));
-  // Fase 3: al final, para no empujar «Te toca hoy» ni «Empezar».
-  const extra = h('div.today-extra');
-  content.appendChild(extra);
+  // Antes de entrenar, al final: no empuja «Te toca hoy» ni «Empezar».
+  if (!settled) content.appendChild(extra);
 
   // Si la app se queda abierta y cambia el día, se vuelve a montar al volver.
   const onVisible = () => { if (document.visibilityState === 'visible' && todayStr() !== today) refresh({ keepScroll: false }); };
@@ -82,12 +99,12 @@ export async function mountToday(root) {
 // Fase 3: check-in de hoy, resumen del panel semanal y objetivos
 // ---------------------------------------------------------------------------
 let extraModules = null;
-let analysisModule = null;
+let focusModule = null;
 let cycleModule = null;
-/** «Tu análisis» se carga aparte: si falla, las tarjetas de la Fase 3 siguen. */
-function loadAnalysisModule() {
-  if (!analysisModule) analysisModule = import('./analysis.js').catch((err) => { analysisModule = null; throw err; });
-  return analysisModule;
+/** «Lo importante esta semana» (usa el análisis) se carga aparte: si falla, el check-in y los objetivos siguen. */
+function loadFocusModule() {
+  if (!focusModule) focusModule = import('./focus.js').catch((err) => { focusModule = null; throw err; });
+  return focusModule;
 }
 /** Tarjeta del ciclo (views/cycle.js), solo en modo mujer con seguimiento. Aislada: Hoy nunca se rompe por ella. */
 function loadCycleModule() {
@@ -133,21 +150,21 @@ const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
  * propia tarea (con meses de datos, todas juntas bloqueaban la pantalla casi un segundo al abrir la app).
  */
 async function fillExtra(slot, today, active) {
-  const [mods, an] = await Promise.all([
+  const [mods, focus] = await Promise.all([
     loadExtraModules().catch((err) => { console.error('[hoy] módulos de la Fase 3', err); return null; }),
-    loadAnalysisModule().catch((err) => { console.error('[hoy] módulo del análisis', err); return null; }),
+    loadFocusModule().catch((err) => { console.error('[hoy] módulo de «Lo importante»', err); return null; }),
   ]);
   await nextTask(); // lo principal de Hoy se pinta antes de calcular nada
   if (mods && slot.isConnected) { // si se cambió de pantalla mientras cargaban, no se calcula nada
     const [ci, weekly, goals] = mods;
     const data = safely('datos', () => weekly.weeklyData(today)); // un único `data` para todas las tarjetas
+    // Una sola tarjeta de lectura («Lo importante esta semana» junta el panel semanal y el analista)
     const cards = [
       () => todayCheckin(ci, today, active),
-      data ? () => weekly.weeklySummaryCard({ data }) : null,
+      data && focus ? () => focus.focusCard({ data, today }) : null,
       data ? () => goals.goalsSummaryCard({ data }) : null,
-      data && an ? () => an.analysisSummaryCard({ data, today }) : null,
     ];
-    const labels = ['check-in', 'panel semanal', 'objetivos', 'análisis'];
+    const labels = ['check-in', 'lo importante', 'objetivos'];
     for (let i = 0; i < cards.length; i++) {
       if (!slot.isConnected) break;
       if (!cards[i]) continue;
@@ -231,29 +248,58 @@ function backupBanner() {
   icon('chevron-right', 20, 'chev'));
 }
 
-/** Tarjeta destacada de la sesión en curso con su cronómetro. */
-function activeCard(s, timers) {
+/**
+ * Tarjeta de la sesión en curso: manda en Hoy. Nombre, cronómetro, cuántas series llevas y, si cuenta para hoy en
+ * lugar de lo planificado, qué sustituye. `plan`: el plan de hoy si la sesión cuenta para hoy (si no, null).
+ */
+function activeCard(s, timers, plan = null) {
   const clock = h('span.today-clock.tnum');
   const tick = () => { clock.textContent = s.startedAt ? fmtDuration((Date.now() - s.startedAt) / 1000) : fmtDate(s.date); };
   tick();
   if (s.startedAt) timers.push(setInterval(tick, 1000));
-  return h('button.card.card-accent.today-active', { type: 'button', onClick: () => navigate(`#/session/${s.id}`) },
-    h('span.today-active-title', 'Sesión en curso: ', h('b', s.templateName || 'Sesión'), ' · ', clock),
+  const sets = (s.exercises || []).flatMap((se) => se.sets || []);
+  const done = sets.filter((x) => x.done).length;
+  const progress = sets.length ? `${done} de ${sets.length} series` : null;
+  const instead = plan && plan.kind !== 'rest' && plan.label && (plan.kind !== 'template' || plan.templateId !== s.templateId) ? `En lugar de ${plan.label}` : null;
+  const when = (s.planDate ?? s.date) !== todayStr() ? `Del ${fmtDate(s.planDate ?? s.date)}` : null;
+  const sub = [progress, instead, when].filter(Boolean).join(' · ');
+  return h('button.card.card-accent.today-active', { type: 'button', dataset: { live: plan ? '1' : '' }, onClick: () => navigate(`#/session/${s.id}`) },
+    h('span.today-active-top', h('span.today-kicker', 'Sesión en curso'), clock),
+    h('span.today-active-name', s.templateName || 'Sesión'),
+    sub ? h('span.today-active-sub', sub) : null,
     h('span.btn.btn-primary.btn-lg.btn-block', icon('play', 20), 'Continuar'));
 }
 
-/** «Te toca hoy»: plan efectivo con su acción principal (o lo ya hecho). */
-function planCard(today, ctx, active) {
-  const st = dayStatus(today, ctx);
+/** Próximo evento en las próximas 2 semanas: una tarjeta (cuanto más cerca, más visible). Más lejos, raceLine. */
+function raceCard(race, today) {
+  const n = diffDays(today, race.date);
+  const when = n === 0 ? 'Hoy' : n === 1 ? 'Mañana' : `En ${n} días`;
+  const tgt = targetText(race);
+  return h('button.card.today-race-card', {
+    type: 'button',
+    dataset: { race: race.id },
+    'aria-label': `Próximo evento: ${raceTitle(race)}, ${fmtDate(race.date, 'long')}. ${when}${tgt ? `, objetivo ${tgt}` : ''}`,
+    onClick: () => navigate(`#/races/${encodeURIComponent(race.id)}`),
+  },
+  h('span.today-race-flag', { 'aria-hidden': 'true' }, '🏁'),
+  h('span.today-race-main',
+    h('span.today-kicker', 'Próximo evento'),
+    h('span.today-race-title', `${raceShortLabel(race)} · ${when}`),
+    h('span.today-race-sub', [cap(fmtDate(race.date, 'long')), tgt ? `objetivo ${tgt}` : null].filter(Boolean).join(' · '))),
+  icon('chevron-right', 20, 'chev'));
+}
+
+/**
+ * «Te toca hoy»: plan efectivo con su acción principal (o lo ya hecho). Con una sesión en curso que cuenta para hoy
+ * no se pinta: la tarjeta de la sesión (arriba) ya dice qué es y lleva «Continuar».
+ */
+function planCard(today, ctx, active, st = dayStatus(today, ctx)) {
   const eff = st.plan;
-  // Sesión en curso que cuenta para hoy: la tarjeta de arriba ya lleva «Continuar»; aquí solo «En curso».
   const liveToday = !!active && (active.planDate ?? active.date) === today;
-  const live = liveToday && !st.sessions.length && !st.manual;
   let pill = statusPill(st.status, { manual: st.manual });
-  if (live) pill = h('span.badge.badge-accent.today-live', 'En curso');
   // En un descanso normal la píldora «Descanso» repetiría el título.
-  else if (eff.kind === 'rest' && st.status === 'rest' && !st.manual) pill = null;
-  const card = h('section.card.today-plan', { dataset: live ? { kind: eff.kind, status: st.status, live: '1' } : { kind: eff.kind, status: st.status } },
+  if (eff.kind === 'rest' && st.status === 'rest' && !st.manual) pill = null;
+  const card = h('section.card.today-plan', { dataset: { kind: eff.kind, status: st.status } },
     h('div.today-plan-top', h('span.today-kicker', 'Te toca hoy'), pill),
     h('div.today-plan-title',
       h('span.today-plan-emoji', { 'aria-hidden': 'true' }, planEmoji(eff)),
@@ -268,11 +314,6 @@ function planCard(today, ctx, active) {
   const busy = () => h('p.small.text-2.today-busy', 'Termina la sesión en curso (arriba) para empezar otra.');
   const canStartPlan = eff.kind === 'template' && !eff.missing;
   const startPlan = () => startStrength({ templateId: eff.templateId, date: today, planDate: today });
-
-  if (live) {
-    card.append(dayLink(today));
-    return card;
-  }
 
   // Ya hay sesiones que cuentan para hoy: estado + resumen + «Otra sesión».
   if (st.sessions.length) {

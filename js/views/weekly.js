@@ -7,16 +7,15 @@
 // resumen, el bloque compacto «Tu análisis» (views/analysis.js · analysisSummaryCard).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, emptyState, whyBox } from '../ui.js';
+import { h, icon, screen, emptyState, whyBox, stateTag } from '../ui.js';
 import { todayStr, weekStart, addDays, fmtWeekRange, fmtDate, isDateStr, fmtNum } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
-import { weeklyInsights, keyMessages, LEVEL_LABEL } from '../insights.js';
+import { weeklyInsights, LEVEL_LABEL } from '../insights.js';
 import { periodSummary, kindInfo, fmtValue, fmtKm, summaryHref } from '../summary-logic.js';
 import { deltaChip, kindColorStyle } from './summary.js';
 import { bodyMap, bodyMapData } from '../bodymap.js';
 import { analysisSummaryCard } from './analysis.js';
 
-const LEVEL_ICON = { neutral: 'info', good: 'check', warn: 'alert' };
 /** Mensajes cuyas filas se enseñan siempre en la tarjeta (aunque haya una sola). */
 const ALWAYS_ITEMS = new Set(['load', 'km']);
 /** Mensajes cuyas filas ya están en la tabla de músculos (no se repiten). */
@@ -29,7 +28,6 @@ const ITEMS_VISIBLE = 6;
 /** Fila larga (etiqueta + valor): se apila (etiqueta arriba, valor debajo) en vez de partir dos columnas. */
 const isLong = (label, value) => String(label).length + String(value).length > 36;
 /** Secciones de la tarjeta resumen, en el orden del panel: información primero, sugerencias después. */
-const SUMMARY_GROUPS = [['info', 'Información'], ['suggestion', 'Sugerencias']];
 
 /** Entrada de insights.js con los datos actuales del store (stats + check-ins). Una vez por render. */
 export function weeklyData(today = todayStr()) {
@@ -187,8 +185,11 @@ function block(section, title, sub, msgs) {
       : h('p.wk-none', section === 'info' ? 'Sin información para esta semana.' : 'Sin sugerencias para esta semana.'));
 }
 
+/** Nivel de un mensaje con el componente de estados de toda la app (ui.stateTag): «Estancado» lleva su icono. */
+const LEVEL_STATE = { neutral: 'info', good: 'ok', warn: 'warn' };
 function levelBadge(m, extra = '') {
-  return h(`span.wk-level.wk-level-${m.level}${extra}`, icon(LEVEL_ICON[m.level] || 'info', 14), m.tag || LEVEL_LABEL[m.level]);
+  const kind = m.tag === 'Estancado' ? 'stalled' : LEVEL_STATE[m.level] || 'info';
+  return stateTag(kind, m.tag || LEVEL_LABEL[m.level], { small: !!extra, className: `wk-level wk-level-${m.level}` });
 }
 
 function messageCard(m) {
@@ -281,47 +282,5 @@ function muscleTable(rows, inProgress) {
 // Tarjeta resumen (Hoy y Progreso)
 // ===========================================================================
 
-/**
- * CONTRATO (lo usan Hoy y Progreso): tarjeta breve con 2–3 mensajes clave de la semana actual y el botón
- * «Ver panel semanal». Los mensajes van agrupados como en el panel (primero «Información», después
- * «Sugerencias»), con su texto completo (las cifras que lo justifican) y su «¿Por qué?».
- * Devuelve null si aún no hay ninguna sesión registrada.
- * @param {{data?: object, max?: number}} [opts] data: entrada de insights (por defecto weeklyData()); puede
- *   ser el dataFromStore() de la pantalla: si no trae `checkins`, se le añaden al MISMO objeto (así se conserva
- *   la caché de stats.js, que va por objeto).
- * @returns {HTMLElement|null}
- */
-export function weeklySummaryCard({ data = null, max = 3 } = {}) {
-  const d = data || weeklyData();
-  if (!d.checkins) d.checkins = store.all('checkins');
-  const r = weeklyInsights(d, d.today);
-  if (!r.hasHistory) return null;
-  const msgs = keyMessages(r, max);
-  const sub = `${fmtWeekRange(r.week)}${r.inProgress ? ` · ${leftTxt(r.daysLeft)}` : ''}`;
-  return h('section.card.wk-summary', { dataset: { card: 'weekly' } },
-    h('div.wk-summary-head',
-      h('span.wk-block-icon', { 'aria-hidden': 'true' }, icon('chart', 20)),
-      h('div.wk-summary-titles',
-        // «Panel semanal» y no «Esta semana»: en Hoy va justo debajo de la mini semana, que ya se llama así.
-        h('h2.wk-summary-title', 'Panel semanal'),
-        h('p.wk-summary-sub', sub))),
-    msgs.length
-      ? SUMMARY_GROUPS.map(([sec, label]) => {
-        const list = msgs.filter((m) => m.section === sec);
-        if (!list.length) return null;
-        return h(`section.wk-summary-group.wk-summary-group-${sec}`, { dataset: { section: sec }, 'aria-label': label },
-          h('h3.wk-summary-ghead', label),
-          h('ul.wk-summary-list', list.map(summaryItem)));
-      })
-      : h('p.wk-summary-empty', 'Sin avisos ni sugerencias destacadas esta semana.'),
-    h('button.btn.btn-secondary.btn-block.wk-summary-btn', { type: 'button', onClick: () => navigate(`#/weekly?week=${r.week}`) },
-      'Ver panel semanal', icon('chevron-right', 18)));
-}
-
-function summaryItem(m) {
-  return h('li.wk-summary-item', { dataset: { id: m.id, level: m.level, section: m.section } },
-    levelBadge(m, '.wk-level-sm'),
-    h('span.wk-summary-mtitle', m.title),
-    h('p.wk-summary-mtext', m.text),
-    whyBox(whyContent(m.why)));
-}
+// (La tarjeta resumen de Hoy y Progreso es ahora «Lo importante esta semana», views/focus.js: junta el panel y el
+// analista en una sola lista con un «Qué hacer» por mensaje.)

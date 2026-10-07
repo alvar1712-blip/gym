@@ -462,6 +462,38 @@ body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 .badge-info { background: var(--info-soft); color: var(--info); }
 .badge-pr { background: rgba(251, 191, 36, 0.18); color: var(--pr); }
 
+/* Estados (ui.js stateTag, docs/PULIDO.md §5): el mismo componente en toda la app; icono + texto, nunca solo color.
+   Relleno suave para el estado; contorno para la confianza (es una cualidad del dato, no un juicio). */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.state .icon { flex: none; }
+.state-sm { padding: 2px 8px 2px 6px; }
+.state-ok, .state-progress { background: var(--ok-soft); color: var(--ok); }
+.state-warn, .state-stalled { background: var(--warn-soft); color: var(--warn); }
+.state-info { background: var(--info-soft); color: var(--info); }
+.state-neutral { background: var(--surface-3); color: var(--text-2); }
+.state-insufficient { background: transparent; border: 1px dashed var(--border-strong); color: var(--muted); }
+.state-pr { background: rgba(251, 191, 36, 0.18); color: var(--pr); }
+.state-error { background: var(--danger-soft); color: var(--danger); }
+.state[class*="state-conf-"] { padding: 2px 9px; background: transparent; font-weight: 700; border-color: var(--border-strong); }
+.state-conf-high { border-color: rgba(74, 222, 128, 0.5); color: var(--ok); }
+.state-conf-medium { color: var(--text-2); }
+.state-conf-low { border-color: rgba(251, 191, 36, 0.55); color: var(--warn); }
+.state-conf-insufficient { border-style: dashed; color: var(--muted); }
+
 /* ---------- Respuesta al toque (escala + atenuación, sin retrasar el clic) ----------
    .is-pressed la pone ui.js tras ~50 ms sin moverse (no al empezar a desplazar ni al deslizar desde el borde)
    y la quita al mover, soltar o cancelar. Al soltar vuelve con un muelle corto. */

@@ -12,7 +12,7 @@
 //   mountAnalysis(root) → pantalla completa (back '#/progress').
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, emptyState, toast, sheet } from '../ui.js';
+import { h, icon, screen, emptyState, toast, sheet, stateTag } from '../ui.js';
 import { todayStr, addDays, fmtNum, fmtDuration, clamp } from '../util.js';
 import { dataFromStore, chartHeight } from '../progress-ui.js';
 import { lineChart, COLORS } from '../charts.js';
@@ -21,8 +21,8 @@ import { reportText } from '../analysis-report.js';
 import { createAnalysisCache } from '../analysis-cache.js';
 import { rateText } from '../analysis-training.js';
 import { getProfile, profileExtrasMissing } from '../profile.js';
+import { weekFocus } from '../focus.js';
 
-const LEVEL_ICON = { good: 'check', warn: 'alert', neutral: 'info', info: 'info' };
 const STATUS_TAG = { fast: 'Rápido', good: 'Bien', stalled: 'Estancado', down: 'Bajando' };
 const STATUS_CLASS = { fast: 'ok', good: 'ok', stalled: 'warn', down: 'danger' };
 const PACE_CLASS = { in: 'ok', below: 'warn', above: 'warn' };
@@ -73,14 +73,15 @@ export const analysisCacheStats = () => cache.stats();
 // Piezas comunes
 // ===========================================================================
 
+const LEVEL_STATE = { good: 'ok', warn: 'warn', neutral: 'neutral', info: 'info' };
 function levelBadge(level, small = false) {
-  return h(`span.an-level.an-level-${level}${small ? '.an-level-sm' : ''}`, icon(LEVEL_ICON[level] || 'info', 14), LEVEL_LABEL[level] || 'Info');
+  return stateTag(LEVEL_STATE[level] || 'info', LEVEL_LABEL[level] || 'Info', { small, className: `an-level an-level-${level}` });
 }
 
 /** Ronda 6: «Confianza media» (o «Datos insuficientes»); los motivos van en el «¿Por qué?». */
 function confBadge(c, small = false) {
   if (!c) return null;
-  return h(`span.an-conf.an-conf-${c.level}${small ? '.an-conf-sm' : ''}`, { title: c.reasons?.length ? c.reasons.join('; ') : c.label }, c.label);
+  return stateTag(`conf-${c.level}`, c.label, { small, className: `an-conf an-conf-${c.level}`, title: c.reasons?.length ? c.reasons.join('; ') : c.label });
 }
 
 /** «¿Por qué?»: la regla y los datos (mismas clases que el panel semanal). */
@@ -204,7 +205,7 @@ export function analysisSummaryCard({ data = null, today = null, max = 3, compac
 // #/analysis
 // ===========================================================================
 
-export function mountAnalysis(root) {
+export function mountAnalysis(root, params = {}) {
   const today = todayStr();
   const profile = getProfile(store.settings());
   const a = analysisFor(today);
@@ -242,6 +243,9 @@ export function mountAnalysis(root) {
   if (a.cycle) c.appendChild(cycleCard(a));
   c.appendChild(forecastCard(a));
   c.appendChild(reportCard(a, report));
+  // #/analysis?area=strength (desde la portada de Progreso): directo a esa tarjeta, después del scroll a 0 del router
+  const target = params.area && c.querySelector(`.an-card[data-area="${CSS.escape(params.area)}"]`);
+  if (target) requestAnimationFrame(() => requestAnimationFrame(() => target.scrollIntoView({ block: 'start' })));
   return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
 }
 
@@ -295,16 +299,23 @@ function summaryCard(a, content) {
     void el.offsetWidth; // reinicia la animación
     el.classList.add('an-flash');
   };
+  // Pulido (docs/PULIDO.md §6): uno principal y hasta dos secundarios, sin dos del mismo tema, cada uno con su paso
+  // siguiente; sin avisos, «Todo evoluciona dentro de lo esperado…» (no se fuerza a encontrar un problema).
+  const f = weekFocus({ analysis: pts });
+  const byId = new Map(pts.map((i) => [i.id, i]));
+  const items = f.items.map((it) => ({ ...it, ins: byId.get(it.id) })).filter((x) => x.ins);
   return card('summary',
-    cardHead('bolt', 'Resumen', 'Lo más importante ahora'),
-    pts.length
-      ? h('ul.an-keys', pts.map((i) => h('li.an-key', { dataset: { insight: i.id, level: i.level } },
-        h('button.an-key-btn', { type: 'button', 'aria-label': `${i.title}. Ver el detalle en ${AREA_LABEL[i.area]}`, onClick: () => go(i.id) },
-          h('span.an-key-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area])),
+    cardHead('bolt', 'Resumen', f.allGood && pts.length ? 'Nada que cambiar ahora' : 'Lo más importante ahora'),
+    f.allGood && pts.length ? h('p.an-allgood', icon('check', 18), h('span', f.message)) : null,
+    items.length
+      ? h('ul.an-keys', items.map(({ ins: i, step, stepLabel, text }, idx) => h(`li.an-key${idx === 0 && !f.allGood ? '.an-key-main' : ''}`, { dataset: { insight: i.id, level: i.level, step } },
+        h('button.an-key-btn', { type: 'button', 'aria-label': `${i.title}. Qué hacer: ${stepLabel}. Ver el detalle en ${AREA_LABEL[i.area]}`, onClick: () => go(i.id) },
+          h('span.an-key-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area]), confBadge(i.confidence, true)),
           h('span.an-key-title', i.title),
-          h('span.an-key-text', i.text),
+          h('span.an-key-text', text),
+          h('span.an-key-step', h('b', 'Qué hacer: '), stepLabel),
           h('span.an-key-more', 'Ver detalle', icon('chevron-down', 16))))))
-      : note('Sin puntos destacados por ahora.'));
+      : pts.length ? null : note('Aún no hay nada destacado: con unas semanas de registros, aquí verás lo más importante y qué hacer.'));
 }
 
 // ---------- Peso ----------

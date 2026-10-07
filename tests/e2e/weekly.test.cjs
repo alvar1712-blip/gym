@@ -454,7 +454,7 @@ test('#/weekly: navegación de semanas (‹ › y «Esta semana») y semana term
   }
 });
 
-test('#/weekly a 375×667 y tarjeta resumen weeklySummaryCard() (2–3 mensajes clave + «Ver panel semanal»)', async () => {
+test('#/weekly a 375×667 y «Lo importante esta semana» en Hoy (1–3 puntos, «Qué hacer», «¿Por qué?» y «Panel semanal»)', async () => {
   const app = await launch({ width: 375, height: 667 });
   const { page } = app;
   try {
@@ -503,50 +503,44 @@ test('#/weekly a 375×667 y tarjeta resumen weeklySummaryCard() (2–3 mensajes 
     assert.deepStrictEqual(await whyLayoutIssues(page, '.wk'), []);
     assert.ok(await noHScroll(page));
 
-    // Tarjeta resumen: Hoy la pinta en su hueco (.today-extra) al terminar de cargar lo principal
+    // «Lo importante esta semana» (sustituye a la tarjeta resumen del panel): Hoy la pinta en su hueco (.today-extra)
+    // al terminar de cargar lo principal. Junta el panel y el analista: 1–3 puntos, uno por tema, uno principal
     await open(page, '#/today');
     await page.waitForFunction(() => document.querySelector('.today-extra')?.dataset.ready === '1', null, { timeout: 5000 });
-    await page.locator('.today-extra .wk-summary').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await page.locator('.today-extra .focus').evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(() => window.scrollBy(0, -70));
     await page.waitForTimeout(150);
-    const card = page.locator('.wk-summary');
+    const card = page.locator('.focus');
     assert.strictEqual(await card.count(), 1);
-    const items = await card.locator('.wk-summary-item').count();
-    assert.ok(items >= 2 && items <= 3, `2–3 mensajes clave (${items})`);
-    assert.match(await card.locator('.wk-summary-sub').innerText(), /21–27 sep · quedan 4 días/);
-    assert.ok(await card.locator('.wk-summary-item .wk-level').first().innerText());
-    // Información primero y después sugerencias, cada grupo con su rótulo (como en #/weekly)
-    const groups = await card.locator('.wk-summary-group').evaluateAll((els) => els.map((g) => ({
-      sec: g.dataset.section, head: g.querySelector('.wk-summary-ghead').textContent,
-      ids: [...g.querySelectorAll('.wk-summary-item')].map((li) => li.dataset.section),
-    })));
-    assert.ok(groups.length >= 1 && groups.length <= 2);
-    assert.deepStrictEqual(groups.map((g) => g.sec), ['info', 'suggestion'].filter((x) => groups.some((g) => g.sec === x)), 'información antes que sugerencias');
-    for (const g of groups) {
-      assert.strictEqual(g.head, g.sec === 'info' ? 'Información' : 'Sugerencias');
-      assert.ok(g.ids.every((x) => x === g.sec), `cada mensaje en su grupo: ${JSON.stringify(g)}`);
-    }
-    // Cada mensaje con su texto completo (sin recortar) y su «¿Por qué?» con la regla y datos concretos
-    assert.deepStrictEqual(await clipped(page, '.wk-summary-mtext, .wk-summary-mtitle'), []);
-    assert.strictEqual(await card.locator('.wk-summary-item .why-btn').count(), items, 'un «¿Por qué?» por mensaje');
+    const items = await card.locator('.focus-item').count();
+    assert.ok(items >= 1 && items <= 3, `1–3 puntos (${items})`);
+    assert.match(await card.locator('.focus-sub').innerText(), /21–27 sep · quedan 4 días/);
+    assert.ok(await card.locator('.focus-item .state').first().innerText(), 'cada punto con su estado (icono + texto)');
+    const topics = await card.locator('.focus-item').evaluateAll((els) => els.map((e) => e.dataset.topic));
+    assert.strictEqual(new Set(topics).size, topics.length, `un punto por tema: ${topics}`);
+    assert.strictEqual(await card.locator('.focus-main').count() + await card.locator('.focus-allgood').count(), 1);
+    // Cada punto con su texto completo (sin recortar), un «Qué hacer» y su «¿Por qué?» con la regla y datos concretos
+    assert.deepStrictEqual(await clipped(page, '.focus-text, .focus-title, .focus-step'), []);
+    assert.strictEqual(await card.locator('.focus-item .focus-step').count(), items, 'un «Qué hacer» por punto');
+    assert.strictEqual(await card.locator('.focus-item .why-btn').count(), items, 'un «¿Por qué?» por punto');
     await shot(page, 'weekly-375-summary-card');
     for (let i = 0; i < items; i++) {
-      const it = card.locator('.wk-summary-item').nth(i);
+      const it = card.locator('.focus-item').nth(i);
       await it.locator('.why-btn').click();
       assert.ok(await it.locator('.why-body').isVisible(), 'porqué abierto');
       assert.ok((await it.locator('.wk-why-rule').innerText()).length > 40, 'regla');
       const vals = await it.locator('.wk-why-value').allInnerTexts();
       assert.ok(vals.length > 0 && vals.some((v) => /\d/.test(v)), `datos con cifras: ${vals}`);
     }
-    assert.deepStrictEqual(await whyLayoutIssues(page, '.wk-summary'), []);
-    // La descarga (si está entre los clave) enseña sus cifras en el texto, no solo en el porqué
-    const dl = card.locator('.wk-summary-item[data-id="deload"] .wk-summary-mtext');
+    assert.deepStrictEqual(await whyLayoutIssues(page, '.focus'), []);
+    // La descarga (si está entre los puntos) enseña sus cifras en el texto, no solo en el porqué
+    const dl = card.locator('.focus-item[data-id="deload"] .focus-text');
     if (await dl.count()) assert.match(await dl.innerText(), /check-ins bajos \(2 de 3\)/);
     assert.ok(await noHScroll(page));
-    await card.locator('.wk-summary-item').first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    await card.locator('.focus-item').first().evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await page.evaluate(() => window.scrollBy(0, -70));
     await shot(page, 'weekly-375-summary-why');
-    await clickAndWait(page, card.locator('.wk-summary-btn'));
+    await clickAndWait(page, card.locator('.focus-link[data-go="weekly"]'));
     assert.match(page.url(), /#\/weekly\?week=2026-09-21$/);
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Semana 21–27 sep');
     assert.deepStrictEqual(app.errors, []);
@@ -562,7 +556,11 @@ test('#/weekly: estados vacíos (sin datos, semana futura y anterior al primer r
     await open(page, '#/weekly');
     assert.strictEqual(await page.locator('.wk-empty .empty-title').innerText(), 'Aún no hay datos');
     assert.strictEqual(await page.locator('.wk-block').count(), 0);
-    assert.strictEqual(await page.evaluate(async () => (await import('./js/views/weekly.js')).weeklySummaryCard()), null, 'sin datos, sin tarjeta resumen');
+    assert.strictEqual(await page.evaluate(async () => {
+      const w = await import('./js/views/weekly.js');
+      const data = w.weeklyData();
+      return (await import('./js/views/focus.js')).focusCard({ data, today: data.today });
+    }), null, 'sin datos, sin «Lo importante esta semana»');
     await shot(page, 'weekly-390-empty');
     assert.ok(await noHScroll(page));
 

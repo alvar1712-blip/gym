@@ -279,3 +279,21 @@ test('COLORS coincide con los tokens de css/app.css', () => {
   for (const [k, t] of Object.entries(map)) assert.equal(COLORS[k], tok(t), `${k} ↔ --${t}`);
   for (const v of Object.values(COLORS)) assert.match(v, /^#[0-9a-f]{6}$/);
 });
+
+test('minigráfica (sparkPoints): dentro del rectángulo, sin inventar puntos; plana a media altura; < 2 valores → nada', async () => {
+  const { sparkPoints } = await import('../../js/charts.js');
+  const pts = sparkPoints([40, 42, 41, 48], 64, 26, 3);
+  assert.equal(pts.length, 4);
+  assert.deepEqual([pts[0].x, pts[3].x], [3, 61], 'de un margen al otro');
+  assert.ok(pts.every((p) => p.y >= 3 && p.y <= 23), JSON.stringify(pts));
+  assert.equal(pts[3].y, 3, 'el máximo arriba');
+  assert.equal(pts[0].y, 23, 'el mínimo abajo');
+  // Valores que faltan (semanas sin pesar): se saltan, el resto conserva su sitio en el eje
+  const gaps = sparkPoints([80, null, NaN, 81], 64, 26, 3);
+  assert.deepEqual(gaps.map((p) => p.x), [3, 61]);
+  assert.deepEqual(sparkPoints([5, 5, 5], 60, 20).map((p) => p.y), [10, 10, 10]);
+  assert.deepEqual(sparkPoints([7], 60, 20), []);
+  assert.deepEqual(sparkPoints([], 60, 20), []);
+  assert.deepEqual(sparkPoints(null, 60, 20), []);
+  assert.ok(sparkPoints([0, 1e9, Infinity, -5], 60, 20).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+});

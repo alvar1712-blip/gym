@@ -727,6 +727,60 @@ export function legend(items = []) {
 }
 
 // ---------------------------------------------------------------------------
+// Minigráfica (sparkline): una línea sin ejes para una fila de resumen (docs/PULIDO.md §7)
+// ---------------------------------------------------------------------------
+/**
+ * Puntos de una minigráfica en un rectángulo w×h con `pad` de margen: valores no finitos se saltan (no se inventan);
+ * todos iguales → una línea a media altura. Menos de 2 valores → [] (no se dibuja). PURA.
+ * @returns {{x:number, y:number}[]}
+ */
+export function sparkPoints(values, w, hgt, pad = 3) {
+  const vs = (values || []).map((v, i) => [i, v]).filter(([, v]) => typeof v === 'number' && Number.isFinite(v));
+  if (vs.length < 2) return [];
+  const n = (values || []).length;
+  const ys = vs.map(([, v]) => v);
+  const lo = Math.min(...ys);
+  const hi = Math.max(...ys);
+  const span = hi - lo;
+  return vs.map(([i, v]) => ({
+    x: Math.round((pad + (i / Math.max(1, n - 1)) * (w - 2 * pad)) * 10) / 10,
+    y: Math.round((span > 0 ? pad + (1 - (v - lo) / span) * (hgt - 2 * pad) : hgt / 2) * 10) / 10,
+  }));
+}
+
+/**
+ * Minigráfica: línea fina con el último punto marcado; `label` es su texto accesible («Series por semana: de 40 a
+ * 52»). Sin datos suficientes, un hueco del mismo tamaño (las filas no bailan).
+ */
+export function sparkline(values, { width = 72, height = 28, color = COLORS.muted, label = '' } = {}) {
+  const pts = sparkPoints(values, width, height);
+  if (!pts.length) return h('span.spark.spark-empty', { 'aria-hidden': 'true', style: { width: `${width}px`, height: `${height}px` } });
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'spark');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('role', 'img');
+  const finite = (values || []).filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (label) svg.setAttribute('aria-label', `${label}: de ${fmtNum(finite[0], 1)} a ${fmtNum(finite[finite.length - 1], 1)}`);
+  const line = document.createElementNS(NS, 'polyline');
+  line.setAttribute('points', pts.map((p) => `${p.x},${p.y}`).join(' '));
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', color);
+  line.setAttribute('stroke-width', '1.75');
+  line.setAttribute('stroke-linejoin', 'round');
+  line.setAttribute('stroke-linecap', 'round');
+  const end = pts[pts.length - 1];
+  const dot = document.createElementNS(NS, 'circle');
+  dot.setAttribute('cx', end.x);
+  dot.setAttribute('cy', end.y);
+  dot.setAttribute('r', '2.5');
+  dot.setAttribute('fill', color);
+  svg.append(line, dot);
+  return svg;
+}
+
+// ---------------------------------------------------------------------------
 // Gráfica de líneas (escala temporal real)
 // ---------------------------------------------------------------------------
 /**

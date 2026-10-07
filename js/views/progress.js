@@ -6,18 +6,19 @@
 // al salir de la pantalla se destruyen todas (listeners y observers).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, chips, segmented, emptyState } from '../ui.js';
+import { h, icon, screen, chips, segmented, emptyState, stateTag } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, weekStart, relDay, plural } from '../util.js';
-import { lineChart, barChart, periodSelector, getPeriod, COLORS } from '../charts.js';
+import { lineChart, barChart, periodSelector, getPeriod, sparkline, COLORS } from '../charts.js';
 import * as S from '../stats.js';
 import { MUSCLES, MUSCLE_LABEL } from '../seed.js';
 import { emptyBests, addToBests, detectPRs } from '../calc.js';
 import { formatSet, fmtSec } from '../session-logic.js';
 import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts } from '../progress-ui.js';
-import { weeklySummaryCard } from './weekly.js';
 import { bodyMap, bodyMapData } from '../bodymap.js';
 import { goalsSummaryCard } from './goals.js';
 import { pastRecoveryCard, pastRecordsLink } from './past-records.js';
+import { analysisFor } from './analysis.js';
+import { progressOverview } from '../overview.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
 const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null };
@@ -162,8 +163,13 @@ export function mountProgress(root) {
   };
 
   const exSection = exercisesSection(ctx);
+  // Pulido: arriba, «Cómo vas» (fuerza, resistencia, cuerpo y recuperación); después, los accesos y los objetivos
+  if (range.first) {
+    const ov = safeOverview(ctx);
+    if (ov) c.appendChild(ov);
+  }
   c.appendChild(linksRow(ctx, exSection));
-  c.appendChild(progressExtra(data)); // Fase 3: resumen del panel semanal y objetivos
+  c.appendChild(progressExtra(data)); // Fase 3: objetivos activos
   if (!range.first) {
     c.appendChild(h('section.card.prg-nodata', emptyState({
       emoji: '📈',
@@ -198,13 +204,51 @@ export function mountProgress(root) {
 }
 
 /**
- * Fase 3: tarjetas resumen del panel semanal (2–3 mensajes clave) y de los objetivos activos; cada una es null
- * sin datos (sin sesiones / sin objetivos) y se aísla: un fallo en una no deja Progreso sin gráficas.
- * Reutilizan el `data` de la pantalla (weeklySummaryCard le añade los check-ins).
+ * Portada «Cómo vas» (docs/PULIDO.md §7): una fila por área con su cifra clave, el cambio reciente, una minigráfica
+ * y el acceso a su detalle. Los números salen de overview.js (series semanales de la pantalla + análisis en caché).
+ * Aislada: si falla, Progreso sigue con sus gráficas.
+ */
+function safeOverview(ctx) {
+  try {
+    const a = analysisFor(ctx.today, ctx.data);
+    const rows = progressOverview({ weeks: ctx.weeks, analysis: a, bodyweight: ctx.data.bodyweight, today: ctx.today });
+    return overviewCard(rows);
+  } catch (err) {
+    console.error('[progreso] cómo vas', err);
+    return null;
+  }
+}
+
+function overviewCard(rows) {
+  return h('section.card.prg-ov', { dataset: { block: 'overview' } },
+    h('div.prg-ov-head',
+      h('h2.prg-ov-title', 'Cómo vas'),
+      h('p.prg-ov-sub', 'Últimas 4 semanas frente a las 4 anteriores')),
+    h('ul.prg-ov-list', rows.map((r) => h('li.prg-ov-item',
+      h('button.prg-ov-row', {
+        type: 'button',
+        dataset: { area: r.area },
+        'aria-label': [r.label, r.value, r.change, r.state?.label].filter(Boolean).join('. '),
+        onClick: () => goChild(r.href),
+      },
+      h('span.prg-ov-main',
+        h('span.prg-ov-label', r.label),
+        h('span.prg-ov-value', r.value),
+        r.change ? h('span.prg-ov-change', r.change) : null),
+      h('span.prg-ov-side', { 'aria-hidden': 'true' },
+        sparkline(r.spark, { width: 64, height: 26, color: COLORS.muted, label: r.sparkLabel }),
+        r.state ? stateTag(r.state.kind, r.state.label, { small: true }) : null),
+      icon('chevron-right', 18, 'chev'))))));
+}
+
+/**
+ * Fase 3: tarjeta resumen de los objetivos activos (null sin objetivos); aislada: un fallo no deja Progreso sin
+ * gráficas. (El resumen del panel semanal ya no se repite aquí: lo importante de la semana está en Hoy y en el
+ * panel; aquí, «Cómo vas».)
  */
 function progressExtra(data) {
   const slot = h('div.progress-extra');
-  const make = [['panel semanal', () => weeklySummaryCard({ data })], ['objetivos', () => goalsSummaryCard({ data })]];
+  const make = [['objetivos', () => goalsSummaryCard({ data })]];
   for (const [label, fn] of make) {
     try {
       const el = fn();

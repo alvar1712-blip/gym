@@ -104,10 +104,21 @@
 .today-backup .banner-text { font-size: 13px; line-height: 1.3; }
 .today-backup .banner-title, .today-backup .banner-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.today-active { cursor: pointer; }
-.today-active-title { font-size: 17px; line-height: 1.35; color: var(--text-2); }
-.today-active-title b { color: var(--text); }
-.today-clock { color: var(--accent); font-weight: 800; }
+.today-active { cursor: pointer; gap: 4px; }
+.today-active-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.today-active-name { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; overflow-wrap: anywhere; }
+.today-active-sub { font-size: var(--fs-md); color: var(--text-2); line-height: 1.35; }
+.today-active > .btn { margin-top: 8px; }
+.today-clock { color: var(--accent); font-weight: 800; font-size: 20px; }
+
+/* Evento en las próximas 2 semanas (views/today.js raceCard) */
+.today-race-card { display: flex; flex-direction: row; align-items: center; gap: 12px; width: 100%; text-align: left; color: var(--text); font: inherit; cursor: pointer; }
+.today-race-card.is-pressed { background: var(--surface-2); }
+.today-race-flag { flex: none; font-size: 28px; line-height: 1; }
+.today-race-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.today-race-title { font-size: 19px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.today-race-sub { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.35; }
+.today-race-card .chev { flex: none; color: var(--muted); }
 
 .today-plan-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .today-kicker {

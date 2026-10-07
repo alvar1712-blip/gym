@@ -45,3 +45,77 @@ y la app vacía a 375 px, en Chromium y en WebKit. Comprueba invariantes que no 
 
 Deja una captura de cada pantalla en `test-results/visual/` para revisarlas a ojo (no se comparan píxel a píxel:
 una comparación así se rompe con cualquier cambio de fuente o de antialiasing y acaba ignorándose).
+
+## 5. Estados (ui.js `stateTag`)
+
+Un solo componente para todos los estados, con icono y texto (nunca solo color):
+
+| Estado | Clase | Icono | Ejemplos |
+|---|---|---|---|
+| Bien | `state-ok` | ✓ | «Bien», «En tu rango» |
+| Atención | `state-warn` | ⚠ | «Atención», «Sin subir» |
+| Info / Nota | `state-info` / `state-neutral` | ⓘ | «Info» (azul), «Nota» (gris) |
+| Faltan datos | `state-insufficient` | reloj, borde discontinuo | «Faltan datos» |
+| Progresa | `state-progress` | ↑ | «Progresa», «Subir peso» |
+| Estancado | `state-stalled` | – | «Estancado» |
+| Récord | `state-pr` | trofeo | «Récord» |
+| Error | `state-error` | ✕ | |
+| Confianza | `state-conf-high/medium/low/insufficient` | sin icono, contorno | «Confianza media» |
+
+El panel semanal (`.wk-level`), el analista (`.an-level`, `.an-conf`) y Tiempos previstos (`.prd-conf`) usan este
+componente (las clases antiguas se conservan como alias para las pruebas). «Info» es azul en todas partes; antes era
+azul en el panel y gris en el analista.
+
+## 6. «Lo importante esta semana» y el resumen del analista (js/focus.js)
+
+Una sola lista corta para Hoy (antes había dos tarjetas: el resumen del panel semanal y «Tu análisis») y para el
+resumen de #/analysis:
+
+- Uno principal y hasta dos secundarios. Candidatos: los mensajes clave del panel semanal y los puntos clave del
+  analista (no se calcula nada nuevo).
+- Un mensaje por tema (`topicOf`): si el panel y el analista hablan de los ejercicios estancados, sale uno (el del
+  analista, que lleva confianza y fuentes).
+- Solo entra lo que pide un cambio (Atención, «Subir peso») o lo que va bien. Lo informativo no ocupa hueco.
+- Sin avisos: «Todo evoluciona dentro de lo esperado. No necesitas cambiar nada.» No se fuerza un problema.
+- Cada uno lleva **un** «Qué hacer». Si el analista ya da su recomendación (`parts.recommendation`), esa es la
+  acción y no se repite en el texto; si no, una de esta lista: Mantén lo que haces · No necesitas cambiar nada ·
+  Acumula más datos · Reevalúa en una semana · Prioriza la recuperación · Reduce 1–2 series · Añade 1–2 series ·
+  Sube el peso.
+
+## 7. «Cómo vas» (portada de Progreso, js/overview.js)
+
+Cuatro filas —Fuerza, Resistencia, Cuerpo, Recuperación— con su cifra clave, el cambio reciente (4 últimas semanas
+completas frente a las 4 anteriores; la semana en curso no cuenta), una minigráfica de 12 semanas
+(`charts.sparkline`, sin ejes) y el acceso al detalle (#/analysis?area=…, #/bodyweight). Sin datos, cada fila dice
+qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: la bici siempre gana en km).
+
+## 8. Orden de Hoy
+
+- Sesión abierta: «Sesión en curso» manda (nombre, cronómetro, «2 de 20 series», «En lugar de Día 3 — Cardio» si
+  sustituye a lo planificado) y «Te toca hoy» no la repite debajo.
+- Antes de entrenar: «Te toca hoy» con «Empezar»; el check-in, «Lo importante esta semana» y los objetivos, al final.
+- Hecho, saltado o descanso: no queda nada que empezar, así que «Lo importante esta semana» sube por encima de
+  «Registrar».
+- Evento a 14 días o menos: tarjeta debajo de «Te toca hoy» («10K · En 5 días»); más lejos, una línea.
+
+## 9. Términos
+
+| Término | Significa | No usar |
+|---|---|---|
+| Récord | La mejor marca de SIEMPRE (fuerza o resistencia), venga de una sesión, de una actividad importada o de una marca histórica | «PR» en la interfaz (solo el icono 🏆) |
+| Marca histórica | Un resultado anterior a Entreno, apuntado a mano (Récords › Marcas históricas o un resultado de carrera en Tu contexto) | «marca antigua», «PR histórico» |
+| Mejor serie | La serie concreta con más peso × reps de un ejercicio | |
+| 1RM estimado | Repetición máxima calculada con Epley (reps + RIR). «1RM est.» solo en etiquetas cortas | «1RM» a secas cuando es estimado |
+| Serie de trabajo | Cualquier serie hecha que no es calentamiento (tipos Efectiva, Al fallo, Drop) | |
+| Series efectivas (por músculo) | Series de trabajo repartidas por músculo (principal 1, secundario según Ajustes) frente a tu rango semanal | usarlo para el total de series de una sesión |
+| Efectiva | El tipo de serie normal en la sesión (frente a Calentamiento, Al fallo, Drop) | |
+| Volumen | kg × reps de las series de trabajo | «carga» |
+| Carga | Minutos × esfuerzo percibido (RPE) de TODAS las sesiones | «volumen» |
+| Tendencia | Lo que dice la pendiente de tus datos (peso medio, 1RM estimado) | |
+| Tiempo previsto | La estimación actual de una distancia (pantalla «Tiempos previstos») | «predicción» en títulos |
+| Confianza | Alta / media / baja / datos insuficientes: cuánto fiarse de una estimación | |
+| Tu contexto | Fases y hechos que explican tus datos (vacaciones, creatina, un resultado de carrera) | |
+| Fase | Un periodo de tu contexto con principio (y fin) | |
+| Evento | Algo FUTURO apuntado en Eventos (una carrera, una marcha) | para hechos pasados (eso es contexto) |
+| Actividad | Carrera, bici, natación, senderismo u otra (no fuerza) | |
+| Sesión | Un entrenamiento de fuerza (o cualquier registro, en el historial) | |

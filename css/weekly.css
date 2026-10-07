@@ -96,21 +96,7 @@
 .wk-msg-warn { border-left-color: var(--warn); }
 .wk-msg-neutral { border-left-color: var(--info); }
 .wk-msg-head { display: flex; align-items: center; gap: 8px; }
-.wk-level {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px 3px 7px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-.wk-level .icon { flex: none; }
-.wk-level-neutral { background: var(--info-soft); color: var(--info); }
-.wk-level-good { background: var(--ok-soft); color: var(--ok); }
-.wk-level-warn { background: var(--warn-soft); color: var(--warn); }
+/* Nivel: .state (css/app.css) */
 .wk-msg-title { font-size: 17px; font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; }
 .wk-msg-text { font-size: 15px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
 
@@ -219,37 +205,6 @@
 .wk-settings-link > .icon:first-child { flex: none; color: var(--accent); }
 .wk-settings-link .list-item-sub { white-space: normal; overflow: visible; text-overflow: clip; }
 .wk-empty { padding: 4px; }
-
-/* Tarjeta resumen (Hoy y Progreso) */
-.wk-summary { gap: 10px; }
-.wk-summary-head { display: flex; align-items: center; gap: 10px; }
-.wk-summary-titles { flex: 1; min-width: 0; }
-.wk-summary-title { font-size: 18px; font-weight: 750; }
-.wk-summary-sub { margin-top: 2px; font-size: 13px; color: var(--muted); }
-.wk-summary-group { display: flex; flex-direction: column; }
-/* Rótulo de grupo con el mismo código que los bloques de #/weekly (azul información, verde sugerencias). */
-.wk-summary-ghead {
-  padding: 6px 0 6px 10px;
-  border-left: 3px solid var(--info);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-.wk-summary-group-suggestion .wk-summary-ghead { border-left-color: var(--accent); }
-.wk-summary-group + .wk-summary-group { margin-top: 6px; }
-.wk-summary-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
-.wk-summary-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 9px 0; border-bottom: 1px solid var(--border); }
-.wk-summary-item:last-child { border-bottom: 0; }
-.wk-summary-item > .why { align-self: stretch; margin-top: 2px; }
-.wk-summary .why-body { padding: 10px 12px 8px; }
-.wk-level-sm { padding: 2px 8px 2px 6px; font-size: var(--fs-xs); }
-.wk-summary-mtitle { font-size: 15px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
-/* Texto completo (sin recortar): son las cifras que justifican el mensaje. */
-.wk-summary-mtext { font-size: 14px; line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; }
-.wk-summary-empty { font-size: 14px; color: var(--muted); }
-.wk-summary-btn .icon { flex: none; }
 
 /* «Resumen de la semana» (arriba del panel; propietario: módulo de resúmenes). La diferencia con la semana
    anterior usa .sum-delta de css/summary.css (flecha + texto). */
@@ -487,3 +442,27 @@
 
 /* ---------- «Tu análisis» en el panel (ronda 5; la tarjeta es de css/analysis.css) ---------- */
 .wk-analysis { border-left: 4px solid var(--accent); }
+
+/* ---------- «Lo importante esta semana» (Hoy, views/focus.js · docs/PULIDO.md §6) ----------
+   Una tarjeta, filas con separador (sin tarjetas dentro): el principal más grande; los secundarios, compactos. */
+.focus { gap: 4px; }
+.focus-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.focus-heading { font-size: 18px; font-weight: 750; }
+.focus-sub { font-size: var(--fs-sm); color: var(--muted); }
+.focus-allgood { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0 10px; font-size: var(--fs-md); line-height: 1.4; color: var(--text); }
+.focus-allgood .icon { flex: none; margin-top: 1px; color: var(--ok); }
+.focus-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.focus-item { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.focus-item:last-child { border-bottom: 0; }
+.focus-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.focus-title { font-size: var(--fs-md); font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.focus-main .focus-title { font-size: 18px; font-weight: 750; }
+.focus-text { font-size: 14px; line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; }
+/* Texto completo (sin recortar): son las cifras que justifican el mensaje. */
+.focus-main .focus-text { font-size: var(--fs-md); }
+.focus-step { display: flex; align-items: flex-start; gap: 6px; font-size: 14px; line-height: 1.35; color: var(--text-2); }
+.focus-step .icon { flex: none; margin-top: 1px; color: var(--muted); }
+.focus-step b { color: var(--text); font-weight: 700; }
+.focus-item > .why { align-self: stretch; }
+.focus .why-body { padding: 10px 12px 8px; }
+.focus-links { display: flex; flex-wrap: wrap; column-gap: 18px; border-top: 1px solid var(--border); padding-top: 2px; }

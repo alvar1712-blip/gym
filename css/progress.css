@@ -521,3 +521,34 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 /* Hoy: una sola línea (como «Ahora: …») */
 .today-race { max-width: 100%; text-align: left; line-height: 1.3; }
 .today-race-text { min-width: 0; }
+
+/* ---------- «Cómo vas» (portada de Progreso, docs/PULIDO.md §7) ----------
+   Una superficie con cuatro filas (sin tarjetas dentro): etiqueta, cifra clave, cambio; a la derecha, la minigráfica
+   y el estado. Toda la fila lleva a su detalle. */
+.prg-ov { gap: 2px; padding-bottom: 4px; }
+.prg-ov-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.prg-ov-title { font-size: 18px; font-weight: 750; }
+.prg-ov-sub { font-size: var(--fs-sm); color: var(--muted); }
+.prg-ov-list { list-style: none; margin: 0 -14px; padding: 0; }
+.prg-ov-item + .prg-ov-item { border-top: 1px solid var(--border); }
+.prg-ov-row {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.prg-ov-row.is-pressed { background: var(--surface-2); }
+.prg-ov-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.prg-ov-label { font-size: var(--fs-xs); font-weight: 750; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.prg-ov-value { font-size: 19px; font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.prg-ov-change { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.prg-ov-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.prg-ov-row .chev { flex: none; color: var(--muted); }
+.spark { display: block; overflow: visible; }
+.spark-empty { display: block; }
