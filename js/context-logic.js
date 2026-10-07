@@ -6,10 +6,14 @@
 //   Fase:  { id, kind:'phase', type, start:Approx, end:Approx|null (null = sigue), text, notes, goalIds:[], sports:[],
 //            createdAt, updatedAt }
 //   Hecho: { id, kind:'event', type, date:Approx, text, notes, kg:number|null, createdAt, updatedAt }
+//   Resultado de carrera (hecho type 'race_result'): además { result: { km, sec, effort:'race'|'training'|'test'|null,
+//     elevationM:number|null, surface:'road'|'track'|'trail'|'mixed'|null } | null }; `text` = nombre de la carrera
+//     (opcional), `notes` = nota. Es la ÚNICA copia de esa marca: los tiempos previstos (race-predict) y el informe la
+//     leen de aquí. Algo que ya pasó (nunca en el futuro: eso es un evento deportivo, races-logic).
 //   Approx = { date:'YYYY-MM-DD' (primer día del periodo), precision:'day'|'month'|'season'|'year' }
 // Estaciones meteorológicas: primavera mar–may, verano jun–ago, otoño sep–nov, invierno dic–feb (la de diciembre de
 // un año: «invierno 2026-27»).
-import { isDateStr, todayStr, addDays, addMonths, fmtDate, fmtNum, MONTH_LONG, MONTH_SHORT } from './util.js';
+import { isDateStr, todayStr, addDays, addMonths, diffDays, fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, MONTH_LONG, MONTH_SHORT } from './util.js';
 
 /**
  * Tipos de fase. `aspect` = qué aspecto describe; pueden estar vigentes VARIAS fases a la vez (p. ej. ganancia muscular +
@@ -54,8 +58,37 @@ export const EVENT_TYPES = [
   { id: 'injury', label: 'Lesión' },
   { id: 'usual_weight', label: 'Peso habitual', kg: true },
   { id: 'weight', label: 'Peso en esa fecha', kg: true },
+  { id: 'race_result', label: 'Resultado de carrera', race: true },
   { id: 'other', label: 'Otro' },
 ];
+
+/**
+ * Distancias rápidas de un resultado de carrera (km). Las de 5 km a maratón son las de stats.RACE_DISTANCES (una
+ * prueba lo comprueba); 1 km, para un test.
+ */
+export const RESULT_DISTANCES = [
+  { id: '1k', km: 1, label: '1 km' },
+  { id: '5k', km: 5, label: '5 km' },
+  { id: '10k', km: 10, label: '10 km' },
+  { id: 'half', km: 21.0975, label: 'Media maratón' },
+  { id: 'marathon', km: 42.195, label: 'Maratón' },
+];
+export const RESULT_EFFORTS = [
+  { id: 'race', label: 'Carrera oficial' },
+  { id: 'training', label: 'Entrenamiento' },
+  { id: 'test', label: 'Test' },
+];
+export const RESULT_SURFACES = [
+  { id: 'road', label: 'Asfalto' },
+  { id: 'track', label: 'Pista' },
+  { id: 'trail', label: 'Trail' },
+  { id: 'mixed', label: 'Mixta' },
+];
+/** Límites de un resultado: distancia (km) y tiempo (s; menos de 100 h). */
+export const RESULT_KM_MIN = 0.1;
+export const RESULT_KM_MAX = 250;
+export const RESULT_SEC_MAX = 100 * 3600;
+export const RESULT_ELEVATION_MAX = 20000;
 
 export const PRECISIONS = [
   { id: 'day', label: 'Día' },
@@ -87,6 +120,7 @@ export const phaseType = (id) => PHASE_TYPES.find((t) => t.id === id) || null;
 export const eventType = (id) => EVENT_TYPES.find((t) => t.id === id) || null;
 export const typeOf = (e) => (e?.kind === 'event' ? eventType(e.type) : phaseType(e?.type));
 export const hasKg = (e) => e?.kind === 'event' && !!eventType(e.type)?.kg;
+export const isRaceResult = (e) => e?.kind === 'event' && e.type === 'race_result';
 
 // ---------------------------------------------------------------------------
 // Fechas aproximadas
@@ -170,6 +204,62 @@ export function approxParts(a, today = todayStr()) {
 const cleanText = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const uniqStrings = (xs) => (Array.isArray(xs) ? [...new Set(xs.filter((x) => typeof x === 'string' && x))] : []);
 
+const RESULT_EFFORT_IDS = new Set(RESULT_EFFORTS.map((x) => x.id));
+const RESULT_SURFACE_IDS = new Set(RESULT_SURFACES.map((x) => x.id));
+
+/** Resultado de carrera saneado: { km, sec, effort, elevationM, surface } o null si faltan distancia o tiempo válidos. */
+export function normalizeResult(x) {
+  if (!x || typeof x !== 'object') return null;
+  if (!isNum(x.km) || x.km < RESULT_KM_MIN || x.km > RESULT_KM_MAX) return null;
+  if (!isNum(x.sec) || Math.round(x.sec) <= 0 || x.sec >= RESULT_SEC_MAX) return null;
+  return {
+    km: Math.round(x.km * 10000) / 10000,
+    sec: Math.round(x.sec),
+    effort: RESULT_EFFORT_IDS.has(x.effort) ? x.effort : null,
+    elevationM: isNum(x.elevationM) && x.elevationM >= 0 && x.elevationM <= RESULT_ELEVATION_MAX ? Math.round(x.elevationM) : null,
+    surface: RESULT_SURFACE_IDS.has(x.surface) ? x.surface : null,
+  };
+}
+
+/** Distancia de un resultado: «10 km», «Media maratón», «7,5 km». */
+export function resultDistanceLabel(km) {
+  const std = RESULT_DISTANCES.find((d) => Math.abs(d.km - km) < 0.001);
+  return std ? std.label : `${fmtNum(km, 2)} km`;
+}
+
+/** «10 km · 1:00:00» (con nombre: «San Silvestre · 10 km · 1:00:00»). '' sin resultado válido. */
+export function resultText(e) {
+  const r = e?.result;
+  if (!r) return '';
+  return `${e.text ? `${e.text} · ` : ''}${resultDistanceLabel(r.km)} · ${fmtRaceTime(r.sec) ?? '—'}`;
+}
+
+/** Ritmo de un resultado: «6:00/km» o null. */
+export const resultPace = (r) => (r && r.km > 0 ? fmtPaceKm(r.sec / r.km) : null);
+
+/**
+ * Fecha en que se toma un resultado para calcular su antigüedad: la mitad de su periodo (día → ese día; «mayo 2026» →
+ * 16 may), sin pasar de hoy.
+ */
+export function resultDate(e, today = todayStr()) {
+  const r = entryRange(e);
+  if (!r.from) return null;
+  const mid = addDays(r.from, Math.floor(diffDays(r.from, r.to) / 2));
+  return mid > today ? (r.from > today ? null : today) : mid;
+}
+
+/**
+ * Resultados de carrera con números válidos ocurridos hasta `today` (el periodo empieza hoy o antes), de lo más reciente
+ * a lo más antiguo: { id, entry, km, sec, date (resultDate), name, effort, elevationM, surface, when (approxLabel) }.
+ */
+export function raceResults(list, today = todayStr()) {
+  return normalizeAll(list)
+    .filter((e) => isRaceResult(e) && e.result && approxFrom(e.date) <= today)
+    .map((e) => ({ id: e.id, entry: e, ...e.result, date: resultDate(e, today), name: e.text, when: approxLabel(e.date, { short: true }), precision: e.date.precision }))
+    .filter((x) => x.date)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
 /**
  * Copia saneada de un registro (para leer datos guardados o importados con campos de menos o de más).
  * null si no tiene la forma mínima (clase y fecha de inicio/del hecho válidas).
@@ -182,6 +272,8 @@ export function normalizeEntry(r) {
     if (!date) return null;
     const type = EVENT_IDS.has(r.type) ? r.type : 'other';
     const kg = eventType(type)?.kg && isNum(r.kg) && r.kg >= KG_MIN && r.kg <= KG_MAX ? r.kg : null;
+    // Un resultado ilegible (copia dañada) se conserva sin números: se ve en la línea temporal, no se usa para calcular.
+    if (type === 'race_result') return { ...base, kind: 'event', type, date, kg: null, result: normalizeResult(r.result) };
     return { ...base, kind: 'event', type, date, kg };
   }
   if (r.kind !== 'phase') return null;
@@ -205,7 +297,7 @@ export function normalizeAll(list) {
  * Errores de un borrador antes de guardarlo: { field: mensaje }. Vacío = se puede guardar.
  * Una fase personalizada necesita texto; el fin no puede ser anterior al inicio; los kg, entre KG_MIN y KG_MAX.
  */
-export function validateEntry(d) {
+export function validateEntry(d, today = todayStr()) {
   const err = {};
   if (!d || (d.kind !== 'phase' && d.kind !== 'event')) return { kind: 'Elige fase o hecho.' };
   if (d.kind === 'phase') {
@@ -226,6 +318,16 @@ export function validateEntry(d) {
       if (!isNum(d.kg)) err.kg = 'Indica el peso.';
       else if (d.kg < KG_MIN || d.kg > KG_MAX) err.kg = `Entre ${KG_MIN} y ${KG_MAX} kg.`;
     }
+    if (d.type === 'race_result') {
+      const r = d.result || {};
+      if (!isNum(r.km)) err.km = 'Indica la distancia.';
+      else if (r.km < RESULT_KM_MIN || r.km > RESULT_KM_MAX) err.km = `Entre ${fmtNum(RESULT_KM_MIN, 1)} y ${RESULT_KM_MAX} km.`;
+      if (!isNum(r.sec) || Math.round(r.sec) <= 0) err.sec = 'Indica el tiempo.';
+      else if (r.sec >= RESULT_SEC_MAX) err.sec = 'El tiempo es demasiado largo.';
+      const date = normalizeApprox(d.date);
+      if (date && approxFrom(date) > today) err.date = 'Un resultado es algo que ya pasó. Para una carrera que quieres hacer, usa «Eventos deportivos».';
+      if (r.elevationM != null && !(isNum(r.elevationM) && r.elevationM >= 0 && r.elevationM <= RESULT_ELEVATION_MAX)) err.elevationM = `Entre 0 y ${RESULT_ELEVATION_MAX} m.`;
+    }
   }
   return err;
 }
@@ -235,6 +337,7 @@ export function entryRecord(d, { id, now = Date.now() } = {}) {
   const n = normalizeEntry({ ...d, id: d.id ?? id, createdAt: d.createdAt ?? now, updatedAt: now });
   if (!n) throw new Error('Registro de contexto no válido');
   if (n.kind === 'event' && !eventType(n.type)?.kg) delete n.kg;
+  if (n.kind === 'event' && n.type !== 'race_result') delete n.result;
   return n;
 }
 
@@ -251,8 +354,16 @@ export function phaseActiveOn(e, date) {
   return from <= date && (to == null || to >= date);
 }
 
-/** Título: el tipo («Vuelta tras vacaciones o parón»); en una personalizada u «Otro», su texto. */
+/**
+ * Título: el tipo («Vuelta tras vacaciones o parón»); en una personalizada u «Otro», su texto; en un resultado de
+ * carrera, «Resultado de carrera: 10 km en 1:00:00» (o con su nombre: «San Silvestre: 10 km en 1:00:00»).
+ */
 export function entryTitle(e) {
+  if (isRaceResult(e)) {
+    const r = e.result;
+    if (!r) return e.text || 'Resultado de carrera';
+    return `${e.text || 'Resultado de carrera'}: ${resultDistanceLabel(r.km)} en ${fmtRaceTime(r.sec) ?? '—'}`;
+  }
   if ((e.type === 'custom' || e.type === 'other') && e.text) return e.text;
   const t = typeOf(e);
   return t ? t.label : 'Contexto';
@@ -269,6 +380,7 @@ export function entryWhen(e, { short = true } = {}) {
 
 /** Línea de resumen: «Peso habitual: 75 kg» · «Vuelta tras vacaciones o parón» (+ el texto si aporta). */
 export function entryLine(e) {
+  if (isRaceResult(e)) return e.result ? `🏁 ${resultText(e)}` : `🏁 ${e.text || 'Resultado de carrera'} · sin distancia o tiempo válidos`;
   const title = entryTitle(e);
   const kg = isNum(e.kg) ? `: ${fmtNum(e.kg, 1)} kg` : '';
   const extra = e.text && e.text !== title ? ` · ${e.text}` : '';
@@ -304,7 +416,7 @@ export function contextOn(list, date = todayStr()) {
 /**
  * Cambios recientes: fases que empezaron o terminaron y hechos ocurridos en los últimos `days` días (hasta hoy), de lo
  * más reciente a lo más antiguo. Cuenta el PRINCIPIO del periodo de cada fecha aproximada («verano 2026» no es reciente
- * en octubre aunque el año 2026 lo sea); el peso habitual es una referencia, no un cambio.
+ * en octubre aunque el año 2026 lo sea); el peso habitual y los resultados de carrera son referencias, no cambios.
  * @returns {{ entry, what:'start'|'end'|'event', date }[]}
  */
 export function recentChanges(list, today = todayStr(), days = RECENT_DAYS) {
@@ -314,7 +426,8 @@ export function recentChanges(list, today = todayStr(), days = RECENT_DAYS) {
   for (const e of normalizeAll(list)) {
     const r = entryRange(e);
     if (e.kind === 'event') {
-      if (e.type !== 'usual_weight' && inWindow(r.from)) out.push({ entry: e, what: 'event', date: r.from });
+      // El peso habitual y los resultados de carrera son referencias, no cambios
+      if (e.type !== 'usual_weight' && e.type !== 'race_result' && inWindow(r.from)) out.push({ entry: e, what: 'event', date: r.from });
       continue;
     }
     if (inWindow(r.from)) out.push({ entry: e, what: 'start', date: r.from });

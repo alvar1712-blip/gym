@@ -61,6 +61,9 @@ de calentamiento pendientes al principio). No cambia el registro de 1 toque ni o
   margen del rango tiene un tope de ±25 %; cada predicción lleva `status` ('ok' | 'tentative' | 'incoherent' |
   'invalid'), `usable` y `advice {note, improve}`. `mid` = estimación actual (media ponderada). Formato solo con
   `util.fmtRaceTime` / `fmtPaceKm` / `fmtRaceRange` / `fmtPaceRange` (null si el dato no vale).
+  Resultados de carrera de «Tu contexto» (ronda 6, docs/MEJORAS6.md): los de 12 semanas cuentan como una carrera más; los
+  anteriores, como referencias históricas con menos peso cuanto más antiguos y la mitad si después hubo un parón;
+  `history`, `duplicates`, `canPredict`; `status:'tentative'` también con menos de 2 carreras recientes.
 - `checkTarget(data, distanceKm, targetSec)` → `{ verdict:'probable'|'ajustado'|'hoy_no'|'insuficiente', prediction,
   gapSec, why }`: objetivo ≥ `high` → probable; dentro del rango → ajustado; < `low` → hoy no (con cuánto falta).
 - Vista: tabla de las 4 distancias (rango, ritmo, confianza, «¿Por qué?»), comprobador (distancia: 5k/10k/media/

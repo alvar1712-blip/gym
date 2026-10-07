@@ -34,6 +34,7 @@ import { analysisContext } from './analysis-context.js';
 import { analyzeHybrid, personalInterference } from './analysis-hybrid.js';
 import { checkinsBetween, areasOf, areaName, level as ckLevel } from './checkin-logic.js';
 import { racePrediction } from './races-progress.js';
+import { runningReferences } from './race-predict.js';
 import { splitGoals } from './goals-logic.js';
 
 /** Orden de las áreas (desempates y orden de las tarjetas). */
@@ -302,6 +303,8 @@ export function buildAnalysis(data = {}, today) {
   const wellbeing = attempt(errors, 'wellbeing', () => wellbeingSummary(d.checkins || [], t), null);
   const events = attempt(errors, 'events', () => (context?.events?.upcoming || []).map((x) => ({ ...x, prediction: racePrediction(d, x.race, { today: t }) })), []);
   const goals = attempt(errors, 'goals', () => splitGoals(toArr(d.goals)).active.map((x) => ({ id: x.id, kind: x.kind, title: x.title })), []);
+  // Resultados de carrera de tu contexto que usan los tiempos previstos (para el informe)
+  const runningRefs = attempt(errors, 'runningRefs', () => runningReferences(d, { today: t }), null);
 
   const wf = attempt(errors, 'forecast', () => weightForecast(weight, { today: t, female }), null);
   const forecast = sortInsights([
@@ -321,7 +324,7 @@ export function buildAnalysis(data = {}, today) {
 
   return {
     today: t, profile, profileIncomplete: profileIncomplete(profile), female, hasData,
-    weight, strength, endurance, recovery, cycle, forecast, hybrid, wellbeing, events, goals,
+    weight, strength, endurance, recovery, cycle, forecast, hybrid, wellbeing, events, goals, runningRefs,
     keyPoints: pickKeyPoints(all, 3), all, errors, context,
   };
 }

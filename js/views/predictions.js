@@ -79,6 +79,9 @@ function emptyView(r) {
       text: `Para estimar tus tiempos en 5 km, 10 km, media y maratón hacen falta al menos ${MIN_VALID} carreras de ${MIN_KM} km o más en las últimas ${WINDOW_WEEKS} semanas, con distancia y tiempo. ${have}`,
       action: { label: 'Registrar una carrera', onClick: () => navigate('#/activity/new?kind=run') },
     }),
+    h('button.btn.btn-secondary.btn-block.prd-add-result', { type: 'button', onClick: () => navigate('#/context/new?kind=event&type=race_result') },
+      '🏁 Apuntar un resultado anterior'),
+    h('p.prd-note.prd-add-result-why', '¿Corriste una carrera antes de usar Entreno? Apúntala en tu contexto (vale con el mes): cuenta como referencia, con menos peso cuanto más antigua.'),
     h('div.prd-empty-count', { 'aria-label': `${r.valid} de ${MIN_VALID} carreras válidas` },
       Array.from({ length: MIN_VALID }, (_, i) => h('span.prd-dot', { class: i < r.valid ? 'on' : '' })),
       h('span', `${r.valid} de ${MIN_VALID} carreras válidas`)),
@@ -92,12 +95,15 @@ function emptyView(r) {
 // Carreras que no cuentan por un ritmo imposible (para revisarlas)
 // ===========================================================================
 
+/** Ficha de un esfuerzo: la actividad registrada o el resultado de tu contexto. */
+const effortHref = (x) => (x.source === 'context' ? `#/context/${encodeURIComponent(x.entryId)}` : `#/activity/${x.sessionId}`);
+
 function suspectList(list) {
   return h('div.list.prd-suspect-list', list.map((x) => h('button.list-item.prd-suspect-item', {
-    type: 'button', dataset: { session: x.sessionId, why: x.why }, 'aria-label': `Revisar ${x.label.replace(/\s+/g, ' ')}`,
-    onClick: () => navigate(`#/activity/${x.sessionId}`),
+    type: 'button', dataset: { session: x.sessionId ?? '', entry: x.entryId ?? '', source: x.source, why: x.why }, 'aria-label': `Revisar ${x.label.replace(/\s+/g, ' ')}`,
+    onClick: () => navigate(effortHref(x)),
   },
-    h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, '🏃'),
+    h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, x.source === 'context' ? '🏁' : '🏃'),
     h('span.list-item-main',
       h('span.list-item-title', keep(x.label)),
       h('span.list-item-sub', keep(`${dayTxt(x.date)} · ${x.why === 'slow' ? `más lenta de ${paceTxt(MAX_PACE)}` : `más rápida de ${paceTxt(MIN_PACE)}`}`))),
@@ -139,6 +145,17 @@ function estimateView(p, { tentative = false } = {}) {
       h('div.prd-fact', h('dt', 'Ritmo estimado'), h('dd.prd-race-pace', pace))));
 }
 
+/** «🏁 Incluye tu marca de may 2026 (10 km · 1:00:00), con poco peso (8 %).» si se usan referencias históricas. */
+function historyLine(p) {
+  const olds = p.efforts.filter((e) => e.old);
+  if (!olds.length) return null;
+  const share = fmtNum(olds.reduce((t, e) => t + e.share, 0) * 100, 0);
+  const text = olds.length === 1
+    ? `Incluye tu marca de ${olds[0].when} (${fmtNum(olds[0].km, 2)} km · ${timeTxt(olds[0].sec)}), con poco peso (${share} %).`
+    : `Incluye ${olds.length} marcas anteriores, con poco peso (${share} % entre las dos).`;
+  return h('p.prd-race-history', h('span', { 'aria-hidden': 'true' }, '🏁'), h('span', keep(text)));
+}
+
 function noteView(text) {
   return text ? h('p.prd-race-note', icon('alert', 14), h('span', keep(text))) : null;
 }
@@ -164,6 +181,8 @@ function raceCard(p) {
   const est = p.usable ? estimateView(p, { tentative: p.status === 'tentative' }) : null;
   if (p.status === 'ok' && est) {
     el.append(est);
+    const hist = historyLine(p);
+    if (hist) el.append(hist);
     const note = noteView(p.advice.note);
     if (note) el.append(note);
   } else if (p.status === 'tentative' && est) {
@@ -329,6 +348,23 @@ function verdictView(res) {
 // Base del cálculo
 // ===========================================================================
 
+/** Referencias históricas listadas en «Con qué se calcula», como mucho. */
+const MAX_HISTORY_SHOWN = 5;
+
+/** Un esfuerzo de la base o una referencia histórica: abre la carrera registrada o el resultado de tu contexto. */
+function effortItem(e) {
+  const ctx = e.source === 'context';
+  const tags = [e.old ? 'referencia histórica' : ctx ? 'de tu contexto' : null, e.interrupted ? 'antes de un parón' : null].filter(Boolean);
+  return h('button.list-item.prd-effort', {
+    type: 'button', dataset: { session: e.sessionId ?? '', entry: e.entryId ?? '', source: e.source }, onClick: () => navigate(effortHref(e)),
+  },
+    h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, ctx ? '🏁' : '🏃'),
+    h('span.list-item-main',
+      h('span.list-item-title', keep(`${e.name ? `${e.name} · ` : ''}${fmtNum(e.km, 2)} km en ${timeTxt(e.sec)}`)),
+      h('span.list-item-sub.wrap', keep([e.when, paceTxt(e.pace), ...tags].join(' · ')))),
+    icon('chevron-right', 20, 'chev'));
+}
+
 function basisView(r) {
   const longest = r.longest;
   const kpi = (label, value, sub) => h('div.kpi', h('div.kpi-label', label), h('div.kpi-value', value), h('div.kpi-sub', sub));
@@ -338,15 +374,12 @@ function basisView(r) {
       kpi('Km/semana', km1(r.weeklyKm), `media ${VOLUME_WEEKS} sem.`),
       kpi('Tirada larga', longest ? km1(longest.km) : '—', longest ? dayTxt(longest.date) : `${VOLUME_WEEKS} sem.`),
       kpi('Carreras', String(r.valid), `≥${NB}${MIN_KM}${NB}km · ${WINDOW_WEEKS}${NB}sem.`)),
-    h('h3.prd-basis-sub', r.basis.length === 1 ? 'Esfuerzo usado' : `Los ${r.basis.length} esfuerzos usados`),
-    h('div.list.prd-efforts', r.basis.map((e) => h('button.list-item.prd-effort', {
-      type: 'button', dataset: { session: e.sessionId }, onClick: () => navigate(`#/activity/${e.sessionId}`),
-    },
-      h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, '🏃'),
-      h('span.list-item-main',
-        h('span.list-item-title', keep(`${fmtNum(e.km, 2)} km en ${timeTxt(e.sec)}`)),
-        h('span.list-item-sub', keep(`${dayTxt(e.date)} · ${paceTxt(e.pace)}`))),
-      icon('chevron-right', 20, 'chev')))),
+    r.basis.length ? h('h3.prd-basis-sub', r.basis.length === 1 ? 'Esfuerzo usado' : `Los ${r.basis.length} esfuerzos usados`) : null,
+    r.basis.length ? h('div.list.prd-efforts', r.basis.map((e) => effortItem(e))) : h('p.prd-note.prd-no-recent', 'Ninguna carrera reciente válida: la estimación sale de tus referencias históricas.'),
+    r.history.length ? h('h3.prd-basis-sub', 'Referencias históricas') : null,
+    r.history.length ? h('div.list.prd-efforts.prd-history', r.history.slice(0, MAX_HISTORY_SHOWN).map((e) => effortItem(e))) : null,
+    r.duplicates.length ? h('p.prd-note.prd-dup', keep(`No se cuenta dos veces: ${r.duplicates.map((x) => `${x.label} (${x.when}) de tu contexto es la misma carrera que la registrada el ${x.runWhen}`).join('; ')}.`)) : null,
     h('p.prd-note', `Se usan tus ${TOP_N} mejores carreras de ${MIN_KM} km o más de las últimas ${WINDOW_WEEKS} semanas, con su tiempo en movimiento; las más recientes y de distancia más parecida pesan más. Solo cuenta la carrera: el senderismo y otros deportes no.`),
+    h('p.prd-note', 'Los resultados de carrera de tu contexto también cuentan: los recientes, como una carrera más; los anteriores, como referencia histórica con menos peso cuanto más antiguos y la mitad si después hubo un parón. Tu historial importa, pero tu estado reciente importa más.'),
     h('p.prd-note', `Media y maratón dependen también del volumen: con menos de ${VOLUME.half.weeklyKm} km/sem o una tirada de menos de ${VOLUME.half.longKm} km (media), o de ${VOLUME.marathon.weeklyKm} km/sem y ${VOLUME.marathon.longKm} km (maratón), la estimación sale más lenta y con menos confianza.`));
 }

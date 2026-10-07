@@ -206,6 +206,9 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 ### context, pastRecords, races (ronda 6, IndexedDB v3) — ver `docs/MEJORAS6.md` («Fase A — modelo de datos»)
 - `context`: fases `{ id, kind:'phase', type, start:Approx, end:Approx|null, text, notes, goalIds, sports }` y hechos
   `{ id, kind:'event', type, date:Approx, text, notes, kg? }`; `Approx = { date:'YYYY-MM-DD', precision:'day'|'month'|'season'|'year' }`.
+  Hecho «Resultado de carrera» (`type:'race_result'`): además `result: { km, sec, effort:'race'|'training'|'test'|null,
+  elevationM|null, surface:'road'|'track'|'trail'|'mixed'|null } | null`; `text` = nombre (opcional). Es la ÚNICA copia
+  de esa marca: los tiempos previstos y el informe la leen de aquí (sin esquema nuevo; viaja en la copia como el resto).
   Lógica pura en `js/context-logic.js` (`normalizeEntry` sanea al leer; `contextOn`, `recentChanges`, `timeline`).
 - `pastRecords` (fase B, marcas históricas manuales, aparte de los récords de `stats.js`): `{ id:'pr_…', exerciseId, weight,
   reps, rir:0–5|null, date:Approx|null, beforeApp, bodyweightKg|null, note, createdAt, updatedAt }`. `weight` en kg
@@ -409,6 +412,10 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   `status` ('ok' | 'tentative' | 'incoherent' | 'invalid'), `usable` y `advice`. Formato estricto en `util.js`:
   `fmtRaceTime`, `fmtPaceKm`, `fmtRaceRange`, `fmtPaceRange` (null si el dato no vale: la vista nunca pinta
   negativos ni «h:mm:ss/km»). `activity-logic.paceWarning` avisa en el formulario de un ritmo de carrera imposible.
+  Lee `data.context` (`progress-ui.dataFromStore` lo incluye): resultados de carrera (los de 12 semanas como una carrera
+  más; los anteriores, referencias históricas con recencia 0,5·e^(−(días−84)/84), como mucho 2 por distancia), parones
+  (`breakAfter`: fase o hecho de tu contexto posterior, o 4 semanas sin correr tras una referencia histórica → peso × 0,5)
+  y duplicados con carreras registradas (±5 %, cuenta la registrada). `canPredict(ctx)`, `runningReferences(data)` (informe).
 - **Resúmenes** (`summary-logic.js`, puro): `periodSummary(data, { unit:'week'|'month'|'year', start, today? })`,
   `summaryHref`, `kindInfo`, `fmtValue`, `fmtKm`; bloque «Resumen de la semana» arriba de `#/weekly`.
 - **Mapa corporal** (`bodymap.js`): `bodyMap({ muscles, onSelect?, selected?, label?, compact?, inProgress? })` →
@@ -486,7 +493,9 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   (clave: fecha, `APP_VERSION`, `ANALYSIS_VERSION`, `epoch` y la revisión de cada almacén); el resultado no se modifica.
   Toda escritura de datos DEBE pasar por esas funciones de `store.js` (ya era así: no hay escrituras directas a `db.js`).
 - **Contexto** (`context-logic.js`, puro): fechas aproximadas (`normalizeApprox`, `makeApprox`, `approxFrom/To`,
-  `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Campo de fecha aproximada
+  `approxLabel`), `contextOn`, `contextSummary`, `weightReferences`, `currentLabel`. Resultados de carrera:
+  `RESULT_DISTANCES`, `normalizeResult`, `resultText`, `resultPace`, `resultDate` (mitad del periodo, sin pasar de hoy) y
+  `raceResults(list, today)`; `validateEntry(d, today)` no admite un resultado en el futuro (eso es un evento). Campo de fecha aproximada
   compartido: `approx-input.approxInput({ label, value, today, key, onChange })`.
 - **Marcas históricas** (`past-records-logic.js`, puro): `markable(ex)` (peso × reps, unilateral, peso corporal),
   `comparableType(ex)` (con 1RM estimado: no el core de peso corporal), `validatePastRecord(draft, ex, today)`,

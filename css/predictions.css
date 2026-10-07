@@ -45,6 +45,7 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.prd-race-history { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
 .prd-race-note {
   display: flex;
   align-items: flex-start;
@@ -241,3 +242,8 @@
   .prd-race-time { font-size: 30px; }
   .prd-seg .seg-btn { padding: 0 2px; }
 }
+
+/* ---------- Resultados de tu contexto ---------- */
+.prd-add-result { margin-top: 4px; }
+.prd-add-result-why { text-align: center; }
+.prd-history { margin-top: 0; }

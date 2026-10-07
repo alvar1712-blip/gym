@@ -2,7 +2,8 @@
 // PURO: convierte el resultado de analysis.buildAnalysis() en texto plano en español para pegar en ChatGPT, Claude u
 // otra IA, o dárselo a un entrenador. Prioriza lo que otra IA necesita para no equivocarse por falta de contexto:
 //   PERFIL · OBJETIVO · CONTEXTO DEL USUARIO · CAMBIOS RECIENTES · PESO · FUERZA · MARCAS HISTÓRICAS · VOLUMEN ·
-//   RUNNING · BICI · NATACIÓN · SENDERISMO · OTRAS ACTIVIDADES · CARGA · RECUPERACIÓN · SUEÑO · ENERGÍA · ESTRÉS ·
+//   RUNNING · REFERENCIAS HISTÓRICAS DE RUNNING · BICI · NATACIÓN · SENDERISMO · OTRAS ACTIVIDADES · CARGA ·
+//   RECUPERACIÓN · SUEÑO · ENERGÍA · ESTRÉS ·
 //   AGUJETAS/MOLESTIAS · (CICLO MENSTRUAL, solo con permiso) · EVENTOS FUTUROS · TENDENCIAS · INSIGHTS ·
 //   CONFIANZA (DATOS CON BAJA CONFIANZA) · PREGUNTA
 // «CONTEXTO DEL USUARIO», «CAMBIOS RECIENTES» y «DATOS CON BAJA CONFIANZA» salen siempre (decir que no hay nada también
@@ -25,6 +26,8 @@ export const CYCLE_WEIGHT_IDS = ['weight-cycle-retention', 'weight-reds-cycle'];
 export const SHOWN_IN_SECTIONS = (i) => i.id === 'weight-protein' || (i.id === 'load-sport' && i.level === 'info');
 /** Máximo de ejercicios listados en «Fuerza» y de músculos en «Volumen». */
 const MAX_EXERCISES = 10;
+/** Máximo de resultados de carrera listados (los más recientes: los que más dicen del estado actual). */
+export const MAX_RUN_REFS = 5;
 const MAX_MUSCLES = 8;
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -198,6 +201,23 @@ function sportLine(r) {
   if (r.load4w > 0) bits.push(`carga ${fmtNum(r.load4w, 0)}/semana${r.changePct != null ? ` (${signed(r.changePct, 0, ' %')} frente a las 4 anteriores)` : ''}`);
   if (r.noRpe4w) bits.push(`${r.noRpe4w} sin esfuerzo (RPE) apuntado`);
   return `- Últimas 4 semanas completas: ${bits.join(' · ')}`;
+}
+
+const EFFORT_TXT = { race: 'carrera oficial', training: 'entrenamiento', test: 'test' };
+const SURFACE_TXT = { road: 'asfalto', track: 'pista', trail: 'trail', mixed: 'mixta' };
+
+/** Resultados de carrera apuntados en el contexto (sin nombres ni notas), de lo más reciente a lo más antiguo. */
+function runRefsSection(a) {
+  const r = a.runningRefs;
+  if (!r || !r.items?.length) return [];
+  const lines = r.items.slice(0, MAX_RUN_REFS).map((x) => {
+    const tags = [x.ageText, EFFORT_TXT[x.effort], SURFACE_TXT[x.surface], isNum(x.elevationM) ? `+${fmtNum(x.elevationM, 0)} m` : null].filter(Boolean);
+    const dist = Math.abs(x.km - 21.0975) < 0.001 ? 'Media maratón' : Math.abs(x.km - 42.195) < 0.001 ? 'Maratón' : `${fmtNum(x.km, 2)} km`;
+    return `- ${dist} — ${fmtDuration(x.sec)} — ${x.whenLong} (${tags.join('; ')})${x.interrupted ? ` · después hubo ${x.interrupted}` : ''}`;
+  });
+  if (r.items.length > MAX_RUN_REFS) lines.push(`- (${r.items.length - MAX_RUN_REFS} más antiguas sin listar)`);
+  if (r.duplicates?.length) lines.push(`- ${r.duplicates.length === 1 ? '1 resultado coincide' : `${r.duplicates.length} resultados coinciden`} con una carrera registrada: se cuenta una sola vez`);
+  return section('REFERENCIAS HISTÓRICAS DE RUNNING (resultados que apunté; los tiempos previstos les dan menos peso cuanto más antiguos y si después hubo un parón)', lines);
 }
 
 function sportSections(a) {
@@ -405,6 +425,7 @@ export function reportText(analysis, { includeCycle = false } = {}) {
     'Datos de mi app de entrenamiento (Entreno), que calcula en el móvil tendencias con estadística y reglas basadas en estudios. Las valoraciones de la app están escritas en segunda persona (se refieren a mí).',
     DISCLAIMER,
   ];
+  const sports = sportSections(a); // RUNNING primero, y justo después sus referencias históricas
   const sections = [
     head,
     profileSection(a),
@@ -415,7 +436,9 @@ export function reportText(analysis, { includeCycle = false } = {}) {
     strengthSection(a),
     marksSection(a),
     volumeSection(a),
-    ...sportSections(a),
+    sports[0],
+    runRefsSection(a),
+    ...sports.slice(1),
     loadSection(a),
     recoverySection(a),
     ...wellbeingSections(a),

@@ -21,6 +21,8 @@ export function dataFromStore(today = todayStr()) {
     plan: new Map(store.all('plan').map((p) => [p.id, p])),
     settings: store.settings(),
     bodyweight: store.bodyweightList(),
+    // Tu contexto: resultados de carrera y parones para los tiempos previstos (race-predict)
+    context: store.all('context'),
     today,
     createdAt: store.get('meta', 'app')?.createdAt ?? null,
   };

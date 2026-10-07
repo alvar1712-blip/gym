@@ -114,6 +114,14 @@
       aviso en el formulario de actividad. Mismo tope en la previsión de 5 km del análisis. Detalle en
       `docs/MEJORAS6.md`.
 
+- [x] **Resultados de carrera en «Tu contexto»**: Ajustes › Tu contexto › Añadir hecho › «Resultado de carrera»
+      (distancia rápida o en km, tiempo con el control de duración de siempre, fecha exacta o aproximada, nombre, nota y
+      detalles opcionales plegados). Una sola copia (almacén context, sin esquema nuevo); en la línea temporal
+      («🏁 10 km · 1:00:00»), editar, borrar con deshacer, copia. Tiempos previstos: los recientes cuentan como una
+      carrera más y los anteriores como referencia histórica con menos peso (y la mitad tras un parón); con poco dato
+      reciente, «todavía poco fiable» explicándolo; duplicados con lo importado, una vez; «¿Por qué?» y el informe para
+      tu IA los muestran. Arreglo de paso: «Deshacer» en Tu contexto no se veía hasta salir y volver.
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).

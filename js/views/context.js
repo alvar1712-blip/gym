@@ -6,9 +6,10 @@
 // La lógica (tipos, fechas aproximadas, validación) está en ../context-logic.js.
 import * as store from '../store.js';
 import { navigate, back } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, numInput, confirmDialog, undoToast, emptyState } from '../ui.js';
-import { uid, todayStr } from '../util.js';
+import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState } from '../ui.js';
+import { uid, todayStr, fmtNum, parseNum } from '../util.js';
 import * as C from '../context-logic.js';
+import { paceWarning } from '../activity-logic.js';
 import { approxInput } from '../approx-input.js';
 import { SPORTS } from '../profile.js';
 
@@ -20,7 +21,6 @@ const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 // ===========================================================================
 
 export function mountContext(root) {
-  const today = todayStr();
   const c = screen(root, {
     title: 'Tu contexto',
     subtitle: 'Fases y hechos que explican tus datos',
@@ -28,30 +28,39 @@ export function mountContext(root) {
     actions: [{ icon: 'plus', label: 'Añadir', onClick: () => navigate('#/context/new?kind=phase') }],
   });
   c.classList.add('ctx');
-  const list = C.timeline(store.all('context'));
-  c.appendChild(h('p.ctx-intro', 'Lo que está pasando (o pasó antes de usar la app) para que el análisis no interprete igual un cambio de peso en una vuelta tras un parón que en una fase estable. Solo está en este iPhone.'));
+  render();
+  // Se vuelve a pintar si cambia el almacén (p. ej. «Deshacer» tras borrar devuelve el registro a la lista al momento)
+  let queued = false;
+  return store.on('change', (e) => {
+    if (e.store !== 'context' || queued) return;
+    queued = true;
+    queueMicrotask(() => { queued = false; render(); });
+  });
 
-  const now = C.contextOn(list, today).phases;
-  c.appendChild(h('section.card.ctx-now', { dataset: { block: 'now' } },
-    h('h2.card-title', 'Ahora'),
-    now.length
-      ? h('div.list.ctx-list', now.map((e) => entryRow(e, today)))
-      : h('p.ctx-none', 'Sin ninguna fase marcada ahora (p. ej. «Vuelta tras un parón», «Déficit», «Preparación 10K»).'),
-    h('div.ctx-add',
-      h('button.btn.btn-secondary.ctx-add-phase', { type: 'button', onClick: () => navigate('#/context/new?kind=phase') }, icon('plus', 20), 'Añadir fase'),
-      h('button.btn.btn-secondary.ctx-add-event', { type: 'button', onClick: () => navigate('#/context/new?kind=event') }, icon('plus', 20), 'Añadir hecho'))));
-
-  if (!list.length) {
-    c.appendChild(h('section.card.ctx-empty', emptyState({
-      emoji: '🧭',
-      title: 'Aún no hay nada en tu línea temporal',
-      text: 'Por ejemplo: «Peso habitual: 75 kg», «Verano 2026: entrenamiento irregular», «Agosto 2026: bajé a 72,7 kg», «Septiembre 2026: vuelta al gimnasio», «Empiezo creatina». Vale con fecha aproximada (mes, estación o año).',
-    })));
-    return undefined;
+  function render() {
+    const today = todayStr();
+    const list = C.timeline(store.all('context'));
+    const parts = [h('p.ctx-intro', 'Lo que está pasando (o pasó antes de usar la app) para que el análisis no interprete igual un cambio de peso en una vuelta tras un parón que en una fase estable. Solo está en este iPhone.')];
+    const now = C.contextOn(list, today).phases;
+    parts.push(h('section.card.ctx-now', { dataset: { block: 'now' } },
+      h('h2.card-title', 'Ahora'),
+      now.length
+        ? h('div.list.ctx-list', now.map((e) => entryRow(e, today)))
+        : h('p.ctx-none', 'Sin ninguna fase marcada ahora (p. ej. «Vuelta tras un parón», «Déficit», «Preparación 10K»).'),
+      h('div.ctx-add',
+        h('button.btn.btn-secondary.ctx-add-phase', { type: 'button', onClick: () => navigate('#/context/new?kind=phase') }, icon('plus', 20), 'Añadir fase'),
+        h('button.btn.btn-secondary.ctx-add-event', { type: 'button', onClick: () => navigate('#/context/new?kind=event') }, icon('plus', 20), 'Añadir hecho'))));
+    if (!list.length) {
+      parts.push(h('section.card.ctx-empty', emptyState({
+        emoji: '🧭',
+        title: 'Aún no hay nada en tu línea temporal',
+        text: 'Por ejemplo: «Peso habitual: 75 kg», «Verano 2026: entrenamiento irregular», «Agosto 2026: bajé a 72,7 kg», «Septiembre 2026: vuelta al gimnasio», «Empiezo creatina», «Mayo 2026: 10 km en 1:00:00». Vale con fecha aproximada (mes, estación o año).',
+      })));
+    } else {
+      parts.push(h('h2.section-title', 'Historial'), h('div.list.ctx-list.ctx-timeline', list.map((e) => entryRow(e, today))));
+    }
+    c.replaceChildren(...parts);
   }
-  c.appendChild(h('h2.section-title', 'Historial'));
-  c.appendChild(h('div.list.ctx-list.ctx-timeline', list.map((e) => entryRow(e, today))));
-  return undefined;
 }
 
 function entryRow(e, today) {
@@ -66,8 +75,20 @@ function entryRow(e, today) {
       h('span.ctx-when', cap(C.entryWhen(e))),
       h(live ? 'span.badge.badge-accent.ctx-badge' : 'span.badge.ctx-badge', live ? 'Ahora' : e.kind === 'phase' ? 'Fase' : 'Hecho')),
     h('span.list-item-title.wrap', C.entryLine(e)),
+    C.isRaceResult(e) && resultDetails(e) ? h('span.list-item-sub.wrap.ctx-result-sub', resultDetails(e)) : null,
     e.notes ? h('span.list-item-sub.wrap.ctx-notes', e.notes) : null),
   icon('chevron-right', 20, 'chev'));
+}
+
+/** «6:00/km · Carrera oficial · Trail · +350 m» de un resultado de carrera. */
+function resultDetails(e) {
+  const r = e.result;
+  if (!r) return '';
+  const bits = [C.resultPace(r)];
+  if (r.effort) bits.push(C.RESULT_EFFORTS.find((x) => x.id === r.effort)?.label);
+  if (r.surface) bits.push(C.RESULT_SURFACES.find((x) => x.id === r.surface)?.label);
+  if (r.elevationM != null) bits.push(`+${fmtNum(r.elevationM, 0)} m`);
+  return bits.filter(Boolean).join(' · ');
 }
 
 // ===========================================================================
@@ -92,6 +113,10 @@ export function mountContextEdit(root, params = {}) {
     text: '', notes: '', kg: null, sports: [], goalIds: [],
   };
   if (draft.kind === 'event' && !draft.date) draft.date = { date: today, precision: 'day' };
+  // Resultado de carrera: los números en draft.result (distancia, tiempo y detalles opcionales)
+  draft.result = { km: null, sec: null, effort: null, elevationM: null, surface: null, ...(draft.result || {}) };
+  let distChoice = C.RESULT_DISTANCES.find((x) => Math.abs(x.km - draft.result.km) < 0.001)?.id ?? (draft.result.km != null ? 'custom' : null);
+  let moreOpen = !!(draft.result.effort || draft.result.surface || draft.result.elevationM != null);
 
   const c = screen(root, { title: editing ? 'Editar contexto' : 'Añadir contexto', back: '#/context' });
   c.classList.add('ctx', 'ctx-edit');
@@ -113,7 +138,7 @@ export function mountContextEdit(root, params = {}) {
         }),
         h('p.cfg-why', isPhase
           ? 'Un periodo con inicio y, si ya terminó, fin: «Verano 2026: parón», «Desde septiembre: vuelta al gimnasio».'
-          : 'Algo puntual: «Empiezo creatina», «Peso habitual: 75 kg», «28 ago: 72,7 kg».')));
+          : 'Algo puntual: «Empiezo creatina», «Peso habitual: 75 kg», «28 ago: 72,7 kg», «Mayo 2026: 10 km en 1:00:00».')));
     }
     const types = isPhase ? C.PHASE_TYPES : C.EVENT_TYPES;
     blocks.push(h('section.card.ctx-block', { dataset: { block: 'type' } },
@@ -139,6 +164,7 @@ export function mountContextEdit(root, params = {}) {
         ongoing ? null : approxInput({ label: 'Hasta', value: draft.end, today, key: 'end', onChange: (v) => { draft.end = v; } }),
         errEl('end')));
     } else {
+      if (C.isRaceResult(draft)) blocks.push(resultBlock());
       blocks.push(h('section.card.ctx-block', { dataset: { block: 'dates' } },
         h('h2.card-title', 'Cuándo'),
         approxInput({ label: 'Fecha', value: draft.date, today, key: 'date', onChange: (v) => { draft.date = v; } }),
@@ -154,20 +180,78 @@ export function mountContextEdit(root, params = {}) {
     }
 
     const needsText = draft.type === 'custom' || draft.type === 'other';
+    const race = C.isRaceResult(draft);
     blocks.push(h('section.card.ctx-block', { dataset: { block: 'text' } },
-      h('label.field', h('span.field-label', needsText ? 'Descripción' : 'Descripción (opcional)'),
-        textInput({ value: draft.text, maxlength: 200, placeholder: isPhase ? 'p. ej. Entrenamiento irregular y pérdida de peso' : 'p. ej. 3 g al día', ariaLabel: 'Descripción', onInput: (v) => { draft.text = v; } })),
+      race
+        ? h('label.field', h('span.field-label', 'Nombre de la carrera (opcional)'),
+          textInput({ value: draft.text, maxlength: 200, placeholder: 'p. ej. San Silvestre', ariaLabel: 'Nombre de la carrera', onInput: (v) => { draft.text = v; } }))
+        : h('label.field', h('span.field-label', needsText ? 'Descripción' : 'Descripción (opcional)'),
+          textInput({ value: draft.text, maxlength: 200, placeholder: isPhase ? 'p. ej. Entrenamiento irregular y pérdida de peso' : 'p. ej. 3 g al día', ariaLabel: 'Descripción', onInput: (v) => { draft.text = v; } })),
       errEl('text'),
       isPhase ? h('div.field', h('span.field-label', 'Deportes prioritarios (opcional)'),
         chips({ options: SPORTS.map((s) => ({ value: s.id, label: s.label })), value: draft.sports, multi: true, className: 'ctx-sports', onChange: (v) => { draft.sports = v; } })) : null,
       isPhase ? goalsField() : null,
-      h('label.field', h('span.field-label', 'Observaciones (opcional)'),
-        textInput({ value: draft.notes, multiline: true, rows: 3, maxlength: 2000, ariaLabel: 'Observaciones', onInput: (v) => { draft.notes = v; } }))));
+      h('label.field', h('span.field-label', race ? 'Nota (opcional)' : 'Observaciones (opcional)'),
+        textInput({ value: draft.notes, multiline: true, rows: 3, maxlength: 2000, ariaLabel: race ? 'Nota' : 'Observaciones', onInput: (v) => { draft.notes = v; } }))));
+    if (race) blocks.push(moreBlock());
 
     blocks.push(h('div.ctx-actions',
       h('button.btn.btn-primary.btn-lg.btn-block.ctx-save', { type: 'button', onClick: onSave }, editing ? 'Guardar cambios' : 'Guardar'),
       editing ? h('button.btn.btn-danger-ghost.btn-block.ctx-delete', { type: 'button', onClick: onDelete }, icon('trash', 20), 'Borrar') : null));
     form.replaceChildren(...blocks);
+  }
+
+  /** Distancia (rápida u otra en km), tiempo (el mismo control de duración de toda la app) y el ritmo en vivo. */
+  function resultBlock() {
+    const r = draft.result;
+    const paceHint = h('span.field-hint.ctx-result-pace', { 'aria-live': 'polite' });
+    const updatePace = () => {
+      const warn = paceWarning({ kind: 'run', movingSec: r.sec, distanceKm: r.km });
+      const pace = r.km > 0 && r.sec > 0 ? C.resultPace(r) : null;
+      paceHint.textContent = warn || (pace ? `Ritmo: ${pace}` : '');
+      paceHint.hidden = !paceHint.textContent;
+      paceHint.classList.toggle('warn', !!warn);
+    };
+    const custom = numInput({ value: distChoice === 'custom' ? r.km : null, decimals: 2, suffix: 'km', placeholder: 'p. ej. 7,5', ariaLabel: 'Distancia (km)', onInput: (v) => { r.km = v; updatePace(); } });
+    const customWrap = h('div.ctx-result-custom', { hidden: distChoice !== 'custom' }, custom);
+    const dist = chips({
+      options: [...C.RESULT_DISTANCES.map((x) => ({ value: x.id, label: x.label })), { value: 'custom', label: 'Otra' }],
+      value: distChoice, className: 'ctx-result-dist',
+      onChange: (v) => {
+        distChoice = v;
+        customWrap.hidden = v !== 'custom';
+        r.km = v === 'custom' ? parseNum(custom.input.value) : C.RESULT_DISTANCES.find((x) => x.id === v)?.km ?? null;
+        if (v === 'custom') setTimeout(() => custom.input.focus(), 0);
+        updatePace();
+      },
+    });
+    const time = durationInput({ seconds: r.sec, showHours: true, showSeconds: true, ariaLabel: 'Tiempo', onChange: (sec) => { r.sec = sec; updatePace(); } });
+    updatePace();
+    return h('section.card.ctx-block.ctx-result', { dataset: { block: 'result' } },
+      h('h2.card-title', 'Carrera'),
+      h('div.field', h('span.field-label', 'Distancia'), dist, customWrap),
+      errEl('km'),
+      h('div.field', h('span.field-label', 'Tiempo'), time, paceHint),
+      errEl('sec'),
+      h('p.cfg-why', 'Algo que ya corriste (para una carrera futura, «Eventos deportivos»). Los tiempos previstos lo usan como referencia: tu historial importa, pero tu estado reciente importa más.'));
+  }
+
+  /** Detalles opcionales del resultado, plegados para que apuntar una marca sea rápido. */
+  function moreBlock() {
+    const r = draft.result;
+    const body = h('div.ctx-more-body', { hidden: !moreOpen, id: 'ctx-more-body' },
+      h('div.field', h('span.field-label', 'Tipo'),
+        chips({ options: C.RESULT_EFFORTS.map((x) => ({ value: x.id, label: x.label })), value: r.effort, allowNone: true, className: 'ctx-result-effort', onChange: (v) => { r.effort = v; } })),
+      h('label.field', h('span.field-label', 'Desnivel positivo'),
+        numInput({ value: r.elevationM, decimals: 0, inputmode: 'numeric', suffix: 'm', placeholder: 'p. ej. 120', ariaLabel: 'Desnivel positivo (m)', onInput: (v) => { r.elevationM = v; } })),
+      errEl('elevationM'),
+      h('div.field', h('span.field-label', 'Superficie'),
+        chips({ options: C.RESULT_SURFACES.map((x) => ({ value: x.id, label: x.label })), value: r.surface, allowNone: true, className: 'ctx-result-surface', onChange: (v) => { r.surface = v; } })));
+    const btn = h('button.why-btn.ctx-more-btn', {
+      type: 'button', 'aria-expanded': String(moreOpen), 'aria-controls': 'ctx-more-body',
+      onClick: () => { moreOpen = !moreOpen; body.hidden = !moreOpen; btn.setAttribute('aria-expanded', String(moreOpen)); },
+    }, icon('chevron-down', 16), h('span', 'Más detalles (opcional)'));
+    return h('section.card.ctx-block', { dataset: { block: 'more' } }, btn, body);
   }
 
   function goalsField() {

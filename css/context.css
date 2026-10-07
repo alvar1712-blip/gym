@@ -48,3 +48,15 @@
 .wel-nav { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
 .wel-nav-row { display: flex; justify-content: space-between; }
 .wel-nav-row .btn { min-height: 44px; }
+
+/* ---------- Resultado de carrera (hecho 'race_result') ---------- */
+.ctx-result-custom { margin-top: 8px; max-width: 220px; }
+.ctx-result-custom[hidden] { display: none; }
+.ctx-result-pace { font-variant-numeric: tabular-nums; }
+.ctx-result-pace[hidden] { display: none; }
+.ctx-more-btn .icon { transition: transform 0.18s ease; }
+.ctx-more-btn[aria-expanded="true"] .icon { transform: rotate(180deg); }
+.ctx-more-body { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.ctx-more-body[hidden] { display: none; }
+.ctx-result-sub { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .ctx-more-btn .icon { transition: none; } }

@@ -578,3 +578,75 @@ Comprobado sin cortes, solapes ni letra < 12 px a 375, 390 y 430 px (E2E, Chromi
 - `tests/e2e/predictions.test.cjs`: tarjeta nueva; caso iPhone a 375/390/430 px (sin scroll horizontal, sin cortes,
   sin solapes, letra ≥ 12 px; capturas `test-results/predictions-iphone-*.png`), «Revisar» abre la carrera y el
   formulario avisa; carreras que se contradicen sin cifras.
+
+## Resultados de carrera en «Tu contexto» (y su uso en los tiempos previstos)
+Un usuario apunta, por ejemplo, «10 km · 1:00:00 · mayo 2026» (una carrera de antes de usar Entreno) y Entreno lo
+guarda estructurado, lo enseña en su línea temporal y lo usa como referencia de rendimiento, con menos peso cuanto más
+antiguo y si después hubo un parón. Filosofía: tu historial importa, pero tu estado reciente importa más.
+
+### Dónde vive el dato (revisión de la arquitectura)
+- `pastRecords` es de fuerza (ejercicio, peso × repeticiones); `races` son carreras FUTURAS (objetivo, prioridad); los
+  récords de `stats.js` se calculan de lo registrado. Ninguno encaja sin mezclar conceptos.
+- `context` ya guarda hechos puntuales con fecha aproximada y campos estructurados (el peso habitual guarda `kg`, no
+  texto). Por eso el resultado es un hecho más: `type:'race_result'` con `result: { km, sec, effort, elevationM,
+  surface }`, `text` = nombre opcional y `notes` = nota. Sin almacén ni esquema nuevos, sin migración: la copia de
+  seguridad ya lo lleva. Es la ÚNICA copia: `race-predict` y el informe lo leen de ahí (no hay copia en Running ni en
+  Récords). `validateEntry` no admite una fecha futura («para una carrera que quieres hacer, usa Eventos deportivos»).
+- Un resultado ilegible (copia dañada) se conserva con `result: null`: se ve en la línea temporal y no se calcula.
+- No es un «cambio reciente» del analista (como el peso habitual, es una referencia).
+
+### Cómo entra en los tiempos previstos (`js/race-predict.js`, reglas 1b, 3b, 5b y 5c)
+Sin resultados ni parones apuntados, las predicciones son EXACTAMENTE las de antes (las 535 pruebas anteriores pasan sin
+tocar sus números).
+- **Fecha efectiva**: la mitad de su periodo («mayo 2026» → 16 may; día → ese día), sin pasar de hoy.
+- **Recientes (12 semanas)**: cuentan como una carrera registrada más (≥ 1 km: una marca apuntada es un esfuerzo a tope;
+  también suman al volumen y a la tirada más larga).
+- **Anteriores → referencias históricas**: aparte de la base de 3, como mucho 2 por distancia (las de más peso para
+  ESA distancia). Recencia: la misma curva sin saltos (mismo valor y pendiente a los 84 días),
+  0,5 · e^(−(días − 84)/84): se reduce a la mitad cada ~8 semanas y nunca llega a 0 (≈ 0,23 a los 5 meses, ≈ 0,02 al
+  año). No se descartan: una marca de hace meses sigue informando.
+- **Parones**: lo anterior a un parón pesa la mitad. Parón = fase «Parón o entrenamiento irregular», «Vuelta tras
+  vacaciones o parón», «Enfermedad» o «Lesión» que empieza después, o hecho «Vacaciones», «Enfermedad» o «Lesión»
+  posterior (manda lo apuntado); en una referencia histórica, también 4 semanas o más sin correr después (registradas
+  o resultados de tu contexto). En las carreras recientes registradas NO se detectan huecos: el modelo actual no cambia
+  para quien no apunta nada.
+- **Duplicados**: si una carrera registrada válida (p. ej. importada de un FIT) cae en el periodo del resultado ±1 día
+  con distancia y tiempo a ±5 %, cuenta solo la registrada (ni en la estimación ni en el volumen). No se borra nada;
+  «¿Por qué?» y «Con qué se calcula» lo dicen.
+- **Cuándo se predice**: con ≥ 2 carreras recientes (como antes) o con al menos un resultado de tu contexto (mejor que
+  «Datos insuficientes»). Con menos de 2 carreras recientes la predicción es «todavía poco fiable» (confianza baja),
+  explicada: «Tienes pocos datos recientes. Tu referencia es 10 km en 1:00:00 (may 2026), pero es de hace 5 meses y
+  después hubo «Parón o entrenamiento irregular» (jun 2026 – ago 2026), así que sirve como orientación, no como
+  predicción de hoy.» La cifra, a un toque («Ver estimación orientativa»).
+- **Confianza** (además de las reglas de siempre: número de carreras, distancia, dispersión, volumen y tirada): baja un
+  nivel si más del 30 % de la estimación sale de referencias históricas o si después de la carrera más reciente que se
+  usa hubo un parón.
+- Casos: A (10K hace 3 semanas + running regular) → confianza alta; B (10K hace 5 meses + poco running) → baja,
+  «todavía poco fiable», la marca pesa ≈ 9 %; C (10K antiguo + parón + sin actividad) → baja, peso a la mitad y
+  explicado; con dos carreras recientes, esa marca pesa < 10 %.
+- «Forma en carrera» del análisis (bloques de 4 semanas): sigue siendo solo lo registrado.
+
+### Pantallas
+- **Tu contexto › Añadir hecho › Resultado de carrera**: distancia rápida (1 km, 5 km, 10 km, media, maratón) u «Otra»
+  en km con decimales; tiempo con el mismo `durationInput` de toda la app y el ritmo en vivo («Ritmo: 6:00/km»; si es
+  imposible, el mismo aviso que en una actividad); fecha exacta o aproximada; nombre y nota opcionales; «Más detalles
+  (opcional)» plegado: tipo (carrera oficial / entrenamiento / test), desnivel positivo y superficie.
+- **Línea temporal**: «15 sep 2026 · 🏁 Carrera popular · 7,5 km · 40:00» y debajo «5:20/km · Carrera oficial · Trail ·
+  +85 m»; con fecha aproximada, «May 2026 · 🏁 10 km · 1:00:00».
+- **Tiempos previstos**: sin rehacer la pantalla. Tarjeta normal con una línea «🏁 Incluye tu marca de may 2026 (10 km ·
+  1:00:00), con poco peso (8 %).»; «¿Por qué?» con cada referencia («may 2026 · 10 km en 1:00:00 (6:00/km) · referencia
+  histórica → … · pesa un 8 %»), «Por qué pesa menos» y «No se cuenta dos veces»; «Con qué se calcula» con «Referencias
+  históricas» (cada una abre su ficha de tu contexto). Estado vacío: «🏁 Apuntar un resultado anterior».
+- **Informe para tu IA**: «REFERENCIAS HISTÓRICAS DE RUNNING» justo después de RUNNING, las 5 más recientes (las que más
+  dicen del estado actual) con antigüedad, tipo, superficie, desnivel y el parón posterior; sin nombres ni notas.
+
+### Arreglo encontrado de paso
+- «Tu contexto»: tras borrar, «Deshacer» devolvía el registro a la base de datos pero la lista no lo enseñaba hasta salir
+  y volver (la prueba anterior recargaba la página). Ahora la lista se vuelve a pintar al cambiar el almacén, como la de
+  eventos. Lo cubre `race-results.test.cjs` (espera la fila sin recargar).
+
+### Decisiones (se pueden cambiar)
+- Hecho de contexto (no almacén nuevo ni `pastRecords`): mismo modelo de fechas aproximadas, una sola copia.
+- 2 referencias históricas por distancia; parón × 0,5 (no acumulativo); 4 semanas sin correr como parón detectado.
+- Un resultado de tu contexto basta para predecir (orientativo); una sola carrera registrada, como antes, no.
+- El informe no incluye el nombre de la carrera (como no incluye notas ni nombres de rutinas).

@@ -1088,9 +1088,10 @@ export function findInterference(d, { today, weeks = INTERFERENCE_WEEKS } = {}) 
  */
 function blockPrediction(d, from, to) {
   const ctx = analyzeRuns(d, { today: to });
-  const valid = ctx.valid.filter((e) => e.date >= from);
+  // Solo lo registrado en el bloque: los resultados apuntados en tu contexto no entran en la forma por bloques
+  const valid = ctx.valid.filter((e) => e.source === 'run' && e.date >= from);
   if (valid.length < MIN_VALID) return null;
-  const p = predictDistance({ ...ctx, valid, basis: valid.slice(0, 3) }, 5, raceFor(5));
+  const p = predictDistance({ ...ctx, valid, basis: valid.slice(0, 3), history: [], duplicates: [] }, 5, raceFor(5));
   if (!p.usable) return null;
   return { pred5kSec: p.mid, low: p.low, high: p.high, runs: valid.length, efforts: p.efforts.map((e) => e.label) };
 }
