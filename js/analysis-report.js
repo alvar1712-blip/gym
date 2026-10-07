@@ -2,8 +2,8 @@
 // PURO: convierte el resultado de analysis.buildAnalysis() en texto plano en español para pegar en ChatGPT, Claude u
 // otra IA, o dárselo a un entrenador. Prioriza lo que otra IA necesita para no equivocarse por falta de contexto:
 //   PERFIL · OBJETIVO · CONTEXTO DEL USUARIO · CAMBIOS RECIENTES · PESO · FUERZA · MARCAS HISTÓRICAS · VOLUMEN ·
-//   RUNNING · REFERENCIAS HISTÓRICAS DE RUNNING · BICI · NATACIÓN · SENDERISMO · OTRAS ACTIVIDADES · CARGA ·
-//   RECUPERACIÓN · SUEÑO · ENERGÍA · ESTRÉS ·
+//   RUNNING · RÉCORDS DE RUNNING · REFERENCIAS PARA LA PREDICCIÓN ACTUAL · BICI · NATACIÓN · SENDERISMO ·
+//   OTRAS ACTIVIDADES · CARGA · RECUPERACIÓN · SUEÑO · ENERGÍA · ESTRÉS ·
 //   AGUJETAS/MOLESTIAS · (CICLO MENSTRUAL, solo con permiso) · EVENTOS FUTUROS · TENDENCIAS · INSIGHTS ·
 //   CONFIANZA (DATOS CON BAJA CONFIANZA) · PREGUNTA
 // «CONTEXTO DEL USUARIO», «CAMBIOS RECIENTES» y «DATOS CON BAJA CONFIANZA» salen siempre (decir que no hay nada también
@@ -16,6 +16,7 @@ import { fmtNum, fmtDate, fmtDuration } from './util.js';
 import { SEXES, GOALS, SECONDARY_GOALS, EXPERIENCES, CONTRACEPTION, SPORTS as PROFILE_SPORTS, label, g, isFemale } from './profile.js';
 import { MUSCLE_LABEL } from './seed.js';
 import { LEVEL_LABEL, DISCLAIMER, isPlaceholder } from './analysis.js';
+import { REPORT_HISTORY_MAX } from './race-predict.js';
 
 /** Insights de peso que revelan datos del ciclo (fuera del informe sin permiso). */
 export const CYCLE_WEIGHT_IDS = ['weight-cycle-retention', 'weight-reds-cycle'];
@@ -26,8 +27,9 @@ export const CYCLE_WEIGHT_IDS = ['weight-cycle-retention', 'weight-reds-cycle'];
 export const SHOWN_IN_SECTIONS = (i) => i.id === 'weight-protein' || (i.id === 'load-sport' && i.level === 'info');
 /** Máximo de ejercicios listados en «Fuerza» y de músculos en «Volumen». */
 const MAX_EXERCISES = 10;
-/** Máximo de resultados de carrera listados (los más recientes: los que más dicen del estado actual). */
-export const MAX_RUN_REFS = 5;
+/** Distancias de los récords de running en el informe (las de Progreso › Récords). */
+const RECORD_LABELS = [['1k', '1 km'], ['5k', '5 km'], ['10k', '10 km'], ['half', 'Media maratón'], ['marathon', 'Maratón']];
+const ORIGIN_TXT = { app: 'registrada en Entreno', import: 'actividad importada', context: 'marca histórica' };
 const MAX_MUSCLES = 8;
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -203,21 +205,41 @@ function sportLine(r) {
   return `- Últimas 4 semanas completas: ${bits.join(' · ')}`;
 }
 
-const EFFORT_TXT = { race: 'carrera oficial', training: 'entrenamiento', test: 'test' };
-const SURFACE_TXT = { road: 'asfalto', track: 'pista', trail: 'trail', mixed: 'mixta' };
-
-/** Resultados de carrera apuntados en el contexto (sin nombres ni notas), de lo más reciente a lo más antiguo. */
-function runRefsSection(a) {
-  const r = a.runningRefs;
-  if (!r || !r.items?.length) return [];
-  const lines = r.items.slice(0, MAX_RUN_REFS).map((x) => {
-    const tags = [x.ageText, EFFORT_TXT[x.effort], SURFACE_TXT[x.surface], isNum(x.elevationM) ? `+${fmtNum(x.elevationM, 0)} m` : null].filter(Boolean);
-    const dist = Math.abs(x.km - 21.0975) < 0.001 ? 'Media maratón' : Math.abs(x.km - 42.195) < 0.001 ? 'Maratón' : `${fmtNum(x.km, 2)} km`;
-    return `- ${dist} — ${fmtDuration(x.sec)} — ${x.whenLong} (${tags.join('; ')})${x.interrupted ? ` · después hubo ${x.interrupted}` : ''}`;
+/**
+ * RÉCORD PERSONAL: la mejor marca de siempre en cada distancia (registrada, importada o marca histórica de tu contexto);
+ * su antigüedad no le quita valor. Sin nombres ni notas.
+ */
+function runRecordsSection(a) {
+  const best = a.running?.records?.best;
+  if (!best || !Object.values(best).some(Boolean)) return [];
+  const lines = RECORD_LABELS.map(([id, label]) => {
+    const b = best[id];
+    if (!b) return `- ${label} — sin marca`;
+    return `- ${label} — ${fmtDuration(b.timeSec)} — ${b.when} — ${ORIGIN_TXT[b.source] || ''}${b.estimated ? ` (estimado a ritmo medio desde una carrera de ${fmtNum(b.fromKm, 2)} km)` : ''}`;
   });
-  if (r.items.length > MAX_RUN_REFS) lines.push(`- (${r.items.length - MAX_RUN_REFS} más antiguas sin listar)`);
-  if (r.duplicates?.length) lines.push(`- ${r.duplicates.length === 1 ? '1 resultado coincide' : `${r.duplicates.length} resultados coinciden`} con una carrera registrada: se cuenta una sola vez`);
-  return section('REFERENCIAS HISTÓRICAS DE RUNNING (resultados que apunté; los tiempos previstos les dan menos peso cuanto más antiguos y si después hubo un parón)', lines);
+  return section('RÉCORDS DE RUNNING (mi mejor marca de siempre en cada distancia; su antigüedad no le quita valor)', lines);
+}
+
+/**
+ * PREDICCIÓN ACTUAL: lo que usa la estimación de hoy (carreras recientes y referencias históricas, con su antigüedad y
+ * el parón posterior) y el tiempo previsto. Aquí sí importa cuándo fue y qué hice después.
+ */
+function runPredictionSection(a) {
+  const r = a.running;
+  if (!r || (!r.refs?.length && !r.predictions?.length)) return [];
+  const lines = r.refs.map((x) => {
+    const dist = Math.abs(x.km - 21.0975) < 0.001 ? 'Media maratón' : Math.abs(x.km - 42.195) < 0.001 ? 'Maratón' : `${fmtNum(x.km, 2)} km`;
+    const what = x.source === 'context' ? (x.old ? 'marca histórica, pesa menos por antigua' : 'resultado apuntado') : 'carrera registrada';
+    return `- ${dist} — ${fmtDuration(x.sec)} — ${x.whenLong} (${x.ageText}; ${what})${x.interrupted ? ` · después hubo ${x.interrupted}${x.old ? '' : ' (pesa la mitad)'}` : ''}`;
+  });
+  if (r.historyTotal > REPORT_HISTORY_MAX) lines.push(`- (${r.historyTotal - REPORT_HISTORY_MAX} marcas históricas más antiguas sin listar)`);
+  if (r.duplicates?.length) lines.push(`- ${r.duplicates.length === 1 ? '1 resultado apuntado coincide' : `${r.duplicates.length} resultados apuntados coinciden`} con una carrera registrada: se cuenta una sola vez`);
+  const pred = (r.predictions || []).map((p) => {
+    if (p.mid == null) return `${p.label}: sin previsión útil`;
+    return `${p.label} ≈ ${fmtDuration(p.mid)} (${p.status === 'tentative' ? 'orientativo, ' : ''}confianza ${p.confidence})`;
+  });
+  if (pred.length) lines.push(`- Tiempo previsto hoy: ${pred.join(' · ')}`);
+  return section('REFERENCIAS PARA LA PREDICCIÓN ACTUAL (aquí sí importa cuándo fue y qué he hecho después: lo reciente pesa más y lo anterior a un parón, menos)', lines);
 }
 
 function sportSections(a) {
@@ -437,7 +459,8 @@ export function reportText(analysis, { includeCycle = false } = {}) {
     marksSection(a),
     volumeSection(a),
     sports[0],
-    runRefsSection(a),
+    runRecordsSection(a),
+    runPredictionSection(a),
     ...sports.slice(1),
     loadSection(a),
     recoverySection(a),

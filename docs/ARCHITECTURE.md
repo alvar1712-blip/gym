@@ -415,7 +415,17 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   Lee `data.context` (`progress-ui.dataFromStore` lo incluye): resultados de carrera (los de 12 semanas como una carrera
   más; los anteriores, referencias históricas con recencia 0,5·e^(−(días−84)/84), como mucho 2 por distancia), parones
   (`breakAfter`: fase o hecho de tu contexto posterior, o 4 semanas sin correr tras una referencia histórica → peso × 0,5)
-  y duplicados con carreras registradas (±5 %, cuenta la registrada). `canPredict(ctx)`, `runningReferences(data)` (informe).
+  y duplicados con carreras registradas (±5 %, cuenta la registrada). `canPredict(ctx)`, `runningSummary(data)` (informe:
+  lo que usa la predicción actual y el tiempo previsto).
+- **Récords de running** (`stats.js`, vista derivada, sin copias): `enduranceRecords(data).run.best` por
+  `RECORD_DISTANCES` (1 km, 5 km, 10 km, media, maratón; 1 km solo en Récords) con lo registrado o importado y tus marcas
+  históricas (`historicalRunMarks(data)`: resultados de carrera de `data.context` con ritmo creíble y sin carrera
+  registrada equivalente, `context-logic.matchesRun`, la ÚNICA regla de duplicados). Cada récord: `source`
+  ('app'|'import'|'context'), `origin` (`RECORD_ORIGIN`), `when` (fecha con la precisión apuntada: nunca se inventa un
+  día), `sessionId` o `entryId`, `alsoContext`. Misma regla de distancia de siempre (≥ X, a ritmo medio, «estimado» si
+  > X × 1,02); orden cronológico, una marca aproximada desde el principio de su periodo; la antigüedad NO le quita valor
+  (eso solo en los tiempos previstos). `summary-logic` usa las marcas como marcas anteriores en «Récords del periodo».
+  `#/records` escucha el store (sessions, context, exercises, bodyweight, meta) y se recalcula.
 - **Resúmenes** (`summary-logic.js`, puro): `periodSummary(data, { unit:'week'|'month'|'year', start, today? })`,
   `summaryHref`, `kindInfo`, `fmtValue`, `fmtKm`; bloque «Resumen de la semana» arriba de `#/weekly`.
 - **Mapa corporal** (`bodymap.js`): `bodyMap({ muscles, onSelect?, selected?, label?, compact?, inProgress? })` →
@@ -423,7 +433,8 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   filas `stats.muscleTable` / ítems de `insights`). `inProgress`: lo que aún no llega al mínimo sale en gris
   («Faltan series»). Integrado en la tarjeta «Esta semana por músculo» de Progreso y en el mensaje `muscles` del panel.
 - **Accesos**: Hoy («Importar desde un archivo»), actividad nueva suelta («Importar desde archivo»), Copias y datos
-  («Importar actividades»), Progreso (Resúmenes, Predicciones), Récords › Resistencia › Carrera («Tiempos previstos»),
+  («Importar actividades»), Progreso (Resúmenes, Predicciones), Récords › Resistencia › Carrera («Tiempos previstos»,
+  «Apuntar una marca»),
   panel semanal («Ver mes» / «Ver año»).
 - **Transiciones y cristal** (`router.js`, `ui.js`, `css/app.css`): `navigate(hash, { transition:'push'|'pop'|'tab'|'none' })`
   (por defecto `push`; `replace`/`refresh` sin animación; `back()` = `pop`; pestañas = `tab`, o `pop` si se pulsa la

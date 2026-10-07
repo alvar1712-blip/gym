@@ -5,12 +5,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../../js/context-logic.js';
 import {
-  predictRaces, checkTarget, analyzeRuns, predictDistance, recencyWeight, breakAfter, runningReferences, rangeText,
-  paceRangeText, RACES, WINDOW_DAYS, HISTORY_TOP, BREAK_FACTOR, MIN_KM, STATUSES,
+  predictRaces, checkTarget, analyzeRuns, predictDistance, recencyWeight, breakAfter, runningSummary, rangeText,
+  paceRangeText, RACES, WINDOW_DAYS, HISTORY_TOP, BREAK_FACTOR, MIN_KM, STATUSES, REPORT_HISTORY_MAX,
 } from '../../js/race-predict.js';
 import { racePrediction } from '../../js/races-progress.js';
 import { buildAnalysis } from '../../js/analysis.js';
-import { reportText, MAX_RUN_REFS } from '../../js/analysis-report.js';
+import { reportText } from '../../js/analysis-report.js';
 import { RACE_DISTANCES } from '../../js/stats.js';
 import { addDays, tsFromDate, fmtRaceTime } from '../../js/util.js';
 import { SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
@@ -310,30 +310,46 @@ test('propiedad: mezclas aleatorias de carreras, resultados del contexto y paron
 // Informe para tu IA
 // ---------------------------------------------------------------------------
 
-test('informe: «REFERENCIAS HISTÓRICAS DE RUNNING» con las más recientes primero, como mucho 5, sin nombres ni notas', () => {
+test('informe: «RÉCORDS DE RUNNING» (la mejor de siempre) separado de «REFERENCIAS PARA LA PREDICCIÓN ACTUAL»; sin nombres ni notas', () => {
   const EX = new Map(SEED_EXERCISES.map((e) => [e.id, e]));
   const context = [
     result('2026-05-01', 'month', 10, 3600, { text: 'Carrera de mi barrio', notes: 'nota privada', result: { km: 10, sec: 3600, effort: 'race', surface: 'road' } }),
     result('2026-03-15', 'day', 21.0975, 8400), result('2025-11-01', 'month', 5, 1500), result('2025-06-01', 'season', 10, 3500),
     result('2025-01-01', 'year', 42.195, 15000), result('2024-01-01', 'year', 5, 1400), phase('break', '2026-06-01', '2026-08-01'),
   ];
-  const d = { sessions: [run(ago(5), 5, 1630)], context, exercises: EX, templates: new Map(), plan: new Map(), settings: defaultSettings(), bodyweight: [], checkins: [], today: T };
+  const d = { sessions: [run(ago(5), 5, 1630), run(ago(9), 6, 2050)], context, exercises: EX, templates: new Map(), plan: new Map(), settings: defaultSettings(), bodyweight: [], checkins: [], today: T };
   const a = buildAnalysis(d, T);
-  assert.equal(a.runningRefs.total, 6);
   const txt = reportText(a);
-  const sec = txt.split('\n\n').find((b) => b.startsWith('REFERENCIAS HISTÓRICAS DE RUNNING'));
-  assert.ok(sec, txt);
-  const lines = sec.split('\n').slice(1);
-  assert.equal(lines.length, MAX_RUN_REFS + 1);
-  assert.match(lines[0], /^- 10 km — 1:00:00 — mayo 2026 \(hace 5 meses; carrera oficial; asfalto\) · después hubo «Parón o entrenamiento irregular» \(jun 2026 – ago 2026\)$/);
-  assert.match(lines[1], /^- Media maratón — 2:20:00 — 15 mar 2026 \(hace 7 meses\) · después hubo «Parón o entrenamiento irregular»/);
-  assert.equal(lines[5], '- (1 más antiguas sin listar)');
+  const blocks = txt.split('\n\n');
+  const rec = blocks.find((b) => b.startsWith('RÉCORDS DE RUNNING'));
+  const pred = blocks.find((b) => b.startsWith('REFERENCIAS PARA LA PREDICCIÓN ACTUAL'));
+  assert.ok(rec && pred, txt);
+  // Récords: la mejor de siempre, también una de 2024 (la antigüedad no le quita valor), con la precisión apuntada
+  assert.deepEqual(rec.split('\n').slice(1), [
+    '- 1 km — 4:40 — 2024 — marca histórica (estimado a ritmo medio desde una carrera de 5 km)',
+    '- 5 km — 23:20 — 2024 — marca histórica',
+    '- 10 km — 58:20 — verano 2025 — marca histórica',
+    '- Media maratón — 2:05:00 — 2025 — marca histórica (estimado a ritmo medio desde una carrera de 42,2 km)',
+    '- Maratón — 4:10:00 — 2025 — marca histórica',
+  ]);
+  // Predicción actual: lo reciente y las referencias históricas más recientes, con su antigüedad y el parón
+  const lines = pred.split('\n').slice(1);
+  assert.match(lines[0], /^- 5 km — 27:10 — \d+ \w+ 2026 \(hace 5 días; carrera registrada\)$/);
+  assert.match(lines[2], /^- 10 km — 1:00:00 — mayo 2026 \(hace 5 meses; marca histórica, pesa menos por antigua\) · después hubo «Parón o entrenamiento irregular» \(jun 2026 – ago 2026\)$/);
+  assert.equal(lines.filter((l) => /marca histórica, pesa menos/.test(l)).length, REPORT_HISTORY_MAX);
+  assert.ok(lines.includes('- (3 marcas históricas más antiguas sin listar)'));
+  assert.match(lines.at(-1), /^- Tiempo previsto hoy: 5 km ≈ \d+:\d\d \(confianza \w+\) · 10 km ≈ /);
   assert.ok(!/Carrera de mi barrio|nota privada/.test(txt), 'sin nombres ni notas');
-  // Justo después de RUNNING
-  const blocks = txt.split('\n\n').map((b) => b.split('\n')[0]);
-  assert.equal(blocks.indexOf(sec.split('\n')[0]) - 1, blocks.findIndex((b) => b.startsWith('RUNNING')));
-  // Sin resultados apuntados: no sale
-  assert.ok(!reportText(buildAnalysis({ ...d, context: [] }, T)).includes('REFERENCIAS HISTÓRICAS DE RUNNING'));
+  // Orden: RUNNING (si hay) → RÉCORDS → PREDICCIÓN ACTUAL
+  const heads = blocks.map((b) => b.split('\n')[0]);
+  assert.equal(heads.indexOf(pred.split('\n')[0]), heads.indexOf(rec.split('\n')[0]) + 1);
+  // Sin marcas ni carreras: ninguna de las dos
+  const none = reportText(buildAnalysis({ ...d, sessions: [], context: [] }, T));
+  assert.ok(!none.includes('RÉCORDS DE RUNNING') && !none.includes('REFERENCIAS PARA LA PREDICCIÓN ACTUAL'));
+  // runningSummary: lo mismo que usa el informe
+  const sum = runningSummary(d, { today: T });
+  assert.equal(sum.historyTotal, 6);
+  assert.equal(sum.refs.filter((x) => x.old).length, REPORT_HISTORY_MAX);
 });
 
 test('análisis: la «forma en carrera» por bloques sigue siendo solo lo registrado', async () => {

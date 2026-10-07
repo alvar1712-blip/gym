@@ -4,6 +4,7 @@
 // Los números salen de js/stats.js (puro) con un `data` construido UNA vez por pantalla; las gráficas, de
 // js/charts.js. Cambiar el periodo o un chip solo filtra lo ya calculado y actualiza las gráficas afectadas;
 // al salir de la pantalla se destruyen todas (listeners y observers).
+import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, chips, segmented, emptyState } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, weekStart, relDay, plural } from '../util.js';
@@ -939,23 +940,30 @@ export function mountExerciseProgress(root, params = {}) {
 // #/records
 // ===========================================================================
 
-function recRow({ label, value, sub, sessionId = null, href = null, badge = null, key = '', muted = false }) {
+function recRow({ label, value, sub, sessionId = null, entryId = null, source = null, href = null, badge = null, key = '', muted = false, origin = null, extra = null }) {
   const inner = [
     h('span.prg-rec-main',
       h('span.prg-rec-label', label, badge ? h('span.badge.badge-info.prg-badge-inline', badge) : null),
-      sub ? h('span.prg-rec-sub', sub) : null),
+      sub || origin ? h('span.prg-rec-sub', sub, origin ? h('span.prg-rec-origin', `${sub ? ' · ' : ''}${origin}`) : null, extra ? ` · ${extra}` : null) : null),
     h(`span.prg-rec-value${muted ? '.prg-rec-na' : ''}`, value),
   ];
-  if (!sessionId) return h('div.prg-rec-row.prg-rec-static', { dataset: { rec: key } }, ...inner);
-  return h('button.prg-rec-row', { type: 'button', dataset: { rec: key, session: sessionId }, onClick: () => navigate(href || `#/session/${sessionId}`) },
+  const dataset = { rec: key };
+  if (sessionId) dataset.session = sessionId;
+  if (entryId) dataset.entry = entryId;
+  if (source) dataset.source = source;
+  if (!sessionId && !href) return h('div.prg-rec-row.prg-rec-static', { dataset }, ...inner);
+  return h('button.prg-rec-row', { type: 'button', dataset, onClick: () => navigate(href || `#/session/${sessionId}`) },
     ...inner, icon('chevron-right', 18, 'chev'));
 }
+
+/** Tiendas de las que salen los récords: al cambiar cualquiera, la pantalla se vuelve a calcular. */
+const RECORD_STORES = new Set(['sessions', 'context', 'exercises', 'bodyweight', 'meta']);
 
 export function mountRecords(root) {
   const c = screen(root, { title: 'Récords', back: '#/progress' });
   c.classList.add('prg', 'prg-records');
-  const data = dataFromStore();
-  const today = data.today;
+  let data = dataFromStore();
+  let today = data.today;
   if (ui.recSeg !== 'strength' && ui.recSeg !== 'endurance') ui.recSeg = 'strength';
   const body = h('div.prg-rec-body');
   const seg = segmented({
@@ -973,7 +981,20 @@ export function mountRecords(root) {
     else body.replaceChildren(enduranceEl || (enduranceEl = enduranceRecordsView(data, today)));
   }
   paint();
-  return undefined;
+  // Vista derivada: si cambian tus carreras, tus marcas históricas o tus series (editar, borrar, deshacer…), se recalcula
+  let queued = false;
+  return store.on('change', (e) => {
+    if (!RECORD_STORES.has(e.store) || queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      data = dataFromStore();
+      today = data.today;
+      strengthEl = null;
+      enduranceEl = null;
+      paint();
+    });
+  });
 }
 
 function strengthRecordsView(data, today) {
@@ -1068,6 +1089,9 @@ function strengthRecordsView(data, today) {
     listEl);
 }
 
+/** Ficha de un récord: la actividad registrada o la marca de «Tu contexto». */
+const recHref = (r) => (r.source === 'context' ? `#/context/${encodeURIComponent(r.entryId)}` : `#/activity/${r.sessionId}`);
+
 function enduranceRecordsView(data, today) {
   const e = S.enduranceRecords(data);
   const dateTxt = (r) => fmtDate(r.date, 'full');
@@ -1085,6 +1109,12 @@ function enduranceRecordsView(data, today) {
     parts.push(dateTxt(r));
     return recRow({ key: 'longest', label: 'Mayor distancia', value: r.label, sub: parts.join(' · '), sessionId: r.sessionId, href: `#/activity/${r.sessionId}` });
   };
+  // Carrera: la mayor distancia también puede ser una marca histórica (con su fecha tal como se apuntó)
+  const runLongestRow = (r) => {
+    if (!r || r.source !== 'context') return longestRow('run', r, 'Registra tu primera carrera con distancia.');
+    const sub = [r.name || null, fmtDuration(r.movingSec), fmtPace(r.movingSec / r.distanceKm), r.when].filter(Boolean).join(' · ');
+    return recRow({ key: 'longest', label: 'Mayor distancia', value: r.label, sub, origin: S.RECORD_ORIGIN.context, entryId: r.entryId, source: 'context', href: recHref(r) });
+  };
   // Senderismo: mayor desnivel positivo en una ruta (con o sin distancia).
   const gainRow = (g) => (g
     ? recRow({
@@ -1097,23 +1127,33 @@ function enduranceRecordsView(data, today) {
     h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, `${emoji} `), title),
     h('span.prg-rec-meta', count ? plural(count, one, many) : 'sin registros'));
 
-  const runRows = [longestRow('run', e.run.longest, 'Registra tu primera carrera con distancia.')];
-  for (const r of S.RACE_DISTANCES) {
+  const runRows = [runLongestRow(e.run.longest)];
+  for (const r of S.RECORD_DISTANCES) {
     const b = e.run.best[r.id];
     if (!b) {
-      runRows.push(recRow({ key: r.id, label: r.label, value: 'sin datos', sub: `Aún no hay carreras de ${fmtNum(r.km, 1)} km o más`, muted: true }));
+      runRows.push(recRow({ key: r.id, label: r.label, value: '—', sub: 'Sin marca todavía', muted: true }));
       continue;
     }
-    const how = b.estimated
-      ? `estimado a ritmo medio desde una carrera de ${km(b.fromKm)} km`
-      : `en una carrera de ${km(b.fromKm)} km`;
-    runRows.push(recRow({ key: r.id, label: r.label, value: b.timeLabel, sub: `${b.paceLabel} · ${how} · ${dateTxt(b)}`, sessionId: b.sessionId, href: `#/activity/${b.sessionId}`, badge: b.estimated ? 'estimado' : null }));
+    // Distancia → tiempo → fecha (con la precisión apuntada) · origen; si se estimó desde una carrera más larga
+    // (distintivo «estimado»), de cuál
+    runRows.push(recRow({
+      key: r.id, label: r.label, value: b.timeLabel, sub: [b.name || null, b.when].filter(Boolean).join(' · '), origin: b.origin,
+      extra: b.estimated ? `de una carrera de ${km(b.fromKm)} km` : null,
+      sessionId: b.sessionId, entryId: b.entryId, source: b.source, href: recHref(b), badge: b.estimated ? 'estimado' : null,
+    }));
   }
+  const runMeta = [e.run.count ? plural(e.run.count, 'carrera', 'carreras') : null, e.run.historyCount ? plural(e.run.historyCount, 'marca histórica', 'marcas históricas') : null].filter(Boolean).join(' · ');
   return h('div.prg-rec-endurance',
     h('section.card.prg-rec', { dataset: { sport: 'run' } },
-      head('🏃', 'Carrera', e.run.count, 'carrera', 'carreras'),
+      h('div.prg-rec-khead',
+        h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, '🏃 '), 'Carrera'),
+        h('span.prg-rec-meta', runMeta || 'sin registros')),
       h('div.prg-rec-rows', runRows),
-      h('p.prg-hist-note', 'Los tiempos salen de carreras de esa distancia o más largas. Si la carrera fue más larga, el tiempo se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),
+      h('p.prg-hist-note', 'Tu mejor marca de siempre en cada distancia, de tus carreras (registradas o importadas) y de tus marcas históricas de «Tu contexto»; un récord no caduca (la antigüedad solo cuenta en los tiempos previstos). Si la carrera fue más larga, el tiempo se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),
+      h('button.list-item.prg-link-row', { type: 'button', dataset: { link: 'add-result' }, onClick: () => navigate('#/context/new?kind=event&type=race_result') },
+        h('span.prg-link-emoji', { 'aria-hidden': 'true' }, '🏁'),
+        h('span.list-item-main', h('span.list-item-title', 'Apuntar una marca'), h('span.list-item-sub.wrap', 'Una carrera de antes de usar Entreno')),
+        icon('chevron-right', 20, 'chev')),
       h('button.list-item.prg-link-row', { type: 'button', dataset: { link: 'predictions' }, onClick: () => navigate('#/predictions') },
         icon('clock', 22),
         h('span.list-item-main', h('span.list-item-title', 'Tiempos previstos'), h('span.list-item-sub', '5 km, 10 km, media y maratón · ¿Puedo hacerlo?')),

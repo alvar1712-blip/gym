@@ -69,7 +69,7 @@ import {
 import { riegel, pace, RUN_PACE_MIN, RUN_PACE_MAX } from './calc.js';
 import { runPaceSeries, enduranceRecords, RACE_DISTANCES } from './stats.js';
 import { RIEGEL_K, MIN_KM as GOAL_MIN_KM, fmtTimeWords } from './goals-logic.js';
-import { raceResults, normalizeAll, entryRange, entryTitle, entryWhen, approxLabel } from './context-logic.js';
+import { raceResults, normalizeAll, entryRange, entryTitle, entryWhen, approxLabel, matchesRun, RESULT_DUP_TOL } from './context-logic.js';
 
 // ===========================================================================
 // Constantes
@@ -146,8 +146,8 @@ export const BREAK_PHASES = ['break', 'return', 'illness', 'injury'];
 export const BREAK_EVENTS = ['holidays', 'illness', 'injury'];
 /** Si las referencias históricas pesan más de esto en una estimación, la confianza baja un nivel. */
 export const OLD_SHARE_WARN = 0.3;
-/** Misma carrera (registrada y apuntada en tu contexto): distancia y tiempo a ±5 %. */
-export const DUP_TOL = 0.05;
+/** Misma carrera (registrada y apuntada en tu contexto): distancia y tiempo a ±5 % (context-logic.matchesRun). */
+export const DUP_TOL = RESULT_DUP_TOL;
 
 /** Las 4 distancias: { id, km, label, short (chip), phrase («en la media maratón»), noun, profile }. */
 export const RACES = RACE_DISTANCES.map((r) => ({
@@ -280,22 +280,40 @@ function runDates(d, today) {
   return [...set].sort();
 }
 
+/** Huecos de RUN_GAP_DAYS o más entre fechas de carrera consecutivas (y de la última a hoy), memorizados por lista. */
+const GAPS = new WeakMap();
+function bigGaps(dates, today) {
+  const m = GAPS.get(dates);
+  if (m && m.today === today) return m.list;
+  const list = [];
+  for (let i = 0; i < dates.length; i++) {
+    const next = i + 1 < dates.length ? dates[i + 1] : today;
+    const days = diffDays(dates[i], next);
+    if (days >= RUN_GAP_DAYS) list.push({ after: dates[i], next, days });
+  }
+  GAPS.set(dates, { today, list });
+  return list;
+}
+const gapInfo = (after, next, days, today) => ({ kind: 'gap', from: addDays(after, 1), label: `${Math.floor(days / 7)} semanas sin correr${next === today ? ' (hasta hoy)' : ''}` });
+
 /**
  * Primer parón después de `date` (regla 3b): uno de tu contexto que empieza después (manda: es lo que tú apuntaste) o,
- * si no hay y con `gaps`, RUN_GAP_DAYS o más sin correr entre `date` y hoy. → { kind:'context'|'gap', from, label } | null
+ * si no hay y con `gaps`, RUN_GAP_DAYS o más sin correr entre `date` y hoy (`dates` = fechas de carrera ordenadas).
+ * → { kind:'context'|'gap', from, label } | null
  */
 export function breakAfter(date, { breaks = [], dates = [], today, gaps = false } = {}) {
   const best = breaks.find((b) => b.from > date) || null;
-  if (best) return best;
-  if (gaps) {
-    let prev = date;
-    for (const x of [...dates.filter((x) => x > date), today]) {
-      const gap = diffDays(prev, x);
-      if (gap >= RUN_GAP_DAYS) return { kind: 'gap', from: addDays(prev, 1), label: `${Math.floor(gap / 7)} semanas sin correr${x === today ? ' (hasta hoy)' : ''}` };
-      prev = x;
-    }
-  }
-  return null;
+  if (best || !gaps) return best;
+  // Primera carrera después de `date` (búsqueda binaria) y, desde ella, el primer hueco largo precalculado
+  let lo = 0;
+  let hi = dates.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (dates[m] <= date) lo = m + 1; else hi = m; }
+  const first = lo < dates.length ? dates[lo] : today;
+  const d0 = diffDays(date, first);
+  if (d0 >= RUN_GAP_DAYS) return gapInfo(date, first, d0, today);
+  if (lo >= dates.length) return null;
+  const g = bigGaps(dates, today).find((x) => x.after >= first);
+  return g ? gapInfo(g.after, g.next, g.days, today) : null;
 }
 
 /** ¿Hay datos para predecir? ≥ 2 carreras recientes válidas o al menos un resultado de tu contexto utilizable. */
@@ -360,16 +378,13 @@ export function analyzeRuns(data, opts = {}) {
   }
 
   // Resultados de carrera de tu contexto (regla 1b)
-  const near = (x, y) => Math.abs(x - y) <= DUP_TOL * y + EPS;
   for (const r of results) {
     const p = pace(r.sec, r.km);
     if (!plausibleRunPace(p)) {
       suspect.push({ source: 'context', sessionId: null, entryId: r.id, date: r.date, km: r.km, sec: r.sec, pace: p, why: p < MIN_PACE ? 'fast' : 'slow', label: `${kmTxt(r.km)} en ${timeTxt(r.sec)}` });
       continue;
     }
-    const { from: pFrom, to: pTo } = entryRange(r.entry);
-    const lo = addDays(pFrom, -1); const hi = addDays(pTo, 1);
-    const same = valid.find((e) => e.source === 'run' && e.date >= lo && e.date <= hi && near(e.km, r.km) && near(e.sec, r.sec));
+    const same = valid.find((e) => e.source === 'run' && matchesRun(r, e));
     if (same) {
       duplicates.push({ entryId: r.id, sessionId: same.sessionId, label: `${kmTxt(r.km)} en ${timeTxt(r.sec)}`, when: r.precision === 'day' ? dayTxt(r.date) : r.when, runWhen: same.when });
       continue;
@@ -487,7 +502,7 @@ export function predictDistance(ctx, km, race = raceFor(km)) {
   const status = !finite ? 'invalid' : !coherent ? 'incoherent' : tentative ? 'tentative' : 'ok';
 
   const rec = race ? ctx.records?.best?.[race.id] ?? null : null;
-  const record = rec ? { timeSec: rec.timeSec, date: rec.date, estimated: !!rec.estimated, fromKm: rec.fromKm, sessionId: rec.sessionId } : null;
+  const record = rec ? { timeSec: rec.timeSec, date: rec.date, when: rec.when, origin: rec.origin, source: rec.source, estimated: !!rec.estimated, fromKm: rec.fromKm, sessionId: rec.sessionId, entryId: rec.entryId } : null;
   const p = {
     id: race ? race.id : 'custom', km: D, label: race ? race.label : kmTxt(D), phrase: race ? race.phrase : `en ${kmTxt(D)}`,
     noun, profile, k, adjusted: !!volume && volume.short > EPS, volume, efforts, midExact,
@@ -651,8 +666,9 @@ function predictionWhy(ctx, p) {
   if (p.record) {
     const r = p.record;
     data.push({
-      label: `Tu mejor marca en ${p.noun.replace(/^(los|la|el) /, '')}`,
-      value: `${timeTxt(r.timeSec)} · ${fmtDate(r.date, 'full')}${r.estimated ? ` (a ritmo medio de una carrera de ${kmTxt(r.fromKm)})` : ''}`,
+      // Récord personal (la mejor de siempre, su antigüedad no le quita valor) ≠ estimación de hoy
+      label: `Tu récord en ${p.noun.replace(/^(los|la|el) /, '')} (la mejor de siempre)`,
+      value: `${timeTxt(r.timeSec)} · ${r.when || fmtDate(r.date, 'full')}${r.origin ? ` · ${r.origin.toLowerCase()}` : ''}${r.estimated ? ` (a ritmo medio de una carrera de ${kmTxt(r.fromKm)})` : ''}`,
     });
   }
   return { rule: parts.join(' '), data };
@@ -697,20 +713,34 @@ function insufficient(ctx) {
   };
 }
 
+/** Referencias históricas que se listan en el informe, como mucho. */
+export const REPORT_HISTORY_MAX = 3;
+
 /**
- * Resultados de carrera de tu contexto que usan las predicciones (para el informe para tu IA), de lo más reciente a lo
- * más antiguo: { items:[{ entryId, km, sec, when, whenLong, age, ageText, old, interrupted, effort, surface,
- * elevationM }], duplicates, total }.
+ * Lo que usa la predicción ACTUAL (para el informe para tu IA; aquí la recencia sí importa, a diferencia de los
+ * récords): las carreras recientes de la base y las referencias históricas más recientes (como mucho
+ * REPORT_HISTORY_MAX), de lo más reciente a lo más antiguo, y el tiempo previsto hoy en cada distancia.
+ * @returns {{ refs:[{ source:'run'|'context', sessionId, entryId, km, sec, when, whenLong, age, ageText, old,
+ *   interrupted, effort, surface, elevationM }], predictions:[{ id, label, mid, status, confidence }], duplicates,
+ *   historyTotal }}
  */
-export function runningReferences(data, opts = {}) {
+export function runningSummary(data, opts = {}) {
   const ctx = analyzeRuns(data, opts);
-  const items = [...ctx.valid.filter((e) => e.source === 'context'), ...ctx.history]
+  const refs = [...ctx.basis, ...ctx.history.slice(0, REPORT_HISTORY_MAX)]
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .map((e) => ({
-      entryId: e.entryId, km: e.km, sec: e.sec, when: e.when, whenLong: e.whenLong, age: e.age, ageText: ageTxt(e.age), old: e.old,
-      interrupted: e.interrupted ? e.interrupted.label : null, effort: e.effort, surface: e.surface, elevationM: e.elevationM,
+      source: e.source, sessionId: e.sessionId, entryId: e.entryId, km: e.km, sec: e.sec, when: e.when,
+      whenLong: e.whenLong || fmtDate(e.date, 'full'), age: e.age, ageText: ageTxt(e.age), old: e.old,
+      interrupted: e.interrupted ? e.interrupted.label : null, effort: e.effort ?? null, surface: e.surface ?? null,
+      elevationM: e.elevationM ?? null,
     }));
-  return { items, duplicates: ctx.duplicates, total: items.length };
+  const predictions = canPredict(ctx)
+    ? RACES.map((r) => {
+      const p = predictDistance(ctx, r.km, r);
+      return { id: r.id, label: r.label, mid: p.usable ? p.mid : null, status: p.status, confidence: p.confidence };
+    })
+    : [];
+  return { refs, predictions, duplicates: ctx.duplicates, historyTotal: ctx.history.length };
 }
 
 /**

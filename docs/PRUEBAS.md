@@ -32,6 +32,7 @@
 | G | `analysis-cache.test.mjs` (invalidación por fecha, versión, epoch y cada almacén) | `analysis-cache.test.cjs` (cada escritura real del store = calcular desde cero; Chromium y WebKit) |
 | H | — | toda la batería en WebKit (`npm run e2e:webkit`); `transitions.test.cjs` (hoja que se cierra mientras se abre) |
 | Resultados de carrera en Tu contexto | `race-results.test.mjs` (dato estructurado, validación, fecha aproximada, recencia, casos A/B/C, parones, varias marcas, combinación, duplicados, propiedad con 200 mezclas, informe, forma por bloques) | `race-results.test.cjs` (crear 10 km · 1:00:00 · mayo 2026, fecha exacta y distancia propia, validación, editar, borrar/deshacer, predicciones y «¿Por qué?», duplicado importado, informe, copia; Chromium y WebKit a 375 px) |
+| Marcas históricas en Récords | `race-records.test.mjs` (5K y 10K como récord, histórico mejor que lo posterior, una carrera mejor lo supera, editar/borrar/deshacer, fechas exactas y aproximadas, importada vs histórica, empates, récord antiguo vigente frente a su poco peso en la predicción, distancia propia, resúmenes, fuerza intacta); `race-results.test.mjs` (informe: récords vs predicción actual) | `race-records.test.cjs` (crear desde Ajustes, récord con fecha y origen, superado al momento, borrar/deshacer, editar, importada, informe, copia; Chromium y WebKit a 375 px); `progress.test.cjs` (filas nuevas) |
 | Corrección tiempos previstos | `time-format.test.mjs`, `race-predict-iphone.test.mjs` (falla con el código anterior), `race-predict.test.mjs` (regresión, propiedad con 300 conjuntos aleatorios, estados), `analysis-training.test.mjs` (previsión con bloques que se contradicen), `activity.test.mjs` (aviso de ritmo) | `predictions.test.cjs` (caso iPhone a 375/390/430 px sin cortes ni solapes; carreras que se contradicen; Chromium y WebKit) |
 
 Esperas: nunca pausas fijas. Tras navegar, `go()` / `settle()` (espera a `router.settled()` y a dos fotogramas); para
@@ -127,5 +128,6 @@ Antes: Ajustes › Copias y datos › «Exportar copia» (guárdala en Archivos)
 9. **Resultado de carrera (1 min).** Ajustes › Tu contexto › Añadir hecho › «Resultado de carrera» › 10 km, tiempo
    (la primera casilla son las horas: 1 · 00 · 00), Cuándo › Mes › mayo › Guardar. La línea temporal muestra
    «🏁 10 km · 1:00:00». Progreso › Tiempos previstos: la usa como referencia (en «¿Por qué?», «referencia histórica»).
+   Progreso › Récords › Resistencia: «10 km · 1:00:00 · may 2026 · Marca histórica» (si no tienes uno más rápido).
 10. **Copia (1 min).** Exporta una copia nueva y comprueba que se guarda en Archivos. Si algo fue mal en los pasos
    anteriores, importa la copia del principio (Ajustes › Copias y datos › Importar).

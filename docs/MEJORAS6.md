@@ -650,3 +650,51 @@ tocar sus números).
 - 2 referencias históricas por distancia; parón × 0,5 (no acumulativo); 4 semanas sin correr como parón detectado.
 - Un resultado de tu contexto basta para predecir (orientativo); una sola carrera registrada, como antes, no.
 - El informe no incluye el nombre de la carrera (como no incluye notas ni nombres de rutinas).
+
+## Marcas históricas de running en Récords
+Regla: «Para un récord importa cuál fue tu mejor marca; para una predicción importa especialmente cuándo la hiciste y qué
+has hecho desde entonces.»
+
+### Revisión de la arquitectura
+- Récords › Resistencia ya era una vista calculada: `stats.enduranceRecords(data)` recorre las carreras registradas y,
+  para 5 km, 10 km, media y maratón, toma las de esa distancia o más y el tiempo a su ritmo medio («estimado» si la
+  carrera fue > 2 % más larga). No guardaba nada. Por eso las marcas históricas entran como candidatos más, sin copias:
+  `historicalRunMarks(data)` lee los resultados de carrera de «Tu contexto» (la única copia) y `enduranceRecords` los
+  recorre junto a lo registrado, con la MISMA regla de distancia (una media histórica también puede dar el récord de
+  10 km a su ritmo medio, como una media registrada). No hizo falta ninguna decisión que rompiera nada.
+- 1 km se añade solo a Récords (`RECORD_DISTANCES`); los tiempos previstos siguen con 5 km a maratón.
+- Distancias personalizadas: no crean filas (no existe «Otros récords»); cuentan, como una carrera registrada, para las
+  estándar menores y para «Mayor distancia».
+
+### Reglas
+- **Orden y empates**: cronológico; en un empate cuenta la primera vez. Una marca con fecha aproximada se ordena desde el
+  principio de su periodo (determinista) y se muestra con la precisión apuntada («15 may 2026», «may 2026»,
+  «primavera 2026», «2026»): nunca se inventa un día.
+- **Validez**: ritmo creíble (2:30–20:00 /km, como en las predicciones); la antigüedad NO cuenta (un récord de hace 3
+  años sigue siendo récord). En la predicción actual, esa misma marca pesa poco.
+- **Duplicados**: una única regla, `context-logic.matchesRun` (fecha dentro del periodo ±1 día, distancia y tiempo a
+  ±5 %), la usan récords, resúmenes y predicciones: cuenta la carrera registrada o importada; nada se borra.
+- **Origen**: «Registrado en Entreno», «Actividad importada» (la sesión trae `source` del archivo) o «Marca histórica».
+
+### Pantalla
+`Distancia → tiempo` en la fila y debajo `fecha · origen` (y, si es estimado, «de una carrera de 21,1 km»): p. ej.
+«10 km · 1:00:00 · may 2026 · Marca histórica». Sin marca: «—» y «Sin marca todavía». Cada récord abre su actividad o
+su marca de «Tu contexto» (nombre, nota, detalles). Cabecera: «12 carreras · 2 marcas históricas». Acceso «Apuntar una
+marca». La pantalla escucha el store y se recalcula al momento (editar, borrar, deshacer, importar).
+
+### Otros sitios
+- «Récords del periodo» (resúmenes): las marcas cuentan como marcas anteriores; una carrera que no mejora tu marca
+  histórica no es récord del periodo (y las marcas no aparecen como récord de un periodo: no son sesiones).
+- «¿Por qué?» de los tiempos previstos: «Tu récord en 10 km (la mejor de siempre): 1:00:00 · may 2026 · marca
+  histórica», separado de la estimación de hoy.
+- Informe para tu IA: «RÉCORDS DE RUNNING» (la mejor de siempre en 1 km…maratón, con fecha, origen o «sin marca») y,
+  aparte, «REFERENCIAS PARA LA PREDICCIÓN ACTUAL» (carreras recientes y las 3 marcas históricas más recientes, con su
+  antigüedad y el parón posterior, y el tiempo previsto hoy). Sustituye a «REFERENCIAS HISTÓRICAS DE RUNNING».
+- Sin cambios: objetivos de resistencia (su progreso sigue usando lo registrado), récords de fuerza y eventos.
+
+### Rendimiento (medido)
+`buildAnalysis` (Hoy y Análisis) con 5 años de datos sintéticos (≈ 900 sesiones de fuerza, ≈ 600 carreras, 20 marcas),
+Node, mediana de 15: antes de los resultados de carrera (`e2e73f5`) ≈ 45 ms; la primera versión de esta mejora
+≈ 330 ms (la regla de duplicados recalculaba el periodo de cada marca para cada carrera, y el análisis pide los récords
+una vez por bloque de «Forma en carrera»); tras memorizar los récords por instantánea de datos, precalcular el periodo
+de cada marca y los huecos sin correr (búsqueda binaria), ≈ 49 ms (+4 ms, en el ruido de la medición).

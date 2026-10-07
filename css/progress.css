@@ -374,6 +374,8 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .prg-rec-label { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 15px; font-weight: 700; line-height: 1.3; }
 .prg-rec-label .prg-badge-inline { margin-left: 0; vertical-align: 0; }
 .prg-rec-sub { font-size: 13px; line-height: 1.35; color: var(--muted); }
+/* Origen del récord (registrado, importado o marca histórica): secundario, sin partirse */
+.prg-rec-origin { white-space: nowrap; }
 .prg-rec-value { flex: none; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .prg-rec-na { font-size: 14px; font-weight: 650; color: var(--muted); }
 .prg-rec-toggle {

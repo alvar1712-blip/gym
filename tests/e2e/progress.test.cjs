@@ -508,13 +508,14 @@ test('#/records: fuerza (mejor peso, 1RM estimado, reps a cada peso, buscador) y
     const row = (k) => run.locator(`[data-rec="${k}"]`).innerText();
     const r5 = await row('5k');
     assert.match(r5, /23:20/);
-    assert.match(r5, /estimado a ritmo medio desde una carrera de 8 km/);
-    assert.match(r5, /2 sep 2026/);
+    // Estimado (distintivo) a ritmo medio de una carrera más larga: de cuál; fecha y origen
+    assert.match(r5, /estimado/);
+    assert.match(r5, /2 sep 2026 · Registrado en Entreno · de una carrera de 8 km/);
     const r10 = await row('10k');
     assert.match(r10, /58:20/);
-    assert.match(r10, /desde una carrera de 12 km/);
-    assert.match(await row('half'), /sin datos/);
-    assert.match(await row('marathon'), /sin datos/);
+    assert.match(r10, /de una carrera de 12 km/);
+    assert.match(await row('half'), /Sin marca todavía/);
+    assert.match(await row('marathon'), /Sin marca todavía/);
     assert.match(await row('longest'), /15 km/);
     assert.match(await page.locator('.prg-rec[data-sport="bike"] [data-rec="longest"]').innerText(), /70 km/);
     assert.match(await page.locator('.prg-rec[data-sport="swim"] [data-rec="longest"]').innerText(), /2\.000 m/);
@@ -554,7 +555,10 @@ test('base de datos vacía: estados vacíos útiles; #/bodyweight: la gráfica s
     assert.match(await page.locator('#view').innerText(), /Aún no hay récords de fuerza/);
     await page.locator('.seg-btn', { hasText: 'Resistencia' }).click();
     // Carrera (distancia + 4 tiempos), bici, natación y senderismo (distancia y desnivel)
-    assert.strictEqual(await page.locator('.prg-rec-na', { hasText: 'sin datos' }).count(), 9);
+    // Mayor distancia de cada deporte y mayor desnivel: «sin datos»; las 5 distancias de carrera: «—» y «Sin marca todavía»
+    assert.strictEqual(await page.locator('.prg-rec-na', { hasText: 'sin datos' }).count(), 5);
+    assert.strictEqual(await page.locator('.prg-rec[data-sport="run"] .prg-rec-na', { hasText: '—' }).count(), 5);
+    assert.strictEqual(await page.locator('.prg-rec[data-sport="run"] .prg-rec-sub', { hasText: 'Sin marca todavía' }).count(), 5);
     await shot(page, 'records-empty');
 
     await open(page, '#/progress/exercise/press_banca');

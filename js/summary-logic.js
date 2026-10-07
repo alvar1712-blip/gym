@@ -26,7 +26,7 @@
 //    (1–26 sep frente a 1–26 ago): comparar medio mes con un mes entero daría bajadas engañosas.
 import { weekStart, addDays, addMonths, diffDays, dow, isDateStr, todayStr, fmtDate, fmtWeekRange, fmtDuration, fmtPace, fmtMinutes, round, MONTH_LONG, MONTH_SHORT, DAY_LONG } from './util.js';
 import { isWorkSet, sessionLoad, sessionDurationMin, sessionVolume, sessionMuscleSets, makeBodyweightFn, orderKeyOf, emptyBests, addToBests, detectPRs } from './calc.js';
-import { DISTANCE_KINDS, RACE_DISTANCES, ESTIMATE_FACTOR, exercisesWithHistory, exerciseHistory, distanceLabel, weightLabel, fmtNumFast, muscleTarget } from './stats.js';
+import { DISTANCE_KINDS, RACE_DISTANCES, ESTIMATE_FACTOR, exercisesWithHistory, exerciseHistory, distanceLabel, weightLabel, fmtNumFast, muscleTarget, historicalRunMarks } from './stats.js';
 import { ACTIVITY_KINDS, MUSCLES, MUSCLE_LABEL } from './seed.js';
 import { formatSet, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
 
@@ -363,13 +363,27 @@ export function strengthPrDetail(entry) {
 /**
  * Récords de resistencia en orden: mayor distancia por deporte, mejores tiempos de carrera (5 km, 10 km, media,
  * maratón; tiempo al ritmo medio de una carrera igual o más larga, como stats.enduranceRecords) y mayor
- * desnivel en senderismo. Solo cuenta como récord si ya había una marca anterior de ese tipo.
+ * desnivel en senderismo. Solo cuenta como récord si ya había una marca anterior de ese tipo. Tus marcas históricas
+ * de «Tu contexto» (stats.historicalRunMarks) cuentan como marcas anteriores desde el principio de su periodo (como en
+ * Récords): una carrera que no mejora tu marca histórica no es récord. Ellas no salen como récord de un periodo.
  */
 function endurancePRs(ctx) {
   if (ctx.endurancePRs) return ctx.endurancePRs;
   const out = [];
   const state = {};
+  const marks = historicalRunMarks(ctx.data).marks;
+  let mi = 0;
+  const applyMark = (m) => {
+    const st = state.run || (state.run = { longest: null, race: {}, elev: null });
+    if (st.longest == null || m.km > st.longest) st.longest = m.km;
+    for (const r of RACE_DISTANCES) {
+      if (m.km + EPS < r.km) continue;
+      const t = (m.sec * r.km) / m.km;
+      if (st.race[r.id] == null || t < st.race[r.id]) st.race[r.id] = t;
+    }
+  };
   for (const a of ctx.done) {
+    while (mi < marks.length && marks[mi].date < a.date) applyMark(marks[mi++]);
     const k = rawKind(a);
     const tracksElevation = ELEVATION_KINDS.includes(k);
     if (!ENDURANCE_KINDS.includes(k) && !tracksElevation) continue;

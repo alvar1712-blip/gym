@@ -122,6 +122,14 @@
       reciente, «todavía poco fiable» explicándolo; duplicados con lo importado, una vez; «¿Por qué?» y el informe para
       tu IA los muestran. Arreglo de paso: «Deshacer» en Tu contexto no se veía hasta salir y volver.
 
+- [x] **Marcas históricas en Récords**: Progreso › Récords › Resistencia calcula la mejor marca de siempre en 1 km, 5 km,
+      10 km, media y maratón con lo registrado, lo importado y tus resultados de «Tu contexto» (vista derivada, sin
+      copias; una marca antigua sigue siendo récord). Fecha tal como se apuntó y origen discreto («Registrado en Entreno»,
+      «Actividad importada», «Marca histórica»); cada récord abre su actividad o su marca. Se recalcula al momento al
+      editar, borrar o deshacer. Duplicados: la misma regla que las predicciones. «Récords del periodo» de los resúmenes
+      no llama récord a lo que no mejora tu marca. Informe: «RÉCORDS DE RUNNING» separado de «REFERENCIAS PARA LA
+      PREDICCIÓN ACTUAL».
+
 ## Decisiones tomadas que conviene que el usuario confirme (se pueden cambiar)
 - Equilibrio empuje/tirón: cuenta 1 por serie según el patrón del ejercicio (sin el factor de secundarios).
 - «Esfuerzo alto sostenido» de la descarga: mínimo de 2 sesiones con RPE en el periodo (fijo, no en Ajustes).

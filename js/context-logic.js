@@ -250,14 +250,46 @@ export function resultDate(e, today = todayStr()) {
 
 /**
  * Resultados de carrera con números válidos ocurridos hasta `today` (el periodo empieza hoy o antes), de lo más reciente
- * a lo más antiguo: { id, entry, km, sec, date (resultDate), name, effort, elevationM, surface, when (approxLabel) }.
+ * a lo más antiguo: { id, entry, km, sec, date (resultDate), from, to (su periodo), lo, hi (periodo ±1 día, para
+ * matchesRun), name, effort, elevationM, surface, when (approxLabel), precision }.
  */
 export function raceResults(list, today = todayStr()) {
-  return normalizeAll(list)
-    .filter((e) => isRaceResult(e) && e.result && approxFrom(e.date) <= today)
-    .map((e) => ({ id: e.id, entry: e, ...e.result, date: resultDate(e, today), name: e.text, when: approxLabel(e.date, { short: true }), precision: e.date.precision }))
-    .filter((x) => x.date)
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const out = [];
+  for (const e of normalizeAll(list)) {
+    if (!isRaceResult(e) || !e.result) continue;
+    const { from, to } = entryRange(e);
+    if (!from || from > today) continue;
+    const mid = addDays(from, Math.floor(diffDays(from, to) / 2));
+    const date = mid > today ? today : mid;
+    out.push({
+      id: e.id, entry: e, ...e.result, date, from, to, lo: addDays(from, -1), hi: addDays(to, 1), name: e.text,
+      when: approxLabel(e.date, { short: true }), precision: e.date.precision,
+    });
+  }
+  return out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+/** Misma carrera: distancia y tiempo a ±5 %. */
+export const RESULT_DUP_TOL = 0.05;
+
+/**
+ * ¿Es este resultado de tu contexto la misma carrera que una registrada (p. ej. importada de un FIT)? Fecha de la carrera
+ * dentro del periodo del resultado ±1 día, y distancia y tiempo a ±RESULT_DUP_TOL. `res` = un elemento de raceResults;
+ * `run` = { date, km, sec }. La ÚNICA regla de duplicados: la usan los tiempos previstos, los récords y los resúmenes
+ * (cuenta la registrada; nada se borra).
+ */
+export function matchesRun(res, run) {
+  if (!res || !run || !(run.km > 0) || !(run.sec > 0)) return false;
+  // Primero lo barato (números); la ventana de fechas viene precalculada en raceResults (lo, hi)
+  if (Math.abs(run.km - res.km) > RESULT_DUP_TOL * res.km + 1e-9 || Math.abs(run.sec - res.sec) > RESULT_DUP_TOL * res.sec + 1e-9) return false;
+  let { lo, hi } = res;
+  if (!lo) {
+    if (!res.entry) return false;
+    const { from, to } = entryRange(res.entry);
+    if (!from) return false;
+    lo = addDays(from, -1); hi = addDays(to, 1);
+  }
+  return isDateStr(run.date) && run.date >= lo && run.date <= hi;
 }
 
 /**

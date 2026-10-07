@@ -532,7 +532,7 @@ test('enduranceRecords: 5k estimado desde un 10k y exacto; empates → la primer
   assert.equal(r2.run.best['5k'].estimated, true);
   assert.equal(enduranceRecords(mk({ sessions: [act('r3', 'run', '2026-09-10', { distanceKm: 5.1, movingSec: 1500 })] })).run.best['5k'].estimated, false);
   const empty = enduranceRecords(mk());
-  assert.deepEqual(empty, { run: { count: 0, longest: null, best: { '5k': null, '10k': null, half: null, marathon: null } }, bike: { count: 0, longest: null }, swim: { count: 0, longest: null }, hike: { count: 0, longest: null, maxGain: null } });
+  assert.deepEqual(empty, { run: { count: 0, historyCount: 0, longest: null, best: { '1k': null, '5k': null, '10k': null, half: null, marathon: null } }, bike: { count: 0, longest: null }, swim: { count: 0, longest: null }, hike: { count: 0, longest: null, maxGain: null } });
 });
 
 // ---------------------------------------------------------------------------

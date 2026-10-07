@@ -23,12 +23,13 @@
 // actividades por deporte, agregados por semana) que se construye UNA vez por objeto `data` y se reutiliza
 // en las llamadas siguientes con el mismo objeto (WeakMap). Si cambian los datos, construye un `data` nuevo
 // (o llama a buildIndex(data) para forzar la reconstrucción). No mutes los objetos devueltos.
-import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDuration, fmtPace, fmtMinutes, fmtSigned, normalize, round } from './util.js';
+import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtDuration, fmtPace, fmtMinutes, fmtSigned, normalize, round } from './util.js';
 import {
   isWorkSet, setMetrics, makeBodyweightFn, sessionLoad, sessionDurationMin, sessionVolume, sessionMuscleSets,
   pace, speed, pace100, movingAverage, bestSet as calcBestSet, weeksBetween, orderKeyOf, emptyBests, addToBests,
-  detectPRs,
+  detectPRs, RUN_PACE_MIN, RUN_PACE_MAX,
 } from './calc.js';
+import { raceResults, matchesRun, approxLabel } from './context-logic.js';
 import { bwPoints, bwTrend } from './activity-logic.js';
 import { makeCtx, adherence, adherenceText, trackingSince, weekPlan } from './plan.js';
 import { formatSet, fmtLastre, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
@@ -49,6 +50,13 @@ export const RACE_DISTANCES = [
   { id: 'half', km: 21.0975, label: 'Media maratón' },
   { id: 'marathon', km: 42.195, label: 'Maratón' },
 ];
+/**
+ * Distancias de los récords de carrera (Progreso › Récords): las de RACE_DISTANCES y 1 km. Solo récords: los tiempos
+ * previstos siguen con RACE_DISTANCES (no hay predicción de 1 km).
+ */
+export const RECORD_DISTANCES = [{ id: '1k', km: 1, label: '1 km' }, ...RACE_DISTANCES];
+/** De dónde sale un récord: registrado en Entreno, actividad importada (FIT/GPX/TCX) o marca histórica de tu contexto. */
+export const RECORD_ORIGIN = { app: 'Registrado en Entreno', import: 'Actividad importada', context: 'Marca histórica' };
 /** Una carrera más larga que la distancia × 1,02 da un tiempo «estimado a ritmo medio». */
 export const ESTIMATE_FACTOR = 1.02;
 
@@ -683,55 +691,126 @@ export function exerciseSummary(data, exerciseId) {
 // ===========================================================================
 
 /**
- * Récords de carrera, bici, natación y senderismo (incluidas las actividades enlazadas a una sesión de fuerza).
+ * Marcas históricas de carrera de «Tu contexto» (resultados de carrera, context-logic) que cuentan como récord: con
+ * distancia y tiempo, ritmo creíble (2:30–20:00 /km, como en los tiempos previstos) y sin una carrera registrada que sea
+ * la misma (context-logic.matchesRun: cuenta la registrada; nada se borra). Vista derivada: no se copian.
+ * `date` = primer día de su periodo (solo para ordenar y desempatar de forma determinista: una marca de «mayo 2026» cuenta
+ * desde el 1 de mayo; a igual fecha, lo registrado primero); `when` = su fecha con la precisión que apuntaste
+ * («15 may 2026», «may 2026», «primavera 2026», «2026»): nunca se inventa un día.
+ * @returns {{ entryId, km, sec, date, when, precision, name, effort, sameAs:null }[]} de la más antigua a la más reciente
+ *   y `duplicates`: Map(sessionId → entryId) de los resultados que son una carrera registrada.
+ */
+export function historicalRunMarks(data) {
+  const d = data && typeof data === 'object' ? data : {};
+  const idx = getIndex(d);
+  const today = isDateStr(d.today) ? d.today : todayStr();
+  const runs = idx.activities.run
+    .map((a) => ({ id: a.id, date: a.date, km: a.distanceKm > 0 ? a.distanceKm : null, sec: actSec(a) }))
+    .filter((a) => a.km && a.sec > 0);
+  const marks = [];
+  const duplicates = new Map();
+  for (const r of raceResults(d.context, today)) {
+    const p = r.sec / r.km;
+    if (!(p >= RUN_PACE_MIN && p <= RUN_PACE_MAX)) continue;
+    const same = runs.find((a) => matchesRun(r, a));
+    if (same) { if (!duplicates.has(same.id)) duplicates.set(same.id, r.id); continue; }
+    marks.push({
+      entryId: r.id, km: r.km, sec: r.sec, date: r.entry.date.date, precision: r.precision,
+      when: r.precision === 'day' ? fmtDate(r.entry.date.date, 'full') : approxLabel(r.entry.date, { short: true }),
+      name: r.name || '', effort: r.effort,
+    });
+  }
+  marks.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return { marks, duplicates };
+}
+
+/** Origen de una carrera registrada: importada de un archivo o apuntada en Entreno. */
+const runOrigin = (a) => (a && a.source && typeof a.source === 'object' ? 'import' : 'app');
+
+/**
+ * Récords de carrera, bici, natación y senderismo (incluidas las actividades enlazadas a una sesión de fuerza) y, en
+ * carrera, también tus marcas históricas de «Tu contexto» (historicalRunMarks). Un récord es la mejor marca de
+ * SIEMPRE: su antigüedad no le quita valor (eso solo pesa en los tiempos previstos).
  * @returns {{
- *   run:  { count, longest:{distanceKm, movingSec, date, sessionId, label}|null,
- *           best:{ '5k'|'10k'|'half'|'marathon': {id, label, distanceKm, timeSec, timeLabel, paceLabel,
- *                  date, sessionId, fromKm, fromSec, estimated}|null } },
+ *   run:  { count, historyCount, longest:{distanceKm, movingSec, date, when, sessionId, entryId, source, label}|null,
+ *           best:{ '1k'|'5k'|'10k'|'half'|'marathon': {id, label, distanceKm, timeSec, timeLabel, paceLabel, date, when,
+ *                  precision, sessionId, entryId, source:'app'|'import'|'context', origin, name, alsoContext,
+ *                  fromKm, fromSec, estimated}|null } },
  *   bike: { count, longest }, swim: { count, longest },
  *   hike: { count, longest:{…, elevationM|null}|null, maxGain:{elevationM, distanceKm, movingSec, date, sessionId, label}|null } }}
- *  best.X sale de carreras de distancia ≥ X: tiempo = movingSec × X / distanceKm (ritmo medio de esa carrera);
- *  estimated = distanceKm > X × 1,02 («estimado a ritmo medio»). hike.maxGain = mayor desnivel positivo
- *  (elevationM > 0; con o sin distancia). Empates: cuenta la primera vez.
+ *  best.X sale de carreras (o marcas) de distancia ≥ X: tiempo = tiempo × X / distancia (ritmo medio);
+ *  estimated = distancia > X × 1,02 («estimado a ritmo medio»). Orden cronológico y empates: cuenta la primera vez (una
+ *  marca con fecha aproximada, desde el principio de su periodo). alsoContext = id del resultado de tu contexto que es la
+ *  misma carrera que la registrada (se cuenta una sola vez). hike.maxGain = mayor desnivel positivo (elevationM > 0; con
+ *  o sin distancia).
  */
 export function enduranceRecords(data) {
   const idx = getIndex(data);
+  // Memorizado en el índice (el análisis lo pide varias veces con los mismos datos): depende además del contexto y de hoy
+  const memo = idx.enduranceRecords;
+  if (memo && memo.context === data?.context && memo.today === data?.today) return memo.value;
+  const value = computeEnduranceRecords(data, idx);
+  idx.enduranceRecords = { context: data?.context, today: data?.today, value };
+  return value;
+}
+
+function computeEnduranceRecords(data, idx) {
   const out = {
-    run: { count: 0, longest: null, best: Object.fromEntries(RACE_DISTANCES.map((r) => [r.id, null])) },
+    run: { count: 0, historyCount: 0, longest: null, best: Object.fromEntries(RECORD_DISTANCES.map((r) => [r.id, null])) },
     bike: { count: 0, longest: null },
     swim: { count: 0, longest: null },
     hike: { count: 0, longest: null, maxGain: null },
   };
+  const { marks, duplicates } = historicalRunMarks(data);
+  out.run.historyCount = marks.length;
   for (const kind of DISTANCE_KINDS) {
     const bucket = out[kind];
-    for (const a of idx.activities[kind]) {
-      bucket.count++;
+    // Carrera: lo registrado y tus marcas históricas, en orden cronológico (a igual fecha, lo registrado primero)
+    const items = kind !== 'run' ? idx.activities[kind] : mergeByDate(idx.activities.run, marks);
+    for (const a of items) {
+      const isMark = !!a.entryId;
+      if (!isMark) bucket.count++;
       if (kind === 'hike' && a.elevationM > 0 && (!bucket.maxGain || a.elevationM > bucket.maxGain.elevationM + EPS)) {
         bucket.maxGain = {
           elevationM: a.elevationM, distanceKm: a.distanceKm > 0 ? a.distanceKm : null, movingSec: actSec(a), date: a.date,
           sessionId: a.id, label: elevationLabel(a.elevationM),
         };
       }
-      const km = a.distanceKm > 0 ? a.distanceKm : null;
+      const km = isMark ? a.km : a.distanceKm > 0 ? a.distanceKm : null;
       if (km == null) continue;
-      const sec = actSec(a);
+      const sec = isMark ? a.sec : actSec(a);
+      const src = isMark ? { sessionId: null, entryId: a.entryId, source: 'context', when: a.when, precision: a.precision, name: a.name }
+        : { sessionId: a.id, entryId: null, source: runOrigin(a), when: fmtDate(a.date, 'full'), precision: 'day', name: '' };
       if (!bucket.longest || km > bucket.longest.distanceKm + EPS) {
-        bucket.longest = { distanceKm: km, movingSec: sec, date: a.date, sessionId: a.id, label: distanceLabel(kind, km) };
+        bucket.longest = { distanceKm: km, movingSec: sec, date: a.date, label: distanceLabel(kind, km), ...src };
         if (kind === 'hike') bucket.longest.elevationM = a.elevationM > 0 ? a.elevationM : null;
       }
       if (kind !== 'run' || !(sec > 0)) continue;
-      for (const r of RACE_DISTANCES) {
+      for (const r of RECORD_DISTANCES) {
         if (km + EPS < r.km) continue;
         const t = (sec * r.km) / km;
         const cur = bucket.best[r.id];
         if (cur && !(t < cur.timeSec - EPS)) continue;
         bucket.best[r.id] = {
           id: r.id, label: r.label, distanceKm: r.km, timeSec: t, timeLabel: fmtDuration(t), paceLabel: fmtPace(sec / km),
-          date: a.date, sessionId: a.id, fromKm: km, fromSec: sec, estimated: km > r.km * ESTIMATE_FACTOR,
+          date: a.date, ...src, origin: RECORD_ORIGIN[src.source], alsoContext: isMark ? null : duplicates.get(a.id) ?? null,
+          fromKm: km, fromSec: sec, estimated: km > r.km * ESTIMATE_FACTOR,
         };
       }
     }
   }
+  return out;
+}
+
+/** Une carreras registradas (cronológicas) y marcas (por fecha): a igual fecha, la registrada primero. */
+function mergeByDate(runs, marks) {
+  const out = [];
+  let j = 0;
+  for (const a of runs) {
+    while (j < marks.length && marks[j].date < a.date) out.push(marks[j++]);
+    out.push(a);
+  }
+  while (j < marks.length) out.push(marks[j++]);
   return out;
 }
 
