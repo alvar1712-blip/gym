@@ -1,6 +1,7 @@
 // Guardas visuales estables (docs/PULIDO.md): recorre TODAS las pantallas con datos realistas (6 meses de fuerza,
-// carrera, bici, peso, ciclo, objetivos, contexto, un evento y una sesión a medias) a 375 y 430 px, y también con la
-// app vacía, y con el texto del sistema al 125 % y al 150 %, y comprueba invariantes de maquetación que no dependen de píxeles:
+// carrera, bici, peso, ciclo, objetivos, contexto, un evento y una sesión a medias) a 375, 390 y 430 px, también
+// con la app vacía y con el texto del sistema al 125 % y al 150 %, y comprueba invariantes de maquetación que no
+// dependen de píxeles:
 //   · ningún texto roto («null», «undefined», NaN, Infinity, «[object …]», «:-5», ritmos «h:mm:ss /km»);
 //   · sin scroll horizontal ni nada que se salga por los lados (salvo dentro de un carrusel);
 //   · la cabecera no tapa el principio del contenido y lo último queda por encima de la barra de pestañas;
@@ -159,7 +160,7 @@ const beforeLoad = (scale) => async (page) => {
   if (scale !== 1) await page.addInitScript((s) => { try { localStorage.setItem('entreno.textScale', String(s)); } catch { /* */ } }, scale);
 };
 
-async function withData(browser, tag, { scale = 1, widths = [375, 430] } = {}) {
+async function withData(browser, tag, { scale = 1, widths = [375, 390, 430] } = {}) {
   const app = await openApp({ browser, beforeLoad: beforeLoad(scale) });
   try {
     const { activeId } = await seedRealistic(app.page, { months: 6, female: true, activeSession: true });
@@ -191,11 +192,11 @@ async function empty(browser, tag) {
   }
 }
 
-test('guardas visuales con datos realistas: todas las pantallas a 375 y 430 px', () => withData('chromium', 'chromium'));
+test('guardas visuales con datos realistas: todas las pantallas a 375, 390 y 430 px', () => withData('chromium', 'chromium'));
 test('guardas visuales con la app vacía (estados vacíos) a 375 px', () => empty('chromium', 'chromium-vacia'));
-test('WebKit: guardas visuales con datos realistas a 375 y 430 px', { skip: skipWebkit }, () => withData('webkit', 'webkit'));
+test('WebKit: guardas visuales con datos realistas a 375, 390 y 430 px', { skip: skipWebkit }, () => withData('webkit', 'webkit'));
 test('WebKit: guardas visuales con la app vacía a 375 px', { skip: skipWebkit }, () => empty('webkit', 'webkit-vacia'));
 // Texto grande (125 % y 150 %): nada cortado, nada que se salga, botones a 44 px, la cabecera sin tapar nada
 test('texto al 125 %: guardas visuales con datos realistas a 375 px', () => withData('chromium', 'chromium-125', { scale: 1.25, widths: [375] }));
-test('texto al 150 %: guardas visuales con datos realistas a 375 y 430 px', () => withData('chromium', 'chromium-150', { scale: 1.5 }));
+test('texto al 150 %: guardas visuales con datos realistas a 375 y 430 px', () => withData('chromium', 'chromium-150', { scale: 1.5, widths: [375, 430] }));
 test('WebKit: texto al 150 % con datos realistas a 375 px', { skip: skipWebkit }, () => withData('webkit', 'webkit-150', { scale: 1.5, widths: [375] }));

@@ -159,12 +159,16 @@ async function fillExtra(slot, today, active) {
     const [ci, weekly, goals] = mods;
     const data = safely('datos', () => weekly.weeklyData(today)); // un único `data` para todas las tarjetas
     // Una sola tarjeta de lectura («Lo importante esta semana» junta el panel semanal y el analista)
+    // «Lo importante» junta dos cálculos (panel semanal y analista): cada uno en su tarea, como cuando eran dos
+    // tarjetas (juntos, con años de datos, bloqueaban la pantalla medio segundo)
+    let weeklyR = null;
     const cards = [
       () => todayCheckin(ci, today, active),
-      data && focus ? () => focus.focusCard({ data, today }) : null,
+      data && focus ? () => { weeklyR = focus.focusWeekly(data); return null; } : null,
+      data && focus ? () => focus.focusCard({ data, today, weekly: weeklyR }) : null,
       data ? () => goals.goalsSummaryCard({ data }) : null,
     ];
-    const labels = ['check-in', 'lo importante', 'objetivos'];
+    const labels = ['check-in', 'panel semanal', 'lo importante', 'objetivos'];
     for (let i = 0; i < cards.length; i++) {
       if (!slot.isConnected) break;
       if (!cards[i]) continue;

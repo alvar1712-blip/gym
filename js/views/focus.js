@@ -35,9 +35,15 @@ function item(it, main) {
  * Tarjeta de Hoy. null sin nada que decir (sin historial ni análisis).
  * @param {{ data: object, today: string }} opts  `data` = el de la pantalla (weekly.weeklyData), compartido con las demás
  */
-export function focusCard({ data, today }) {
+/** La parte del panel semanal (Hoy la calcula en su propia tarea, antes que la del analista). */
+export function focusWeekly(data) {
   if (!data.checkins) data.checkins = store.all('checkins');
-  const r = weeklyInsights(data, data.today);
+  return weeklyInsights(data, data.today);
+}
+
+/** `weekly`: el resultado de focusWeekly(data), si ya se calculó (Hoy: en otra tarea, para no bloquear). */
+export function focusCard({ data, today, weekly: pre = null }) {
+  const r = pre || focusWeekly(data);
   const a = analysisFor(today, data);
   if (a.errors?.length) console.error('[análisis]', a.errors);
   const weekly = r.hasHistory ? keyMessages(r, CANDIDATES) : [];
