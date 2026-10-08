@@ -5,6 +5,7 @@ import * as store from './store.js';
 import { h } from './ui.js';
 import { lineChart, periodSelector, periodStart, getPeriod, COLORS } from './charts.js';
 import { bodyweightSeries, dataRange } from './stats.js';
+import { levelSummary } from './chart-summary.js';
 import { todayStr, fmtNum, weekStart } from './util.js';
 
 /**
@@ -101,16 +102,24 @@ export function bodyweightChartOpts(data, periodId, { height = 220, series = nul
 export function bodyweightChartCard({ key = 'bodyweight' } = {}) {
   let period = getPeriod(key);
   const slot = h('div.prg-chart');
+  const summary = h('p.chart-summary', { hidden: true, 'aria-live': 'polite' });
   const sel = periodSelector({ key, value: period, ariaLabel: 'Periodo de la gráfica de peso', onChange: (id) => { period = id; paint(); } });
   const el = h('section.card.prg-card.prg-bw-chart', { dataset: { chart: 'bodyweight' } },
     cardHead('Evolución', 'kg · pesajes diarios y media móvil de 7 días'),
+    summary,
     sel,
     slot,
     h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Toca o arrastra para ver el valor exacto.'));
   let chart = null;
   function paint() {
     const data = { bodyweight: store.bodyweightList(), settings: store.settings(), sessions: [], today: todayStr() };
-    const o = bodyweightChartOpts(data, period);
+    const series = bodyweightSeries(data);
+    const o = bodyweightChartOpts(data, period, { series });
+    // Lo que hay que entender del periodo, sobre la media de 7 días (docs/PULIDO.md §12)
+    const res = levelSummary(series.ma, { from: o.xDomain[0], today: data.today, unit: 'kg', stable: 0.3 });
+    summary.textContent = res?.text || '';
+    summary.hidden = !res;
+    summary.dataset.dir = res?.dir || '';
     if (chart) chart.update(o);
     else chart = lineChart(slot, o);
   }

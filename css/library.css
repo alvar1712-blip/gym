@@ -168,7 +168,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   /* Cabecera sticky: 52 px + muesca/isla (--sat) + borde; con margen para que el ítem quede a la vista. */
-  scroll-margin-top: calc(var(--sat) + 76px);
+  scroll-margin-top: calc(var(--topbar-h, calc(var(--sat) + 68px)) + 8px); /* alto real de la cabecera (ui.screen) */
   scroll-margin-bottom: calc(var(--tabbar-h) + var(--sab) + 16px);
 }
 .lib-item.open { border-color: var(--border-strong); background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 120px), var(--surface); }

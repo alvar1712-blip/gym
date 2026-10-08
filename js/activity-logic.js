@@ -302,7 +302,8 @@ export function paceWarning(form) {
   if (!form || form.kind !== 'run') return null;
   const v = pace(form.movingSec, form.distanceKm);
   if (v == null) return null;
-  if (v > RUN_PACE_MAX) return `Ritmo de ${fmtDuration(v)} /km: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?`;
+  // Nunca «6:12:00 /km» (un ritmo no se escribe con horas): por encima de una hora por km, se dice así
+  if (v > RUN_PACE_MAX) return `${v >= 3600 ? 'Más de una hora por km' : `Ritmo de ${fmtDuration(v)} /km`}: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?`;
   if (v < RUN_PACE_MIN) return `Ritmo de ${fmtDuration(v)} /km: demasiado rápido para ser real. Revisa la distancia y el tiempo.`;
   return null;
 }

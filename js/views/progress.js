@@ -6,7 +6,7 @@
 // al salir de la pantalla se destruyen todas (listeners y observers).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, chips, segmented, emptyState, stateTag } from '../ui.js';
+import { h, icon, screen, chips, segmented, emptyState, stateTag, kpiValue } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, weekStart, relDay, plural } from '../util.js';
 import { lineChart, barChart, periodSelector, getPeriod, sparkline, COLORS } from '../charts.js';
 import * as S from '../stats.js';
@@ -19,6 +19,7 @@ import { goalsSummaryCard } from './goals.js';
 import { pastRecoveryCard, pastRecordsLink } from './past-records.js';
 import { analysisFor } from './analysis.js';
 import { progressOverview } from '../overview.js';
+import { levelSummary, weeklySummary } from '../chart-summary.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
 const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null };
@@ -108,13 +109,24 @@ function chartHolder(charts, slot, kind, base) {
 
 function chartSection(id, { title, sub, right = null, before = [], note = null, howto = null }) {
   const slot = h('div.prg-chart');
+  // La frase de lo que hay que entender del periodo (docs/PULIDO.md §12); vacía, no ocupa sitio
+  const summary = h('p.chart-summary', { hidden: true, 'aria-live': 'polite' });
   const el = h('section.card.prg-card', { dataset: { chart: id } },
     cardHead(title, sub, right),
+    summary,
     ...before,
     slot,
     note ? h('p.prg-note', icon('info', 16), h('span', note)) : null,
     howto ? h('p.prg-howto', howto) : null);
-  return { el, slot };
+  return { el, slot, summary };
+}
+
+/** Pone (o quita) la frase de una gráfica: { text, dir } de chart-summary.js o null. */
+function setSummary(elm, res) {
+  if (!elm) return;
+  elm.textContent = res?.text || '';
+  elm.hidden = !res?.text;
+  elm.dataset.dir = res?.dir || '';
 }
 
 function weekNotes(r) {
@@ -281,7 +293,7 @@ function linksRow(ctx, exSection) {
     wide('📋', 'Panel semanal', 'Panel semanal: información y sugerencias de la semana', () => goChild('#/weekly'), 'weekly'),
     wide('🎯', 'Objetivos', 'Objetivos: progreso y fecha estimada', () => goChild('#/goals'), 'goals'),
     wide('🗓️', 'Resúmenes', 'Resumen mensual y anual', () => goChild('#/summary'), 'summary'),
-    wide('⏱️', 'Predicciones', 'Tiempos previstos de 5 km a maratón', () => goChild('#/predictions'), 'predictions'),
+    wide('⏱️', 'Tiempos previstos', 'Tiempos previstos de 5 km a maratón', () => goChild('#/predictions'), 'predictions'),
     tile('🏆', 'Récords', 'Récords de fuerza y resistencia', () => goChild('#/records'), 'records'),
     tile('⚖️', 'Peso', 'Peso corporal', () => goChild('#/bodyweight'), 'bodyweight'),
     tile('🏋️', 'Ejercicios', 'Ir a la lista de ejercicios', () => exSection.el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 'exercises'));
@@ -317,7 +329,7 @@ function loadCard(ctx) {
   const cur = weeks[weeks.length - 1];
   const prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
   const ref = avg.length && avg[avg.length - 1].x === cur.week ? avg[avg.length - 1] : null; // la de esta semana
-  const { el, slot } = chartSection('load', {
+  const { el, slot, summary } = chartSection('load', {
     title: 'Carga semanal',
     sub: 'Minutos × esfuerzo percibido (1–10)',
     before: [ctx.hasSessions ? statLine([
@@ -335,6 +347,7 @@ function loadCard(ctx) {
     update(pid) {
       const wk = weekFrom(ctx, pid);
       const rows = weeks.filter((r) => r.week >= wk);
+      setSummary(summary, weeklySummary(weeks, (r) => r.loadTotal, { from: wk, unit: '' }));
       const used = LOAD_KINDS.filter((k) => rows.some((r) => r.load[k.key] > 0));
       const kinds = used.length ? used : LOAD_KINDS;
       draw({
@@ -505,7 +518,7 @@ function kmCard(ctx) {
   });
   // Cinco opciones: en dos filas (css/activity.css) para que «Senderismo» no se corte.
   seg.classList.add('prg-seg', 'act-seg-wrap');
-  const { el, slot } = chartSection('km', {
+  const { el, slot, summary } = chartSection('km', {
     title: 'Kilómetros semanales',
     sub: 'km por semana · carrera, bici, natación y senderismo',
     before: [
@@ -522,6 +535,9 @@ function kmCard(ctx) {
     const used = KM_KINDS.filter((k) => rows.some((r) => r.km[k.key] > 0));
     const kinds = one ? [one] : used.length ? used : KM_KINDS;
     const swimOnly = one && one.key === 'swim';
+    setSummary(summary, swimOnly
+      ? weeklySummary(weeks, (r) => (r.km.swim || 0) * 1000, { from: wk, unit: 'm' })
+      : weeklySummary(weeks, (r) => kinds.reduce((t, k) => t + (r.km[k.key] || 0), 0), { from: wk, unit: 'km', decimals: 1 }));
     draw({
       bars: rows.map((r) => ({
         x: r.week,
@@ -610,7 +626,7 @@ function swimCard(ctx) {
 // ---------- f) Peso corporal ----------
 function bodyweightCard(ctx) {
   const s = S.bodyweightSeries(ctx.data);
-  const { el, slot } = chartSection('bodyweight', {
+  const { el, slot, summary } = chartSection('bodyweight', {
     title: 'Peso corporal',
     sub: 'kg · pesajes diarios y media móvil de 7 días',
     right: h('button.prg-head-link', { type: 'button', onClick: () => goChild('#/bodyweight') }, s.count ? 'Ver todo' : 'Registrar', icon('chevron-right', 16)),
@@ -625,6 +641,8 @@ function bodyweightCard(ctx) {
     el,
     update(pid) {
       const o = bodyweightChartOpts(ctx.data, pid, { height: ctx.h(210), series: s });
+      // Sobre la media de 7 días (la que marca la tendencia), no sobre un pesaje suelto; ±0,3 kg es ruido
+      setSummary(summary, levelSummary(s.ma, { from: o.xDomain[0], today: ctx.today, unit: 'kg', stable: 0.3 }));
       draw(o);
     },
   };
@@ -808,7 +826,7 @@ export function mountExerciseProgress(root, params = {}) {
 
   // KPIs
   const k = (label, value, sub, key) => h('div.kpi.prg-kpi', { dataset: { kpi: key } },
-    h('div.kpi-label', label), h('div.kpi-value', value ?? '—'), sub ? h('div.kpi-sub', sub) : null);
+    h('div.kpi-label', label), kpiValue(value ?? '—'), sub ? h('div.kpi-sub', sub) : null);
   const dated = (r) => (r ? fmtDay(r.date, today) : null);
   const kpis = [];
   const anyLastre = bw && hist.some((e) => e.maxWeight);
@@ -847,14 +865,14 @@ export function mountExerciseProgress(root, params = {}) {
     const wFmt = bw ? (v) => S.weightLabel('bodyweight', v) : kg1;
     if (showWeight) {
       defs.push({
-        id: 'maxWeight', title: bw ? 'Lastre máximo' : 'Peso máximo', color: COLORS.accent, points: ser.maxWeight, fmt: wFmt, tick: nf1,
+        id: 'maxWeight', title: bw ? 'Lastre máximo' : 'Peso máximo', color: COLORS.accent, points: ser.maxWeight, fmt: wFmt, tick: nf1, summary: { unit: 'kg', decimals: 2 },
         sub: bw ? 'kg de lastre de la serie más pesada (negativo = asistencia)' : 'kg · la serie más pesada de cada sesión',
         howto: 'Toca un punto para ver esa serie: peso × repeticiones @RIR.',
       });
     }
     if (!bwNoE1rm) {
       defs.push({
-        id: 'e1rm', title: '1RM estimado', color: COLORS.info, points: ser.e1rm, fmt: kg1, tick: nf1, sub: bw ? 'kg · el mejor de cada sesión (peso corporal + lastre)' : 'kg · el mejor de cada sesión',
+        id: 'e1rm', title: '1RM estimado', color: COLORS.info, points: ser.e1rm, fmt: kg1, tick: nf1, summary: { unit: 'kg', decimals: 1 }, sub: bw ? 'kg · el mejor de cada sesión (peso corporal + lastre)' : 'kg · el mejor de cada sesión',
         note: `Estimación con la fórmula de Epley usando reps + RIR; solo series de 1–12 reps.${bw ? ' Incluye tu peso corporal del día.' : ''} No es un peso levantado.`,
         empty: 'Sin series de 1–12 repeticiones en este periodo',
       });
@@ -903,9 +921,9 @@ export function mountExerciseProgress(root, params = {}) {
       });
     }
   } else if (lt === 'time') {
-    defs.push({ id: 'maxTime', title: 'Tiempo máximo', color: COLORS.accent, points: ser.maxTime, fmt: (v) => fmtSec(v), tick: fmtDuration, yTicks: 'time', sub: 'la serie más larga de cada sesión (min:s)', howto: 'Toca un punto para ver el tiempo exacto.' });
+    defs.push({ id: 'maxTime', title: 'Tiempo máximo', color: COLORS.accent, points: ser.maxTime, fmt: (v) => fmtSec(v), tick: fmtDuration, yTicks: 'time', summary: { unit: 's', decimals: 0 }, sub: 'la serie más larga de cada sesión (min:s)', howto: 'Toca un punto para ver el tiempo exacto.' });
   } else if (lt === 'jumps') {
-    defs.push({ id: 'maxHeight', title: 'Altura máxima', color: COLORS.accent, points: ser.maxHeight, fmt: (v) => `${nf1(v)} cm`, tick: nf1, sub: 'cm · el salto más alto de cada sesión', empty: 'Registra la altura de tus saltos (es opcional) para ver su evolución.' });
+    defs.push({ id: 'maxHeight', title: 'Altura máxima', color: COLORS.accent, points: ser.maxHeight, fmt: (v) => `${nf1(v)} cm`, tick: nf1, summary: { unit: 'cm', decimals: 1 }, sub: 'cm · el salto más alto de cada sesión', empty: 'Registra la altura de tus saltos (es opcional) para ver su evolución.' });
     defs.push({ id: 'maxReps', title: 'Repeticiones máximas', color: COLORS.info, points: ser.maxReps, fmt: (v) => `${nf0(v)} reps`, tick: nf0, sub: 'reps · la serie con más repeticiones de cada sesión' });
   } else if (lt === 'distance_time') {
     defs.push({
@@ -921,8 +939,9 @@ export function mountExerciseProgress(root, params = {}) {
     let period = getPeriod('exercise');
     const update = (pid) => {
       const { from } = periodRange(pid, today, first);
-      for (const { draw, d, el } of holders) {
+      for (const { draw, d, el, summary } of holders) {
         const o = { xDomain: [from, today] };
+        if (d.summary) setSummary(summary, levelSummary(d.points, { from, today, ...d.summary }));
         if (d.adapt) { // lo que dibuja depende del periodo (mejor serie con doble progresión)
           const m = d.adapt(from, today);
           Object.assign(o, m.opts);
@@ -939,14 +958,14 @@ export function mountExerciseProgress(root, params = {}) {
     const chartsBox = h('div.prg-charts', periodBar(root, 'exercise', (id) => { period = id; update(period); }));
     c.appendChild(chartsBox);
     for (const d of defs) {
-      const { el, slot } = chartSection(d.id, { title: d.title, sub: d.sub, note: d.note, howto: d.howto });
+      const { el, slot, summary } = chartSection(d.id, { title: d.title, sub: d.sub, note: d.note, howto: d.howto });
       chartsBox.appendChild(el);
       const draw = chartHolder(charts, slot, 'line', {
         series: d.series || [{ id: d.id, label: d.title, color: d.color, points: d.points, dots: true }],
         height: chartHeight(190), yFormat: d.fmt, yTickFormat: d.tick || d.fmt, invertY: !!d.invertY, yTicks: d.yTicks || 'auto',
         empty: d.empty || 'Sin datos en este periodo', ariaLabel: `${ex.name}: ${d.title.toLowerCase()}`,
       });
-      holders.push({ draw, d, el });
+      holders.push({ draw, d, el, summary });
     }
     update(period);
   }
@@ -963,7 +982,7 @@ export function mountExerciseProgress(root, params = {}) {
       type: 'button', dataset: { session: e.sessionId, pr: anyPr ? '1' : '' }, onClick: () => navigate(`#/session/${e.sessionId}`),
     },
     h('span.list-item-main',
-      h('span.prg-hrow-title', h('span', fmtDate(e.date, 'full')), anyPr ? h('span.badge.badge-pr', '🏆 Récord') : null),
+      h('span.prg-hrow-title', h('span', fmtDate(e.date, 'full')), anyPr ? stateTag('pr', 'Récord', { small: true }) : null),
       h('span.list-item-sub', e.templateName),
       h('span.prg-hrow-sets', e.sets.flatMap((set, j) => [
         j ? h('span.prg-sep', ' · ') : null,

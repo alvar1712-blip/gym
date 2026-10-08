@@ -263,7 +263,11 @@ export function mountTemplateEdit(root, params = {}) {
   function scrollToItem(id) {
     requestAnimationFrame(() => {
       const el = listEl.querySelector(`[data-item="${id}"]`);
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (!el || !el.scrollIntoView) return;
+      // Con la cabecera tapando su principio, se alinea arriba (bajo la cabecera, con su scroll-margin); si no, lo
+      // mínimo («nearest» no mueve un ítem desplegado más alto que la pantalla aunque su cabecera quede tapada)
+      const hidden = el.getBoundingClientRect().top < (parseFloat(getComputedStyle(el).scrollMarginTop) || 0);
+      el.scrollIntoView({ block: hidden ? 'start' : 'nearest', behavior: 'smooth' });
     });
   }
 

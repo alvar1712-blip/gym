@@ -4,7 +4,7 @@
 //   · ningún texto roto («null», «undefined», NaN, Infinity, «[object …]», «:-5», ritmos «h:mm:ss /km»);
 //   · sin scroll horizontal ni nada que se salga por los lados (salvo dentro de un carrusel);
 //   · la cabecera no tapa el principio del contenido y lo último queda por encima de la barra de pestañas;
-//   · ningún texto por debajo de 12 px y ningún botón por debajo de 44 px de alto;
+//   · ningún texto por debajo de 12 px, ninguno cortado con «…» y ningún botón por debajo de 44 px de alto;
 //   · ningún error en la consola.
 // Deja una captura de cada pantalla en test-results/visual/ (para mirarlas, no se comparan píxel a píxel).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/visual-guard.test.cjs  (E2E_BROWSER=webkit para WebKit)
@@ -61,6 +61,8 @@ function inspectTop() {
     const cs = getComputedStyle(el);
     if ((r.right > vw + 1 || r.left < -1) && !clipped(el)) issues.push(`se sale por el lado: ${desc(el)} [${Math.round(r.left)}–${Math.round(r.right)}]`);
     const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+    // Recortado con «…» (una etiqueta, una cifra, un nombre): con los datos de prueba, nada debe cortarse
+    if (cs.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1 && el.textContent.trim()) issues.push(`texto cortado con «…»: ${desc(el)}`);
     if (own.trim()) {
       if (parseFloat(cs.fontSize) < 11.9) issues.push(`texto de ${cs.fontSize}: ${desc(el)}`);
       if (/\bnull\b|\bundefined\b|NaN|Infinity|\[object |:-\d|\d+:\d{2}:\d{2}\s?\/km/.test(own)) issues.push(`texto roto: ${desc(el)}`);

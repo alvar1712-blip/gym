@@ -616,7 +616,7 @@ test('375×667: #/goals y los formularios de cada tipo sin desbordamiento horizo
     await open(page, '#/goals');
     assert.strictEqual(await page.locator('.goal-list .goal-card').count(), 4);
     assert.strictEqual(await card(page, 'Bajar a 74 kg').getAttribute('data-status'), 'no_trend');
-    assert.match(await card(page, 'Bajar a 74 kg').locator('.goal-eta').innerText(), /Sin tendencia: con la tendencia actual no se acerca/);
+    assert.match(await card(page, 'Bajar a 74 kg').locator('.goal-eta').innerText(), /Sin tendencia: al ritmo actual no te acercas/);
     assert.match(await card(page, 'Dominadas +15 kg × 5').locator('.goal-kind').innerText(), /1RM estimado/);
     assert.ok(await noHScroll(page), `sin desbordamiento: ${await overflowing(page)}`);
     await scrollShots(page, 'goals-se-list');

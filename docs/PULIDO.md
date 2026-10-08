@@ -139,3 +139,46 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
 después de «atrás», o la propia app tras borrar algo), la vuelta llegaba después y deshacía esa navegación: se
 acababa en otra pantalla. Ahora una navegación pedida con un «atrás» en camino espera a que llegue (popstate /
 hashchange; red de seguridad de 4 s). Pruebas: transitions.test «“atrás” y enseguida otra pantalla».
+
+## 12. Gráficas: la frase de arriba
+
+Cada gráfica principal dice en una frase qué hay que entender del periodo elegido (js/chart-summary.js), encima
+de los números de detalle:
+
+- Magnitudes (peso medio, 1RM estimado, peso máximo, tiempo, altura): «+7,5 kg desde agosto», «−1,2 kg desde el
+  20 sep» o «Estable: ±0,4 kg en el periodo» (peso: ±0,3 kg es ruido). Los extremos se promedian (hasta 3 puntos
+  por lado) para que una sesión rara al principio o al final no decida la frase.
+- Totales semanales (carga, km): «Media 24 km/sem · +12 % frente al periodo anterior» (semanas completas; sin un
+  periodo anterior entero, solo la media).
+- Sin color de juicio (subir de peso puede ser bueno o malo según tu objetivo) y nunca NaN ni signos dobles.
+- El periodo elegido (4 sem · 3 meses · …) ya se recordaba por pantalla (localStorage, charts.getPeriod).
+
+## 13. Nada cortado con «…»
+
+Las guardas visuales fallan si un texto se corta con «…» con los datos de prueba. En vez de cortar: las cifras de
+las casillas (KPI) y sus etiquetas parten en los espacios y los nombres largos de las listas también. Un título de
+pantalla que no cabe pasa a 18 px y hasta dos líneas (ui.js `fitTitle`, clase `.topbar-long`); la cabecera no cambia
+de altura y su altura real se publica en `--topbar-h` (`watchTopbar`) para que «ir a» no deje nada bajo ella.
+
+## 14. Valores imposibles o muy raros (js/sanity.js)
+
+Tres clases por campo: **imposible** (no se guarda y se dice qué revisar), **muy raro** (se guarda, pero se pregunta
+«¿Seguro?» con «Corregir» / «Sí, …») y **normal**. Los límites son amplios a propósito: un récord del mundo o un
+ultra real nunca es «imposible».
+
+- Series de fuerza: 900 kg en banca → «¿Seguro? Has puesto 900 kg. ¿Es correcto?»; más de 1000 kg → no se registra.
+- Peso corporal: fuera de 35–200 kg pregunta; fuera de 20–400 kg no se guarda.
+- Actividades (se guardan solas): un dato imposible (10 km en 2 min, FC 600) no llega al disco; el estado dice
+  «Sin guardar: revisa los datos» y «Listo» no deja salir. Uno muy raro (FC 220) se guarda y se pregunta al pulsar
+  «Listo». Un cambio de tipo confirmado se guarda siempre (tiene «Deshacer»); si deja datos imposibles para el tipo
+  nuevo, el estado dice «Guardado: revisa los datos».
+- FC en lpm, cadencia en ppm, ritmo en min/km (natación: /100 m), bici en km/h.
+
+Pruebas: tests/unit/sanity.test.mjs, tests/e2e/sanity.test.cjs (Chromium y WebKit).
+
+## 15. Formatters en los bordes
+
+Ningún texto visible puede decir NaN, undefined, Infinity ni «+-». Revisado y probado
+(tests/unit/formatters-boundary.test.mjs): una fecha inválida se ve «—»; un ritmo de una hora o más por km se ve
+«—» (y el aviso dice «Más de una hora por km» en vez de «6:12:00 /km»); una serie con un número no finito se trata
+como vacía; un desnivel negativo se escribe «−1 m» con el signo menos tipográfico.

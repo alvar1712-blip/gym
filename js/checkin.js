@@ -31,7 +31,7 @@ import {
 export * from './checkin-logic.js';
 
 /** La línea que explica para qué sirve (se muestra en la tarjeta y en el resumen). */
-export const CHECKIN_HINT = 'Solo se usa como contexto en el panel semanal y en la sugerencia de descarga.';
+export const CHECKIN_HINT = 'Solo lo ves tú. Sirve para tu análisis de recuperación y el panel semanal.';
 
 /** Un segundo toque sobre el mismo botón en este margen es un doble toque accidental: no quita el valor. */
 const DOUBLE_TAP_MS = 450;

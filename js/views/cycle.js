@@ -544,7 +544,7 @@ export function mountCycle(root) {
         h('span.cyc-cycle-bar', { style: { '--w': `${Math.min(100, (info.current.day / Math.max(info.cycleLength, info.current.day)) * 100)}%` } }),
         h('span.list-item-main',
           h('span.list-item-title', info.hormonal ? `Desde el ${fmtDate(last.start, 'day')}` : 'Ciclo actual'),
-          h('span.list-item-sub', `${info.hormonal ? '' : `Desde el ${fmtDate(last.start, 'day')} · `}día ${info.current.day} · ${info.hormonal ? 'sangrado' : 'regla'} ${daysTxt(last.lengthDays)}${info.ongoing ? ' (en curso)' : ''}`)),
+          h('span.list-item-sub.wrap', `${info.hormonal ? '' : `Desde el ${fmtDate(last.start, 'day')} · `}día ${info.current.day} · ${info.hormonal ? 'sangrado' : 'regla'} ${daysTxt(last.lengthDays)}${info.ongoing ? ' (en curso)' : ''}`)),
         icon('chevron-right', 20, 'chev')));
     }
     for (const cy of [...info.cycles].reverse().slice(0, 12)) {

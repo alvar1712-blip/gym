@@ -107,7 +107,8 @@ export function distanceLabel(kind, km) {
 
 /** Desnivel: «+850 m». */
 export function elevationLabel(m) {
-  return m == null || !Number.isFinite(m) ? '—' : `+${num(m, 0)} m`;
+  if (m == null || !Number.isFinite(m)) return '—';
+  return m < 0 ? `−${num(-m, 0)} m` : `+${num(m, 0)} m`; // nunca «+-1 m»
 }
 
 /**

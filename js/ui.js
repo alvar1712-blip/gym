@@ -283,8 +283,40 @@ function layoutCompact(bar) {
 /** Estructura estándar de pantalla: cabecera + <div.content>. Devuelve el contenedor de contenido. */
 export function screen(root, headerOpts) {
   const content = h('div.content');
-  root.replaceChildren(header(headerOpts), content);
+  const top = header(headerOpts);
+  root.replaceChildren(top, content);
+  fitTitle(top);
+  watchTopbar(top);
   return content;
+}
+
+/**
+ * Título largo de una pantalla de detalle (una rutina, una carrera): en vez de cortarse con «…», pasa a 18 px y hasta
+ * dos líneas (como el de la sesión). Dos líneas de 18 px caben en el alto del botón «atrás»: la cabecera mide lo
+ * mismo con el título grande y con el compacto (sin saltos al desplazar).
+ */
+function fitTitle(bar) {
+  const h1 = bar && bar.querySelector('h1');
+  if (!h1 || !bar.querySelector('.back-btn') || !h1.isConnected) return;
+  if (h1.scrollWidth > h1.clientWidth + 1) bar.classList.add('topbar-long');
+}
+
+let topbarRO = null;
+/**
+ * Alto real de la cabecera de la pantalla actual en --topbar-h (con la zona segura; un título largo en dos líneas la
+ * hace más alta): los scroll-margin-top lo usan para que lo que se desplaza a la vista no quede bajo la cabecera.
+ */
+function watchTopbar(el) {
+  if (typeof ResizeObserver !== 'function' || !el) return;
+  if (!topbarRO) {
+    topbarRO = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        if (e.target.isConnected) document.documentElement.style.setProperty('--topbar-h', `${Math.ceil(e.target.getBoundingClientRect().height)}px`);
+      }
+    });
+  }
+  topbarRO.disconnect();
+  topbarRO.observe(el);
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1107,15 @@ export function stateTag(kind, label, { small = false, className = '', title = n
   const ic = conf ? null : icon(STATE_ICON[kind] || 'info', small ? 13 : 14);
   return h(`span.state.state-${kind}${small ? '.state-sm' : ''}${className ? `.${className.trim().split(/\s+/).join('.')}` : ''}`,
     title ? { title } : {}, ic, label);
+}
+
+/**
+ * Valores muy raros (js/sanity.js): «¿Seguro?» con lo que se ha puesto. true si no hay nada raro o se confirma.
+ * @param {{ message: string }[]} rare
+ */
+export async function confirmRare(rare, { confirmText = 'Sí, guardar', cancelText = 'Corregir' } = {}) {
+  if (!rare || !rare.length) return true;
+  return confirmDialog({ title: '¿Seguro?', message: `${rare.map((i) => i.message).join(' ')} ¿Es correcto?`, confirmText, cancelText });
 }
 
 /** Bloque desplegable «¿Por qué?» */

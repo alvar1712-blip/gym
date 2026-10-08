@@ -146,7 +146,7 @@ export function pastRecoveryCard(exercise, data = null) {
   if (!own.length) {
     return h('button.list-item.prg-link-row.pr-link-add', { type: 'button', dataset: { link: 'past-add' }, onClick: () => navigate(`${LIST}/new?exercise=${encodeURIComponent(exercise.id)}`) },
       icon('trophy', 22),
-      h('span.list-item-main', h('span.list-item-title', 'Añadir marca histórica'), h('span.list-item-sub', 'Tu mejor marca de antes de Entreno, para ver cuánto has recuperado')),
+      h('span.list-item-main', h('span.list-item-title', 'Añadir marca histórica'), h('span.list-item-sub.wrap', 'Tu mejor marca de antes de Entreno, para ver cuánto has recuperado')),
       icon('chevron-right', 20, 'chev'));
   }
   const r = recoveryOf(exercise, ctx);

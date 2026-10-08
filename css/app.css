@@ -184,6 +184,9 @@ img, svg { display: block; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Pantallas de detalle con un nombre largo (ui.fitTitle): 18 px y hasta dos líneas en vez de «…», como la sesión.
+   Dos líneas de 18 px caben en el alto del botón «atrás»: la cabecera no cambia de alto al pasar a compacta. */
+.topbar.topbar-long h1 { font-size: 18px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Pantallas raíz (pestañas): título grande, como iOS */
 .topbar-root h1 { font-size: 30px; letter-spacing: -0.02em; }
 .topbar-sub { width: fit-content; max-width: 100%; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -892,8 +895,9 @@ body:has(.update-bar:not([hidden])) .view { padding-bottom: calc(var(--tabbar-h)
 .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .kpis-2 { grid-template-columns: repeat(2, 1fr); }
 .kpi { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; min-width: 0; }
-.kpi-label { font-size: 12px; color: var(--muted); font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kpi-value { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Envolver antes que cortar con «…» (pulido): la etiqueta y la cifra parten en los espacios, nunca dentro de un número */
+.kpi-label { font-size: var(--fs-xs); color: var(--muted); font-weight: 650; line-height: 1.25; }
+.kpi-value { font-size: 20px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .kpi-unit { font-size: var(--fs-sm); font-weight: 700; color: var(--text-2); }
 .kpi-sub { font-size: 12px; color: var(--muted); }
 

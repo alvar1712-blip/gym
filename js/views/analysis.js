@@ -24,7 +24,8 @@ import { getProfile, profileExtrasMissing } from '../profile.js';
 import { weekFocus } from '../focus.js';
 
 const STATUS_TAG = { fast: 'Rápido', good: 'Bien', stalled: 'Estancado', down: 'Bajando' };
-const STATUS_CLASS = { fast: 'ok', good: 'ok', stalled: 'warn', down: 'danger' };
+/** Estado de un ejercicio con el componente de estados (ui.stateTag): icono + texto, igual en toda la app. */
+const STATUS_STATE = { fast: 'progress', good: 'ok', stalled: 'stalled', down: 'warn' };
 const PACE_CLASS = { in: 'ok', below: 'warn', above: 'warn' };
 /** Ronda 6: clase de mejora en la lista de ejercicios («al 88 % de tu marca», «ejercicio nuevo»…). */
 const KIND_SUB = (x) => (x.kind === 'recovery' && x.recovery ? `al ${x.recovery.pct}${NB}% de tu marca`
@@ -461,7 +462,7 @@ function exerciseList(rows) {
     h('span.list-item-sub', [`1RM est. ${kgTxt(x.e1rmNow)}`, `${x.sessions}${NB}sesiones`, KIND_SUB(x)].filter(Boolean).join(' · '))),
   h('span.an-ex-right',
     h('span.an-ex-rate.tnum', rateText(x.ratePctPerWeek)),
-    h(`span.badge.badge-${STATUS_CLASS[x.status] || 'info'}.an-ex-status`, x.status === 'good' && x.slow ? 'Despacio' : STATUS_TAG[x.status])),
+    stateTag(STATUS_STATE[x.status] || 'info', x.status === 'good' && x.slow ? 'Despacio' : STATUS_TAG[x.status], { small: true, className: 'an-ex-status' })),
   icon('chevron-right', 18, 'chev')));
   const list = h('div.list.an-ex-list', items);
   const extra = rows.length - EX_VISIBLE;

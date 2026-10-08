@@ -85,6 +85,11 @@ test('calentamiento sugerido: plegado, desplegar, añadir series, 1 toque y sin 
     assert.deepStrictEqual(plain(await panel.locator('.ses-warm-step').allInnerTexts()), ['40 % · 32,5 kg × 8', '60 % · 47,5 kg × 5', '80 % · 65 kg × 3']);
     const addBtn = panel.locator('.ses-warm-add');
     assert.match(await addBtn.innerText(), /Añadir estas series/);
+    // Se mide con todo quieto: mientras se anima algo que la contiene (transform), la caja mide un pelo menos
+    // (43,9999 px en WebKit con la máquina cargada). Por condición: se esperan las animaciones finitas en curso.
+    await page.evaluate(() => Promise.all(document.getAnimations()
+      .filter((a) => a.effect?.getTiming?.().iterations !== Infinity)
+      .map((a) => a.finished.catch(() => {}))));
     const ab = await addBtn.boundingBox();
     assert.ok(ab.height >= 44 && ab.height < 50, `«Añadir estas series» en una línea y ≥ 44 px (${ab.height})`);
     await page.evaluate((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), `[data-se="${seOf('press_banca').id}"] .ses-warmup`);

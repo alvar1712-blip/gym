@@ -78,7 +78,7 @@ function etaLine(p, today) {
     case 'estimate': return `Estimación: ${p.etaText}`;
     case 'no_trend': return p.stall
       ? `Sin tendencia: estancado desde el ${G.fmtDay(p.stall.since, today)} (${p.stall.bestLabel})`
-      : 'Sin tendencia: con la tendencia actual no se acerca';
+      : 'Sin tendencia: al ritmo actual no te acercas';
     default: {
       const c = p.counts;
       const parts = [];

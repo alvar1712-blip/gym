@@ -346,7 +346,7 @@ test('Hoy y Progreso a 375×667: «Empezar» a la vista, «Omitir» el check-in 
     const small = await page.locator('.prg-links button, .prg-ov-row, .goal-sum-link, .goal-sum-row').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.height < 44).length);
     assert.strictEqual(small, 0, 'botones de al menos 44 px');
     const labels = await page.locator('.prg-link-label').evaluateAll((els) => els.map((e) => ({ t: e.textContent, cut: e.scrollWidth > e.clientWidth + 1 })));
-    assert.deepStrictEqual(labels.map((l) => l.t), ['Análisis', 'Panel semanal', 'Objetivos', 'Resúmenes', 'Predicciones', 'Récords', 'Peso', 'Ejercicios']);
+    assert.deepStrictEqual(labels.map((l) => l.t), ['Análisis', 'Panel semanal', 'Objetivos', 'Resúmenes', 'Tiempos previstos', 'Récords', 'Peso', 'Ejercicios']);
     assert.ok(labels.every((l) => !l.cut), `etiquetas sin recortar: ${JSON.stringify(labels)}`);
     await scrollShots(page, 'fase3-progress-375', 3);
     assert.deepStrictEqual(app.errors, []);

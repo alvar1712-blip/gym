@@ -2,13 +2,14 @@
 // Un valor por día (id = fecha); si se registra otra vez el mismo día, el último manda.
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, stepper, toast, undoToast, sheet, confirmDialog, whyBox, field } from '../ui.js';
+import { h, icon, screen, stepper, toast, undoToast, sheet, confirmDialog, whyBox, field, confirmRare } from '../ui.js';
 import { todayStr, fmtDate, fmtNum, fmtKg, fmtSigned, relDay, parseDate, isDateStr } from '../util.js';
 import { bwStats, bwWithDeltas, roundKg, trendWord, BW_TREND } from '../activity-logic.js';
 import { bodyweightChartCard, bodyweightChartOpts, cardHead } from '../progress-ui.js';
 import { lineChart, periodSelector, getPeriod } from '../charts.js';
 import { getProfile, cycleEnabled, isHormonal } from '../profile.js';
 import { periodsFromDays } from '../cycle-logic.js';
+import { checkBodyweight } from '../sanity.js';
 
 const KG_MIN = 20;
 const KG_MAX = 300;
@@ -76,6 +77,7 @@ export function bodyweightQuickEntry({ onSaved } = {}) {
     type: 'button',
     onClick: async () => {
       if (!validKg(val)) { toast(`Introduce un peso entre ${KG_MIN} y ${KG_MAX} kg.`, { kind: 'error' }); return; }
+      if (!(await confirmRare(checkBodyweight(val)))) return; // 210 kg → «¿Seguro?»
       const res = await saveEntry(today, val);
       val = res.entry.kg;
       st.setValue(val);
@@ -150,6 +152,7 @@ export function mountBodyweight(root) {
     if (!validKg(kg)) { toast(`Introduce un peso entre ${KG_MIN} y ${KG_MAX} kg.`, { kind: 'error' }); return; }
     if (!isDateStr(date)) { toast('Elige una fecha.', { kind: 'error' }); return; }
     if (date > todayStr()) { toast('La fecha no puede ser futura.', { kind: 'error' }); return; }
+    if (!(await confirmRare(checkBodyweight(kg)))) return;
     const res = await saveEntry(date, kg);
     st.setValue(res.entry.kg);
     notifySaved(res);

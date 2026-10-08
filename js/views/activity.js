@@ -5,12 +5,13 @@ import * as store from '../store.js';
 import { back, navigate, refresh, replaceUrl } from '../router.js';
 import {
   h, icon, header, segmented, chips, rpePicker, durationInput, field, textInput, numInput,
-  confirmDialog, undoToast, emptyState, toast,
+  confirmDialog, undoToast, emptyState, toast, confirmRare,
 } from '../ui.js';
 import { todayStr, fmtDate, uid, fmtDuration, fmtMinutes, debounce, isDateStr, hhmm, relDay, deepClone, dateFromTs } from '../util.js';
 import { SWIM_STROKES } from '../seed.js';
 import * as L from '../activity-logic.js';
 import { syncLinkedDuration } from '../session-logic.js';
+import { checkActivity, split } from '../sanity.js';
 
 const DRAFT_PREFIX = 'draft:activity:';
 const DRAFT_TTL = 48 * 3600 * 1000; // un borrador de hace más de 2 días ya no se ofrece
@@ -130,6 +131,7 @@ function mountForm(root, ctx) {
   let record = ctx.record; // objeto del store; null hasta que la actividad es válida
   let removed = false;
   let pendingSoon = false; // hay un saveSoon sin escribir aún en disco
+  let unsaved = false; // el último cambio no se escribió por un dato imposible
   const parent = ctx.parent || (form.parentId ? store.get('sessions', form.parentId) : null);
   const parentSe = ctx.se || (parent && form.parentItemId ? (parent.exercises || []).find((x) => x.id === form.parentItemId) : null);
   const backFallback = form.parentId ? `#/session/${form.parentId}` : '#/today';
@@ -390,8 +392,15 @@ function mountForm(root, ctx) {
     persist(immediate);
   }
 
-  function persist(immediate) {
+  /** Valores imposibles o muy raros (js/sanity.js, docs/PULIDO.md §14). Declaración de función (se usa al montar). */
+  function sanity() { return split(checkActivity(form)); }
+
+  function persist(immediate, { force = false } = {}) {
     if (removed) return;
+    // Un valor imposible (10 km en 2 min, FC 600) no se escribe: se queda lo último válido y el estado lo dice.
+    // Excepción (force): un cambio de tipo confirmado se guarda siempre (tiene deshacer); el estado pide revisar.
+    unsaved = !force && sanity().impossible.length > 0;
+    if (unsaved) { updateStatus(); return; }
     if (!record) {
       if (L.isValid(form)) create();
       else saveDraftSoon();
@@ -454,7 +463,7 @@ function mountForm(root, ctx) {
     buildBody();
     paintTitle();
     updateLive();
-    persist(true);
+    persist(true, { force: true });
     if (prev) undoToast(`Tipo cambiado a ${L.KIND_UI[k].label.toLowerCase()}`, () => undoKindSwitch(prev));
   }
 
@@ -522,9 +531,12 @@ function mountForm(root, ctx) {
     if (record && !(form.movingSec > 0)) bits.push(`Sin duración se mantiene la guardada (${fmtDuration(record.movingSec)}).`);
     const paceWarn = L.paceWarning(form);
     if (paceWarn) bits.push(paceWarn);
+    // Imposibles y muy raros (sin repetir el aviso de ritmo de la carrera, que ya lo dice)
+    const odd = checkActivity(form).filter((i) => !(paceWarn && (i.field === 'pace' || i.level === 'rare')));
+    for (const i of odd) bits.push(i.level === 'impossible' ? i.message : `${i.message} Si es correcto, no tienes que hacer nada.`);
     refs.durHint.textContent = bits.join(' · ');
     refs.durHint.hidden = !bits.length;
-    refs.durHint.classList.toggle('warn', !!paceWarn);
+    refs.durHint.classList.toggle('warn', !!paceWarn || odd.length > 0);
     if (refs.elapsedHint) {
       const bad = form.elapsedSec > 0 && form.movingSec > 0 && form.elapsedSec < form.movingSec;
       refs.elapsedHint.textContent = bad ? 'El tiempo total suele ser mayor o igual que el tiempo en movimiento.' : 'Incluye paradas (opcional).';
@@ -534,6 +546,11 @@ function mountForm(root, ctx) {
 
   function updateStatus() {
     statusEl.classList.remove('act-status-error');
+    if (sanity().impossible.length) {
+      statusEl.replaceChildren(icon('alert', 18), h('span', unsaved || !record ? 'Sin guardar: revisa los datos' : 'Guardado: revisa los datos'));
+      statusEl.className = 'act-status act-status-error';
+      return;
+    }
     if (record) {
       statusEl.replaceChildren(icon('check', 18), h('span', 'Guardado'));
       statusEl.className = 'act-status act-status-ok';
@@ -548,7 +565,11 @@ function mountForm(root, ctx) {
   }
 
   // ---------- acciones ----------
-  function done() {
+  async function done() {
+    const { impossible, rare } = sanity();
+    if (impossible.length) { toast(impossible[0].message, { kind: 'error' }); return; }
+    if (rare.length && !(await confirmRare(rare, { confirmText: 'Sí, es correcto' }))) return;
+    if (!alive || removed) return;
     if (!record) {
       if (!userContent()) { back(backFallback); return; }
       statusEl.replaceChildren(h('span', `${L.missingText(L.validate(form))} para guardar`));

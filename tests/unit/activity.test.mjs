@@ -335,7 +335,9 @@ test('bwWithDeltas: lista descendente con variación respecto al anterior', () =
 
 test('paceWarning: avisa (sin bloquear) de un ritmo de carrera imposible, como 31 min escritos en la casilla de las horas', () => {
   const f = (kind, km, sec) => ({ ...emptyForm(kind, { date: D }), distanceKm: km, movingSec: sec });
-  assert.match(paceWarning(f('run', 5, 31 * 3600)), /^Ritmo de 6:12:00 \/km: más lento que caminar\. ¿Escribiste los minutos en la casilla de las horas\?$/);
+  // Nunca un ritmo con horas («6:12:00 /km»): por encima de una hora por km, se dice con palabras
+  assert.match(paceWarning(f('run', 5, 31 * 3600)), /^Más de una hora por km: más lento que caminar\. ¿Escribiste los minutos en la casilla de las horas\?$/);
+  assert.match(paceWarning(f('run', 5, 2 * 3600)), /^Ritmo de 24:00 \/km: más lento que caminar/);
   assert.match(paceWarning(f('run', 10, 600)), /demasiado rápido para ser real/);
   assert.equal(paceWarning(f('run', 5, 31 * 60)), null);
   assert.equal(paceWarning(f('run', 5, 5 * 1200)), null, '20:00 /km justo aún cuenta');

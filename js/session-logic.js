@@ -544,8 +544,10 @@ function rirTxt(rir) {
  */
 export function formatSet(set, logType, { kg = false, rir = true } = {}) {
   if (!set) return '';
-  const w = typeof set.weight === 'number' ? set.weight : null;
-  const reps = set.reps ?? '—';
+  // Valores no finitos (NaN, Infinity) cuentan como vacíos: nunca «— kg × Infinity»
+  const fin = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const w = fin(set.weight);
+  const reps = fin(set.reps) ?? '—';
   let main;
   switch (logType) {
     case 'bodyweight': {
@@ -554,7 +556,7 @@ export function formatSet(set, logType, { kg = false, rir = true } = {}) {
       break;
     }
     case 'unilateral': {
-      const r = `${set.reps ?? '—'}/${set.repsR ?? '—'}`;
+      const r = `${fin(set.reps) ?? '—'}/${fin(set.repsR) ?? '—'}`;
       main = w != null ? `${kgTxt(w)} kg × ${r}` : `${r} reps`;
       break;
     }
@@ -563,13 +565,13 @@ export function formatSet(set, logType, { kg = false, rir = true } = {}) {
       if (w) main += ` · ${fmtLastre(w)}`;
       break;
     case 'distance_time': {
-      const d = set.distanceM != null ? `${fmtNum(set.distanceM, 1)} m` : '';
-      const t = set.timeSec != null ? `${fmtNum(set.timeSec, 2)} s` : '';
+      const d = fin(set.distanceM) != null ? `${fmtNum(set.distanceM, 1)} m` : '';
+      const t = fin(set.timeSec) != null ? `${fmtNum(set.timeSec, 2)} s` : '';
       main = d && t ? `${d} en ${t}` : d || t || '—';
       break;
     }
     case 'jumps':
-      main = `${reps} reps${set.heightCm ? ` · ${fmtNum(set.heightCm, 1)} cm` : ''}`;
+      main = `${reps} reps${fin(set.heightCm) ? ` · ${fmtNum(set.heightCm, 1)} cm` : ''}`;
       break;
     default:
       main = w != null ? (kg ? `${kgTxt(w)} kg × ${reps}` : `${kgTxt(w)}×${reps}`) : `${reps} reps`;

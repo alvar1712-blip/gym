@@ -20,7 +20,7 @@
 .an-profile .banner-text { display: block; }
 
 /* ---------- Tarjetas ---------- */
-.an-card { gap: 12px; min-width: 0; scroll-margin-top: calc(var(--sat) + 64px); }
+.an-card { gap: 12px; min-width: 0; scroll-margin-top: calc(var(--topbar-h, calc(var(--sat) + 56px)) + 8px); }
 .an-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .an-card-icon {
   flex: none;
@@ -193,7 +193,7 @@
 .an-ex .list-item-sub { font-size: 13px; white-space: normal; line-height: 1.3; }
 .an-ex-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .an-ex-rate { font-size: 14px; font-weight: 750; white-space: nowrap; }
-.an-ex-status { font-size: var(--fs-xs); padding: 2px 7px; }
+.an-ex-status { flex: none; }
 .an-more { margin-top: 4px; }
 
 /* ---------- Ciclo ---------- */

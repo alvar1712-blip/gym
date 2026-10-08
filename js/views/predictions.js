@@ -8,7 +8,7 @@
 // PROPIETARIO: módulo de predicciones. Los cálculos salen de js/race-predict.js (puro); aquí solo DOM.
 // Tono prudente: siempre estimación, nunca promesa.
 import { navigate } from '../router.js';
-import { h, icon, screen, segmented, durationInput, numInput, field, emptyState, whyBox, stateTag } from '../ui.js';
+import { h, icon, screen, segmented, durationInput, numInput, field, emptyState, whyBox, stateTag, kpiValue } from '../ui.js';
 import { fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
 import { racesLink } from './races.js';
@@ -368,7 +368,7 @@ function effortItem(e) {
 
 function basisView(r) {
   const longest = r.longest;
-  const kpi = (label, value, sub) => h('div.kpi', h('div.kpi-label', label), h('div.kpi-value', value), h('div.kpi-sub', sub));
+  const kpi = (label, value, sub) => h('div.kpi', h('div.kpi-label', label), kpiValue(value), h('div.kpi-sub', sub));
   return h('section.card.prd-basis', { 'aria-labelledby': 'prd-basis-title' },
     h('h2.prd-basis-title', { id: 'prd-basis-title' }, 'Con qué se calcula'),
     h('div.kpis.prd-kpis',

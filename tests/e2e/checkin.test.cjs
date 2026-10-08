@@ -16,7 +16,7 @@ const { waitReady, go, reload, idbAll, storeAll, shot, BROWSER } = require('./he
 const TODAY = '2026-09-24';
 const YESTERDAY = '2026-09-23';
 const madrid = (date, hh = 18) => new Date(`${date}T${String(hh).padStart(2, '0')}:00:00+02:00`).getTime();
-const HINT = 'Solo se usa como contexto en el panel semanal y en la sugerencia de descarga.';
+const HINT = 'Solo lo ves tú. Sirve para tu análisis de recuperación y el panel semanal.';
 
 async function launch({ width = 390, height = 844, sat = null } = {}) {
   const { startServer } = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
@@ -248,7 +248,7 @@ test('check-in «antes» en la sesión: plegado, 4 toques guardados al instante,
     assert.deepStrictEqual(await row('pre').allInnerTexts(), ['Normal', 'Normal', 'Bajo', 'Bajas']);
     assert.deepStrictEqual(await row('post').allInnerTexts(), ['Normal', 'Baja', 'Alto', 'Altas']);
     assert.deepStrictEqual(await sum.locator('.ci-sum-when').allInnerTexts(), ['ANTES', 'DESPUÉS']);
-    assert.match(await sum.innerText(), /panel semanal y en la sugerencia de descarga/);
+    assert.match(await sum.innerText(), /Sirve para tu análisis de recuperación y el panel semanal/);
     await shot(page, 'checkin-summary');
 
     // Editar desde el resumen: hoja con los dos, sin «Omitir»

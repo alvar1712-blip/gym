@@ -132,7 +132,7 @@
 .prg-link-emoji { flex: none; font-size: 20px; line-height: 1; }
 .prg-link-label { max-width: 100%; font-size: 14px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prg-link-wide { grid-column: span 3; flex-direction: row; gap: 6px; min-height: 52px; padding: 6px 4px; }
-.prg-link-wide .prg-link-label { min-width: 0; font-size: 15px; }
+.prg-link-wide .prg-link-label { min-width: 0; font-size: 15px; white-space: normal; overflow-wrap: anywhere; text-align: center; } /* «Tiempos previstos» en dos líneas antes que «…» */
 /* «Análisis» (ronda 5): a lo ancho, arriba, con subtítulo y flecha */
 .prg-link-full {
   grid-column: 1 / -1;
@@ -180,8 +180,8 @@
 }
 
 /* Tarjetas con gráfica */
-.prg-card { gap: 12px; min-width: 0; scroll-margin-top: calc(52px + var(--sat) + 12px); }
-.prg-charts > .prg-card { scroll-margin-top: calc(52px + var(--sat) + 68px); }
+.prg-card { gap: 12px; min-width: 0; scroll-margin-top: calc(var(--topbar-h, calc(52px + var(--sat))) + 12px); }
+.prg-charts > .prg-card { scroll-margin-top: calc(var(--topbar-h, calc(52px + var(--sat))) + 68px); }
 .prg-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .prg-card-titles { min-width: 0; }
 .prg-card-title { font-size: 18px; font-weight: 750; line-height: 1.2; }
@@ -265,7 +265,7 @@
 }
 .prg-mrow.is-pressed { background: var(--surface-2); }
 .prg-mrow-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.prg-mrow-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-mrow-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
 .prg-mrow-val { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .prg-mrow-val b { font-size: 16px; font-weight: 800; color: var(--text); }
 .prg-status {
@@ -297,7 +297,7 @@
 .prg-mrow[data-status="above"] .prg-mbar-fill { background: var(--info); }
 
 /* Lista de ejercicios con historial */
-.prg-ex { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: calc(52px + var(--sat) + 8px); }
+.prg-ex { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: calc(var(--topbar-h, calc(52px + var(--sat))) + 8px); }
 .prg-ex-head { align-items: baseline; margin-top: 10px; }
 .prg-ex-head .section-title { margin: 0 2px; }
 .prg-search::-webkit-search-decoration { -webkit-appearance: none; }
@@ -552,3 +552,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .prg-ov-row .chev { flex: none; color: var(--muted); }
 .spark { display: block; overflow: visible; }
 .spark-empty { display: block; }
+
+/* La frase de cada gráfica (docs/PULIDO.md §12): lo primero que se lee, sin colores de juicio (subir el peso puede
+   ser bueno o malo según tu objetivo); la flecha la da el signo del texto. */
+.chart-summary { margin-top: -4px; font-size: var(--fs-md); font-weight: 700; line-height: 1.35; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

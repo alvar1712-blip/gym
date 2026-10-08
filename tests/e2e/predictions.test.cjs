@@ -478,7 +478,7 @@ test('iPhone: un tiempo de 31 h no rompe la pantalla; media y maratón «todaví
     await page.locator('.prd-suspect-item').click();
     await page.waitForFunction(() => location.hash === '#/activity/run_bad');
     await page.locator('.act-dur-hint').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.act-dur-hint').textContent(), 'Ritmo de 6:12:00 /km: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?');
+    assert.equal(await page.locator('.act-dur-hint').textContent(), 'Más de una hora por km: más lento que caminar. ¿Escribiste los minutos en la casilla de las horas?');
     assert.ok(await page.locator('.act-dur-hint').evaluate((el) => el.classList.contains('warn')));
     assert.deepEqual(errors, []);
   } finally {

@@ -115,6 +115,7 @@ export const MONTH_LONG = [
 export function fmtDate(str, style = 'short') {
   if (!str) return '—';
   const d = parseDate(str);
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—'; // «ayer», «2026-13-45»: nunca «undefined NaN»
   const wd = (d.getDay() + 6) % 7;
   const dd = d.getDate();
   const m = d.getMonth();
@@ -280,6 +281,8 @@ export function parseDuration(str, bareUnit = 'min') {
 /** seg/km → '5:12 /km' */
 export function fmtPace(secPerKm, unit = '/km') {
   if (secPerKm == null || !Number.isFinite(secPerKm) || secPerKm <= 0) return '—';
+  // Una hora o más (también 59:59,6 redondeado): no es un ritmo sino un error de datos; nunca «1:05:00 /km»
+  if (Math.round(secPerKm) >= PACE_FMT_MAX) return '—';
   return `${fmtDuration(secPerKm)} ${unit}`;
 }
 export function fmtSpeed(kmh) {

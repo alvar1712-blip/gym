@@ -11,6 +11,7 @@ import {
   extraSet, warmupSet, switchExercise, suggestedWarmup, warmupSetsFromPlan,
 } from './session-logic.js';
 import { progressionHint } from './progression.js';
+import { checkSet, split } from './sanity.js';
 
 const TYPE_OPTS = [
   { value: 'warmup', label: 'Calent.' },
@@ -408,14 +409,28 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
 }
 
 /** Confirma una serie pendiente (1 toque con los valores prellenados). */
-function registerSet(ctx, se, set, ex, logType) {
+function registerSet(ctx, se, set, ex, logType, { confirmed = false } = {}) {
+  const focusField = (key) => {
+    const inp = key && ctx.cardEl?.(se)?.querySelector(`.ses-editor [data-field="${key}"]`);
+    if (inp) inp.focus();
+  };
   const err = validateSet(set, logType);
   if (err) {
     toast(err, { kind: 'error' });
     // Lleva al campo que falta (abre el teclado: estamos dentro del toque).
-    const key = missingField(set, logType);
-    const inp = key && ctx.cardEl?.(se)?.querySelector(`.ses-editor [data-field="${key}"]`);
-    if (inp) inp.focus();
+    focusField(missingField(set, logType));
+    return;
+  }
+  // Imposible → no se guarda; muy raro (900 kg, 150 reps) → «¿Seguro?» (docs/PULIDO.md §14)
+  const { impossible, rare } = split(checkSet(set, logType));
+  if (impossible.length) {
+    toast(impossible[0].message, { kind: 'error' });
+    focusField(impossible[0].field);
+    return;
+  }
+  if (rare.length && !confirmed) {
+    confirmDialog({ title: '¿Seguro?', message: `${rare.map((i) => i.message).join(' ')} ¿Es correcto?`, confirmText: 'Sí, registrar', cancelText: 'Corregir' })
+      .then((ok) => { if (ok) registerSet(ctx, se, set, ex, logType, { confirmed: true }); else focusField(rare[0].field); });
     return;
   }
   const i = se.sets.indexOf(set);
