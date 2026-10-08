@@ -533,7 +533,8 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
         await st.save('bodyweight', { id, kg: Math.round((75.4 - 0.05 * i) * 10) / 10 });
       }
     }, today);
-    await page.waitForTimeout(150);
+    // La pantalla se repinta sola al cambiar el store: se espera a que estén las 28 filas (antes, 150 ms fijos)
+    await page.waitForFunction(() => document.querySelectorAll('.bw-row').length === 28);
     const summary = await page.locator('.bw-summary').innerText();
     assert.match(summary, /\+0,3\d kg\/sem/, summary);
     assert.match(summary, /subiendo/);

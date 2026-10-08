@@ -406,11 +406,14 @@ function planningSection(date, st, ctx) {
  * acción principal («Registrar ruta en bici») quedarían si no ocultos bajo la cabecera.
  */
 function showTop() {
-  window.scrollTo({ top: 0, behavior: scrollBehavior() });
   // El botón pulsado (o el que abrió la hoja) ya no existe tras repintar: el foco va al plan nuevo
-  // (VoiceOver lo lee). El repintado va en una microtarea; esto, después.
+  // (VoiceOver lo lee). El repintado va en una microtarea; esto, después. Y la subida también: en WebKit,
+  // sustituir el contenido de la página cancela un desplazamiento suave en curso (la vista se quedaba abajo).
   planFocusPending = true;
-  setTimeout(() => focusPlan(document.querySelector('.cal-dayview')), 0);
+  setTimeout(() => {
+    focusPlan(document.querySelector('.cal-dayview'));
+    window.scrollTo({ top: 0, behavior: scrollBehavior() });
+  }, 0);
 }
 
 let planFocusPending = false;
