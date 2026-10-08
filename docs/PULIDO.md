@@ -182,3 +182,21 @@ Ningún texto visible puede decir NaN, undefined, Infinity ni «+-». Revisado y
 (tests/unit/formatters-boundary.test.mjs): una fecha inválida se ve «—»; un ritmo de una hora o más por km se ve
 «—» (y el aviso dice «Más de una hora por km» en vez de «6:12:00 /km»); una serie con un número no finito se trata
 como vacía; un desnivel negativo se escribe «−1 m» con el signo menos tipográfico.
+
+## 16. «Deshacer»
+
+Auditoría de las 27 acciones con «Deshacer» y de los borrados sin él (sesión, series, ejercicios de la sesión,
+actividades, peso, check-in, contexto, carreras, marcas, ejercicios, rutinas, objetivos, eventos, importación).
+Reglas que cumplen todas:
+
+- **Una sola vez**: tocar «Deshacer» dos veces no restaura dos veces (ui.js `undoToast`).
+- **Exactamente como estaba**: el registro vuelve igual (con su id y sus enlaces); el cursor de la sesión también;
+  si borrar una actividad cambió la duración automática de su sesión de fuerza, «Deshacer» la devuelve.
+- **Se ve al instante**: si al tocar «Deshacer» la pantalla visible ya no es la que borró (p. ej. borrar un evento
+  entrando desde Hoy y volver a Hoy), `undoToast` la vuelve a pintar tras restaurar.
+- **Nada destructivo sin red**: cambiar el ejercicio de un ítem (sesión o rutina), sustituir o quitar una zona del
+  check-in, vaciar un borrador recuperado o la lista de importación ahora tienen «Deshacer».
+- Un ejercicio con marcas históricas no se borra (se archiva), como uno con sesiones, rutinas u objetivos.
+- Borrar una sesión abierta desde su resumen vuelve a la pantalla de origen (no a «Esta sesión no existe»).
+
+Pruebas: tests/e2e/undo.test.cjs (Chromium y WebKit), tests/unit/library.test.mjs (marcas en exerciseUsage).

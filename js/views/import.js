@@ -5,7 +5,7 @@
 import * as store from '../store.js';
 import { navigate } from '../router.js';
 import {
-  h, icon, screen, sheet, segmented, chips, rpePicker, durationInput, field, numInput, textInput, toast, confirmDialog,
+  h, icon, screen, sheet, segmented, chips, rpePicker, durationInput, field, numInput, textInput, toast, confirmDialog, undoToast,
 } from '../ui.js';
 import { todayStr, fmtDate, uid, plural, isDateStr, hhmm } from '../util.js';
 import { ACTIVITY_EMOJI } from '../seed.js';
@@ -138,9 +138,20 @@ export function mountImport(root) {
   }
 
   function clearList() {
+    if (state.busy) return;
+    const prev = { items: state.items, errors: state.errors };
     state.items = [];
     state.errors = [];
     paint();
+    // Las revisiones (deporte, fecha, RPE…) no se pierden por un toque sin querer
+    undoToast('Lista vaciada', () => {
+      if (!alive) return;
+      state.items = prev.items.concat(state.items); // lo elegido entretanto, también
+      state.errors = prev.errors.concat(state.errors);
+      state.result = null;
+      refreshDuplicates();
+      paint();
+    });
   }
 
   function itemTitle(it) {

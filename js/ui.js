@@ -1,5 +1,5 @@
 // ui.js — utilidades DOM y componentes comunes (tema oscuro, pensado para una mano).
-import { back as routerBack, routeEpoch, pushOverlay, onMount } from './router.js';
+import { back as routerBack, navigate, routeEpoch, pushOverlay, onMount, refresh as routerRefresh } from './router.js';
 import { numToInput, parseNum, clamp, round } from './util.js';
 
 // ---------------------------------------------------------------------------
@@ -798,9 +798,44 @@ export function toast(message, { actionLabel = null, onAction = null, duration =
   return { close };
 }
 
-/** Toast de «Eliminado · Deshacer». */
+/**
+ * «Vaciar» un borrador recuperado (localStorage[key]) con «Deshacer»: se vuelve a montar `hash` en blanco y, si se
+ * deshace, el borrador vuelve (salvo que ya se haya empezado otro) y la pantalla se repinta con él.
+ */
+export function discardDraftUndo(key, hash) {
+  let snap = null;
+  try { snap = localStorage.getItem(key); localStorage.removeItem(key); } catch { /* sin almacenamiento */ }
+  navigate(hash, { replace: true });
+  if (!snap) return;
+  // Después de navigate(): el aviso cuenta ya con la pantalla nueva y no se cierra al montarla
+  undoToast('Borrador vaciado', () => {
+    try { if (!localStorage.getItem(key)) localStorage.setItem(key, snap); } catch { /* sin almacenamiento */ }
+    // undoToast repinta la pantalla (ya se montó otra vez desde el aviso): vuelve el banner con el borrador
+  });
+}
+
+// Pantallas montadas desde que arrancó la app: «Deshacer» sabe si la pantalla visible ya no es la que borró.
+let mounts = 0;
+onMount(() => { mounts++; });
+
+/**
+ * Toast de «Eliminado · Deshacer». Se deshace una sola vez. Si al tocar «Deshacer» la pantalla visible no es la
+ * que hizo el cambio (p. ej. se borró un evento y se volvió a Hoy), se vuelve a pintar después de restaurar:
+ * así nunca queda una pantalla con datos viejos (docs/PULIDO.md §16).
+ */
 export function undoToast(message, onUndo, duration = 7000) {
-  return toast(message, { actionLabel: 'Deshacer', onAction: onUndo, duration, kind: 'undo' });
+  const at = mounts;
+  let used = false;
+  return toast(message, {
+    actionLabel: 'Deshacer', duration, kind: 'undo',
+    onAction: async () => {
+      if (used) return;
+      used = true;
+      try { await onUndo?.(); } finally {
+        if (mounts !== at) routerRefresh();
+      }
+    },
+  });
 }
 
 /** Cierra el aviso si es de una pantalla anterior (app.js lo llama en cada cambio de ruta). */

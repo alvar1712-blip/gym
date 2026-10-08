@@ -218,7 +218,7 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     assert.strictEqual(await diff.locator('.ses-check').count(), 2);
     await shot(page, 'session-diff');
     await diff.locator('.sheet-actions button', { hasText: 'Aplicar a la plantilla' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id);
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id);
 
     s = await getSession(page, id);
     assert.strictEqual(s.status, 'done');
@@ -378,7 +378,7 @@ test('alternativas, cardio enlazado y cursor al volver', async () => {
     await fin.locator('.ses-dur input').fill('');
     await fin.locator('.rpe-chips .chip', { hasText: /^5$/ }).click();
     await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id3);
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id3);
     s = await getSession(page, id3);
     assert.deepStrictEqual([s.status, s.durationMin, s.durationAuto], ['done', 25, true]);
     // resumen: duración y carga totales (fuerza + actividades), con la de la fuerza aparte
@@ -447,7 +447,7 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     assert.strictEqual(await fin.locator('.ses-dur input').inputValue(), '55');
     assert.strictEqual(await fin.locator('.rpe-chips .chip.active').innerText(), '6');
     await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id);
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id);
     s = await getSession(page, id);
     assert.strictEqual(s.durationMin, 55);
     assert.strictEqual(s.rpe, 6);

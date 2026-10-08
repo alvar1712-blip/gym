@@ -155,14 +155,22 @@ export function mountSession(root, params = {}) {
       });
       return ok ? acts : null;
     },
-    /** Borra las actividades confirmadas con confirmLinked y ofrece deshacer (restaura `se` y las actividades). */
-    async afterDropLinked(se, before, acts, msg) {
-      const removed = await dropActivities(acts);
-      syncDuration();
-      undoToast(`${msg} · ${plural(removed.length, 'actividad borrada', 'actividades borradas')}`, async () => {
-        if (before) { for (const k of Object.keys(se)) delete se[k]; Object.assign(se, before); }
-        const writes = removed.map((o) => store.restore('sessions', o)); // en memoria al instante
+    /**
+     * Tras cambiar el ejercicio de un ítem: borra las actividades confirmadas con confirmLinked (si las hay) y
+     * ofrece deshacer, que deja el ítem, el cursor y las actividades exactamente como estaban.
+     */
+    async afterDropLinked(se, before, acts, msg, prevCursor = null) {
+      const removed = acts.length ? await dropActivities(acts) : [];
+      if (removed.length) {
         syncDuration();
+        if (!unmounted) ctx.rerenderCard(se); // la tarjeta ya no muestra la actividad borrada
+      }
+      undoToast(removed.length ? `${msg} · ${plural(removed.length, 'actividad borrada', 'actividades borradas')}` : msg, async () => {
+        if (before) { for (const k of Object.keys(se)) delete se[k]; Object.assign(se, before); }
+        if (prevCursor != null) session.cursor = prevCursor;
+        ctx.editing.delete(se.id);
+        const writes = removed.map((o) => store.restore('sessions', o)); // en memoria al instante
+        if (removed.length) syncDuration();
         ctx.save();
         if (!unmounted) renderList();
         await Promise.allSettled(writes);
@@ -320,7 +328,7 @@ export function mountSession(root, params = {}) {
         ? h('div.stack-sm',
           h('button.btn.btn-primary.btn-lg.btn-block.ses-finish', { type: 'button', onClick: openFinish }, icon('flag', 22), 'Terminar sesión'),
           finishHint)
-        : h('button.btn.btn-secondary.btn-lg.btn-block.ses-to-summary', { type: 'button', onClick: () => navigate(`#/session/${session.id}/summary`) }, icon('chart', 22), 'Ver resumen'));
+        : h('button.btn.btn-secondary.btn-lg.btn-block.ses-to-summary', { type: 'button', onClick: () => navigate(`#/session/${session.id}/summary?from=session`) }, icon('chart', 22), 'Ver resumen'));
   }
 
   function renderAll() {
@@ -396,13 +404,14 @@ export function mountSession(root, params = {}) {
     }
     const dropped = await ctx.confirmLinked(se, eid);
     if (dropped == null || unmounted) return;
-    const before = dropped.length ? deepClone(se) : null;
+    const before = deepClone(se);
+    const prevCursor = session.cursor;
     switchExercise(se, eid, session);
     ctx.editing.delete(se.id);
     ctx.touch(se);
     ctx.save();
     ctx.rerenderCard(se);
-    if (dropped.length) ctx.afterDropLinked(se, before, dropped, `Cambiado a «${store.exercise(eid)?.name || eid}»`);
+    ctx.afterDropLinked(se, before, dropped, `Cambiado a «${store.exercise(eid)?.name || eid}»`, prevCursor);
   }
 
   async function editExerciseNote(se) {
@@ -433,15 +442,19 @@ export function mountSession(root, params = {}) {
     const i = session.exercises.indexOf(se);
     if (i < 0) return;
     const name = store.exercise(se.exerciseId)?.name || se.exName;
+    const prevCursor = session.cursor;
     session.exercises.splice(i, 1);
     session.cursor = Math.max(0, Math.min(session.cursor || 0, session.exercises.length - 1));
     ctx.save();
     renderList();
     const removed = dropped.length ? await dropActivities(dropped) : [];
-    if (removed.length) syncDuration();
+    if (removed.length) {
+      syncDuration();
+      if (!unmounted) renderList(); // sin la actividad ya borrada en «Otras actividades de esta sesión»
+    }
     undoToast(removed.length ? `«${name}» y ${plural(removed.length, 'su actividad', 'sus actividades')} quitados de la sesión` : `«${name}» quitado de la sesión`, async () => {
       session.exercises.splice(Math.min(i, session.exercises.length), 0, se);
-      session.cursor = i;
+      session.cursor = prevCursor;
       const writes = removed.map((o) => store.restore('sessions', o)); // en memoria al instante
       if (removed.length) syncDuration();
       ctx.save();
@@ -462,7 +475,7 @@ export function mountSession(root, params = {}) {
       actions: [
         { label: 'Cambiar fecha', icon: 'calendar', hint: fmtDate(session.date, 'day'), onClick: changeDate },
         { label: 'Duración, esfuerzo y notas', icon: 'clock', onClick: editMeta },
-        active ? null : { label: 'Ver resumen', icon: 'chart', onClick: () => navigate(`#/session/${session.id}/summary`) },
+        active ? null : { label: 'Ver resumen', icon: 'chart', onClick: () => navigate(`#/session/${session.id}/summary?from=session`) },
         active && empty
           ? { label: 'Descartar sesión', icon: 'x', danger: true, onClick: discardSession }
           : { label: 'Borrar sesión', icon: 'trash', danger: true, onClick: deleteSession },

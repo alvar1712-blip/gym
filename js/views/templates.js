@@ -506,9 +506,19 @@ export function mountTemplateEdit(root, params = {}) {
     const eid = await pickExercise({ title: 'Cambiar ejercicio', excludeIds: [cur.exerciseId], preferIds: cur.alternatives || [] });
     const it = itemById(id);
     if (!eid || !it || !content.isConnected) return;
+    const before = deepClone(it);
     const items = [...tpl.items];
     items[indexOf(id)] = L.changeItemExercise(it, eid, store.exercise(it.exerciseId)?.logType, store.exercise(eid)?.logType);
     commit(items);
+    // Cambiar de tipo (p. ej. a una plancha o a cardio) quita el objetivo de series y reps: se puede deshacer.
+    undoToast(`Cambiado a «${exName(eid) || 'Ejercicio'}»`, () => {
+      const t = store.get('templates', tpl.id);
+      const i = t ? t.items.findIndex((x) => x.id === id) : -1;
+      if (i < 0) return;
+      t.items = t.items.map((x, k) => (k === i ? before : x));
+      store.save('templates', t);
+      if (listEl.isConnected) renderList();
+    });
   }
 
   async function addAlt(id) {

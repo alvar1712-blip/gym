@@ -464,6 +464,7 @@ function closeEditor(ctx, se) {
 function deleteSet(ctx, se, set, msg) {
   const i = se.sets.indexOf(set);
   if (i < 0) return;
+  const prevCursor = ctx.session?.cursor;
   se.sets.splice(i, 1);
   ctx.editing.delete(se.id);
   ctx.touch(se);
@@ -471,6 +472,7 @@ function deleteSet(ctx, se, set, msg) {
   ctx.rerenderCard(se);
   undoToast(msg, () => {
     se.sets.splice(Math.min(i, se.sets.length), 0, set);
+    if (ctx.session && prevCursor !== undefined) ctx.session.cursor = prevCursor;
     ctx.save();
     ctx.rerenderCard(se);
   });
@@ -513,13 +515,15 @@ async function chooseAlternative(ctx, se, id, altChips) {
   // Un ítem de cardio con carrera/bici ya registrada: no dejarla huérfana.
   const dropped = ctx.confirmLinked ? await ctx.confirmLinked(se, id) : [];
   if (dropped == null) { altChips.setValue(se.exerciseId); return; }
-  const before = dropped.length ? JSON.parse(JSON.stringify(se)) : null;
+  const before = JSON.parse(JSON.stringify(se));
+  const prevCursor = ctx.session.cursor;
   switchExercise(se, id, ctx.session);
   ctx.editing.delete(se.id);
   ctx.touch(se);
   ctx.save();
   ctx.rerenderCard(se);
-  if (dropped.length) ctx.afterDropLinked(se, before, dropped, `Cambiado a «${to}»`);
+  // Siempre con «Deshacer»: un toque sin querer en otra alternativa no pierde las series ni el objetivo.
+  if (ctx.afterDropLinked) ctx.afterDropLinked(se, before, dropped, `Cambiado a «${to}»`, prevCursor);
 }
 
 // ---------------------------------------------------------------------------

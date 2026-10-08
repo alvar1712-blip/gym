@@ -20,8 +20,8 @@
 //   «Ese día») con «Editar check-in»; null si ese día no hay ninguno.
 // moveSessionCheckins(sessionId, from, to) — al cambiar la fecha de una sesión, sus check-ins van con ella.
 import * as store from './store.js';
-import { h, icon, segmented, chips, textInput, toast, sheet } from './ui.js';
-import { todayStr, addDays, isDateStr } from './util.js';
+import { h, icon, segmented, chips, textInput, toast, sheet, undoToast } from './ui.js';
+import { todayStr, addDays, isDateStr, deepClone } from './util.js';
 import {
   TIMINGS, FIELDS, LEVEL_OPTIONS, TIMING_LABEL, TIMING_SHORT, level, checkinFor, hasValues, isComplete, checkinText,
   applyValue, dismissKey, valueWord, AREA_KINDS, JOINTS, SIDES, AREA_MIN, AREA_MAX, areasOf, areaText, areaShort, areaName,
@@ -176,22 +176,39 @@ export function areaSheet({ date, timing = 'pre', sessionId = null, area = null,
       const e = validateArea(draft);
       const msg = e.kind || e.zone || e.level;
       if (msg) { err.hidden = false; err.textContent = msg; return; }
+      // La misma zona y lado ya apuntada (con otra intensidad o nota) se sustituye: con «Deshacer»
+      const prev = checkinFor(store.all('checkins'), date, timing);
+      const clash = areasOf(prev).find((x) => x.id !== draft.id && x.kind === draft.kind && x.zone === draft.zone && (x.side || null) === (draft.side || null));
+      const snap = clash ? deepClone(prev) : null;
       const rec = persist(upsertArea(store.all('checkins'), key, draft));
       close();
       if (onDone) onDone(rec);
+      if (snap) undoCheckin(snap, `Zona sustituida (antes: ${areaShort(clash)})`, onDone);
     },
   }];
   if (area) {
     actions.push({
       label: 'Quitar', kind: 'danger',
       onClick: (close) => {
+        const prev = checkinFor(store.all('checkins'), date, timing);
+        const snap = prev ? deepClone(prev) : null;
         const rec = persist(removeArea(store.all('checkins'), key, area.id));
         close();
         if (onDone) onDone(rec);
+        if (snap) undoCheckin(snap, 'Zona quitada', onDone);
       },
     });
   }
   return sheet({ title: area ? 'Editar zona' : 'Agujetas o molestia', className: 'ci-area-sheet', body, actions, tall: true });
+}
+
+/** «Deshacer» de un cambio de zonas: deja el check-in exactamente como estaba (también si se había borrado). */
+function undoCheckin(snap, message, onDone) {
+  undoToast(message, () => {
+    const rec = deepClone(snap);
+    store.restore('checkins', rec);
+    if (onDone) onDone(rec);
+  });
 }
 
 /** Bloque de zonas de un check-in: fichas (tocar = editar) y «Añadir zona». */

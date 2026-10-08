@@ -8,7 +8,7 @@ import {
   workSetCount, makeBodyweightFn,
 } from './calc.js';
 import { MUSCLE_LABEL, ACTIVITY_EMOJI, ACTIVITY_LABEL } from './seed.js';
-import { navigate } from './router.js';
+import { navigate, back, parseHash } from './router.js';
 import { formatSet, prLabel, linkedActivities, syncAutoDuration } from './session-logic.js';
 import { previousEquivalent, compareSessions } from './session-compare.js';
 import { checkinSummary } from './checkin.js';
@@ -148,7 +148,12 @@ export function renderSummary(root, id) {
   if (session.notes) c.append(h('h2.section-title', 'Nota'), h('div.card.ses-sum-notes', h('p', session.notes)));
 
   c.append(h('div.stack.ses-sum-actions',
-    h('button.btn.btn-secondary.btn-lg.btn-block.ses-sum-edit', { type: 'button', onClick: () => navigate(`#/session/${session.id}`, { replace: true }) }, icon('edit', 20), 'Ver / editar sesión'),
+    h('button.btn.btn-secondary.btn-lg.btn-block.ses-sum-edit', {
+      type: 'button',
+      // Abierto desde la propia sesión: se vuelve a ella (no se apilan dos entradas de la misma sesión, y borrarla
+      // después vuelve a la pantalla de origen, no a una sesión que ya no existe).
+      onClick: () => (parseHash().query.from === 'session' ? back(`#/session/${session.id}`) : navigate(`#/session/${session.id}`, { replace: true })),
+    }, icon('edit', 20), 'Ver / editar sesión'),
     h('button.btn.btn-primary.btn-lg.btn-block.ses-sum-today', { type: 'button', onClick: () => navigate('#/today', { replace: true }) }, icon('home', 20), 'Ir a Hoy')));
   return undefined;
 }

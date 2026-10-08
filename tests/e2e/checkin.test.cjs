@@ -235,7 +235,7 @@ test('check-in «antes» en la sesión: plegado, 4 toques guardados al instante,
     await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
     const diff = page.locator('.sheet-panel.ses-diff-sheet');
     if (await diff.isVisible().catch(() => false)) await diff.locator('.sheet-actions button', { hasText: 'Solo esta vez' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id);
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id);
     s = await getSession(page, id);
     assert.deepStrictEqual([s.status, s.rpe], ['done', 7]);
 
@@ -323,7 +323,7 @@ test('«Omitir»: oculta el check-in de esa sesión y día sin guardar nada (con
     disk = (await idbAll(page, 'sessions')).find((x) => x.id === id);
     assert.deepStrictEqual(disk.checkinDismissed, { pre: true, post: true });
     await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id);
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id);
     await page.waitForTimeout(200);
     assert.strictEqual(await page.locator('.ci-sum').count(), 0, 'sin check-in, el resumen no lo muestra');
     assert.deepStrictEqual(await idbAll(page, 'checkins'), []);

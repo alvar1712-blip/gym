@@ -2,7 +2,7 @@
 // PROPIETARIO: módulo de biblioteca. La lógica pura (búsqueda, uso, historial…) está en library-logic.js.
 import * as store from '../store.js';
 import { navigate, replaceUrl } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, field, confirmDialog, undoToast, toast, emptyState, sheet } from '../ui.js';
+import { h, icon, screen, segmented, chips, textInput, field, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, sheet } from '../ui.js';
 import { fmtDate, fmtNum, uid, plural } from '../util.js';
 import { MUSCLES, MUSCLE_LABEL, PATTERNS, PATTERN_LABEL, LOG_TYPES, LOG_TYPE_LABEL } from '../seed.js';
 import { makeBodyweightFn } from '../calc.js';
@@ -271,12 +271,13 @@ export function mountExerciseDetail(root, params = {}) {
       : 'Desarchivado: vuelve a aparecer en la biblioteca y en los selectores.', { kind: 'success', duration: 4500 });
   }
   async function onDelete() {
-    const use = L.exerciseUsage(ex.id, { sessions: store.all('sessions'), templates: store.all('templates'), goals: store.all('goals') });
+    const use = L.exerciseUsage(ex.id, { sessions: store.all('sessions'), templates: store.all('templates'), goals: store.all('goals'), pastRecords: store.all('pastRecords') });
     if (use.used) {
       const parts = [];
       if (use.sessions.length) parts.push(plural(use.sessions.length, 'sesión', 'sesiones'));
       if (use.templates.length) parts.push(`${use.templates.length === 1 ? 'la rutina' : 'las rutinas'} ${use.templates.map((t) => `«${t.name}»`).join(', ')}`);
       if (use.goals.length) parts.push(plural(use.goals.length, 'objetivo', 'objetivos'));
+      if (use.marks.length) parts.push(plural(use.marks.length, 'marca histórica', 'marcas históricas'));
       const msg = `Se usa en ${parts.join(' y ')}. Borrarlo dejaría esos registros sin ejercicio.\n\n${ex.archived
         ? 'Ya está archivado: no aparece en la biblioteca ni en los selectores, y su historial se conserva.'
         : 'Archívalo: dejará de aparecer en la biblioteca y en los selectores, pero conservarás su historial.'}`;
@@ -289,7 +290,7 @@ export function mountExerciseDetail(root, params = {}) {
     }
     const ok = await confirmDialog({
       title: `¿Borrar «${ex.name}»?`,
-      message: 'No se usa en ninguna sesión, rutina ni objetivo. Podrás deshacerlo justo después.',
+      message: 'No se usa en ninguna sesión, rutina, objetivo ni marca histórica. Podrás deshacerlo justo después.',
       confirmText: 'Borrar ejercicio', danger: true,
     });
     if (!ok) return;
@@ -359,7 +360,7 @@ export function mountExerciseEdit(root, params = {}) {
   if (restored) {
     content.appendChild(h('div.banner.banner-info.lib-draft',
       h('div.banner-main', h('div.banner-title', 'Borrador recuperado'), h('div.banner-text', 'Tenías un ejercicio a medias.')),
-      h('button.btn.btn-ghost', { type: 'button', onClick: () => { clearDraft(); navigate('#/exercise/new', { replace: true }); } }, 'Vaciar')));
+      h('button.btn.btn-ghost', { type: 'button', onClick: () => discardDraftUndo(DRAFT_KEY, '#/exercise/new') }, 'Vaciar')));
   }
 
   // --- nombre y alias ---

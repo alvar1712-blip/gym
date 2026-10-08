@@ -474,7 +474,7 @@ function mountForm(root, ctx) {
     Object.keys(cur).forEach((key) => delete cur[key]);
     Object.assign(cur, prev);
     pendingSoon = false;
-    store.save('sessions', cur);
+    store.restore('sessions', cur); // tal cual (sin sellar updatedAt de nuevo)
     if (!alive || cur !== record) return;
     Object.keys(form).forEach((key) => delete form[key]);
     Object.assign(form, L.formFromRecord(record));
@@ -602,12 +602,21 @@ function mountForm(root, ctx) {
     if (!ok) return;
     removed = true;
     const obj = await store.remove('sessions', record.id);
-    if (obj?.parentId) syncLinkedDuration(obj.parentId);
+    // La duración automática de la sesión de fuerza se recalcula sin esta actividad; «Deshacer» la deja como estaba
+    // (recalcular no basta: con la actividad de vuelta puede no haber propuesta y quedaría la de sin ella).
+    const parent = obj?.parentId ? store.get('sessions', obj.parentId) : null;
+    const parentBefore = parent ? { durationMin: parent.durationMin, durationAuto: parent.durationAuto } : null;
+    const changed = parent ? syncLinkedDuration(obj.parentId) : null;
+    const parentAfter = parent ? parent.durationMin : null;
     back(backFallback);
     undoToast('Actividad borrada', async () => {
       if (!obj) return;
       await store.restore('sessions', obj);
-      if (obj.parentId) syncLinkedDuration(obj.parentId);
+      const p = obj.parentId ? store.get('sessions', obj.parentId) : null;
+      if (p && changed && p.durationMin === parentAfter) {
+        Object.assign(p, parentBefore);
+        store.save('sessions', p).catch(() => {});
+      } else if (p) syncLinkedDuration(obj.parentId);
       refresh();
     });
   }

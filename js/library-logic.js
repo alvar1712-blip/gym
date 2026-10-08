@@ -500,12 +500,13 @@ export function assignMuscles(primary, secondary, which, next) {
  * Dónde se usa un ejercicio: sesiones de fuerza (como ejercicio o alternativa), plantillas y objetivos.
  * Si se usa en algo, no se puede borrar (se archiva).
  */
-export function exerciseUsage(exerciseId, { sessions = [], templates = [], goals = [] } = {}) {
+export function exerciseUsage(exerciseId, { sessions = [], templates = [], goals = [], pastRecords = [] } = {}) {
   const inSe = (se) => se.exerciseId === exerciseId || se.baseExerciseId === exerciseId || (se.alternatives || []).includes(exerciseId);
   const ses = sessions.filter((s) => s && s.kind === 'strength' && (s.exercises || []).some(inSe));
   const tpls = templates.filter((t) => (t.items || []).some((it) => it.exerciseId === exerciseId || (it.alternatives || []).includes(exerciseId)));
   const gls = goals.filter((g) => g && g.exerciseId === exerciseId);
-  return { sessions: ses, templates: tpls, goals: gls, used: ses.length + tpls.length + gls.length > 0 };
+  const marks = pastRecords.filter((r) => r && r.exerciseId === exerciseId);
+  return { sessions: ses, templates: tpls, goals: gls, marks, used: ses.length + tpls.length + gls.length + marks.length > 0 };
 }
 
 /**

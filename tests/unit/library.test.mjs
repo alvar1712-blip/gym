@@ -352,6 +352,10 @@ test('exerciseUsage: sesiones, plantillas (también como alternativa) y objetivo
   assert.deepEqual(u.templates.map((t) => t.id).sort(), ['tpl_d2', 'tpl_d6']);
   assert.equal(exerciseUsage('mi_ej', { goals: [{ id: 'g', exerciseId: 'mi_ej' }] }).used, true);
   assert.equal(exerciseUsage('mi_ej', { sessions, templates: SEED_TEMPLATES, goals: [] }).used, false);
+  // Una marca histórica también lo usa: borrarlo la dejaría huérfana («Ejercicio borrado») — se archiva
+  const m = exerciseUsage('mi_ej', { pastRecords: [{ id: 'pr1', exerciseId: 'mi_ej' }, { id: 'pr2', exerciseId: 'otro' }] });
+  assert.equal(m.used, true);
+  assert.deepEqual(m.marks.map((r) => r.id), ['pr1']);
 });
 
 test('exerciseHistory y resumen de series', () => {

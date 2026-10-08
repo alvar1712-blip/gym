@@ -3,7 +3,7 @@
 // PROPIETARIO: módulo de objetivos. Los cálculos salen de js/goals-logic.js (puro); aquí solo DOM y store.
 import * as store from '../store.js';
 import { navigate, back } from '../router.js';
-import { h, icon, screen, segmented, chips, stepper, durationInput, textInput, numInput, confirmDialog, undoToast, toast, emptyState, whyBox } from '../ui.js';
+import { h, icon, screen, segmented, chips, stepper, durationInput, textInput, numInput, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, whyBox } from '../ui.js';
 import { pickExercise } from '../pickers.js';
 import { dataFromStore } from '../progress-ui.js';
 import { exerciseHistory } from '../stats.js';
@@ -333,7 +333,7 @@ export function mountGoalEdit(root, params = {}) {
   if (restored) {
     content.appendChild(h('div.banner.banner-info.goal-draft',
       h('div.banner-main', h('div.banner-title', 'Borrador recuperado'), h('div.banner-text', 'Tenías un objetivo a medias.')),
-      h('button.btn.btn-ghost', { type: 'button', onClick: () => { clearDraft(); navigate('#/goal/new', { replace: true }); } }, 'Vaciar')));
+      h('button.btn.btn-ghost', { type: 'button', onClick: () => discardDraftUndo(DRAFT_KEY, '#/goal/new') }, 'Vaciar')));
   }
 
   // ---------- tipo ----------

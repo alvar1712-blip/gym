@@ -593,7 +593,7 @@ test('CRITERIO 3: con una sesión anterior (hecha por la interfaz), registrar la
     await fin.waitFor();
     await fin.locator('.rpe-chips .chip', { hasText: /^8$/ }).click();
     await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, prevId, { timeout: 5000 });
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, prevId, { timeout: 5000 });
     s = await getSession(page, prevId);
     assert.strictEqual(s.status, 'done');
     const lastBench = s.exercises[0].sets.map((x) => [x.type, x.weight, x.reps, x.rir]);
@@ -836,7 +836,7 @@ test('CRITERIO 5: instalada (service worker activo), funciona sin conexión: pes
     const diff = page.locator('.sheet-panel.ses-diff-sheet');
     await diff.waitFor();
     await diff.locator('.sheet-actions button', { hasText: 'Solo esta vez' }).click();
-    await page.waitForFunction((sid) => location.hash === `#/session/${sid}/summary`, id, { timeout: 5000 });
+    await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id, { timeout: 5000 });
     await page.waitForFunction(() => /Series por músculo/i.test(document.querySelector('#view').innerText));
     await assertOk('resumen');
     const done = (await idbAll(page, 'sessions')).find((x) => x.id === id);
