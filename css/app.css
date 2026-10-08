@@ -1143,3 +1143,12 @@ html.text-large .cyc-kpi-label { overflow-wrap: anywhere; }
 html.text-large .act-live-value { font-size: calc(26px * min(var(--ts), 1.2)); }
 html.text-large .ci-toggle .ci-title { white-space: normal; min-width: 0; flex: 1 1 auto; overflow-wrap: break-word; }
 html.text-large .ci-toggle > * { min-width: 0; }
+/* Un control segmentado que no cabe a lo ancho pasa a dos filas (WebKit no parte «Moderado» ni «Drop») */
+html.text-large .seg { flex-wrap: wrap; }
+html.text-large .seg-btn { flex: 1 1 auto; min-width: min-content; }
+html.text-large .btn { padding-left: 12px; padding-right: 12px; }
+/* Selectores de deporte en rejilla (.act-kinds, .act-seg-wrap): con texto grande, dos por fila. Las reglas de
+   activity.css reparten 3 + 2 con selectores :nth-child muy específicos; aquí se anulan a propósito. */
+html.text-large :is(.act-kinds, .act-seg-wrap) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.text-large :is(.act-kinds, .act-seg-wrap) > .seg-btn { grid-column: auto !important; min-width: 0; }
+html.text-large .cyc-actions { grid-template-columns: minmax(0, 1fr); }
