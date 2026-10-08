@@ -346,7 +346,7 @@ test('sesión a posteriori (iPhone SE): sin franja arriba, «Registrar serie 1»
     await shot(page, 'checkin-past-session');
 
     // Terminar: «¿Cómo llegaste?» y «¿Cómo fue?», los dos opcionales (nada guardado solo por mostrarse)
-    await page.locator('.ses-finish-top').click();
+    await page.locator('.ses-finish-bar').click();
     let fin = page.locator('.sheet-panel.ses-finish-sheet');
     await fin.waitFor();
     assert.deepStrictEqual(await fin.locator('.ci-compact').evaluateAll((els) => els.map((e) => e.dataset.checkin)), ['pre', 'post']);
@@ -382,7 +382,7 @@ test('sesión a posteriori (iPhone SE): sin franja arriba, «Registrar serie 1»
     assert.ok((await registerVisible(page)).ok);
 
     // Al volver a Terminar sale lo contestado
-    await page.locator('.ses-finish-top').click();
+    await page.locator('.ses-finish-bar').click();
     fin = page.locator('.sheet-panel.ses-finish-sheet');
     await fin.waitFor();
     const pre2 = fin.locator('.ci-compact[data-checkin="pre"]');
@@ -425,7 +425,7 @@ test('una mano en iPhone SE: con el check-in arriba, «Registrar serie 1» sigue
     const s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets[0].done, true);
     // la hoja de terminar en pantalla pequeña
-    await page.locator('.ses-finish-top').click();
+    await page.locator('.ses-finish-bar').click();
     const fin = page.locator('.sheet-panel.ses-finish-sheet');
     await fin.waitFor();
     await fin.locator('.ci-compact').scrollIntoViewIfNeeded();

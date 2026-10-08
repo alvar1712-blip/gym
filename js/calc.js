@@ -10,6 +10,23 @@ export function isWorkSet(set) {
   return !!set && set.done === true && set.type !== 'warmup';
 }
 
+/**
+ * Progreso de una sesión de fuerza: series hechas de todas las que tiene (calentamientos incluidos; las pendientes
+ * prellenadas cuentan en el total). Una sola cuenta para Hoy («2 de 20 series») y la barra de la sesión («2/20»).
+ */
+export function setProgress(session) {
+  let done = 0;
+  let total = 0;
+  for (const se of session?.exercises || []) {
+    for (const s of se?.sets || []) {
+      if (!s) continue;
+      total++;
+      if (s.done === true) done++;
+    }
+  }
+  return { done, total };
+}
+
 export function rirValue(rir) {
   if (rir === 'F') return 0;
   return typeof rir === 'number' && Number.isFinite(rir) ? rir : null;

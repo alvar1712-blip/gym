@@ -16,6 +16,7 @@ import {
   activityMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 import { bodyweightQuickEntry } from './bodyweight.js';
+import { setProgress } from '../calc.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
 import { currentLabel } from '../context-logic.js';
 import { nextRelevant, todayLine, raceTitle, raceShortLabel, targetText } from '../races-logic.js';
@@ -261,9 +262,8 @@ function activeCard(s, timers, plan = null) {
   const tick = () => { clock.textContent = s.startedAt ? fmtDuration((Date.now() - s.startedAt) / 1000) : fmtDate(s.date); };
   tick();
   if (s.startedAt) timers.push(setInterval(tick, 1000));
-  const sets = (s.exercises || []).flatMap((se) => se.sets || []);
-  const done = sets.filter((x) => x.done).length;
-  const progress = sets.length ? `${done} de ${sets.length} series` : null;
+  const { done, total } = setProgress(s); // la misma cuenta que la barra de la sesión
+  const progress = total ? `${done} de ${total} series` : null;
   const instead = plan && plan.kind !== 'rest' && plan.label && (plan.kind !== 'template' || plan.templateId !== s.templateId) ? `En lugar de ${plan.label}` : null;
   const when = (s.planDate ?? s.date) !== todayStr() ? `Del ${fmtDate(s.planDate ?? s.date)}` : null;
   const sub = [progress, instead, when].filter(Boolean).join(' · ');

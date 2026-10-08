@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseNum, fmtNum, weekStart, dow, addDays, diffDays, isDateStr, parseDate, toDateStr, fmtDate, parseDuration, fmtDuration,
-  numToInput, fmtWeekRange,
+  numToInput, fmtWeekRange, deltaTone,
 } from '../../js/util.js';
+import { delta, deltaInfo } from '../../js/summary-logic.js';
 
 test('parseNum acepta coma decimal', () => {
   assert.equal(parseNum('72,5'), 72.5);
@@ -67,4 +68,27 @@ test('duraciones', () => {
   assert.equal(parseDuration('1:05:30'), 3930);
   assert.equal(fmtDuration(3930), '1:05:30');
   assert.equal(fmtDuration(330), '5:30');
+});
+
+// Ronda 8 (A4): tono de los deltas comparativos — neutro salvo que una regla lo determine.
+test('deltaTone: neutro por defecto; mejora o aviso solo con regla y en su dirección', () => {
+  // «Carrera 0 km · −100 %» a mitad de semana: bajar no es alerta
+  const runMid = deltaInfo(delta(0, 12.4));
+  assert.equal(runMid.dir, 'down');
+  assert.equal(runMid.pctText, '−100 %');
+  assert.equal(deltaTone(runMid.dir), 'neutral');
+  // subir tampoco es «bueno» por sí solo
+  assert.equal(deltaTone('up'), 'neutral');
+  assert.equal(deltaTone('down', {}), 'neutral');
+  assert.equal(deltaTone('same', { better: 'up', warn: 'up' }), 'neutral');
+  assert.equal(deltaTone('none', { warn: 'down' }), 'neutral');
+  assert.equal(deltaTone(undefined), 'neutral');
+  // regla de mejora (1RM que sube, más kg en el mismo ejercicio)
+  assert.equal(deltaTone('up', { better: 'up' }), 'good');
+  assert.equal(deltaTone('down', { better: 'up' }), 'neutral', 'bajar donde subir es mejora: neutro, no rojo');
+  assert.equal(deltaTone('down', { better: 'down' }), 'good');
+  // aviso del analista: solo si la diferencia va en la dirección del aviso
+  assert.equal(deltaTone('up', { warn: 'up' }), 'warn');
+  assert.equal(deltaTone('down', { warn: 'up' }), 'neutral', 'un ▼ nunca en ámbar por un aviso de subida');
+  assert.equal(deltaTone('up', { warn: 'up', better: 'up' }), 'warn', 'el aviso manda sobre la mejora');
 });

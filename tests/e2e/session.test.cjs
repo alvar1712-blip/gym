@@ -233,12 +233,17 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
 
     // Resumen
     const sum = await page.locator('#view').innerText();
-    assert.match(sum, /Récords batidos/i);
+    // Récords (ronda 8, A6): tarjeta destacada justo bajo la cabecera (antes de «Frente a la anterior»), con cuántos
+    // y cuáles; ya no hay casilla «Récords» entre las cifras
+    const prCard = page.locator('.ses-sum-prs');
+    assert.strictEqual(await prCard.getAttribute('data-count'), '2');
+    assert.strictEqual(await prCard.locator('.ses-sum-prs-title').innerText(), '2 récords en esta sesión');
+    assert.ok(await page.evaluate(() => document.querySelector('.ses-sum-hero').nextElementSibling?.classList.contains('ses-sum-prs')));
+    assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo']);
     assert.match(sum, /Series por músculo/i);
     assert.match(sum, /Mejor serie por ejercicio/i);
     assert.match(sum, /Series de trabajo\n4\n/, 'series de trabajo sin calentamientos');
     assert.match(sum, /8\/10/);
-    assert.match(sum, /🏆 en esta sesión/);
     // récord: nombre y serie en líneas separadas (el peso × reps no se corta)
     assert.deepStrictEqual(await page.locator('.ses-sum-pr .ses-sum-pr-set').allInnerTexts(), ['82,5 kg × 5 @1', '+12,5 kg × 8 @1']);
     assert.deepStrictEqual(await page.locator('.ses-sum-pr .ses-sum-pr-name').allInnerTexts(), ['Press banca', 'Dominadas']);
@@ -459,7 +464,7 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     await page.locator('.ses-sum-edit').click();
     await page.waitForFunction((sid) => location.hash === `#/session/${sid}`, id);
     await page.waitForSelector('.ses-card');
-    assert.strictEqual(await page.locator('.ses-finish, .ses-finish-top').count(), 0);
+    assert.strictEqual(await page.locator('.ses-finish, .ses-finish-bar, #tabbar .focusbar').count(), 0);
     const fc = card(page, first.id);
     await fc.locator('.ses-row[data-state="done"]').click();
     assert.strictEqual(await fc.locator('.ses-editor-edit').count(), 1);

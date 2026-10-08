@@ -109,7 +109,8 @@
 .today-active-name { font-size: calc(22px * var(--ts)); font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; overflow-wrap: anywhere; }
 .today-active-sub { font-size: var(--fs-md); color: var(--text-2); line-height: 1.35; }
 .today-active > .btn { margin-top: 8px; }
-.today-clock { color: var(--accent); font-weight: 800; font-size: calc(20px * var(--ts)); }
+/* El cronómetro es un dato: en texto normal (el verde de la tarjeta es «Continuar», ronda 8 A3) */
+.today-clock { color: var(--text); font-weight: 800; font-size: calc(20px * var(--ts)); }
 
 /* Evento en las próximas 2 semanas (views/today.js raceCard) */
 .today-race-card { display: flex; flex-direction: row; align-items: center; gap: 12px; width: 100%; text-align: left; color: var(--text); font: inherit; cursor: pointer; }
@@ -119,6 +120,17 @@
 .today-race-title { font-size: calc(19px * var(--ts)); font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
 .today-race-sub { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.35; }
 .today-race-card .chev { flex: none; color: var(--muted); }
+
+/* Ronda 8 (A3): menos verde en Hoy. El verde queda para la acción principal («Empezar», «Continuar»), lo
+   seleccionado (el día de hoy en la mini semana, el check-in) y los estados positivos («Subir peso», el progreso de
+   un objetivo). Jerarquía: acción principal > información importante > enlaces secundarios.
+   · Enlaces secundarios («Ver ciclo», «Importar desde un archivo», «Ver todo», «Calendario», «Panel semanal»…): texto
+     secundario y la flecha en gris; siguen siendo botones de 44 px.
+   · Información («Ahora: Preparación 10K…», «🏁 10K · 24 días…»): texto normal, sin verde.
+   Solo dentro de Hoy (.today): los mismos componentes en Calendario, Progreso o el análisis no cambian. */
+.today :is(.cal-link-btn, .bwq-link, .goal-sum-link) { color: var(--text-2); font-weight: 650; }
+.today :is(.cal-link-btn, .bwq-link, .goal-sum-link) > .icon { color: var(--muted); }
+.today .cal-link-btn:is(.today-context, .today-race) { color: var(--text); }
 
 .today-plan-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .today-kicker {

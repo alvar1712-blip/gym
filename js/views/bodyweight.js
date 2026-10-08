@@ -75,7 +75,8 @@ export function bodyweightQuickEntry({ onSaved } = {}) {
     ariaLabel: 'Peso de hoy (kg)', onChange: (v) => { val = v; },
   });
   st.classList.add('bwq-stepper');
-  const btn = h('button.btn.btn-primary.bwq-save', {
+  // Secundario: en Hoy el único botón verde es la acción principal («Empezar» / «Continuar», ronda 8 A3)
+  const btn = h('button.btn.btn-secondary.bwq-save', {
     type: 'button',
     onClick: async () => {
       if (!validKg(val)) { toast(`Introduce un peso entre ${KG_MIN} y ${KG_MAX} kg.`, { kind: 'error' }); return; }

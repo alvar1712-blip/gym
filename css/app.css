@@ -317,6 +317,36 @@ img, svg { display: block; }
 }
 body:has(.sheet-overlay.open) .tabbar { pointer-events: none; }
 
+/* ---------- Modo foco: barra de la sesión en curso (ui.js focusBar, js/views/session.js; PULIDO §18) ----------
+   La misma cápsula, algo más alta para que «Hoy» y «Terminar» tengan 44 px con aire. --tb-h mueve también el
+   hueco del contenido, los avisos y los pies fijos (--tabbar-h). */
+html.focus-mode { --tb-h: 56px; }
+.tabbar.tabbar-focus { padding: 0 5px; }
+.tabbar.tabbar-focus::before { display: none; }
+.focusbar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.fb-exit {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 12px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: calc(15px * var(--ts));
+  font-weight: 650;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.fb-exit.is-pressed { background: rgba(255, 255, 255, 0.08); transform: scale(0.94); }
+.fb-status { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; text-align: center; }
+.fb-kicker { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); }
+.fb-count { font-size: var(--fs-md); font-weight: 700; color: var(--text); }
+.fb-finish { flex: none; min-height: 44px; padding: 0 16px; gap: 6px; border-radius: 999px; font-size: calc(15px * var(--ts)); white-space: nowrap; }
+
 /* ---------- Tarjetas y listas ---------- */
 .card {
   background: var(--surface);
@@ -1152,3 +1182,102 @@ html.text-large .btn { padding-left: 12px; padding-right: 12px; }
 html.text-large :is(.act-kinds, .act-seg-wrap) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 html.text-large :is(.act-kinds, .act-seg-wrap) > .seg-btn { grid-column: auto !important; min-width: 0; }
 html.text-large .cyc-actions { grid-template-columns: minmax(0, 1fr); }
+/* Barra de la sesión (modo foco) con texto grande: la cápsula crece en alto (el hueco de abajo con ella) y las
+   iconos y palabras ceden sitio a «En sesión · n/N» sin reducir la letra: «Hoy» se queda en la flecha (como
+   el «atrás» de iOS; VoiceOver sigue diciendo «Ir a Hoy») y «Terminar» pierde el icono antes que el texto. */
+html.text-large.focus-mode { --tb-h: 64px; }
+html.text-large .fb-finish { white-space: nowrap; padding-left: 14px; padding-right: 14px; }
+html.text-large .fb-finish svg { display: none; }
+html.text-large .fb-exit { min-width: 44px; justify-content: center; padding: 0 4px; }
+html.text-large .fb-exit-label { display: none; }
+html.text-large .fb-status { overflow-wrap: break-word; }
+html.text-large .fb-count-unit { display: none; }
+/* ---------- Texto grande: reflujo en vez de palabras partidas y cifras encima de su unidad (ronda 8, A2) ----------
+   La guarda visual (tests/e2e/visual-guard.test.cjs) falla si una palabra corta se parte a media palabra
+   («Senderism|o»), si un valor pisa su unidad («00» sobre «min») o si un texto pisa el trazo de un anillo. Aquí se
+   resuelve sin bajar la letra: columnas → filas, unidades debajo de la cifra y nombres en su propia línea. */
+/* Unidad superpuesta (−/+ y duración h·min·s): con texto grande no cabe al lado de la cifra; va debajo, centrada,
+   y el campo reserva su hueco (crece en alto, no encoge la cifra). */
+html.text-large .stepper-field:has(.stepper-suffix) .stepper-input { min-height: 0; padding: 2px 4px calc(var(--fs-xs) * 1.2 + 6px); }
+html.text-large .stepper-suffix { left: 0; right: 0; bottom: 5px; text-align: center; line-height: 1.2; }
+html.text-large .dur-input { padding: 4px 4px calc(13px * var(--ts) * 1.2 + 8px); }
+html.text-large .dur-unit { top: auto; bottom: 6px; left: 0; right: 0; transform: none; text-align: center; line-height: 1.2; }
+/* «Más datos» de la actividad (desnivel, mochila, FC…): un campo por fila; a media fila no cabían la etiqueta
+   («Desnivel positivo»), el ejemplo («p. ej. 850») y la unidad, que además crece con la letra */
+html.text-large .act-grid { grid-template-columns: minmax(0, 1fr); }
+html.text-large .act-grid .input-suffix-wrap .input { padding-right: calc(14px * var(--ts) * 2.4 + 12px); }
+/* Selector de deporte (formulario de actividad, objetivo, filtro de km): una opción por línea cuando la palabra
+   más larga («Senderismo») no cabe en media fila. Flex con base automática: cada botón mide al menos su palabra
+   más larga y la fila se reparte el resto. */
+html.text-large :is(.act-kinds, .act-seg-wrap) { display: flex; flex-wrap: wrap; }
+html.text-large :is(.act-kinds, .act-seg-wrap) > .seg-btn { flex: 1 1 auto; min-width: min-content; overflow-wrap: normal; hyphens: manual; }
+/* Accesos rápidos de Hoy: dos por fila («Senderismo» y «Natación» no caben en un tercio) */
+html.text-large .today-quick, html.text-large .today-quick.act-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.text-large .today-quick-btn { overflow-wrap: break-word; }
+/* Peso rápido de Hoy: la cifra necesita todo el ancho; «Guardar», debajo */
+html.text-large .bwq-row { flex-wrap: wrap; }
+html.text-large .bwq-stepper { flex-basis: 100%; }
+html.text-large .bwq-save { flex: 1 1 100%; }
+/* Anillo pequeño de la tarjeta del ciclo (Hoy): crece con el número para que no pise el trazo */
+html.text-large .cyc-today-ring, html.text-large .cyc-today-ring .cyc-ring-svg { width: 76px; height: 76px; }
+/* Tablas por músculo (panel semanal, Progreso): el nombre en su línea; debajo, las series y el estado (como a 320 px) */
+html.text-large :is(.wk-mrow-top, .prg-mrow-top) { flex-wrap: wrap; row-gap: 2px; }
+html.text-large :is(.wk-mrow-name, .prg-mrow-name) { flex: 1 0 100%; overflow-wrap: break-word; }
+html.text-large :is(.wk-mrow-val, .prg-mrow-val) { margin-right: auto; }
+/* «Cómo vas» (Progreso): la cifra y el cambio a todo lo ancho; la minigráfica y el estado, debajo */
+html.text-large .prg-ov-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main chev" "side chev"; row-gap: 6px; }
+html.text-large .prg-ov-main { grid-area: main; }
+html.text-large .prg-ov-side { grid-area: side; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 6px 12px; }
+html.text-large .prg-ov-row .chev { grid-area: chev; align-self: center; }
+html.text-large :is(.prg-ov-label, .prg-ov-value) { overflow-wrap: break-word; }
+/* Accesos de Progreso: los anchos, una fila cada uno; los pequeños, dos por fila (el último, a lo ancho) */
+html.text-large .prg-link-wide { grid-column: 1 / -1; }
+html.text-large .prg-link:not(.prg-link-wide, .prg-link-full) { grid-column: span 3; }
+html.text-large .prg-link:not(.prg-link-wide, .prg-link-full):last-child:nth-child(even) { grid-column: 1 / -1; }
+html.text-large .prg-link-label { overflow-wrap: break-word; }
+/* Cifras breves sobre las gráficas: una columna menos estrecha → la etiqueta parte entre palabras */
+html.text-large .prg-stat-label { overflow-wrap: break-word; }
+html.text-large .prg-stats { column-gap: 10px; }
+/* Carga por deporte (análisis): nombre y % arriba; los minutos y la carga, debajo */
+html.text-large .an-load-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
+html.text-large .an-load-name { grid-column: 1; grid-row: 1; overflow-wrap: break-word; }
+html.text-large .an-load-chg { grid-column: 2; grid-row: 1; }
+html.text-large .an-load-val { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
+/* Resumen del periodo: un deporte por fila; «Más progresan» con el cambio debajo del nombre */
+html.text-large .sum-sport-grid { grid-template-columns: minmax(0, 1fr); }
+html.text-large :is(.sum-sport-main, .sum-sport-name, .sum-prog-name, .sum-rec-label) { overflow-wrap: break-word; }
+html.text-large .sum-prog-btn { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; }
+html.text-large .sum-prog-btn .sum-prog-main { grid-column: 1; grid-row: 1; }
+html.text-large .sum-prog-btn .sum-delta { grid-column: 1; grid-row: 2; justify-self: start; max-width: 100%; }
+html.text-large .sum-prog-btn .chev { grid-column: 2; grid-row: 1 / span 2; }
+/* Ciclo: las tres cifras de «Tus ciclos», dos por fila; la tabla por fase con columnas a la medida de su título */
+html.text-large .cyc-hist-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.text-large .cyc-hist-kpis > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+html.text-large .cyc-kpi-label { overflow-wrap: break-word; }
+html.text-large .cyc-eff-row { grid-template-columns: var(--eff-fit, var(--eff-even, repeat(5, minmax(0, 1fr)))); }
+/* (dos clases: la regla general de arriba, con :is(.today-backup .banner-title…), pesa más que una sola) */
+html.text-large .cyc-eff-row .cyc-eff-th { white-space: normal; overflow-wrap: normal; hyphens: manual; }
+/* Filas de lista con una cifra o un estado a la derecha (análisis, ejercicios de Progreso, ejercicios de una
+   rutina): el texto de la fila no encoge por debajo de su palabra más larga; si con la cifra no cabe, la cifra
+   (y la flecha) bajan a otra línea en vez de partir «Flexion|es» o «Elevacione|s». */
+html.text-large :is(.list-item, .lib-item-head) { flex-wrap: wrap; row-gap: 6px; }
+/* Base = su palabra más larga (decide si la cifra baja de línea) pero nunca más que la fila: con min-width:
+   min-content, una palabra más ancha que la fila («Euskalherriamaratoia») sacaba el texto por la derecha. */
+html.text-large :is(.list-item-main, .lib-item-main) { min-width: 0; flex-basis: min-content; max-width: 100%; }
+html.text-large .lib-item-name { overflow-wrap: break-word; }
+html.text-large .lib-item-target { max-width: none; }
+/* La flecha no baja sola a otra línea: queda fija a la derecha, centrada en la fila, con su hueco reservado */
+html.text-large .list-item:has(> .chev:last-child), html.text-large .lib-item-head { position: relative; padding-right: 40px; }
+html.text-large .list-item > .chev:last-child, html.text-large .lib-item-head > .lib-item-chev { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); }
+/* Anillo del ciclo: el hueco no da para «Día del ciclo», la cifra, la fase en dos líneas y «estimada» a 150 %
+   (pisaban el trazo). Con texto grande el anillo crece hasta 290 px, dentro quedan el rótulo y el día, y la fase
+   y «estimada» pasan debajo. Una rejilla superpone el dibujo y el centro: las filas 1–4 son el cuadrado del
+   anillo (rótulo y día centrados entre dos filas flexibles) y las 5–6, el pie. */
+html.text-large .cyc-ring { display: grid; grid-template-rows: 1fr auto auto 1fr auto auto; justify-items: center; width: min(100%, 290px); height: auto; }
+html.text-large .cyc-ring-svg { grid-row: 1 / 5; grid-column: 1; width: 100%; height: auto; aspect-ratio: 1; }
+html.text-large .cyc-ring-center { display: contents; }
+html.text-large .cyc-ring-center > * { grid-column: 1; max-width: 62%; text-align: center; }
+html.text-large .cyc-ring-kicker { grid-row: 2; }
+html.text-large .cyc-ring-big { grid-row: 3; }
+html.text-large .cyc-ring-phase { grid-row: 5; max-width: 100%; margin-top: 10px; }
+html.text-large .cyc-ring-est { grid-row: 6; max-width: 100%; }

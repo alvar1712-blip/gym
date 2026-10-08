@@ -4,10 +4,10 @@
 import * as store from '../store.js';
 import {
   h, icon, header, sheet, confirmDialog, promptDialog, actionSheet, toast, undoToast,
-  rpePicker, field, textInput, numInput, emptyState, scrollBehavior,
+  rpePicker, field, textInput, numInput, emptyState, scrollBehavior, focusBar,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
-import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn } from '../calc.js';
+import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress } from '../calc.js';
 import { navigate, back, refresh, screenToken, backFrom, navigateFrom } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import {
@@ -213,7 +213,8 @@ export function mountSession(root, params = {}) {
   function headerBottom() {
     return headerEl ? Math.max(0, headerEl.getBoundingClientRect().bottom) : 0;
   }
-  /** Límite inferior útil: encima de la barra de pestañas (y del teclado, si está abierto). */
+  /** Límite inferior útil: encima de la barra de abajo (en una sesión en curso, la de la sesión: es la misma
+   *  cápsula #tabbar en modo foco) y del teclado, si está abierto. */
   function visibleBottom() {
     let bottom = window.innerHeight;
     const vv = window.visualViewport;
@@ -242,8 +243,8 @@ export function mountSession(root, params = {}) {
     if (active && session.startedAt) sub.append(' · ', clockEl);
     else if (active) sub.append(' · a posteriori');
     else sub.append(` · ${session.durationMin != null ? fmtMinutes(session.durationMin) : 'terminada'}`);
+    // En curso, «Terminar» está en la barra de la sesión (abajo, a mano): la cabecera deja sitio al nombre.
     const actions = [];
-    if (active) actions.push({ text: 'Terminar', label: 'Terminar sesión', onClick: openFinish, className: 'ses-finish-top' });
     actions.push({ icon: 'more', label: 'Opciones de la sesión', onClick: sessionMenu, className: 'ses-menu-btn' });
     const hd = header({ title: session.templateName || 'Sesión de fuerza', subtitle: sub, back: '#/today', actions });
     if (headerEl) headerEl.replaceWith(hd);
@@ -333,6 +334,30 @@ export function mountSession(root, params = {}) {
     const n = pendingCount(session);
     finishHint.textContent = n ? `${plural(n, 'serie pendiente', 'series pendientes')} sin confirmar.` : '';
     finishHint.hidden = !n || session.status !== 'active';
+    updateFocusBar();
+  }
+
+  // --- modo foco: en curso, la barra de pestañas pasa a ser la barra de la sesión ---
+  // Dice que estás en una sesión y cuántas series llevas (la misma cuenta que Hoy), y lleva «Terminar». No
+  // encierra: «Hoy» sale sin cerrar nada (la sesión sigue abierta y Hoy la muestra arriba, con «Continuar»);
+  // fuera de esta pantalla vuelven las pestañas. Sin cronómetro de descanso (el de la sesión va en la cabecera).
+  const fbCount = h('span.fb-count.tnum', { 'aria-hidden': 'true' });
+  const fbCountSr = h('span.sr-only');
+  const focusEl = h('div.focusbar',
+    h('button.fb-exit', {
+      type: 'button',
+      'aria-label': 'Ir a Hoy. La sesión sigue abierta',
+      onClick: () => navigate('#/today', { transition: 'pop' }),
+    }, icon('chevron-left', 22), h('span.fb-exit-label', 'Hoy')),
+    h('div.fb-status', h('span.fb-kicker', 'En sesión'), fbCount, fbCountSr),
+    h('button.btn.btn-primary.fb-finish.ses-finish-bar', { type: 'button', 'aria-label': 'Terminar sesión', onClick: openFinish },
+      icon('flag', 18), h('span', 'Terminar')));
+  function updateFocusBar() {
+    const { done, total } = setProgress(session);
+    // Con texto grande la palabra «series» cede sitio (css: .fb-count-unit); VoiceOver lee fbCountSr.
+    if (total) fbCount.replaceChildren(`${done}/${total}`, h('span.fb-count-unit', ' series'));
+    else fbCount.replaceChildren('Sin series');
+    fbCountSr.textContent = total ? `${done} de ${total} series hechas` : 'Sin series';
   }
 
   function renderFooter() {
@@ -772,6 +797,7 @@ export function mountSession(root, params = {}) {
   const synced = syncDuration();
   root.replaceChildren(content);
   renderAll();
+  if (session.status === 'active') focusBar(focusEl);
   if (synced) toast(`Duración de la fuerza recalculada: ${fmtMinutes(synced.to)} (se descuentan las actividades enlazadas).`, { kind: 'success' });
 
   // Volver a donde se dejó: tras el scroll a 0 que hace el router, ir a la tarjeta del cursor.
@@ -787,6 +813,7 @@ export function mountSession(root, params = {}) {
   return () => {
     unmounted = true;
     clearInterval(timer);
+    focusBar(null);
     document.removeEventListener('visibilitychange', onVisible);
     // Sesión ya terminada: las series añadidas y no confirmadas no se quedan como pendientes.
     if (session.status === 'done' && pendingCount(session) && store.get('sessions', session.id) === session) {

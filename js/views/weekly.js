@@ -79,7 +79,7 @@ export function mountWeekly(root, params = {}) {
     c.appendChild(h('p.wk-provisional', icon('clock', 16),
       h('span', `Semana en curso, ${leftTxt(r.daysLeft)}: los recuentos son provisionales y lo que aún no llega al mínimo se puede completar.`)));
   }
-  c.appendChild(weekRecap(data, ws, today));
+  c.appendChild(weekRecap(data, ws, today, r.suggestions));
   // Ronda 5: «Tu análisis» (tendencias de ahora, no de una semana pasada): solo en la semana actual.
   if (ws === cur) {
     const an = analysisBlock(data, today);
@@ -127,18 +127,22 @@ function weekNav(ws, cur) {
  * Bloque compacto con los totales de la semana (sesiones, tiempo, carga, volumen de fuerza y km por deporte)
  * frente a la semana anterior (en curso: el mismo tramo, lunes → hoy) y enlaces al resumen del mes y del año.
  * Los números salen de summary-logic.periodSummary (los mismos que en #/summary).
+ * Ronda 8 (A4): las diferencias van en neutro; solo «Carga» y los km de carrera se tiñen de aviso si las
+ * sugerencias de esta misma semana (insights.js: load-warn / runkm-warn) ya avisan de esa subida.
  */
-function weekRecap(data, ws, today) {
+function weekRecap(data, ws, today, suggestions = []) {
   const sum = periodSummary(data, { unit: 'week', start: ws, today });
   const cmp = sum.compare;
   const ok = cmp.available;
+  const warned = (id) => (suggestions.some((m) => m.id === id && m.level === 'warn') ? { warn: 'up' } : undefined);
+  const kmRule = { run: warned('runkm-warn') };
   // Mes / año de la semana: el de hoy si está en curso; si no, el del jueves (el que tiene más días de la semana).
   const ref = sum.inProgress ? today : addDays(ws, 3);
   const kmKinds = sum.kindOrder.filter((k) => sum.byKind[k].km > 0 || (cmp.kinds[k] && cmp.kinds[k].km));
-  const stat = (key, label, value, d, fmt) => h('div.wk-recap-kpi', { dataset: { kpi: key } },
+  const stat = (key, label, value, d, fmt, rule) => h('div.wk-recap-kpi', { dataset: { kpi: key } },
     h('span.wk-recap-label', label),
     h('span.wk-recap-value', value),
-    ok ? deltaChip(d, fmt) : null);
+    ok ? deltaChip(d, fmt, rule) : null);
   const minutes = (v) => fmtValue('minutes', v);
   const volume = (v) => fmtValue('volume', v);
   return h('section.card.wk-recap', { dataset: { card: 'week-summary' }, 'aria-labelledby': 'wk-recap-title' },
@@ -151,7 +155,7 @@ function weekRecap(data, ws, today) {
     h('div.wk-recap-kpis',
       stat('sessions', 'Sesiones', fmtNum(sum.sessions, 0), cmp.sessions),
       stat('minutes', 'Tiempo', minutes(sum.minutes), cmp.minutes, minutes),
-      stat('load', 'Carga', fmtValue('load', sum.load), cmp.load),
+      stat('load', 'Carga', fmtValue('load', sum.load), cmp.load, undefined, warned('load-warn')),
       stat('volume', 'Volumen de fuerza', volume(sum.strength.volume), cmp.volume, volume)),
     kmKinds.length
       ? h('ul.wk-recap-km', { 'aria-label': 'Distancia por deporte' }, kmKinds.map((k) => {
@@ -161,7 +165,7 @@ function weekRecap(data, ws, today) {
           h('span.wk-recap-km-name', h('span', { 'aria-hidden': 'true' }, `${info.emoji} `), info.label),
           h('span.wk-recap-km-right',
             h('span.wk-recap-km-val', fmtKm(k, sum.byKind[k].km)),
-            ok && d ? deltaChip(d, (v) => fmtKm(k, v)) : null));
+            ok && d ? deltaChip(d, (v) => fmtKm(k, v), kmRule[k]) : null));
       }))
       : null,
     h('div.wk-recap-links',

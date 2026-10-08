@@ -8,7 +8,7 @@ import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, chips, segmented, emptyState, stateTag, kpiValue, scrollBehavior } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, weekStart, relDay, plural } from '../util.js';
-import { lineChart, barChart, periodSelector, getPeriod, sparkline, COLORS } from '../charts.js';
+import { lineChart, barChart, periodSelector, getPeriod, sparkline, relativeSpan, COLORS } from '../charts.js';
 import * as S from '../stats.js';
 import { MUSCLES, MUSCLE_LABEL } from '../seed.js';
 import { emptyBests, addToBests, detectPRs } from '../calc.js';
@@ -837,11 +837,11 @@ export function mountExerciseProgress(root, params = {}) {
   const core = bw && ex.pattern === 'core';
   const repsKpi = () => k('Más repeticiones', rec.maxReps?.label, rec.maxReps ? `${rec.maxReps.setLabel} · ${dated(rec.maxReps)}` : null, 'reps');
   if (load) {
+    // El 1RM estimado es la métrica principal (va primero); sin él, el peso o las repeticiones.
+    if (!bwNoE1rm) kpis.push(k('Mejor 1RM estimado', rec.bestE1rm?.label, rec.bestE1rm ? `${bw ? 'estimación (con tu peso)' : 'estimación'} · ${dated(rec.bestE1rm)}` : 'sin series de 1–12 reps', 'e1rm'));
     if (bw && !anyLastre) kpis.push(repsKpi());
     else kpis.push(k(bw ? 'Mayor lastre' : 'Mejor peso', rec.bestWeight?.label, rec.bestWeight ? `${rec.bestWeight.setLabel} · ${dated(rec.bestWeight)}` : null, 'weight'));
-    if (!bwNoE1rm) kpis.push(k('Mejor 1RM estimado', rec.bestE1rm?.label, rec.bestE1rm ? `${bw ? 'estimación (con tu peso)' : 'estimación'} · ${dated(rec.bestE1rm)}` : 'sin series de 1–12 reps', 'e1rm'));
-    else if (anyLastre) kpis.push(repsKpi());
-    else kpis.push(k('Series de trabajo', nf0(sum.workSets), 'en total', 'sets'));
+    if (bwNoE1rm) kpis.push(anyLastre ? repsKpi() : k('Series de trabajo', nf0(sum.workSets), 'en total', 'sets'));
   } else if (lt === 'time') {
     kpis.push(k('Tiempo máximo', rec.maxTime?.label, rec.maxTime ? dated(rec.maxTime) : null, 'time'));
     kpis.push(k('Series de trabajo', nf0(sum.workSets), 'en total', 'sets'));
@@ -858,21 +858,25 @@ export function mountExerciseProgress(root, params = {}) {
   c.appendChild(h('div.kpis.kpis-2.prg-kpis', kpis));
   if (pastCard) c.appendChild(pastCard);
 
-  // Gráficas (todas con el mismo selector de periodo)
+  // Gráficas (todas con el mismo selector de periodo). Ejes con un rango mínimo relativo al valor (span): un
+  // cambio pequeño no se dibuja como un precipicio. Frases con el redondeo de S.EXERCISE_METRIC_SUMMARY.
+  const MS = S.EXERCISE_METRIC_SUMMARY;
+  const kgSpan = relativeSpan(0.2, 5);
+  const repsSpan = relativeSpan(0.2, 4);
   const defs = [];
   if (load) {
     const showWeight = !bw || anyLastre;
     const wFmt = bw ? (v) => S.weightLabel('bodyweight', v) : kg1;
     if (showWeight) {
       defs.push({
-        id: 'maxWeight', title: bw ? 'Lastre máximo' : 'Peso máximo', color: COLORS.accent, points: ser.maxWeight, fmt: wFmt, tick: nf1, summary: { unit: 'kg', decimals: 2 },
+        id: 'maxWeight', title: bw ? 'Lastre máximo' : 'Peso máximo', color: COLORS.accent, points: ser.maxWeight, fmt: wFmt, tick: nf1, summary: MS.maxWeight, span: kgSpan,
         sub: bw ? 'kg de lastre de la serie más pesada (negativo = asistencia)' : 'kg · la serie más pesada de cada sesión',
         howto: 'Toca un punto para ver esa serie: peso × repeticiones @RIR.',
       });
     }
     if (!bwNoE1rm) {
       defs.push({
-        id: 'e1rm', title: '1RM estimado', color: COLORS.info, points: ser.e1rm, fmt: kg1, tick: nf1, summary: { unit: 'kg', decimals: 1 }, sub: bw ? 'kg · el mejor de cada sesión (peso corporal + lastre)' : 'kg · el mejor de cada sesión',
+        id: 'e1rm', title: '1RM estimado', color: COLORS.info, points: ser.e1rm, fmt: kg1, tick: nf1, summary: MS.e1rm, span: kgSpan, sub: bw ? 'kg · el mejor de cada sesión (peso corporal + lastre)' : 'kg · el mejor de cada sesión',
         note: `Estimación con la fórmula de Epley usando reps + RIR; solo series de 1–12 reps.${bw ? ' Incluye tu peso corporal del día.' : ''} No es un peso levantado.`,
         empty: 'Sin series de 1–12 repeticiones en este periodo',
       });
@@ -886,7 +890,7 @@ export function mountExerciseProgress(root, params = {}) {
         sub: bwNoE1rm ? `${unit} · la serie de más peso × reps de cada sesión`
           : `${unit} · la serie con mayor 1RM estimado de cada sesión (sin series de 1–12 reps, la de más peso × reps)`,
         howto: 'El globo muestra la serie completa (peso × reps @RIR). Si sube el peso sin perder repeticiones, progresas. Si ninguna serie del día tiene 1RM estimado (más de 12 reps), cuenta la de más peso × reps.',
-        opts: { series: [{ id: 'bestSet', label: 'Mejor serie', color: COLORS.swim, points: ser.bestSet, dots: true }], yFormat: wFmt, yTickFormat: nf1 },
+        opts: { series: [{ id: 'bestSet', label: 'Mejor serie', color: COLORS.swim, points: ser.bestSet, dots: true }], yFormat: wFmt, yTickFormat: nf1, yMinSpan: kgSpan },
       };
       // Doble progresión: si en el periodo la mejor serie pesa siempre lo mismo que el peso máximo, la gráfica
       // repetiría la de arriba; entonces dibuja las repeticiones de esa serie (el globo sigue dando la serie entera).
@@ -895,7 +899,7 @@ export function mountExerciseProgress(root, params = {}) {
         mode: 'reps',
         sub: `reps · la mejor serie de cada sesión (en este periodo, su ${bw ? 'lastre' : 'peso'} es siempre el ${bw ? 'lastre' : 'peso'} máximo)`,
         howto: 'Con doble progresión la mejor serie es la más pesada, así que aquí ves sus repeticiones: suben a igual peso y bajan al subir el peso. El globo muestra la serie completa (peso × reps @RIR).',
-        opts: { series: [{ id: 'bestSet', label: 'Mejor serie', color: COLORS.swim, points: repsPts, dots: true }], yFormat: (v) => `${nf0(v)} reps`, yTickFormat: nf0 },
+        opts: { series: [{ id: 'bestSet', label: 'Mejor serie', color: COLORS.swim, points: repsPts, dots: true }], yFormat: (v) => `${nf0(v)} reps`, yTickFormat: nf0, yMinSpan: repsSpan },
       };
       defs.push({
         id: 'bestSet', title: 'Mejor serie', color: COLORS.swim, points: ser.bestSet, fmt: wFmt, tick: nf1,
@@ -910,28 +914,33 @@ export function mountExerciseProgress(root, params = {}) {
       });
     }
     if (bw) {
-      defs.push({ id: 'maxReps', title: 'Repeticiones máximas', color: COLORS.accent, points: ser.maxReps, fmt: (v) => `${nf0(v)} reps`, tick: nf0, sub: 'reps · la serie con más repeticiones de cada sesión' });
+      defs.push({ id: 'maxReps', title: 'Repeticiones máximas', color: COLORS.accent, points: ser.maxReps, fmt: (v) => `${nf0(v)} reps`, tick: nf0, summary: MS.maxReps, span: repsSpan, sub: 'reps · la serie con más repeticiones de cada sesión' });
     }
     // Core de peso corporal: el volumen es solo el lastre × reps (sin lastre no hay volumen: no se pinta la tarjeta).
     if (!core || ser.volume.length) {
       defs.push({
-        id: 'volume', title: 'Volumen', color: COLORS.strength, points: ser.volume, fmt: (v) => S.fmtMetric('volume', v), tick: nf0,
+        id: 'volume', title: 'Volumen', color: COLORS.strength, points: ser.volume, fmt: (v) => S.fmtMetric('volume', v), tick: nf0, span: relativeSpan(0.2, 100),
         sub: core ? 'kg por sesión · lastre × reps (en core el peso corporal no cuenta)' : bw ? 'kg por sesión · (peso corporal + lastre) × reps' : lt === 'unilateral' ? 'kg por sesión · peso × reps de los dos lados' : 'kg por sesión · peso × repeticiones',
         howto: 'Suma de las series de trabajo de cada sesión (sin calentamientos).',
       });
     }
   } else if (lt === 'time') {
-    defs.push({ id: 'maxTime', title: 'Tiempo máximo', color: COLORS.accent, points: ser.maxTime, fmt: (v) => fmtSec(v), tick: fmtDuration, yTicks: 'time', summary: { unit: 's', decimals: 0 }, sub: 'la serie más larga de cada sesión (min:s)', howto: 'Toca un punto para ver el tiempo exacto.' });
+    defs.push({ id: 'maxTime', title: 'Tiempo máximo', color: COLORS.accent, points: ser.maxTime, fmt: (v) => fmtSec(v), tick: fmtDuration, yTicks: 'time', summary: MS.maxTime, span: relativeSpan(0.2, 10), sub: 'la serie más larga de cada sesión (min:s)', howto: 'Toca un punto para ver el tiempo exacto.' });
   } else if (lt === 'jumps') {
-    defs.push({ id: 'maxHeight', title: 'Altura máxima', color: COLORS.accent, points: ser.maxHeight, fmt: (v) => `${nf1(v)} cm`, tick: nf1, summary: { unit: 'cm', decimals: 1 }, sub: 'cm · el salto más alto de cada sesión', empty: 'Registra la altura de tus saltos (es opcional) para ver su evolución.' });
-    defs.push({ id: 'maxReps', title: 'Repeticiones máximas', color: COLORS.info, points: ser.maxReps, fmt: (v) => `${nf0(v)} reps`, tick: nf0, sub: 'reps · la serie con más repeticiones de cada sesión' });
+    defs.push({ id: 'maxHeight', title: 'Altura máxima', color: COLORS.accent, points: ser.maxHeight, fmt: (v) => `${nf1(v)} cm`, tick: nf1, summary: MS.maxHeight, span: relativeSpan(0.2, 5), sub: 'cm · el salto más alto de cada sesión', empty: 'Registra la altura de tus saltos (es opcional) para ver su evolución.' });
+    defs.push({ id: 'maxReps', title: 'Repeticiones máximas', color: COLORS.info, points: ser.maxReps, fmt: (v) => `${nf0(v)} reps`, tick: nf0, summary: MS.maxReps, span: repsSpan, sub: 'reps · la serie con más repeticiones de cada sesión' });
   } else if (lt === 'distance_time') {
     defs.push({
       id: 'sprint', title: 'Mejor tiempo por distancia', fmt: (v) => `${S.fmtNumFast(v, 2)} s`, tick: (v) => S.fmtNumFast(v, 2), invertY: true,
       series: ser.sprint.map((s, i) => ({ id: `d${s.distanceM}`, label: s.label, color: SPRINT_COLORS[i % SPRINT_COLORS.length], points: s.points, dots: true })),
-      sub: 's · el más rápido de cada sesión; más arriba = más rápido', empty: 'Registra distancia y tiempo de tus series para ver su evolución.',
+      span: relativeSpan(0.1, 0.5), sub: 's · el más rápido de cada sesión; más arriba = más rápido', empty: 'Registra distancia y tiempo de tus series para ver su evolución.',
     });
   }
+
+  // La métrica principal (S.exercisePrimaryMetric, la misma que en la ficha), la primera gráfica
+  const primary = S.exercisePrimaryMetric(lt, ser);
+  const pi = defs.findIndex((d) => d.id === primary);
+  if (pi > 0) defs.unshift(...defs.splice(pi, 1));
 
   const first = sum.firstDate;
   const holders = [];
@@ -962,7 +971,7 @@ export function mountExerciseProgress(root, params = {}) {
       chartsBox.appendChild(el);
       const draw = chartHolder(charts, slot, 'line', {
         series: d.series || [{ id: d.id, label: d.title, color: d.color, points: d.points, dots: true }],
-        height: chartHeight(190), yFormat: d.fmt, yTickFormat: d.tick || d.fmt, invertY: !!d.invertY, yTicks: d.yTicks || 'auto',
+        height: chartHeight(190), yFormat: d.fmt, yTickFormat: d.tick || d.fmt, invertY: !!d.invertY, yTicks: d.yTicks || 'auto', yMinSpan: d.span || null,
         empty: d.empty || 'Sin datos en este periodo', ariaLabel: `${ex.name}: ${d.title.toLowerCase()}`,
       });
       holders.push({ draw, d, el, summary });

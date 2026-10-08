@@ -256,6 +256,29 @@ export function niceTicks(min, max, { maxTicks = 5, minTicks = 3, integer = fals
   return { min: snapTo(outMin, Math.max(dec, 6)), max: snapTo(outMax, Math.max(dec, 6)), step, ticks };
 }
 
+/**
+ * Dominio Y con un rango mínimo: si los datos ocupan menos de `minSpan`, se amplía alrededor de su centro (sin
+ * cruzar el cero si todos son positivos). Así un eje no exagera cambios pequeños (45 → 43,3 kg no ocupa todo el
+ * alto). minSpan no válido o datos ya más anchos → [lo, hi] tal cual.
+ * → [lo, hi]
+ */
+export function widenDomain(lo, hi, minSpan) {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(minSpan > 0) || hi - lo >= minSpan) return [lo, hi];
+  const mid = (lo + hi) / 2;
+  let a = mid - minSpan / 2;
+  let b = mid + minSpan / 2;
+  if (lo >= 0 && a < 0) { b -= a; a = 0; }
+  return [a, b];
+}
+
+/**
+ * Rango mínimo del eje relativo al valor: el mayor de `abs` y `rel` × el valor más grande (en valor absoluto)
+ * que se ve. Para lineChart({ yMinSpan: relativeSpan(0.2, 5) }): con 1RM ≈ 100 kg, al menos 20 kg de eje.
+ */
+export function relativeSpan(rel, abs = 0) {
+  return (lo, hi) => Math.max(abs, rel * Math.max(Math.abs(lo), Math.abs(hi)));
+}
+
 // Candidatos de marcas temporales, de más densas a menos.
 const TIME_CANDIDATES = [
   { u: 'd', n: 1 }, { u: 'd', n: 2 }, { u: 'w', n: 1 }, { u: 'w', n: 2 },
@@ -792,6 +815,7 @@ export function sparkline(values, { width = 72, height = 28, color = COLORS.mute
  *   height: 200, yFormat(v) → texto (globo y eje), yTickFormat?(v) (solo eje), xLabel?(x) → título del globo,
  *   yTickDecimals?: decimales que escribe el eje (si no, se deducen de yTickFormat/yFormat),
  *   xDomain?: [from|null, to|null], yMin?, yMax?, zeroBased?: false, invertY?: false,
+ *   yMinSpan?: número | (lo, hi) => número (rango mínimo del eje; ver widenDomain / relativeSpan),
  *   yTicks?: 'auto' | 'time' (segundos redondos) | number[],
  *   band?: { min, max, label?, color? }, legend?: true | false | items (defecto: automática con ≥ 2 series),
  *   bands?: [{ from:'YYYY-MM-DD', to:'YYYY-MM-DD', color?, opacity?: 0.16, note?: string }] (franjas verticales de
@@ -921,6 +945,8 @@ function drawLine(svg, o, W, H) {
   }
   const band = validBand(o.band);
   if (band) { lo = Math.min(lo, band.min); hi = Math.max(hi, band.max); if (!Number.isInteger(band.min) || !Number.isInteger(band.max)) ints = false; }
+  // Rango mínimo del eje (yMinSpan): un cambio de 1 kg sobre 100 no se dibuja como un precipicio
+  if (o.yMinSpan != null) [lo, hi] = widenDomain(lo, hi, typeof o.yMinSpan === 'function' ? o.yMinSpan(lo, hi) : o.yMinSpan);
   const { scale, labels: tickLabels } = yAxis(lo, hi, o, ints, fmtTick);
   const f = frame(W, H, tickLabels);
   const yPx = yMapper(scale, f, !!o.invertY);

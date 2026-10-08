@@ -220,7 +220,7 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 .cyc-effect-reason { font-size: calc(15px * var(--ts)); font-weight: 650; line-height: 1.35; }
 .cyc-effect-nodata { font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px dashed var(--border-strong); }
 .cyc-eff { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
-.cyc-eff-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 0 8px; }
+.cyc-eff-row { display: grid; grid-template-columns: var(--eff-even, repeat(5, minmax(0, 1fr))); gap: 2px; padding: 0 8px; }
 .cyc-eff-head { padding-top: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .cyc-eff-th { font-size: var(--fs-xs); font-weight: 750; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cyc-eff-phase { padding: 7px 0 8px; border-bottom: 1px solid var(--border); }

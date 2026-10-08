@@ -97,6 +97,12 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
 - Hecho, saltado o descanso: no queda nada que empezar, así que «Lo importante esta semana» sube por encima de
   «Registrar».
 - Evento a 14 días o menos: tarjeta debajo de «Te toca hoy» («10K · En 5 días»); más lejos, una línea.
+- Verde (ronda 8, A3): solo la acción principal («Empezar» / «Continuar», el único botón verde), lo seleccionado
+  (hoy en la mini semana, el check-in) y los estados positivos («Subir peso», el progreso de un objetivo). Los enlaces
+  secundarios («Ver ciclo», «Importar desde un archivo», «Ver todo», «Calendario», «Panel semanal»…) van en texto
+  secundario con la flecha gris; «Ahora: …», el próximo evento y el cronómetro, en texto normal; «Guardar» del peso,
+  botón secundario. Reglas en css/calendar.css (bajo `.today`, no cambian otras pantallas); lo vigila
+  tests/e2e/today-green.test.cjs.
 
 ## 9. Términos
 
@@ -128,8 +134,10 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
   «Objetivo 3×4–6 · ↑ Sube a 82,5 kg» o «Objetivo 3×4–6 · ◎ 6/6/6 → +2,5 kg» (al completar 6/6/6, +2,5 kg). Es la
   MISMA regla e incrementos que el panel semanal (js/progression.js, que el panel reexporta) y lleva la frase entera
   para VoiceOver («Siguiente paso: +2,5 kg cuando completes 6/6/6»).
-- Resumen: tres cifras protagonistas (duración, series de trabajo, récords) y una línea con esfuerzo, volumen y
-  carga. «Frente a la anterior» (js/session-compare.js): la sesión terminada anterior de la MISMA rutina; por
+- Resumen: dos cifras protagonistas (duración y series de trabajo; «1 h 10 min» en una línea, sin partir) y una
+  línea con esfuerzo, volumen y carga. Récords (ronda 8, A6): sin récord no sale nada (ni «Récords 0 / ninguno esta
+  vez»); con récord, tarjeta dorada `.ses-sum-prs` justo bajo la cabecera, «🏆 2 récords en esta sesión» y, por
+  serie, el ejercicio, la serie y qué récord es (session-polish.test y session.test). «Frente a la anterior» (js/session-compare.js): la sesión terminada anterior de la MISMA rutina; por
   ejercicio, la serie más pesada («+2,5 kg», «+2 reps», «Igual», «−1 rep»), como mucho 5 filas (primero lo que
   mejora) y los totales (series, volumen, duración). Solo datos reales; sesión libre o sin anterior → no sale.
 
@@ -232,3 +240,92 @@ Auditoría (31 problemas confirmados por verificación independiente, 1 descarta
 Guardas: tests/e2e/visual-guard.test.cjs recorre todas las pantallas también con el texto al 125 % y al 150 % y,
 además de lo anterior, falla si un texto se sale de su caja (un botón, una ficha) o se corta a N líneas (salvo los
 avances marcados con `data-preview`, cuyo texto entero está a un toque).
+
+## 18. Modo foco en la sesión en curso
+
+En `#/session/<id>` de una sesión de fuerza **en curso** (y solo ahí) la cápsula de la barra de pestañas muestra la
+barra de la sesión: «‹ Hoy» · «En sesión · 2/20 series» · «Terminar» (ui.js `focusBar`, js/views/session.js).
+
+- Es el mismo elemento `#tabbar` (mismo sitio, áreas seguras, inerte con una hoja abierta): el hueco de abajo del
+  contenido, los avisos y el código que esquiva la barra (`visibleBottom` de la sesión) siguen valiendo.
+  `html.focus-mode` sube `--tb-h` a 56 px (64 px con texto grande) para que los botones tengan 44 px con aire.
+- n/N es `calc.setProgress` (la misma cuenta que «2 de 20 series» en Hoy). Sin cronómetro de descanso; el de la
+  sesión sigue en la cabecera, que ya no repite «Terminar».
+- No encierra: «Hoy» sale sin cerrar nada (Hoy muestra la sesión con «Continuar»); el «atrás» de la cabecera
+  también. Fuera de esa pantalla (Hoy, Progreso, la ficha de un ejercicio, una sesión terminada, el resumen)
+  vuelven las pestañas.
+- Texto grande: «Hoy» se queda en la flecha (VoiceOver dice «Ir a Hoy»), «Terminar» sin icono y n/N sin la palabra
+  «series»; la letra no se reduce.
+
+Pruebas: tests/e2e/focus-bar.test.cjs (Chromium y WebKit, 375/390/430, texto 100 % y 150 %: la barra cabe, nada
+de la pantalla queda bajo ella, n/N se actualiza, «Hoy» sale con la sesión abierta y «Terminar» la termina).
+
+## 19. Texto grande sin solapes (ronda 8, A2)
+
+Con el texto al 150 % había fallos que la guarda no veía porque nada «se salía de su caja»: el texto del anillo del
+ciclo pisaba el trazo, «00» se montaba sobre «min» (y «80,8» sobre «kg»), «Senderismo» se partía en
+«Senderism|o», «RECUPERACIÓ|N» y «Señales de / cansancio» en «Cómo vas», «Energí|a» en la tabla del ciclo… Arreglos
+(sin bajar la letra, todo bajo `html.text-large`, salvo dos casos que también rozaban al 100 %):
+
+- **Anillo del ciclo**: crece hasta 290 px; dentro quedan el rótulo y el día; la fase y «estimada» pasan debajo
+  (rejilla que superpone dibujo y centro). El anillo pequeño de Hoy pasa a 76 px.
+- **Unidades superpuestas** (−/+, duración h·min·s): la unidad va debajo de la cifra y el campo crece en alto.
+  Al 100 %, «28 días» (Perfil) y «42,5 kg» (sesión, 375 px) se tocaban: la cifra se centra en el hueco que deja la
+  unidad.
+- **Columnas → filas**: selector de deporte en flex (cada opción mide al menos su palabra), accesos rápidos de Hoy
+  y de Progreso de dos en dos, «Más datos» de la actividad un campo por fila, tablas por músculo con el nombre en su
+  línea, «Cómo vas» con la minigráfica y el estado debajo, carga por deporte en dos líneas, «Más progresan» con el
+  cambio debajo, «Tus ciclos» de dos en dos, columnas de «Cómo te afecta» a la medida de su título.
+- **Filas de lista con cifra a la derecha**: el texto no encoge por debajo de su palabra más larga; la cifra baja de
+  línea si no cabe y la flecha queda fija a la derecha.
+- La cabecera de la actividad se vuelve a medir al cambiar el título («Nuevo senderismo» se cortaba con «…»):
+  ui.js `fitTitle` exportada.
+
+Guarda (tests/e2e/visual-guard.test.cjs, `overlapIssues`), en todas las pantallas y tamaños:
+
+- **palabra partida**: una palabra de 2–14 letras repartida en dos líneas;
+- **valor sobre su unidad**: el valor (o el ejemplo, en Chromium) de un campo con unidad superpuesta pisa la tinta de
+  la unidad, o no cabe en el campo;
+- **texto sobre un anillo**: una línea de texto que toca un círculo SVG con trazo y no cabe entera en su hueco.
+
+Una prueba propia (`la guarda de solapes avisa…`, Chromium y WebKit) monta cada caso roto y su arreglo y comprueba
+que la guarda avisa del primero y calla con el segundo; con el CSS anterior, la guarda falla en #/cycle, #/today,
+#/activity/new, #/progress, #/bodyweight y #/settings/thresholds. «Senderismo» al 150 % se recorre también
+(`activity-new-hike`).
+
+## 20. Deltas comparativos: neutros por defecto (ronda 8, A4)
+
+Un solo camino para colorear una diferencia frente a otro periodo o sesión: `deltaTone(dir, { better, warn })` de
+`js/util.js` → `'neutral' | 'good' | 'warn'`. Subir no es «bueno» ni bajar «malo»: «Carrera 0 km · ▼ −100 %» a
+mitad de semana va en gris, como cualquier cambio sin regla detrás.
+
+- **good** solo si una regla dice qué dirección es mejora y la diferencia va en ella: 1RM en «Ejercicios que más
+  progresan» (#/summary) y más kg o reps en «Frente a la anterior» (resumen de sesión). Bajar ahí es neutro.
+- **warn** solo si el analista ya avisa de esa subida en esa semana: en «Resumen de la semana» (#/weekly), «Carga» si
+  hay `load-warn` y los km de carrera si hay `runkm-warn` (sugerencias de `insights.js`), y nunca en un ▼.
+- Todo lo demás (#/summary «Comparación», KPIs y deportes, panel semanal sin avisos), neutro. «Cómo vas» ya era
+  texto neutro con su estado (`stateTag`) decidido por `overview.js`.
+
+Chips: `deltaChip(d, fmt, rule)` (views/summary.js) pone `data-tone` y `.sum-delta-tone-*`; las filas de sesión,
+`data-tone` en `.ses-cmp-row`. Pruebas: `tests/unit/util.test.mjs` (deltaTone) y `tests/e2e/deltas-neutral.test.cjs`.
+
+## 21. Ficha de ejercicio y su gráfica de progreso (ronda 8, A5)
+
+- **Ficha (#/exercise/:id)**: arriba, «de un vistazo» (`.lib-glance`): «Última vez · 5 oct · hace 2 días» con sus
+  series, «Mejor serie» (la del récord de 1RM estimado; sin 1RM, la de más peso, reps, tiempo o altura), «1RM
+  estimado» (el de la última sesión y el récord) y la tendencia de los 3 últimos meses. Debajo, «Ver progreso» y el
+  historial; al final, los metadatos (músculos, patrón, alias, rutinas) y las acciones. Sin sesiones terminadas, la
+  tarjeta no sale.
+- Los números salen de `stats.exerciseGlance`, que solo reúne `exerciseSummary`, `exerciseSeries` y `exerciseRecord`
+  (Epley de calc.js) y la frase de `levelSummary`: nada se calcula dos veces. La tendencia es la MISMA frase que la de
+  la gráfica con el periodo por defecto (3 meses).
+- **Métrica principal** (`stats.exercisePrimaryMetric`): el 1RM estimado si hay series con carga de 1–12 reps; si no,
+  lastre o repeticiones (peso corporal), tiempo o altura. Va primero en los datos clave y en las gráficas de
+  #/progress/exercise/:id.
+- **Redondeo humano**: `stats.EXERCISE_METRIC_SUMMARY` (como mucho un decimal): «−1,7 kg desde julio», nunca
+  «−1,67 kg».
+- **Ejes con rango mínimo**: `lineChart({ yMinSpan })` amplía el eje alrededor de los datos si ocupan menos de ese
+  rango (`charts.widenDomain`, sin cruzar el cero); las gráficas del ejercicio usan `relativeSpan(0.2, mínimo)` (al
+  menos el 20 % del valor: 5 kg, 4 reps, 10 s, 5 cm…). Antes, 45 → 40 kg ocupaba todo el alto (eje 40–45).
+
+Pruebas: tests/unit/exercise-glance.test.mjs y tests/e2e/exercise-glance.test.cjs (Chromium y WebKit).

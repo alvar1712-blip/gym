@@ -15,6 +15,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { openApp, go, engineAvailable } = require('./helpers.cjs');
+const playwright = require('playwright');
 const { seedRealistic } = require('./realistic-data.cjs');
 
 const skipWebkit = engineAvailable('webkit') ? false : 'WebKit no instalado: ejecuta scripts/setup-webkit.sh';
@@ -26,7 +27,7 @@ const madrid = (date, hh = 12) => new Date(`${date}T${String(hh).padStart(2, '0'
 const routes = (ids) => [
   ['today', '#/today'], ['calendar', '#/calendar'], ['day', `#/day/${ids.doneDate || TODAY}`], ['history', '#/history'],
   ids.activeId && ['session', `#/session/${ids.activeId}`], ids.done && ['summary', `#/session/${ids.done}/summary`],
-  ['activity-new', '#/activity/new?kind=run'], ids.run && ['activity', `#/activity/${ids.run}`],
+  ['activity-new', '#/activity/new?kind=run'], ['activity-new-hike', '#/activity/new?kind=hike'], ids.run && ['activity', `#/activity/${ids.run}`],
   ['bodyweight', '#/bodyweight'], ['exercises', '#/exercises'], ['exercise', '#/exercise/press_banca'], ['exercise-edit', '#/exercise/press_banca/edit'],
   ['templates', '#/templates'], ['template', '#/template/tpl_d1'],
   ['settings', '#/settings'], ['settings-week', '#/settings/week'], ['settings-thresholds', '#/settings/thresholds'], ['settings-data', '#/settings/data'], ['profile', '#/settings/profile'],
@@ -78,6 +79,7 @@ function inspectTop() {
     // Las zonas del mapa corporal (SVG) son regiones del dibujo, no botones: se tocan por su área
     if (tappable && r.height < 43.5 && !el.closest('svg, .why-body')) issues.push(`objetivo táctil de ${Math.round(r.width)}×${Math.round(r.height)}: ${desc(el)}`);
   }
+  issues.push(...overlapIssues(root, desc, shown));
   // La cabecera (título compacto) no tapa el primer bloque del contenido
   const top = root.querySelector('.topbar');
   const content = root.querySelector('.content');
@@ -85,6 +87,119 @@ function inspectTop() {
   if (top && first && first.getBoundingClientRect().top < top.getBoundingClientRect().bottom - 1) issues.push(`la cabecera tapa ${desc(first)}`);
   return [...new Set(issues)];
 }
+
+/**
+ * Solapes que no son «salirse de la caja» (docs/PULIDO.md §17, texto grande):
+ *   · una palabra corta partida a media palabra («Senderism|o», «RECUPERACIÓ|N»): la caja es más estrecha que la
+ *     palabra y hay que reorganizar (filas en vez de columnas), no partirla;
+ *   · el valor de un campo (o su ejemplo) que pisa la unidad superpuesta («00» sobre «min», «/km», «kg») o que no
+ *     cabe en el campo;
+ *   · texto superpuesto a un anillo (SVG redondo) que se sale de su hueco interior y pisa el trazo.
+ * Se mide con rectángulos de texto (Range), no con cajas: una caja centrada puede ser más ancha que su texto.
+ * page.evaluate serializa una sola función: `inspectTop` la recibe en su ámbito (ver `measureTop`).
+ */
+function overlapIssues(root, desc, shown) {
+  const issues = [];
+  const rectsOf = (node, from, to) => {
+    const rg = document.createRange();
+    rg.setStart(node, from);
+    rg.setEnd(node, to);
+    return [...rg.getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5);
+  };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const texts = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!n.textContent.trim() || !el || el.closest('svg, [data-preview]') || !shown(el)) continue;
+    texts.push(n);
+  }
+  // 1) Palabras partidas (≤ 14 letras: una palabra más larga puede no caber de ninguna manera)
+  for (const n of texts) {
+    const re = /[^\s ·—–\-/]+/g;
+    for (let m = re.exec(n.textContent); m; m = re.exec(n.textContent)) {
+      if (m[0].length < 2 || m[0].length > 14) continue;
+      const lines = new Set(rectsOf(n, m.index, m.index + m[0].length).map((r) => Math.round(r.top / 4)));
+      if (lines.size > 1) issues.push(`palabra partida «${m[0]}»: ${desc(n.parentElement)}`);
+    }
+  }
+  // 2) Campos con una unidad superpuesta (posición absoluta dentro del mismo envoltorio)
+  const seen = (el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width >= 1 && r.height >= 1 && !el.closest('[hidden]') && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05;
+  };
+  const ctx = document.createElement('canvas').getContext('2d');
+  for (const inp of root.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=date]):not([type=time]):not([type=range])')) {
+    if (!shown(inp)) continue;
+    const wrap = inp.parentElement;
+    // (la unidad suele llevar aria-hidden —el campo ya la dice—: aquí cuenta si se ve)
+    const units = [...wrap.children].filter((u) => u !== inp && getComputedStyle(u).position === 'absolute' && u.textContent.trim() && seen(u));
+    if (!units.length) continue;
+    const text = inp.value || inp.placeholder;
+    if (!text) continue;
+    const cs = getComputedStyle(inp); // la caja (márgenes interiores, alineación) es la del campo
+    // El ejemplo (placeholder) se mide con su propia letra. Todos los campos lo pintan en gris (--muted): si el
+    // estilo de ::placeholder sale con el color del campo, el motor no lo da (WebKit) y el ejemplo no se mide
+    const ph = !inp.value;
+    const fcs = ph ? getComputedStyle(inp, '::placeholder') : cs; // la letra, la del texto que se ve
+    if (ph && fcs.color === cs.color) continue;
+    ctx.font = `${fcs.fontStyle} ${fcs.fontWeight} ${fcs.fontSize} ${fcs.fontFamily}`;
+    const tw = ctx.measureText(text).width;
+    const r = inp.getBoundingClientRect();
+    const left = r.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+    const avail = inp.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (tw > avail + 1) { issues.push(`texto que no cabe en el campo («${text}», ${Math.round(tw)} > ${Math.round(avail)} px): ${desc(wrap)}`); continue; }
+    const start = cs.textAlign === 'center' ? left + (avail - tw) / 2 : cs.textAlign === 'right' || cs.textAlign === 'end' ? left + avail - tw : left;
+    // En vertical: la línea va centrada en la caja de contenido; la tinta, de la línea base arriba y abajo
+    const m = ctx.measureText(text);
+    const cTop = r.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+    const cBottom = r.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom);
+    const base = (cTop + cBottom) / 2 - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) / 2 + m.fontBoundingBoxAscent;
+    const inkTop = base - m.actualBoundingBoxAscent;
+    const inkBottom = base + m.actualBoundingBoxDescent;
+    for (const u of units) {
+      // La tinta de la unidad, igual: su caja de texto (Range) empieza en lo alto de la fuente, no de las letras
+      const ucs = getComputedStyle(u);
+      ctx.font = `${ucs.fontStyle} ${ucs.fontWeight} ${ucs.fontSize} ${ucs.fontFamily}`;
+      const um = ctx.measureText(u.textContent.trim());
+      const ur = [...u.childNodes].filter((c) => c.nodeType === 3).flatMap((c) => rectsOf(c, 0, c.textContent.length)).map((q) => {
+        const ub = q.top + (q.height - (um.fontBoundingBoxAscent + um.fontBoundingBoxDescent)) / 2 + um.fontBoundingBoxAscent;
+        return { left: q.left, right: q.right, top: ub - um.actualBoundingBoxAscent, bottom: ub + um.actualBoundingBoxDescent };
+      });
+      if (ur.some((q) => q.left < start + tw - 1 && q.right > start + 1 && q.top < inkBottom - 2 && q.bottom > inkTop + 2)) issues.push(`el valor pisa la unidad «${u.textContent.trim()}» («${text}»): ${desc(wrap)}`);
+    }
+  }
+  // 3) Anillos (círculo SVG sin relleno, con trazo): ninguna línea de texto puede pisar el trazo. Una línea que
+  //    toca el disco exterior tiene que caber entera en el hueco interior (radio − medio trazo).
+  for (const c of root.querySelectorAll('svg circle')) {
+    const ccs = getComputedStyle(c);
+    const ctm = c.getScreenCTM();
+    // (los dibujos llevan aria-hidden: aquí cuenta si se ven, no si los lee VoiceOver)
+    if (ccs.fill !== 'none' || !(parseFloat(ccs.strokeWidth) > 0) || !ctm || !seen(c.ownerSVGElement)) continue;
+    const k = Math.hypot(ctm.a, ctm.b);
+    const r0 = c.r.baseVal.value * k;
+    const half = (parseFloat(ccs.strokeWidth) / 2) * k;
+    if (r0 < 15) continue;
+    const cx = ctm.a * c.cx.baseVal.value + ctm.c * c.cy.baseVal.value + ctm.e;
+    const cy = ctm.b * c.cx.baseVal.value + ctm.d * c.cy.baseVal.value + ctm.f;
+    const outer = r0 + half;
+    const inner = r0 - half;
+    for (const n of texts) {
+      for (const q of rectsOf(n, 0, n.textContent.length)) {
+        // Un píxel de margen por lado (antialiasing y la caja de línea, algo más alta que las letras)
+        const L = q.left + 1, R = q.right - 1, T = q.top + 1, B = q.bottom - 1;
+        const near = Math.hypot(Math.max(L - cx, 0, cx - R), Math.max(T - cy, 0, cy - B));
+        if (near >= outer) continue;
+        const far = Math.max(...[[L, T], [R, T], [L, B], [R, B]].map(([x, y]) => Math.hypot(x - cx, y - cy)));
+        if (far > inner) issues.push(`texto que pisa un anillo («${n.textContent.trim().slice(0, 20)}»): ${desc(n.parentElement)}`);
+      }
+    }
+  }
+  return issues;
+}
+
+/** inspectTop con overlapIssues a su alcance (page.evaluate solo serializa la función que recibe). */
+const measureTop = (page) => page.evaluate(`(() => { const overlapIssues = ${overlapIssues}; return (${inspectTop})(); })()`);
 
 /** Al final de la pantalla: lo último visible queda por encima de la barra de pestañas (o del pie fijo). */
 function inspectBottom() {
@@ -141,7 +256,7 @@ async function sweep(app, { tag, widths, ids }) {
       await go(page, '#/today'); // se entra siempre desde Hoy (como en el uso real)
       await go(page, hash);
       await page.evaluate(() => window.scrollTo(0, 0));
-      const top = await page.evaluate(inspectTop);
+      const top = await measureTop(page);
       await page.screenshot({ path: path.join(OUT, `${tag}-${key}-${w}.png`) });
       await page.evaluate(scrollToEnd);
       const bottom = await page.evaluate(inspectBottom);
@@ -200,3 +315,55 @@ test('WebKit: guardas visuales con la app vacía a 375 px', { skip: skipWebkit }
 test('texto al 125 %: guardas visuales con datos realistas a 375 px', () => withData('chromium', 'chromium-125', { scale: 1.25, widths: [375] }));
 test('texto al 150 %: guardas visuales con datos realistas a 375 y 430 px', () => withData('chromium', 'chromium-150', { scale: 1.5, widths: [375, 430] }));
 test('WebKit: texto al 150 % con datos realistas a 375 px', { skip: skipWebkit }, () => withData('webkit', 'webkit-150', { scale: 1.5, widths: [375] }));
+
+/**
+ * La guarda de solapes, contra casos conocidos (ronda 8, A2): con texto al 150 % el anillo del ciclo, la duración
+ * («00» sobre «min»), «Senderismo» en un tercio de fila y «RECUPERACIÓ|N» pasaban la guarda. Se monta cada caso
+ * roto y su arreglo en una página mínima y se comprueba que la guarda avisa del roto y calla con el arreglo.
+ */
+async function selfTest(browserName) {
+  const browser = await playwright[browserName].launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 375, height: 800 } });
+    await page.setContent(`<!doctype html><html lang="es"><body style="margin:0;font-family:sans-serif;background:#111;color:#eee">
+      <div id="view">
+        <div class="case" id="ring-bad" style="position:relative;width:120px;height:120px">
+          <svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="50" fill="none" stroke="#888" stroke-width="16"/></svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;text-align:center">Ovulación aprox.</div>
+        </div>
+        <div class="case" id="ring-ok" style="position:relative;width:120px;height:120px">
+          <svg viewBox="0 0 120 120" width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="50" fill="none" stroke="#888" stroke-width="16"/></svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px">15</div>
+        </div>
+        <label class="case" id="unit-bad" style="position:relative;display:flex;width:100px">
+          <input value="00" style="width:100%;height:44px;font-size:30px;text-align:center;padding:0 8px;box-sizing:border-box">
+          <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:19px">min</span>
+        </label>
+        <label class="case" id="unit-ok" style="position:relative;display:flex;width:100px">
+          <input value="00" style="width:100%;height:70px;font-size:30px;text-align:center;padding:2px 4px 30px;box-sizing:border-box">
+          <span style="position:absolute;left:0;right:0;bottom:4px;text-align:center;font-size:19px;line-height:1.2">min</span>
+        </label>
+        <div class="case" id="word-bad" style="width:60px;font-size:20px;overflow-wrap:anywhere">Senderismo</div>
+        <div class="case" id="word-ok" style="width:200px;font-size:20px;overflow-wrap:anywhere">Senderismo</div>
+      </div></body></html>`);
+    const run = (id) => page.evaluate(`(() => {
+      const overlapIssues = ${overlapIssues};
+      const shown = (el) => { const r = el.getBoundingClientRect(); return r.width >= 1 && r.height >= 1 && !el.closest('[aria-hidden="true"]'); };
+      const desc = (el) => el.tagName.toLowerCase();
+      return overlapIssues(document.getElementById(${JSON.stringify(id)}), desc, shown);
+    })()`);
+    const ring = await run('ring-bad');
+    assert.ok(ring.some((x) => /pisa un anillo/.test(x)), `anillo: ${ring.join(' | ')}`);
+    assert.deepStrictEqual(await run('ring-ok'), []);
+    const unit = await run('unit-bad');
+    assert.ok(unit.some((x) => /pisa la unidad «min»/.test(x)), `unidad: ${unit.join(' | ')}`);
+    assert.deepStrictEqual(await run('unit-ok'), []);
+    const word = await run('word-bad');
+    assert.ok(word.some((x) => /palabra partida «Senderismo»/.test(x)), `palabra: ${word.join(' | ')}`);
+    assert.deepStrictEqual(await run('word-ok'), []);
+  } finally {
+    await browser.close();
+  }
+}
+test('la guarda de solapes avisa de un texto sobre el anillo, un valor sobre su unidad y una palabra partida', () => selfTest('chromium'));
+test('WebKit: la guarda de solapes avisa de los mismos casos', { skip: skipWebkit }, () => selfTest('webkit'));

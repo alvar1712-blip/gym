@@ -614,16 +614,18 @@ export function mountCycle(root) {
     const kg = signed;
     const lvl = (v) => fmtNum(v, 1, 1);
     const COLS = [
-      { key: 'energy', th: 'Energía', get: (p) => [p.energy.mean, p.energy.n], fmt: lvl },
-      { key: 'sleep', th: 'Sueño', get: (p) => [p.sleep.mean, p.sleep.n], fmt: lvl },
-      { key: 'rpe', th: 'RPE', get: (p) => [p.rpe.mean, p.rpe.n], fmt: lvl },
-      { key: 'strength', th: 'Fuerza', get: (p) => [p.strength.pct, p.strength.n], fmt: pct },
-      { key: 'weight', th: 'Peso kg', get: (p) => [p.weight.kg, p.weight.n], fmt: kg },
+      { key: 'energy', w: 1.3, th: 'Energía', get: (p) => [p.energy.mean, p.energy.n], fmt: lvl },
+      { key: 'sleep', w: 1, th: 'Sueño', get: (p) => [p.sleep.mean, p.sleep.n], fmt: lvl },
+      { key: 'rpe', w: 0.8, th: 'RPE', get: (p) => [p.rpe.mean, p.rpe.n], fmt: lvl },
+      { key: 'strength', w: 1.2, th: 'Fuerza', get: (p) => [p.strength.pct, p.strength.n], fmt: pct },
+      { key: 'weight', w: 0.75, th: 'Peso kg', get: (p) => [p.weight.kg, p.weight.n], fmt: kg },
     ].filter((col) => stats.phases.some((p) => { const [v, n] = col.get(p); return v != null && n >= MIN; }));
     if (!COLS.length) {
       return h('p.cyc-effect-nodata', 'Aún no hay check-ins, sesiones con esfuerzo (RPE) ni pesajes en las fechas de tus ciclos. En cuanto los registres, aquí verás tus medias por fase.');
     }
-    const cols = { gridTemplateColumns: `repeat(${COLS.length}, minmax(0, 1fr))` };
+    // Columnas iguales; con texto grande (css/app.css), cada una a la medida de su título («Energía» no cabe en
+    // una quinta parte y se partía «Energí|a»)
+    const cols = `--eff-even: repeat(${COLS.length}, minmax(0, 1fr)); --eff-fit: ${COLS.map((col) => `minmax(0, ${col.w}fr)`).join(' ')}`;
     const cell = (col, p) => {
       const [v, n] = col.get(p);
       const ok = v != null && n >= MIN;

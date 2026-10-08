@@ -2,7 +2,7 @@
 // PROPIETARIO: módulo de sesión.
 import * as store from './store.js';
 import { h, icon, screen, header, emptyState, kpiValue, RPE_HINTS } from './ui.js';
-import { fmtDate, fmtMinutes, fmtNum, fmtKm, fmtDuration, sum } from './util.js';
+import { fmtDate, fmtMinutes, fmtNum, fmtKm, fmtDuration, sum, deltaTone } from './util.js';
 import {
   sessionVolume, sessionMuscleSets, sessionPRs, sessionLoad, sessionDurationMin, bestSet, setMetrics,
   workSetCount, makeBodyweightFn,
@@ -51,8 +51,8 @@ export function renderSummary(root, id) {
   const actsMin = sum(acts, (a) => sessionDurationMin(a) || 0);
   const actsLoad = sum(acts, (a) => sessionLoad(a) || 0);
 
-  // Pulido (docs/PULIDO.md §9): tres cifras protagonistas (duración, series de trabajo, récords) y, en una línea
-  // aparte, el esfuerzo, el volumen y la carga (antes, seis casillas con el mismo peso).
+  // Pulido (docs/PULIDO.md §10): dos cifras protagonistas (duración y series de trabajo) y, en una línea aparte, el
+  // esfuerzo, el volumen y la carga. Los récords van en su propia tarjeta, solo si los hay (ronda 8, A6).
   const meta = [
     session.rpe ? `Esfuerzo ${session.rpe}/10 · ${RPE_HINTS[session.rpe]}` : 'Esfuerzo sin indicar',
     vol > 0 ? `Volumen ${fmtNum(vol, 0)} kg` : null,
@@ -64,38 +64,21 @@ export function renderSummary(root, id) {
         h('h2', session.templateName || 'Sesión de fuerza'),
         h('div.card-sub', fmtDate(session.date, 'longy'))),
       session.status === 'active' ? h('span.badge.badge-warn', 'En curso') : h('span.badge.badge-ok', 'Terminada')),
-    h('div.kpis.ses-sum-kpis',
+    h('div.kpis.kpis-2.ses-sum-kpis',
       acts.length
         ? kpi('Duración total', fmtMinutes((dur || 0) + actsMin), `fuerza ${dur != null ? fmtMinutes(dur) : '—'}`, '.ses-kpi-total')
         : kpi('Duración', dur != null ? fmtMinutes(dur) : '—'),
-      kpi('Series de trabajo', String(work)), // «de trabajo» = sin calentamientos (docs/PULIDO.md §9, términos)
-      kpi('Récords', String(prs.size), prs.size ? '🏆 en esta sesión' : 'ninguno esta vez', prs.size ? '.ses-kpi-pr' : '')),
+      kpi('Series de trabajo', String(work))), // «de trabajo» = sin calentamientos (docs/PULIDO.md §9, términos)
     h('p.ses-sum-meta.tnum', meta.join(' · '))));
+
+  // Récords (ronda 8, A6): sin récord no hay casilla «Récords 0»; con récord, tarjeta destacada justo debajo con
+  // cuáles (nombre, serie y tipo de récord), antes de «Frente a la anterior».
+  if (prs.size) c.appendChild(prCard(session, prs, exMap));
 
   // Frente a la anterior de la misma rutina: solo datos reales y solo si es comparable
   const prev = session.status === 'done' ? previousEquivalent(session, all) : null;
   const cmp = prev ? compareSessions(session, prev, exMap, bwFn) : null;
   if (cmp) c.appendChild(compareCard(cmp, dur));
-
-  // Récords
-  if (prs.size) {
-    const rows = [];
-    for (const se of session.exercises || []) {
-      const ex = exMap.get(se.exerciseId);
-      for (const set of se.sets || []) {
-        const list = prs.get(set.id);
-        if (!list) continue;
-        // Nombre y serie en líneas separadas: el dato clave (peso × reps) nunca se corta.
-        rows.push(h('div.list-item.ses-sum-pr',
-          h('span.ses-sum-emoji', { 'aria-hidden': 'true' }, '🏆'),
-          h('div.list-item-main',
-            h('div.list-item-title.ses-sum-pr-name', ex?.name || se.exName),
-            h('div.ses-sum-pr-set.tnum', formatSet(set, ex?.logType, { kg: true })),
-            h('div.list-item-sub.wrap', list.map((p) => prLabel(p, ex)).join(' · ')))));
-      }
-    }
-    c.append(h('h2.section-title', 'Récords batidos'), h('div.list', rows));
-  }
 
   // Series por músculo
   if (muscles.length) {
@@ -158,6 +141,29 @@ export function renderSummary(root, id) {
   return undefined;
 }
 
+/** Tarjeta destacada de récords: «🏆 2 récords en esta sesión» y una fila por serie récord. */
+function prCard(session, prs, exMap) {
+  const rows = [];
+  for (const se of session.exercises || []) {
+    const ex = exMap.get(se.exerciseId);
+    for (const set of se.sets || []) {
+      const list = prs.get(set.id);
+      if (!list) continue;
+      // Nombre y serie en líneas separadas: el dato clave (peso × reps) nunca se corta.
+      rows.push(h('li.ses-sum-pr',
+        h('div.ses-sum-pr-name', ex?.name || se.exName),
+        h('div.ses-sum-pr-set.tnum', formatSet(set, ex?.logType, { kg: true })),
+        h('div.ses-sum-pr-kind', list.map((p) => prLabel(p, ex)).join(' · '))));
+    }
+  }
+  const n = prs.size;
+  return h('section.card.ses-sum-prs', { dataset: { count: n } },
+    h('div.ses-sum-prs-head',
+      h('span.ses-sum-prs-emoji', { 'aria-hidden': 'true' }, '🏆'),
+      h('h2.ses-sum-prs-title', n === 1 ? '1 récord en esta sesión' : `${n} récords en esta sesión`)),
+    h('ul.ses-sum-prs-list', rows));
+}
+
 const DIR_ICON = { up: 'arrow-up', down: 'arrow-down', same: 'minus' };
 const DIR_LABEL = { up: 'Mejora', down: 'Baja', same: 'Igual' };
 
@@ -175,7 +181,7 @@ function compareCard(cmp, dur) {
     h('div.ses-cmp-head',
       h('h2.ses-cmp-title', 'Frente a la anterior'),
       h('p.ses-cmp-sub', `La misma rutina, el ${fmtDate(cmp.prevDate, 'day')} · serie más pesada de cada ejercicio`)),
-    h('ul.ses-cmp-list', cmp.rows.map((r) => h('li.ses-cmp-row', { dataset: { dir: r.dir, ex: r.exerciseId } },
+    h('ul.ses-cmp-list', cmp.rows.map((r) => h('li.ses-cmp-row', { dataset: { dir: r.dir, tone: deltaTone(r.dir, { better: 'up' }), ex: r.exerciseId } },
       h('span.ses-cmp-icon', { 'aria-label': DIR_LABEL[r.dir], role: 'img' }, icon(DIR_ICON[r.dir], 16)),
       h('span.ses-cmp-name', r.name),
       h('span.ses-cmp-val.tnum', r.text)))),

@@ -6,7 +6,7 @@
 // También exporta deltaChip(), que usa el bloque «Resumen de la semana» del panel semanal (views/weekly.js).
 import { navigate, replaceUrl } from '../router.js';
 import { h, icon, screen, emptyState, segmented } from '../ui.js';
-import { todayStr, isDateStr, fmtDate, fmtNum, addMonths, DAY_LONG } from '../util.js';
+import { todayStr, isDateStr, fmtDate, fmtNum, addMonths, DAY_LONG, deltaTone } from '../util.js';
 import { dataFromStore } from '../progress-ui.js';
 import {
   periodSummary, periodStart, periodTitle, periodName, kindInfo, deltaInfo, fmtValue, fmtKm, monthGrid, summaryHref,
@@ -36,16 +36,19 @@ const dayTxt = (date, today) => fmtDate(date, date.slice(0, 4) === today.slice(0
  * Diferencia con el periodo anterior, con flecha y texto (nunca solo color): «▲ +3 (+25 %)», «▼ −1 (−10 %)»,
  * «= igual». La usa también el bloque semanal de #/weekly.
  * @param {{cur, prev, delta, pct}|null} d  diferencia de summary-logic.delta()
+ * Color (ronda 8, A4): neutro por defecto; solo verde/ámbar si una regla lo determina (util.deltaTone).
  * @param {(v:number)=>string} [fmt] formato del valor absoluto de la diferencia
+ * @param {{better?:'up'|'down', warn?:'up'|'down'}} [rule] regla analítica que da tono (ver deltaTone)
  * @returns {HTMLElement}
  */
-export function deltaChip(d, fmt) {
+export function deltaChip(d, fmt, rule) {
   const info = deltaInfo(d, fmt);
+  const tone = deltaTone(info.dir, rule);
   // La diferencia y el % van cada uno entero (se parte entre los dos, nunca «−12 / %»).
   const text = info.absText
     ? [h('span.sum-delta-part', info.absText), ' ', h('span.sum-delta-part', `(${info.pctText || 'antes 0'})`)]
     : info.text;
-  return h(`span.sum-delta.sum-delta-${info.dir}`, { dataset: { dir: info.dir } },
+  return h(`span.sum-delta.sum-delta-${info.dir}.sum-delta-tone-${tone}`, { dataset: { dir: info.dir, tone } },
     info.arrow ? h('span.sum-delta-arrow', { 'aria-hidden': 'true' }, info.arrow) : null,
     h('span.sum-delta-text', text));
 }
@@ -319,7 +322,7 @@ function progressCard(sum, today) {
             h('span.sum-prog-basis', p.basis === 'prev'
               ? `desde tu última sesión ${prevWord} (${dayTxt(p.fromDate, today)})`
               : `desde tu primera sesión ${unitWord} (${dayTxt(p.fromDate, today)})`)),
-          deltaChip({ cur: p.to, prev: p.from, delta: p.delta, pct: p.pct }, (v) => `${fmtNum(v, 1)} kg`),
+          deltaChip({ cur: p.to, prev: p.from, delta: p.delta, pct: p.pct }, (v) => `${fmtNum(v, 1)} kg`, { better: 'up' }),
           icon('chevron-right', 18, 'chev')))))
       : h('p.sum-none', 'Ningún ejercicio ha subido su 1RM estimado en este periodo.'),
     sum.progressTotal > list.length ? h('p.sum-note', `Y ${fmtNum(sum.progressTotal - list.length, 0)} más con alguna subida.`) : null);

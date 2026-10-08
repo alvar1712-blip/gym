@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import { back, navigate, refresh, replaceUrl, screenToken, backFrom } from '../router.js';
 import {
   h, icon, header, segmented, chips, rpePicker, durationInput, field, textInput, numInput,
-  confirmDialog, undoToast, emptyState, toast, confirmRare,
+  confirmDialog, undoToast, emptyState, toast, confirmRare, fitTitle,
 } from '../ui.js';
 import { todayStr, fmtDate, uid, fmtDuration, fmtMinutes, debounce, isDateStr, hhmm, relDay, deepClone, dateFromTs } from '../util.js';
 import { SWIM_STROKES } from '../seed.js';
@@ -511,6 +511,7 @@ function mountForm(root, ctx) {
   function paintTitle() {
     const ui = L.KIND_UI[form.kind];
     titleEl.textContent = record ? ui.label : ui.newTitle;
+    fitTitle(hdr);
     subEl.textContent = isDateStr(form.date) ? fmtDate(form.date, 'long') : '';
   }
 

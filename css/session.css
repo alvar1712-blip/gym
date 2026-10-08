@@ -12,8 +12,6 @@
 }
 .ses-view .topbar-sub { font-size: calc(14px * var(--ts)); color: var(--text-2); }
 .ses-clock { color: var(--accent); font-weight: 750; }
-.ses-finish-top { padding: 0 4px; }
-.ses-finish-top .icon-btn-text { font-size: calc(16px * var(--ts)); }
 
 .ses-content { gap: 12px; }
 .ses-list { display: flex; flex-direction: column; gap: 12px; }
@@ -203,6 +201,8 @@
 .ses-editor .stepper-md .stepper-input { font-size: calc(20px * var(--ts)); }
 .ses-editor .stepper-input::placeholder { color: var(--muted); font-size: calc(15px * var(--ts)); font-weight: 600; }
 .ses-editor .stepper-suffix { font-size: calc(12px * var(--ts)); }
+/* La cifra se centra en el hueco a la izquierda de «kg»: «42,5» la tocaba en 375 px (guarda de solapes) */
+.ses-editor .stepper-field:has(.stepper-suffix) .stepper-input { padding: 0 22px 0 2px; }
 .ses-hint { font-size: calc(13px * var(--ts)); color: var(--muted); padding-left: 2px; }
 
 .ses-sub { display: flex; flex-direction: column; gap: 5px; }
@@ -288,7 +288,9 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ses-sum-hero h2 { font-size: calc(21px * var(--ts)); }
 .ses-sum-hero .kpi-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Tres cifras protagonistas y, debajo, una línea con el resto (docs/PULIDO.md §9) */
-.ses-sum-kpis .kpi-value { font-size: calc(22px * var(--ts)); white-space: normal; }
+/* «1 h 10 min» en una línea: con dos casillas cabe (a 375 px se partía en tres líneas); con texto grande, las
+   casillas van una por fila (app.css, .kpis-2) */
+.ses-sum-kpis .kpi-value { font-size: calc(22px * var(--ts)); white-space: nowrap; }
 .ses-sum-kpis .kpi-label, .ses-sum-kpis .kpi-sub { white-space: normal; overflow: visible; line-height: 1.25; }
 .ses-sum-meta { font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
 /* Frente a la anterior (misma rutina): filas con separador, no tarjetas */
@@ -299,17 +301,27 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ses-cmp-list { list-style: none; margin: 4px 0 0; padding: 0; border-top: 1px solid var(--border); }
 .ses-cmp-row { display: flex; align-items: center; gap: 10px; min-height: 44px; border-bottom: 1px solid var(--border); }
 .ses-cmp-icon { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-3); color: var(--muted); }
-.ses-cmp-row[data-dir="up"] .ses-cmp-icon { background: var(--ok-soft); color: var(--ok); }
-.ses-cmp-row[data-dir="down"] .ses-cmp-icon { background: var(--warn-soft); color: var(--warn); }
+/* Ronda 8 (A4): tono de util.deltaTone; más peso o reps en el mismo ejercicio sí es mejora; bajar es neutro
+   (un día más ligero no es una alerta: el estancamiento lo detecta el analista) */
+.ses-cmp-row[data-tone="good"] .ses-cmp-icon { background: var(--ok-soft); color: var(--ok); }
+.ses-cmp-row[data-tone="warn"] .ses-cmp-icon { background: var(--warn-soft); color: var(--warn); }
 .ses-cmp-name { flex: 1; min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
 .ses-cmp-val { flex: none; font-weight: 750; }
 .ses-cmp-row[data-dir="same"] .ses-cmp-val { color: var(--text-2); font-weight: 650; }
 .ses-cmp-more { font-size: var(--fs-sm); color: var(--muted); }
 .ses-cmp-totals { font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
-.ses-kpi-pr { border-color: rgba(251, 191, 36, 0.5); background: rgba(251, 191, 36, 0.1); }
-.ses-kpi-pr .kpi-value { color: var(--pr); }
-.ses-sum-emoji { font-size: calc(22px * var(--ts)); flex: none; }
+/* Récords (ronda 8, A6): tarjeta dorada solo si los hay, justo bajo la cabecera */
+.ses-sum-prs { gap: 6px; border-color: rgba(251, 191, 36, 0.5); background: linear-gradient(180deg, rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.04)), var(--surface); }
+.ses-sum-prs-head { display: flex; align-items: center; gap: 10px; }
+.ses-sum-prs-emoji { flex: none; font-size: calc(26px * var(--ts)); line-height: 1; }
+.ses-sum-prs-title { min-width: 0; font-size: calc(18px * var(--ts)); font-weight: 750; color: var(--pr); }
+.ses-sum-prs-list { list-style: none; margin: 4px 0 0; padding: 0; border-top: 1px solid rgba(251, 191, 36, 0.25); }
+.ses-sum-pr { display: flex; flex-direction: column; gap: 1px; padding: 8px 0; border-bottom: 1px solid rgba(251, 191, 36, 0.25); }
+.ses-sum-pr:last-child { border-bottom: 0; padding-bottom: 0; }
+.ses-sum-pr-name { font-size: var(--fs-md); font-weight: 650; color: var(--text-2); overflow-wrap: break-word; }
 .ses-sum-pr-set { font-size: calc(17px * var(--ts)); font-weight: 750; color: var(--text); overflow-wrap: anywhere; }
+.ses-sum-pr-kind { font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
+.ses-sum-emoji { font-size: calc(22px * var(--ts)); flex: none; }
 .ses-kpi-total { border-color: rgba(184, 243, 74, 0.35); }
 .ses-sum-muscles { gap: 8px; }
 .ses-bar-row { display: grid; grid-template-columns: minmax(0, 8.5em) 1fr 2.6em; align-items: center; gap: 8px; min-height: 28px; }

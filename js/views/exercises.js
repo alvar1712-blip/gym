@@ -2,12 +2,14 @@
 // PROPIETARIO: módulo de biblioteca. La lógica pura (búsqueda, uso, historial…) está en library-logic.js.
 import * as store from '../store.js';
 import { navigate, replaceUrl, screenToken, navigateFrom } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, field, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, sheet } from '../ui.js';
-import { fmtDate, fmtNum, uid, plural } from '../util.js';
+import { h, icon, screen, segmented, chips, textInput, field, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, sheet, kpiValue } from '../ui.js';
+import { fmtDate, fmtNum, uid, plural, relDay, todayStr } from '../util.js';
 import { MUSCLES, MUSCLE_LABEL, PATTERNS, PATTERN_LABEL, LOG_TYPES, LOG_TYPE_LABEL } from '../seed.js';
 import { makeBodyweightFn } from '../calc.js';
 import { formatSet } from '../session-logic.js';
 import * as L from '../library-logic.js';
+import { exerciseGlance } from '../stats.js';
+import { dataFromStore, periodRange } from '../progress-ui.js';
 import { renderTemplatesList, createTemplate } from './templates.js';
 
 const SEG_KEY = 'entreno.exercises.seg';
@@ -160,6 +162,51 @@ function renderLibrary(body) {
 // Ficha (#/exercise/:id)
 // ===========================================================================
 
+const sameYear = (a, b) => a.slice(0, 4) === b.slice(0, 4);
+/** «23 sep» este año; «23 sep 2025» si es de otro. */
+const fmtDay = (date, today) => fmtDate(date, sameYear(date, today) ? 'day' : 'full');
+/** Qué mide la tendencia (stats.exercisePrimaryMetric). */
+const TREND_OF = { e1rm: '1RM estimado', maxWeight: 'peso máximo', maxReps: 'repeticiones', maxTime: 'tiempo máximo', maxHeight: 'altura máxima' };
+
+/**
+ * Tarjeta «De un vistazo» de la ficha: los números salen de stats.exerciseGlance (los mismos que la pantalla de
+ * progreso del ejercicio); la tendencia, de los últimos 3 meses (el periodo por defecto de sus gráficas), con la
+ * misma frase que la gráfica. Sin sesiones terminadas → null (el historial ya lo dice).
+ */
+function glanceCard(ex) {
+  const data = dataFromStore();
+  const today = data.today || todayStr();
+  const { from } = periodRange('3m', today, null);
+  const g = exerciseGlance(data, ex.id, { from });
+  if (!g) return null;
+  const bw = ex.logType === 'bodyweight';
+  const tiles = [];
+  if (g.best) {
+    tiles.push(h('div.kpi.lib-glance-kpi', { dataset: { kpi: 'best' } },
+      h('div.kpi-label', 'Mejor serie'),
+      h('div.kpi-value.lib-glance-set', g.best.label),
+      h('div.kpi-sub', fmtDay(g.best.date, today))));
+  }
+  if (g.e1rm) {
+    const isBest = Math.abs(g.e1rm.value - g.e1rm.best.value) < 1e-9;
+    tiles.push(h('div.kpi.lib-glance-kpi', { dataset: { kpi: 'e1rm' } },
+      h('div.kpi-label', '1RM estimado'),
+      kpiValue(`${fmtNum(g.e1rm.value, 1)} kg`),
+      h('div.kpi-sub', isBest
+        ? `récord · ${fmtDay(g.e1rm.date, today)}`
+        : `${fmtDay(g.e1rm.date, today)} · récord ${fmtNum(g.e1rm.best.value, 1)} kg`)));
+  }
+  const metric = g.metric === 'maxWeight' && bw ? 'lastre' : TREND_OF[g.metric];
+  return h('section.card.lib-glance',
+    h('div.lib-glance-last', { dataset: { session: g.last.sessionId } },
+      h('div.lib-k', `Última vez · ${fmtDay(g.last.date, today)} · ${relDay(g.last.date, today)}`),
+      h('div.lib-glance-sets.tnum', g.last.setLabels.flatMap((t, i) => [i ? ' · ' : null, h('span.lib-hist-set', t)]))),
+    tiles.length ? h(`div.kpis${tiles.length > 1 ? '.kpis-2' : ''}.lib-glance-kpis`, tiles) : null,
+    metric ? h('div.lib-glance-trend', { dataset: { dir: g.trend?.dir || '' } },
+      h('div.lib-k', `Tendencia · ${metric} · 3 meses`),
+      h('div.lib-glance-trend-v', g.trend ? g.trend.text : 'Faltan datos: hacen falta al menos 2 sesiones en los últimos 3 meses.')) : null);
+}
+
 export function mountExerciseDetail(root, params = {}) {
   const ex = store.exercise(params.id);
   if (!ex) { notFound(root); return undefined; }
@@ -178,42 +225,12 @@ export function mountExerciseDetail(root, params = {}) {
     archBadge);
   content.appendChild(badges);
 
-  // Músculos y cómo cuentan
-  const tags = (ids, cls) => (ids && ids.length
-    ? h('div.lib-tags', muscleNames(ids).map((m) => h(`span.lib-tag${cls}`, m)))
-    : h('span.muted', 'Ninguno'));
-  const pf = settings.primaryFactor ?? 1;
-  const sf = settings.secondaryFactor ?? 0.5;
-  // En cardio sin músculos asignados solo se explica cómo cuenta.
-  const showMuscles = ex.logType !== 'cardio' || (ex.primary || []).length + (ex.secondary || []).length > 0;
-  content.appendChild(h('section.card.lib-muscles',
-    h('h2.card-title', showMuscles ? 'Músculos' : 'Cómo cuenta'),
-    showMuscles ? h('div.lib-kv-block', h('span.lib-k', 'Principales'), tags(ex.primary, '.lib-tag-primary')) : null,
-    showMuscles ? h('div.lib-kv-block', h('span.lib-k', 'Secundarios'), tags(ex.secondary, '')) : null,
-    ex.logType === 'cardio'
-      ? h('p.small.muted', 'Se registra como actividad (carrera, bici o natación): cuenta para la carga y los kilómetros, no para las series por músculo.')
-      : h('p.small.muted.lib-count-rule', `Cómo cuenta: 1 serie efectiva = ${fmtNum(pf, 2)} para cada principal y ${fmtNum(sf, 2)} para cada secundario. Los calentamientos no cuentan. Se cambia en Ajustes.`)));
-
-  // Datos
-  const kv = (k, v) => (v ? h('div.lib-kv', h('span.lib-k', k), h('span.lib-v', v)) : null);
-  // Textos largos (alias, notas): etiqueta encima y texto normal debajo.
-  const kvBlock = (k, v) => (v ? h('div.lib-kv.lib-kv-text', h('span.lib-k', k), h('span.lib-v', v)) : null);
-  const tplUse = store.templatesList().filter((t) => (t.items || []).some((it) => it.exerciseId === ex.id || (it.alternatives || []).includes(ex.id)));
-  content.appendChild(h('section.card.lib-data',
-    kv('Patrón', PATTERN_LABEL[ex.pattern] || '—'),
-    kv('Tipo de registro', LOG_TYPE_LABEL[ex.logType] || ex.logType),
-    // Peso corporal: qué cuenta como carga (calc.setMetrics). En core, el peso corporal no es la carga que se mueve.
-    ex.logType === 'bodyweight' ? kvBlock('Carga', ex.pattern === 'core'
-      ? 'Solo el lastre: el peso corporal no cuenta. Sin 1RM estimado; sin lastre, se sigue por repeticiones.'
-      : 'Tu peso corporal del día + el lastre (la asistencia resta). Cuenta para el 1RM estimado y el volumen.') : null,
-    kv('Categoría', L.CATEGORY_LABEL[ex.category] || '—'),
-    kv('Región', L.REGION_LABEL[ex.region] || '—'),
-    ex.logType === 'cardio' ? kv('Deporte', L.SPORT_LABEL[ex.sport] || '—') : null,
-    kvBlock('Alias', (ex.aliases || []).join(', ')),
-    kvBlock('Notas', ex.notes),
-    tplUse.length ? h('div.lib-kv-block', h('span.lib-k', 'En rutinas'),
-      h('div.lib-tags', tplUse.map((t) => h('button.chip.lib-tpl-chip', { type: 'button', onClick: () => navigate(`#/template/${t.id}`) }, t.name)))) : null));
-
+  // De un vistazo (ronda 8, A5): último rendimiento, mejor serie, 1RM estimado y tendencia; debajo, el historial
+  // y, al final, los metadatos (músculos, patrón…).
+  if (ex.logType !== 'cardio') {
+    const card = glanceCard(ex);
+    if (card) content.appendChild(card);
+  }
   content.appendChild(h('button.list-item.lib-link', { type: 'button', onClick: () => navigate(`#/progress/exercise/${ex.id}`) },
     icon('chart', 22), h('span.list-item-main', h('span.list-item-title', 'Ver progreso'), h('span.list-item-sub', 'Gráficas y récords')), icon('chevron-right', 20, 'chev')));
 
@@ -253,6 +270,42 @@ export function mountExerciseDetail(root, params = {}) {
         `1RM est. = mejor 1RM estimado de la sesión (fórmula de Epley con reps + RIR, solo series de 1–12 reps${ex.logType === 'bodyweight' ? '; incluye tu peso corporal' : ''}). Es una estimación, no un peso levantado.`));
     }
   }
+
+  // Músculos y cómo cuentan
+  const tags = (ids, cls) => (ids && ids.length
+    ? h('div.lib-tags', muscleNames(ids).map((m) => h(`span.lib-tag${cls}`, m)))
+    : h('span.muted', 'Ninguno'));
+  const pf = settings.primaryFactor ?? 1;
+  const sf = settings.secondaryFactor ?? 0.5;
+  // En cardio sin músculos asignados solo se explica cómo cuenta.
+  const showMuscles = ex.logType !== 'cardio' || (ex.primary || []).length + (ex.secondary || []).length > 0;
+  content.appendChild(h('section.card.lib-muscles',
+    h('h2.card-title', showMuscles ? 'Músculos' : 'Cómo cuenta'),
+    showMuscles ? h('div.lib-kv-block', h('span.lib-k', 'Principales'), tags(ex.primary, '.lib-tag-primary')) : null,
+    showMuscles ? h('div.lib-kv-block', h('span.lib-k', 'Secundarios'), tags(ex.secondary, '')) : null,
+    ex.logType === 'cardio'
+      ? h('p.small.muted', 'Se registra como actividad (carrera, bici o natación): cuenta para la carga y los kilómetros, no para las series por músculo.')
+      : h('p.small.muted.lib-count-rule', `Cómo cuenta: 1 serie efectiva = ${fmtNum(pf, 2)} para cada principal y ${fmtNum(sf, 2)} para cada secundario. Los calentamientos no cuentan. Se cambia en Ajustes.`)));
+
+  // Datos
+  const kv = (k, v) => (v ? h('div.lib-kv', h('span.lib-k', k), h('span.lib-v', v)) : null);
+  // Textos largos (alias, notas): etiqueta encima y texto normal debajo.
+  const kvBlock = (k, v) => (v ? h('div.lib-kv.lib-kv-text', h('span.lib-k', k), h('span.lib-v', v)) : null);
+  const tplUse = store.templatesList().filter((t) => (t.items || []).some((it) => it.exerciseId === ex.id || (it.alternatives || []).includes(ex.id)));
+  content.appendChild(h('section.card.lib-data',
+    kv('Patrón', PATTERN_LABEL[ex.pattern] || '—'),
+    kv('Tipo de registro', LOG_TYPE_LABEL[ex.logType] || ex.logType),
+    // Peso corporal: qué cuenta como carga (calc.setMetrics). En core, el peso corporal no es la carga que se mueve.
+    ex.logType === 'bodyweight' ? kvBlock('Carga', ex.pattern === 'core'
+      ? 'Solo el lastre: el peso corporal no cuenta. Sin 1RM estimado; sin lastre, se sigue por repeticiones.'
+      : 'Tu peso corporal del día + el lastre (la asistencia resta). Cuenta para el 1RM estimado y el volumen.') : null,
+    kv('Categoría', L.CATEGORY_LABEL[ex.category] || '—'),
+    kv('Región', L.REGION_LABEL[ex.region] || '—'),
+    ex.logType === 'cardio' ? kv('Deporte', L.SPORT_LABEL[ex.sport] || '—') : null,
+    kvBlock('Alias', (ex.aliases || []).join(', ')),
+    kvBlock('Notas', ex.notes),
+    tplUse.length ? h('div.lib-kv-block', h('span.lib-k', 'En rutinas'),
+      h('div.lib-tags', tplUse.map((t) => h('button.chip.lib-tpl-chip', { type: 'button', onClick: () => navigate(`#/template/${t.id}`) }, t.name)))) : null));
 
   // Acciones
   const archBtn = h('button.btn.btn-secondary', { type: 'button', onClick: () => toggleArchive() });

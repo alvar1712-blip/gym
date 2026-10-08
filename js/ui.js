@@ -293,11 +293,15 @@ export function screen(root, headerOpts) {
 /**
  * Título largo de una pantalla de detalle (una rutina, una carrera): en vez de cortarse con «…», pasa a 18 px y hasta
  * dos líneas (como el de la sesión). Dos líneas de 18 px caben en el alto del botón «atrás»: la cabecera mide lo
- * mismo con el título grande y con el compacto (sin saltos al desplazar).
+ * mismo con el título grande y con el compacto (sin saltos al desplazar). Exportada para las vistas que montan su
+ * cabecera sin screen() y cambian el título después (actividad: «Nuevo senderismo» a 150 % no cabía y se cortaba).
  */
-function fitTitle(bar) {
+export function fitTitle(bar) {
   const h1 = bar && bar.querySelector('h1');
   if (!h1 || !bar.querySelector('.back-btn') || !h1.isConnected) return;
+  // Se vuelve a medir con el tamaño normal: una vista que cambia el título (la actividad al cambiar de tipo) lo
+  // llama otra vez, y un título que ya cabe vuelve a su tamaño
+  bar.classList.remove('topbar-long');
   if (h1.scrollWidth > h1.clientWidth + 1) bar.classList.add('topbar-long');
 }
 
@@ -461,6 +465,24 @@ function setBackgroundInert(on) {
     const el = document.getElementById(id);
     if (el) el.inert = on;
   }
+}
+
+/**
+ * Modo foco (docs/PULIDO.md §18): en la pantalla de una sesión de fuerza en curso, la cápsula de la barra de
+ * pestañas (#tabbar) muestra `node` (la barra de la sesión) en lugar de las pestañas; focusBar(null) las devuelve.
+ * Es el mismo elemento: mismo sitio, mismas áreas seguras y el mismo hueco abajo (--tb-h; html.focus-mode lo
+ * ajusta), así que el contenido, los avisos y el código que esquiva la barra siguen valiendo.
+ */
+export function focusBar(node, label = 'Sesión en curso') {
+  const bar = typeof document !== 'undefined' && document.getElementById('tabbar');
+  if (!bar) return;
+  const on = !!node;
+  for (const el of bar.querySelectorAll(':scope > .focusbar')) if (el !== node) el.remove();
+  for (const t of bar.querySelectorAll(':scope > .tab')) t.hidden = on;
+  if (on && node.parentNode !== bar) bar.append(node);
+  bar.classList.toggle('tabbar-focus', on);
+  bar.setAttribute('aria-label', on ? label : 'Secciones');
+  document.documentElement.classList.toggle('focus-mode', on);
 }
 
 /** Lleva el foco al título de la pantalla visible (tabindex=-1), p. ej. cuando desaparece el control enfocado. */

@@ -1,5 +1,5 @@
 // Sesión y resumen (docs/PULIDO.md §9–10): «Última vez» bien visible y el siguiente paso discreto de la doble
-// progresión (la misma regla que el panel semanal); al terminar, tres cifras protagonistas y «Frente a la anterior»
+// progresión (la misma regla que el panel semanal); al terminar, dos cifras protagonistas, los récords en su tarjeta (solo si los hay; ronda 8, A6) y «Frente a la anterior»
 // (la misma rutina, solo datos reales; sin sesión comparable, no sale). 375 px, Chromium y WebKit. Datos sintéticos.
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/session-polish.test.cjs
 const test = require('node:test');
@@ -70,7 +70,17 @@ async function flow(page) {
   }, id);
   await go(page, `#/session/${id}/summary`);
   await page.locator('.ses-sum-hero').waitFor();
-  assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo', 'Récords']);
+  // Ronda 8 (A6): dos cifras (sin casilla «Récords»); los récords, en su tarjeta destacada
+  assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo']);
+  // 82,5 × 6 en press banca (antes 80) y +10 × 7 en dominadas (antes × 6): 2 series récord, con cuáles y de qué tipo
+  const prs = page.locator('.ses-sum-prs');
+  assert.strictEqual(await prs.getAttribute('data-count'), '2');
+  assert.strictEqual(clean(await prs.locator('.ses-sum-prs-title').innerText()), '2 récords en esta sesión');
+  assert.deepStrictEqual((await prs.locator('.ses-sum-pr-name').allInnerTexts()).map(clean), ['Press banca', 'Dominadas']);
+  assert.deepStrictEqual((await prs.locator('.ses-sum-pr-set').allInnerTexts()).map(clean), ['82,5 kg × 6 @1', '+10 kg × 7 @1']);
+  assert.match(clean(await prs.locator('.ses-sum-pr-kind').first().innerText()), /^Peso máximo: 82,5 kg \(antes 80 kg\)/);
+  // justo bajo la cabecera, antes de «Frente a la anterior»
+  assert.ok(await page.evaluate(() => document.querySelector('.ses-sum-hero').nextElementSibling?.classList.contains('ses-sum-prs')));
   assert.strictEqual(clean(await page.locator('.ses-sum-kpis .kpi').nth(0).locator('.kpi-value').innerText()), '50 min');
   assert.match(await page.locator('.ses-sum-meta').innerText(), /^Esfuerzo 8\/10 · .+ · Volumen [\d.]+ kg · Carga 400$/);
   const cmp = page.locator('.ses-sum-cmp');
@@ -78,6 +88,8 @@ async function flow(page) {
   assert.match(await cmp.locator('.ses-cmp-sub').innerText(), /el 5 oct/);
   const rows = await cmp.locator('.ses-cmp-row').evaluateAll((els) => els.map((e) => [e.dataset.ex, e.dataset.dir, e.querySelector('.ses-cmp-val').textContent]));
   assert.deepStrictEqual(rows, [['press_banca', 'up', '+2,5 kg'], ['dominadas', 'up', '+1 rep']]);
+  // Ronda 8 (A4): tono de util.deltaTone (subir en el mismo ejercicio = mejora; bajar sería neutro, no ámbar)
+  assert.deepStrictEqual(await cmp.locator('.ses-cmp-row').evaluateAll((els) => els.map((e) => e.dataset.tone)), ['good', 'good']);
   assert.match(await cmp.locator('.ses-cmp-totals').innerText(), /^Series de trabajo 3 \(antes 5\) · volumen [+−]\d+ % · duración 50 min \(antes 1 h 00 min\)$/);
   // Cada fila dice qué pasó con texto e icono con nombre accesible (no solo color)
   assert.deepStrictEqual(await cmp.locator('.ses-cmp-icon').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['Mejora', 'Mejora']);
@@ -91,10 +103,37 @@ async function flow(page) {
   await go(page, `#/session/${id}/summary`);
   await page.locator('.ses-sum-hero').waitFor();
   assert.strictEqual(await page.locator('.ses-sum-cmp').count(), 0);
+  // Sin récords (ya no hay con qué compararla): ni tarjeta ni casilla «Récords 0 / ninguno esta vez»
+  assert.strictEqual(await page.locator('.ses-sum-prs').count(), 0);
+  assert.doesNotMatch(await page.locator('#view').innerText(), /Récords|ninguno esta vez/);
+
+  // --- «1 h 10 min» en UNA línea a 375 px (antes, «1 h 10» / «min» en la casilla estrecha) ---
+  await page.evaluate(async (sid) => {
+    const { store } = window.__app;
+    const s = store.get('sessions', sid);
+    s.durationMin = 70;
+    s.endedAt = s.startedAt + 70 * 60e3;
+    await store.save('sessions', s);
+  }, id);
+  await go(page, '#/today');
+  await go(page, `#/session/${id}/summary`);
+  const durVal = page.locator('.ses-sum-kpis .kpi').nth(0).locator('.kpi-value');
+  await durVal.waitFor();
+  assert.strictEqual(clean(await durVal.innerText()), '1 h 10 min');
+  const lines = await durVal.evaluate((el) => {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    // Cifras y unidades tienen alturas distintas: misma línea = sus rectángulos se solapan en vertical
+    const rects = [...r.getClientRects()].filter((q) => q.width > 0);
+    return Math.max(...rects.map((q) => q.top)) < Math.min(...rects.map((q) => q.bottom)) ? 1 : 2;
+  });
+  assert.strictEqual(lines, 1, '«1 h 10 min» en una sola línea');
+  const fits = await durVal.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  assert.ok(fits, '«1 h 10 min» cabe en su casilla');
 }
 
 for (const browser of ['chromium', 'webkit']) {
-  test(`${browser === 'webkit' ? 'WebKit: ' : ''}sesión: «Última vez» + «Siguiente paso»; resumen: tres cifras y «Frente a la anterior» (375 px)`,
+  test(`${browser === 'webkit' ? 'WebKit: ' : ''}sesión: «Última vez» + «Siguiente paso»; resumen: dos cifras, récords y «Frente a la anterior» (375 px)`,
     { skip: browser === 'webkit' ? skipWebkit : false }, async () => {
       const app = await openApp({ browser, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(TODAY) }); } });
       try {

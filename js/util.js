@@ -193,6 +193,22 @@ export function fmtSigned(n, dec = 1, unit = '') {
   const sign = n > 0 ? '+' : n < 0 ? '−' : '±';
   return `${sign}${fmtNum(Math.abs(n), dec)}${unit ? ' ' + unit : ''}`;
 }
+/**
+ * Tono de una diferencia comparativa (ronda 8, A4): ÚNICO camino para colorear deltas (resúmenes, panel semanal,
+ * «Frente a la anterior»…). Por defecto 'neutral': subir no es «bueno» ni bajar «malo» (0 km a mitad de semana
+ * no es una alerta). Solo cambia si una regla analítica existente lo determina:
+ *   better: 'up'|'down'  dirección que esa regla considera mejora (p. ej. 1RM que sube) → 'good'
+ *   warn:   'up'|'down'  dirección de un aviso que el analista/panel YA ha dado (p. ej. km de carrera) → 'warn'
+ * El aviso solo tiñe si la diferencia va en su misma dirección (nunca un ▼ en ámbar por un aviso de subida).
+ * @param {'up'|'down'|'same'|'none'|string} dir
+ * @returns {'neutral'|'good'|'warn'}
+ */
+export function deltaTone(dir, { better = null, warn = null } = {}) {
+  if (dir !== 'up' && dir !== 'down') return 'neutral';
+  if (warn && dir === warn) return 'warn';
+  if (better && dir === better) return 'good';
+  return 'neutral';
+}
 export function round(n, step = 1) {
   if (n == null || !Number.isFinite(n)) return n;
   const inv = 1 / step;

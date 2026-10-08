@@ -68,7 +68,8 @@
   color: var(--text-2);
 }
 .lib-ex-row { align-items: center; min-height: 64px; }
-.lib-ex-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 700; line-height: 1.25; }
+.lib-ex-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 700; line-height: 1.25; min-width: 0; }
+.lib-ex-name > span:first-child { min-width: 0; overflow-wrap: anywhere; } /* un nombre de una sola palabra larga parte antes que salirse */
 .lib-ex-muscles { font-size: calc(14px * var(--ts)); color: var(--text-2); }
 .lib-ex-meta { font-size: calc(13px * var(--ts)); color: var(--muted); }
 
@@ -116,6 +117,16 @@
 .lib-e1rm-l { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .lib-e1rm-note { padding: 0 2px; line-height: 1.45; }
 .lib-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+/* De un vistazo (ronda 8, A5): última vez, mejor serie, 1RM estimado y tendencia, arriba de la ficha. */
+.lib-glance { gap: 12px; }
+.lib-glance-last { display: flex; flex-direction: column; gap: 4px; }
+.lib-glance-sets { font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.35; overflow-wrap: anywhere; }
+.lib-glance-kpi { display: flex; flex-direction: column; gap: 2px; }
+.lib-glance-set { font-size: calc(17px * var(--ts)); overflow-wrap: anywhere; }
+.lib-glance-kpi .kpi-sub { line-height: 1.3; overflow-wrap: anywhere; }
+.lib-glance-trend { display: flex; flex-direction: column; gap: 2px; }
+/* Sin color de juicio (docs/PULIDO.md §12, §20): subir o bajar no es bueno ni malo por sí solo. */
+.lib-glance-trend-v { font-size: calc(15px * var(--ts)); font-weight: 650; color: var(--text); }
 
 /* ---------- Editor de ejercicio ---------- */
 .lib-form .card { gap: 14px; }

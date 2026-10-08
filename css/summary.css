@@ -87,8 +87,9 @@
 .sum-delta-arrow { flex: none; font-size: var(--fs-xs); }
 .sum-delta-text { min-width: 0; }
 .sum-delta-part { white-space: nowrap; }
-.sum-delta-up { background: var(--info-soft); color: var(--info); }
-.sum-delta-down { background: var(--warn-soft); color: var(--warn); }
+/* Ronda 8 (A4): neutro por defecto (gris de la base); verde/ámbar solo con una regla (util.deltaTone) */
+.sum-delta-tone-good { background: var(--ok-soft); color: var(--ok); }
+.sum-delta-tone-warn { background: var(--warn-soft); color: var(--warn); }
 .sum-delta-same,
 .sum-delta-none { color: var(--muted); }
 
@@ -246,8 +247,6 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-prog-vals { font-size: calc(14px * var(--ts)); font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
 .sum-prog-basis { font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
 .sum-prog-btn .sum-delta { flex: none; align-self: center; max-width: 44%; }
-/* Solo subidas: en «más progresan» el chip va en verde (sí es una mejora de la marca). */
-.sum-prog-btn .sum-delta-up { background: var(--ok-soft); color: var(--ok); }
 .sum-more {
   display: flex;
   align-items: center;

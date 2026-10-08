@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { e1rm, setMetrics, muscleContrib, movingAverage, linearRegression, riegel, detectPRs, bestsForExercise, sessionLoad, lastPerformance, sessionPRs, addToBests, makeBodyweightFn, bestSet, sessionVolume } from '../../js/calc.js';
+import { e1rm, setMetrics, muscleContrib, movingAverage, linearRegression, riegel, detectPRs, bestsForExercise, sessionLoad, lastPerformance, sessionPRs, addToBests, makeBodyweightFn, bestSet, sessionVolume, setProgress } from '../../js/calc.js';
 
 test('e1rm: Epley con reps + RIR, solo 1–12 reps', () => {
   assert.equal(e1rm(100, 5, 0), 100 * (1 + 5 / 30));
@@ -212,4 +212,16 @@ test('bestSet sin ninguna serie con 1RM: más peso × reps, luego más peso y lu
   assert.equal(bestSet([s('a', { weight: null, reps: 15 }), s('b', { weight: 5, reps: 8 })], core, 75).id, 'b'); // 40 kg de volumen
   // Sin reps no es comparable
   assert.equal(bestSet([s('a', { weight: 20, reps: null })], lat), null);
+});
+
+test('setProgress: series hechas de todas las de la sesión (la misma cuenta en Hoy y en la barra de la sesión)', () => {
+  const s = { exercises: [
+    { sets: [{ done: true, type: 'warmup' }, { done: true }, { done: false }] },
+    { sets: [] },
+    { /* cardio sin series */ },
+    { sets: [{ done: false }, null] },
+  ] };
+  assert.deepEqual(setProgress(s), { done: 2, total: 4 });
+  assert.deepEqual(setProgress({}), { done: 0, total: 0 });
+  assert.deepEqual(setProgress(null), { done: 0, total: 0 });
 });

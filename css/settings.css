@@ -136,6 +136,8 @@
 .cfg-stepper .stepper-btn { width: 44px; min-height: 44px; }
 .cfg-stepper .stepper-input { min-height: 44px; font-size: calc(19px * var(--ts)); }
 .cfg-stepper .stepper-suffix { bottom: 3px; right: 6px; }
+/* La cifra se centra en el hueco que deja la unidad: «28» tocaba «días» (la guarda de solapes lo detecta) */
+.cfg-stepper .stepper-field:has(.stepper-suffix) .stepper-input { padding: 0 32px 0 4px; }
 
 .cfg-ranges { display: flex; flex-direction: column; }
 .cfg-range { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--border); }

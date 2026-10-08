@@ -34,6 +34,7 @@ import { bwPoints, bwTrend } from './activity-logic.js';
 import { makeCtx, adherence, adherenceText, trackingSince, weekPlan } from './plan.js';
 import { formatSet, fmtLastre, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
 import { MUSCLES, MUSCLE_LABEL } from './seed.js';
+import { levelSummary } from './chart-summary.js';
 
 // ===========================================================================
 // Constantes
@@ -684,6 +685,78 @@ export function exerciseSummary(data, exerciseId) {
   return {
     exerciseId, name: ex.name || exerciseId, logType: ex.logType, exercise: ex, sessions: hist.length, workSets,
     firstDate: hist[0]?.date ?? null, lastDate: lastE?.date ?? null, last, record: recordOf(idx, exerciseId),
+  };
+}
+
+/**
+ * Cómo se resume el cambio de cada métrica de ejercicio (chart-summary.levelSummary), igual en la ficha
+ * (#/exercise/:id) y en sus gráficas (#/progress/exercise/:id). Redondeo humano: «−1,7 kg», no «−1,67 kg».
+ */
+export const EXERCISE_METRIC_SUMMARY = {
+  e1rm: { unit: 'kg', decimals: 1 },
+  maxWeight: { unit: 'kg', decimals: 1 },
+  maxReps: { unit: 'reps', decimals: 0 },
+  maxTime: { unit: 's', decimals: 0 },
+  maxHeight: { unit: 'cm', decimals: 1 },
+};
+
+/**
+ * Métrica principal de un ejercicio (la que manda en su ficha y va primero en sus gráficas): el 1RM estimado
+ * cuando hay series con carga de 1–12 reps; si no, lo que sigue el progreso de ese tipo (lastre o repeticiones
+ * en peso corporal, tiempo, altura). Sprint (varias distancias) y cardio: null.
+ * @param {string} logType
+ * @param {{e1rm:any[], maxWeight:any[], maxReps:any[], maxHeight:any[]}} ser exerciseSeries (todo el historial)
+ */
+export function exercisePrimaryMetric(logType, ser) {
+  if (!ser) return null;
+  if (LOAD_REP_TYPES.includes(logType)) {
+    if (ser.e1rm.length) return 'e1rm';
+    if (logType === 'bodyweight') return ser.maxWeight.some((p) => p.y) ? 'maxWeight' : 'maxReps';
+    return ser.maxWeight.length ? 'maxWeight' : null;
+  }
+  if (logType === 'time') return 'maxTime';
+  if (logType === 'jumps') return ser.maxHeight.length ? 'maxHeight' : 'maxReps';
+  return null;
+}
+
+/**
+ * «De un vistazo» de la ficha de un ejercicio: último rendimiento, mejor serie, 1RM estimado y tendencia. Solo
+ * reúne lo que ya calculan exerciseSummary / exerciseSeries / exerciseRecord (y levelSummary para la frase): no
+ * hay fórmulas nuevas. Solo sesiones terminadas y series de trabajo.
+ * @param {object} data
+ * @param {string} exerciseId
+ * @param {{ from?: string|null }} [o] desde cuándo se mide la tendencia (la vista pasa el inicio de «3 meses»)
+ * @returns {null|{
+ *   last: { date, sessionId, setLabels: string[] },
+ *   best: { label, date, sessionId, kind: 'e1rm'|'weight'|'reps'|'time'|'height'|'sprint' }|null,
+ *   e1rm: { value, date, sessionId, best: { value, date, sessionId } }|null,
+ *   metric: string|null, trend: { text, dir }|null }}
+ */
+export function exerciseGlance(data, exerciseId, { from = null } = {}) {
+  const sum = exerciseSummary(data, exerciseId);
+  if (!sum || !sum.sessions || !sum.last) return null;
+  const lt = sum.logType;
+  const rec = sum.record || {};
+  const ser = exerciseSeries(data, exerciseId);
+  const today = isDateStr(data?.today) ? data.today : todayStr();
+  const pick = (r, kind) => (r ? { label: r.setLabel, date: r.date, sessionId: r.sessionId, kind } : null);
+  let best = null;
+  if (LOAD_REP_TYPES.includes(lt)) best = pick(rec.bestE1rm, 'e1rm') || (lt === 'bodyweight' && !rec.bestWeight?.value ? pick(rec.maxReps, 'reps') : pick(rec.bestWeight, 'weight'));
+  else if (lt === 'time') best = pick(rec.maxTime, 'time');
+  else if (lt === 'jumps') best = pick(rec.maxHeight, 'height') || pick(rec.maxReps, 'reps');
+  else if (lt === 'distance_time') {
+    const s = Object.values(rec.bestSprint || {})[0];
+    best = s ? { label: s.label, date: s.date, sessionId: s.sessionId, kind: 'sprint' } : null;
+  }
+  const lastE = ser.e1rm[ser.e1rm.length - 1];
+  const e1rm = lastE && rec.bestE1rm
+    ? { value: lastE.y, date: lastE.x, sessionId: lastE.sessionId, best: { value: rec.bestE1rm.value, date: rec.bestE1rm.date, sessionId: rec.bestE1rm.sessionId } }
+    : null;
+  const metric = exercisePrimaryMetric(lt, ser);
+  const trend = metric ? levelSummary(ser[metric], { from, today, ...EXERCISE_METRIC_SUMMARY[metric] }) : null;
+  return {
+    last: { date: sum.last.date, sessionId: sum.last.sessionId, setLabels: sum.last.setLabels },
+    best, e1rm, metric, trend,
   };
 }
 

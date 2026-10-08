@@ -108,6 +108,11 @@ const sheetPanel = (page) => page.locator('.sheet-overlay.open .sheet-panel').la
 const sheetBtn = (page, text) => sheetPanel(page).locator('button', { hasText: text });
 const waitNoSheet = (page) => page.waitForFunction(() => !document.querySelector('.sheet-overlay'), null, { timeout: 5000 });
 const tab = (page, id) => page.locator(`#tabbar .tab[data-tab="${id}"]`);
+/** Sale de la sesión en curso por «Hoy» de la barra de la sesión (modo foco; la sesión sigue abierta). */
+async function leaveSession(page) {
+  await page.locator('#tabbar .fb-exit').click();
+  await page.waitForFunction(() => location.hash === '#/today' && !document.getElementById('tabbar').classList.contains('tabbar-focus'));
+}
 const byId = (arr) => [...arr].sort((a, b) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
 
 const settingsOf = (snap) => snap.meta.find((m) => m.id === 'settings');
@@ -270,6 +275,8 @@ test('CRITERIO 1: cierro la app de golpe a mitad de sesión, vuelvo y se reabre 
     await shot(page, 'acceptance-1-reopened');
 
     // Cerrar estando en otra pestaña (Calendario) con la sesión en curso: al volver, también abre la sesión.
+    // En la sesión en curso la barra es la de la sesión (modo foco): se sale por «Hoy» y ahí están las pestañas.
+    await leaveSession(page);
     await tab(page, 'calendar').click();
     await page.waitForFunction(() => location.hash.startsWith('#/calendar'));
     await page.close();
@@ -471,7 +478,8 @@ test('CRITERIO 2: exporto una copia, borro los datos, importo la copia y todo qu
     await reload(page); // hay una sesión en curso: la app la abre
     assert.strictEqual(await hashOf(page), '#/session/ses_live');
 
-    // Ajustes → Copias y datos → Exportar copia (hoja de compartir de iOS).
+    // Ajustes → Copias y datos → Exportar copia (hoja de compartir de iOS). Desde la sesión, por «Hoy» (modo foco).
+    await leaveSession(page);
     await tab(page, 'settings').click();
     await page.locator('.cfg-data-row').click();
     await page.waitForSelector('.cfg-export');
