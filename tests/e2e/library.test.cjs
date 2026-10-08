@@ -24,7 +24,7 @@ const stepBtn = (page, label, dir) => page.locator('.lib-item.open .stepper', { 
 const action = (page, label) => page.locator('.action-item', { hasText: label });
 
 test('rutinas: crear, editar reps y alternativa, superserie, reordenar, quitar con deshacer, duplicar, subir, empezar y borrar con deshacer', async () => {
-  const app = await openApp();
+  const app = await openApp({ exampleWeek: true }); // «semana tipo: lun» (ronda 8, B2: la de ejemplo se siembra explícitamente)
   const { page } = app;
   try {
     await go(page, '#/exercises?seg=templates');

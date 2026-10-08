@@ -21,7 +21,7 @@ const addRace = (page, id, date) => page.evaluate(async ([i, d]) => {
 }, [id, date]);
 
 async function weekday(browser) {
-  const app = await openApp({ browser, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(WED) }); } });
+  const app = await openApp({ browser, exampleWeek: true, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(WED) }); } });
   const { page } = app;
   try {
     // --- Antes de entrenar: «Te toca hoy» → Registrar → Esta semana → (check-in, lo importante) ---
@@ -72,7 +72,7 @@ async function weekday(browser) {
 }
 
 async function restDay(browser) {
-  const app = await openApp({ browser, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(FRI) }); } });
+  const app = await openApp({ browser, exampleWeek: true, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(FRI) }); } });
   const { page } = app;
   try {
     await go(page, '#/today');

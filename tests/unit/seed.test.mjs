@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED_EXERCISES, SEED_TEMPLATES, MUSCLES, PATTERNS, LOG_TYPES, defaultSettings } from '../../js/seed.js';
+import { SEED_EXERCISES, SEED_TEMPLATES, MUSCLES, PATTERNS, LOG_TYPES, defaultSettings, exampleWeekPatterns } from '../../js/seed.js';
 
 const M = new Set(MUSCLES.map((m) => m.id));
 const P = new Set(PATTERNS.map((p) => p.id));
@@ -36,10 +36,17 @@ test('plantillas: todos los ejercicios existen y la semana tipo apunta a plantil
       assert.ok(it.sets >= 1);
     }
   }
-  const days = defaultSettings().weekPatterns[0].days;
+  const days = exampleWeekPatterns()[0].days;
   assert.equal(days.length, 7);
   for (const d of days) if (d.kind === 'template') assert.ok(tpls.has(d.templateId));
   assert.deepEqual(days.map((d) => d.kind), ['template', 'template', 'template', 'template', 'rest', 'template', 'rest']);
+});
+
+test('ronda 8 (B2): un perfil nuevo empieza sin semana tipo (la de ejemplo no se hereda) y la de ejemplo es una copia nueva', () => {
+  assert.deepEqual(defaultSettings().weekPatterns, []);
+  const a = exampleWeekPatterns();
+  a[0].days[0] = { kind: 'rest' };
+  assert.equal(exampleWeekPatterns()[0].days[0].kind, 'template', 'cada llamada devuelve una copia');
 });
 
 test('series por músculo por defecto (REQUISITOS §10): 10–20; más alto en espalda, core y pecho; 0–X en los indirectos', () => {

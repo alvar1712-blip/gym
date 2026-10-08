@@ -274,7 +274,10 @@ Adherencia semanal = días planificados (no descanso) frente a días con `done`/
 `saveSoon(store,obj,ms=250)` (para escritura al teclear; `flush()` se llama al ocultar la app),
 `remove(store,id)` → objeto eliminado, `restore(store,obj)` (deshacer), `saveSettings(patch)`,
 `exportData()`, `validateBackup(obj)`, `importData(obj)` (atómico), `wipeAll()`, `backupOverdue()`,
-`persistStatus()`, `requestPersist()`, `on('change'|'reset'|'error', fn)` → unsubscribe.
+`persistStatus()`, `requestPersist()`, `on('change'|'reset'|'error'|'restorepoint', fn)` → unsubscribe.
+Punto de restauración (ronda 8, B3; docs/PULIDO.md §22): `importData` y `wipeAll` guardan y comprueban antes uno
+(registros reservados `~…` de `meta`, fuera de la memoria y de las copias) o lanzan `RestorePointError` sin tocar
+nada; `restorePointInfo()`, `recoverRestorePoint()`, `discardRestorePoint()`, `hasDataToProtect()`.
 **Muta el objeto obtenido con get() y pásalo a save()**; no hace falta clonar.
 
 ### ui.js
@@ -359,8 +362,12 @@ value, sub?}] }, items?:[{label, value, …}], …extras }`; `why.rule` y `why.d
 ready (ya al alcance: `eta` null), statusLabel, current, target, progressPct 0–100|null, eta:{from, to|null, beyond,
 …}|null, etaText, method, rule, dataUsed:[{date,label,value}], explanation, warning|null, metric, counts, trend, … }`.
 Fuerza: 1RM estimado (Epley) equivalente, tendencia del mejor 1RM por sesión en `TREND_WEEKS` = 12 semanas,
-conseguido con una serie ≥ peso y ≥ reps desde su creación. Resistencia: Riegel (1,06) desde sesiones ≥ `MIN_KM`,
-la mejor predicción por semana (bici y natación, con aviso); solo distancia → la más larga reciente. Peso corporal:
+conseguido con una serie ≥ peso y ≥ reps desde su creación. Carrera con tiempo (ronda 8, B1): consume el motor de
+`race-predict.js` («Actual» = `predictFor`, veredicto = `checkTarget`, tendencia = `predictionSeries` semanal; añade
+`prediction` = `baseOf`, `verdict`, `verdictLabel`, `stateLine`); conseguido solo con un ritmo creíble. Bici, natación
+y senderismo con tiempo: Riegel (1,06) propio desde sesiones ≥ `MIN_KM`, la mejor predicción por semana, con aviso;
+solo distancia → la más larga reciente. Dependencias: `calc` (`riegel`, `RIEGEL_K`) ← `race-predict` (dueño de
+`MIN_KM` de carrera) ← `goals-logic` (reexporta `RIEGEL_K` y `fmtTimeWords`, que vive en `util.js`). Peso corporal:
 media móvil de 7 días (misma que `#/bodyweight`). Suficiencia: ≥ `goals.minRecords` registros en ≥ `goals.minWeeks`
 semanas distintas (lunes–domingo). ETA siempre rango: pendiente ± 1 error típico con margen mínimo ±20 %; más de 2 años
 → «más de 2 años al ritmo actual». Otras: `goalRules`, `sufficiency`, `etaRange`, `etaText`, `progressPercent`,
@@ -406,8 +413,9 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
 - **Calentamiento** (`session-logic.js`): `warmupPlan({ workWeight, reps, exercise, settings })` → `[{ pct, weight,
   reps }]`, `suggestedWarmup(se, exercise, settings, last)`, `warmupSetsFromPlan(plan, se, logType)`,
   `warmupIncrement`, `warmupReference`. UI plegada al final de la tarjeta del ejercicio (`session-view-card.js`).
-- **Tiempos previstos** (`race-predict.js`, puro): `predictRaces(data, { today }?)`, `checkTarget(data, km, sec)`,
-  `analyzeRuns`; Riegel k = 1,06 (hasta 1,10 con poco volumen en media/maratón), rango mínimo ±3 % y máximo ±25 %;
+- **Tiempos previstos** (`race-predict.js`, puro; motor ÚNICO de carrera, ronda 8 B1): `predictRaces(data, { today }?)`,
+  `checkTarget(data, km, sec)`, `analyzeRuns` (memorizado por data y hoy), `predictFor`, `baseOf`, `predictionSeries`,
+  `predictWindow`, `predictionDataset` (lo consumen Tiempos previstos, Objetivos, Eventos, Análisis y el informe); Riegel k = 1,06 (hasta 1,10 con poco volumen en media/maratón), rango mínimo ±3 % y máximo ±25 %;
   esfuerzos con ritmo de 2:30 a 20:00 /km (`calc.RUN_PACE_MIN/MAX`; las demás en `suspect`); cada predicción con
   `status` ('ok' | 'tentative' | 'incoherent' | 'invalid'), `usable` y `advice`. Formato estricto en `util.js`:
   `fmtRaceTime`, `fmtPaceKm`, `fmtRaceRange`, `fmtPaceRange` (null si el dato no vale: la vista nunca pinta

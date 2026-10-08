@@ -35,6 +35,14 @@ export function setWeekPattern(days, { from = weekStart(todayStr()) } = {}) {
   return store.saveSettings({ weekPatterns: list });
 }
 
+/**
+ * ¿Hay semana tipo? Sin ninguna vigencia guardada (perfil nuevo que saltó «Tu semana», ronda 8 B2) no hay
+ * planificación: todos los días salen como descanso y Hoy ofrece una sesión libre en lugar de «Te toca hoy».
+ */
+export function hasWeekPattern(settings) {
+  return Array.isArray(settings?.weekPatterns) && settings.weekPatterns.length > 0;
+}
+
 /** Semana tipo vigente hoy. */
 export function currentPattern() {
   return patternFor(store.settings(), todayStr());

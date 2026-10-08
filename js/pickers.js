@@ -135,6 +135,16 @@ export function quickCreateExercise(name = '') {
   });
 }
 
+/** Sesiones libres que se pueden planificar en un día (semana tipo, calendario, bienvenida «Tu semana»). */
+export const FREE_PLANS = [
+  { activityKind: 'bike', label: 'Ruta en bici', emoji: '🚴' },
+  { activityKind: 'run', label: 'Carrera', emoji: '🏃' },
+  { activityKind: 'swim', label: 'Natación', emoji: '🏊' },
+  { activityKind: 'hike', label: 'Senderismo', emoji: '🥾' },
+  { activityKind: 'other', label: 'Otra actividad', emoji: '⚡' },
+  { activityKind: 'strength', label: 'Fuerza libre', emoji: '🏋️' },
+];
+
 /**
  * Selector de plan para un día: plantilla, descanso o sesión libre.
  * @returns {Promise<null | {kind:'template', templateId} | {kind:'rest'} | {kind:'free', label, activityKind}>}
@@ -151,16 +161,8 @@ export function pickTemplate({ title = 'Elegir rutina', includeRest = false, inc
         h('span.pick-name', '😴 Descanso'), h('span.pick-meta', 'Día sin entrenamiento planificado')));
     }
     if (includeFree) {
-      const FREE = [
-        { activityKind: 'bike', label: 'Ruta en bici', emoji: '🚴' },
-        { activityKind: 'run', label: 'Carrera', emoji: '🏃' },
-        { activityKind: 'swim', label: 'Natación', emoji: '🏊' },
-        { activityKind: 'hike', label: 'Senderismo', emoji: '🥾' },
-        { activityKind: 'other', label: 'Otra actividad', emoji: '⚡' },
-        { activityKind: 'strength', label: 'Fuerza libre', emoji: '🏋️' },
-      ];
       rows.push(h('div.pick-section', 'Sesión libre'));
-      for (const f of FREE) {
+      for (const f of FREE_PLANS) {
         rows.push(h('button.pick-row', { type: 'button', onClick: () => { chosen = { kind: 'free', label: f.label, activityKind: f.activityKind }; s.close(); } },
           h('span.pick-name', `${f.emoji} ${f.label}`)));
       }

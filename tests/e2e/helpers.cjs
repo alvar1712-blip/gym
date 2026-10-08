@@ -27,11 +27,13 @@ async function startServer() {
 
 /**
  * Abre la app en un contexto iPhone nuevo (almacenamiento vacío).
- * @param {{serviceWorkers?:'block'|'allow', hash?:string, browser?:'chromium'|'webkit', beforeLoad?:(page)=>Promise}} [opts]
+ * @param {{serviceWorkers?:'block'|'allow', hash?:string, browser?:'chromium'|'webkit', beforeLoad?:(page)=>Promise, exampleWeek?:boolean}} [opts]
  *   beforeLoad: se ejecuta en una página del mismo origen ANTES de cargar la app (p. ej. crear una base de datos antigua).
+ *   exampleWeek: siembra la semana de ejemplo (L D1 · M D2 · X D3 · J D4 · V — · S D6 · D —) y recarga. Desde la ronda 8
+ *   (B2) un perfil nuevo empieza sin semana tipo; las pruebas que dependen de un plan la siembran así, explícitamente.
  * @returns {{browser, context, page, server, url, errors:string[], close:()=>Promise<void>}}
  */
-async function openApp({ serviceWorkers = 'block', hash = '', browser: name = BROWSER, beforeLoad = null } = {}) {
+async function openApp({ serviceWorkers = 'block', hash = '', browser: name = BROWSER, beforeLoad = null, exampleWeek = false } = {}) {
   const server = await startServer();
   const browser = await playwright[name].launch();
   const context = await browser.newContext({ ...devices['iPhone 13'], locale: 'es-ES', timezoneId: 'Europe/Madrid', serviceWorkers });
@@ -45,6 +47,7 @@ async function openApp({ serviceWorkers = 'block', hash = '', browser: name = BR
   }
   await page.goto(server.url + (hash ? `#${hash.replace(/^#/, '')}` : ''));
   await waitReady(page);
+  if (exampleWeek) await useExampleWeek(page);
   return {
     browser, context, page, server, url: server.url, errors,
     close: async () => { await browser.close(); await server.close(); },
@@ -53,6 +56,15 @@ async function openApp({ serviceWorkers = 'block', hash = '', browser: name = BR
 
 async function waitReady(page) {
   await page.waitForFunction(() => document.documentElement.classList.contains('ready'), null, { timeout: 15000 });
+}
+
+/** Pone la semana de ejemplo como semana tipo (como un usuario que ya la tenía) y recarga la pantalla actual. */
+async function useExampleWeek(page) {
+  await page.evaluate(async () => {
+    const { exampleWeekPatterns } = await import('./js/seed.js');
+    await window.__app.store.saveSettings({ weekPatterns: exampleWeekPatterns() });
+  });
+  await reload(page);
 }
 
 /** Recarga la página (simula cerrar y volver a abrir la app). */
@@ -122,4 +134,4 @@ function chromiumOnly(why) {
   return BROWSER === 'chromium' ? false : `Solo en Chromium (${why}); en WebKit no existe esa herramienta de Playwright`;
 }
 
-module.exports = { openApp, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable, chromiumOnly };
+module.exports = { openApp, useExampleWeek, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable, chromiumOnly };

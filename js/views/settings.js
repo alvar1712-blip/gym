@@ -6,13 +6,13 @@ import { estimate } from '../db.js';
 import { navigate, refresh } from '../router.js';
 import { h, icon, screen, stepper, segmented, chips, textInput, toast, undoToast, confirmDialog, sheet, shareFile, pickFile, isStandalone, actionSheet } from '../ui.js';
 import { todayStr, fmtDate, dateFromTs, hhmm, relDay, plural, DAY_LONG, DAY_LETTER, dow, deepClone, round, clamp } from '../util.js';
-import { defaultSettings, MUSCLES } from '../seed.js';
+import { defaultSettings, exampleWeekPatterns, MUSCLES } from '../seed.js';
 import {
   getProfile, isFemale, isHormonal, g, profileIncomplete, label as plabel, SEXES, GOALS, EXPERIENCES, CONTRACEPTION,
   SECONDARY_GOALS, SPORTS, ageOn, validBirthDate,
 } from '../profile.js';
 import { currentLabel, normalizeAll } from '../context-logic.js';
-import { currentPattern, setWeekPattern } from '../plan.js';
+import { currentPattern, setWeekPattern, hasWeekPattern } from '../plan.js';
 import { pickTemplate } from '../pickers.js';
 import {
   buildBackupObject, backupFileName, csvFileName, parseBackupText, strengthCsv, cardioCsv, csvCounts, dataCounts, formatBytes,
@@ -135,7 +135,9 @@ export function mountSettings(root) {
     h('div.list.cfg-profile-list', profileRow(), contextRow()),
     h('div.section-title', 'Plan'),
     h('div.list',
-      navRow({ ico: 'calendar', title: 'Semana tipo', href: '#/settings/week', extra: weekMini(days, tpls), aria: `Semana tipo: ${weekSummaryText(days, tpls)}`, className: 'cfg-week-row' }),
+      hasWeekPattern(s)
+        ? navRow({ ico: 'calendar', title: 'Semana tipo', href: '#/settings/week', extra: weekMini(days, tpls), aria: `Semana tipo: ${weekSummaryText(days, tpls)}`, className: 'cfg-week-row' })
+        : navRow({ ico: 'calendar', title: 'Semana tipo', sub: 'Sin planificar · elige qué haces cada día', href: '#/settings/week', className: 'cfg-week-row' }),
       navRow({ ico: 'sliders', title: 'Umbrales y reglas', sub: 'Series por músculo, progresión, avisos de carga, descarga', href: '#/settings/thresholds' })),
     h('div.section-title', 'Rutinas y ejercicios'),
     h('div.list',
@@ -225,7 +227,9 @@ export function mountWeekPattern(root) {
 
   function paintInfo() {
     const from = patternFromDate(store.settings(), today);
-    info.textContent = from && from > '2000-01-01'
+    info.textContent = !hasWeekPattern(store.settings())
+      ? 'Aún no has planificado tu semana: toca un día para ponerle una rutina o una sesión libre y Hoy te dirá qué toca.'
+      : from && from > '2000-01-01'
       ? `Vigente desde el ${fmtDate(from, 'full')}. Las semanas anteriores conservan la semana tipo que tenían.`
       : 'Es la semana tipo inicial.';
   }
@@ -260,18 +264,19 @@ export function mountWeekPattern(root) {
     offerUndo(`${cap(DAY_LONG[i])}: ${p.text}. Se aplica desde esta semana.`, prev);
   }
 
-  async function restoreDefault() {
-    const def = defaultSettings().weekPatterns[0].days;
+  /** Semana de ejemplo con las rutinas precargadas (ya no es la de por defecto: ronda 8, B2). */
+  async function useExample() {
+    const def = exampleWeekPatterns()[0].days;
     const ok = await confirmDialog({
-      title: '¿Restaurar la semana por defecto?',
+      title: '¿Usar la semana de ejemplo?',
       message: `${weekSummaryText(def, templatesMap())}\n\nSe aplica desde esta semana; las semanas anteriores no cambian.`,
-      confirmText: 'Restaurar',
+      confirmText: 'Usar',
     });
     if (!ok) return;
     const prev = deepClone(store.settings().weekPatterns);
     await setWeekPattern(def);
     paintAll();
-    offerUndo('Semana tipo por defecto restaurada.', prev);
+    offerUndo('Semana de ejemplo aplicada.', prev);
   }
 
   c.append(
@@ -280,7 +285,7 @@ export function mountWeekPattern(root) {
       h('button.btn.btn-ghost.btn-sm.cfg-intro-btn', { type: 'button', onClick: () => navigate('#/calendar') }, icon('calendar', 18), 'Abrir calendario')),
     list,
     info,
-    h('button.btn.btn-secondary.btn-block.cfg-restore', { type: 'button', onClick: restoreDefault }, icon('refresh', 20), 'Restaurar semana por defecto'));
+    h('button.btn.btn-secondary.btn-block.cfg-restore', { type: 'button', onClick: useExample }, icon('refresh', 20), 'Usar la semana de ejemplo'));
   paintAll();
 }
 
@@ -504,10 +509,66 @@ export function mountData(root) {
     const fileSettings = obj.data?.meta?.find((m) => m && m.id === 'settings');
     const file = new File([JSON.stringify(obj)], backupFileName(new Date(now)), { type: 'application/json' });
     const res = await shareFile(file, { title: 'Copia de Entreno' });
-    if (res === 'cancelled') return;
+    if (res === 'cancelled') return res;
     await markBackup(fileSettings, now);
     paintLast();
     toast(res === 'shared' ? 'Copia exportada.' : 'Copia descargada.', { kind: 'success' });
+    return res;
+  }
+
+  // ---------- antes de sustituir o borrar todo (ronda 8, B3) ----------
+  /**
+   * Primera confirmación de importar / borrar todo: lo que se pierde, el punto de restauración y la opción de
+   * exportar una copia antes. Devuelve null (cancelar), { go: true } (continuar) o { exported: Promise<res> }:
+   * la copia se exporta DESDE el propio toque (iOS solo abre la hoja de compartir así).
+   */
+  function guardSheet({ title, message, confirmText }) {
+    return new Promise((resolve) => {
+      sheet({
+        title,
+        className: 'cfg-guard',
+        onClose: (r) => resolve(r && typeof r === 'object' ? r : null),
+        body: (close) => h('div.stack',
+          String(message).split('\n\n').filter(Boolean).map((p) => h('p.sheet-msg', p)),
+          h('div.sheet-actions.sheet-actions-inline',
+            h('button.btn.btn-block.btn-primary.cfg-guard-export', { type: 'button', onClick: () => close({ exported: onExport() }) },
+              icon('share', 20), 'Exportar copia antes'),
+            h('button.btn.btn-block.btn-danger-ghost.cfg-guard-go', { type: 'button', onClick: () => close({ go: true }) }, confirmText),
+            h('button.btn.btn-block.btn-secondary', { type: 'button', onClick: () => close(null) }, 'Cancelar'))),
+      });
+    });
+  }
+
+  /** Texto honesto sobre el punto de restauración que se creará (o conservará) al continuar. */
+  function restoreNote(info) {
+    const when = info ? `del ${fmtStamp(info.createdAt)}` : '';
+    const where = 'Solo vive en este iPhone: si se borran los datos del sitio, también se pierde. Para tenerlos a salvo fuera, exporta una copia.';
+    if (store.hasDataToProtect()) {
+      return `Antes se guardará en este iPhone un punto de restauración con lo de ahora${info ? ` (sustituye al ${when})` : ''}, para poder recuperarlo aquí. ${where}`;
+    }
+    return info ? `Ahora no hay registros tuyos que guardar: se conserva el punto de restauración ${when}. ${where}` : where;
+  }
+
+  /** No se pudo crear el punto de restauración: no se ha destruido nada. */
+  function restoreError(err, what) {
+    sheet({
+      title: `No se ha ${what} nada`,
+      className: 'cfg-rp-error',
+      body: h('div.stack',
+        h('p.sheet-msg', err.message),
+        h('p.sheet-msg', `Tus datos siguen intactos. ${err.reason === 'space' ? 'Libera espacio en el iPhone o exporta' : 'Exporta'} una copia antes de volver a intentarlo.`)),
+      actions: [
+        { label: 'Exportar copia', kind: 'primary', onClick: (close) => { onExport(); close(); } },
+        { label: 'Entendido' },
+      ],
+    });
+  }
+
+  /** Tras una primera confirmación: true si hay que seguir (si exportó, solo si la copia se guardó). */
+  async function passGuard(g) {
+    if (!g) return false;
+    if (g.exported) return (await g.exported) !== 'cancelled';
+    return true;
   }
 
   function importError(msg) {
@@ -535,20 +596,27 @@ export function mountData(root) {
       : '';
     // Copia de una versión anterior sin secciones que ahora tienen datos: se dice qué se perderá.
     const lostText = lostSectionsWarning(res.backup, Object.fromEntries(NEWER_SECTIONS.map((x) => [x.store, store.count(x.store)])));
-    const ok = await confirmDialog({
+    const g = await guardSheet({
       title: '¿Importar esta copia?',
       message: `Copia ${when}: ${countsText(sum, { all: true, sep: ' · ' })}.\n\n`
         + (lostText ? `${lostText}\n\n` : '')
-        + `SUSTITUYE todos los datos de este iPhone${curText}. `
-        + 'No se puede deshacer: si no tienes copia de lo actual, cancela y exporta antes.',
+        + `SUSTITUYE todos los datos de este iPhone${curText}.\n\n`
+        + restoreNote(await store.restorePointInfo()),
+      confirmText: 'Sustituir todo',
+    });
+    if (!(await passGuard(g))) return;
+    // Si antes exportó, se vuelve a preguntar: su toque fue para exportar, no para sustituir.
+    if (g.exported && !(await confirmDialog({
+      title: '¿Importar la copia ahora?',
+      message: `Sustituye todos los datos de este iPhone por los de la copia ${when}.`,
       confirmText: 'Sustituir todo',
       danger: true,
-    });
-    if (!ok) return;
+    }))) return;
     try {
       await store.importData(res.backup);
     } catch (err) {
-      importError(`No se pudo importar: ${err?.message || err}. Tus datos actuales no se han tocado.`);
+      if (err instanceof store.RestorePointError) restoreError(err, 'importado');
+      else importError(`No se pudo importar: ${err?.message || err}. Tus datos actuales no se han tocado.`);
       return;
     }
     clearLocalDrafts();
@@ -653,17 +721,20 @@ export function mountData(root) {
 
   // ---------- borrar todo ----------
   async function onWipe() {
-    const ok1 = await confirmDialog({
+    const protect = store.hasDataToProtect();
+    const g = await guardSheet({
       title: '¿Borrar todos los datos?',
       message: `Se borrará todo lo de este iPhone: ${countsText(currentCounts()) || 'tus registros'}, además de tus ajustes.\n\n`
-        + 'Antes de seguir, exporta una copia si quieres conservarlos: sin copia no se pueden recuperar.',
+        + restoreNote(await store.restorePointInfo()),
       confirmText: 'Continuar',
-      danger: true,
     });
-    if (!ok1) return;
+    if (!(await passGuard(g))) return;
     const ok2 = await confirmDialog({
       title: 'Confirmación final',
-      message: 'Esta acción no se puede deshacer. La app quedará como recién instalada, con las rutinas y ejercicios iniciales.',
+      message: 'La app quedará como recién instalada, con las rutinas y ejercicios iniciales. '
+        + (protect
+          ? 'Lo de ahora solo se podrá recuperar desde «Punto de restauración», en esta pantalla, mientras no lo elimines.'
+          : 'Esta acción no se puede deshacer.'),
       confirmText: 'Borrar todo',
       danger: true,
       requireText: 'BORRAR',
@@ -672,12 +743,84 @@ export function mountData(root) {
     try {
       await store.wipeAll();
     } catch (err) {
-      toast(`No se pudo borrar: ${err?.message || err}`, { kind: 'error', duration: 6000 });
+      if (err instanceof store.RestorePointError) restoreError(err, 'borrado');
+      else toast(`No se pudo borrar: ${err?.message || err}`, { kind: 'error', duration: 6000 });
       return;
     }
     clearLocalDrafts();
-    toast('Datos borrados. La app vuelve a estar como recién instalada.', { kind: 'success', duration: 5000 });
+    toast(protect
+      ? 'Datos borrados. Si te has equivocado, recupéralos en Ajustes › Copias y datos.'
+      : 'Datos borrados. La app vuelve a estar como recién instalada.', { kind: 'success', duration: 6000 });
   }
+
+  // ---------- punto de restauración ----------
+  const RP_REASON = { import: 'antes de importar una copia', wipe: 'antes de borrar todo', recover: 'antes de recuperar el estado anterior' };
+  const rpBox = h('section.card.cfg-block.cfg-rp', { dataset: { block: 'restore-point' }, hidden: true });
+
+  async function onRecover() {
+    const info = await store.restorePointInfo();
+    if (!info) return;
+    const keep = store.hasDataToProtect();
+    const ok1 = await confirmDialog({
+      title: '¿Recuperar el estado anterior?',
+      message: `Vuelves a lo que había el ${fmtStamp(info.createdAt)}: ${countsText(info.summary || {}, { all: true, sep: ' · ' })}.\n\n`
+        + (keep
+          ? `Lo de ahora (${countsText(currentCounts()) || 'tus ajustes'}) no se pierde: pasa a ser el punto de restauración, por si quieres volver.`
+          : 'Ahora no hay registros tuyos que conservar.'),
+      confirmText: 'Continuar',
+    });
+    if (!ok1) return;
+    const ok2 = await confirmDialog({
+      title: 'Confirmación final',
+      message: 'Se sustituirán todos los datos de la app por los del punto de restauración.',
+      confirmText: 'Recuperar',
+      danger: true,
+    });
+    if (!ok2) return;
+    try {
+      await store.recoverRestorePoint();
+    } catch (err) {
+      sheet({ title: 'No se pudo recuperar', body: h('p.sheet-msg', `${err?.message || err}. Tus datos actuales no se han tocado.`), actions: [{ label: 'Entendido' }] });
+      return;
+    }
+    clearLocalDrafts();
+    toast('Estado anterior recuperado.', { kind: 'success', duration: 5000 });
+  }
+
+  async function onDiscard() {
+    const ok = await confirmDialog({
+      title: '¿Eliminar el punto de restauración?',
+      message: 'Ya no podrás volver a ese estado desde aquí (solo con una copia exportada). Tus datos de ahora no cambian.',
+      confirmText: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await store.discardRestorePoint();
+    } catch (err) {
+      toast(`No se pudo eliminar: ${err?.message || err}`, { kind: 'error', duration: 6000 });
+      return;
+    }
+    toast('Punto de restauración eliminado.');
+  }
+
+  async function paintRestore() {
+    const info = await store.restorePointInfo();
+    rpBox.hidden = !info;
+    if (!info) { rpBox.replaceChildren(); return; }
+    rpBox.replaceChildren(
+      h('h2.card-title', 'Punto de restauración'),
+      h('div.cfg-last',
+        h('span.cfg-last-label', 'Guardado'),
+        h('span.cfg-last-value.cfg-rp-when', fmtStamp(info.createdAt)),
+        h('span.cfg-last-ago.cfg-rp-reason', cap(RP_REASON[info.reason] || 'antes de sustituir los datos'))),
+      h('p.cfg-why.cfg-rp-counts', `${countsText(info.summary || {}, { all: true, sep: ' · ' })}.`),
+      h('p.cfg-hint', 'Se guarda solo en este iPhone, dentro de la app, y solo el último. Si se borran los datos del sitio '
+        + '(o el sistema los elimina por falta de espacio), también se pierde: no sustituye a una copia exportada.'),
+      h('button.btn.btn-secondary.btn-block.cfg-rp-recover', { type: 'button', onClick: onRecover }, icon('refresh', 20), 'Recuperar el estado anterior'),
+      h('button.btn.btn-ghost.btn-block.cfg-rp-discard', { type: 'button', onClick: onDiscard }, icon('trash', 20), 'Eliminar este punto'));
+  }
+  const offRp = store.on('restorepoint', () => { paintRestore(); });
 
   paintLast();
   c.append(
@@ -689,6 +832,7 @@ export function mountData(root) {
       h('p.cfg-hint', 'Se abre la hoja de compartir: elige «Guardar en Archivos» (o Google Drive) y guárdala en una carpeta que recuerdes.'),
       h('button.btn.btn-secondary.btn-block.cfg-import', { type: 'button', onClick: onImport }, icon('upload', 20), 'Importar copia'),
       h('p.cfg-hint', 'Restaura una copia exportada antes. Sustituye TODOS los datos actuales; se pide confirmación.')),
+    rpBox,
     h('section.card.cfg-block', { dataset: { block: 'activities-import' } },
       h('h2.card-title', 'Actividades de otras apps'),
       h('p.cfg-why', 'Trae carreras, salidas en bici o rutas desde Garmin, Strava u otras apps. Se añaden a tu historial; no sustituye nada.'),
@@ -704,10 +848,11 @@ export function mountData(root) {
       h('div.cfg-counts', countRows)),
     h('section.card.card-danger.cfg-danger', { dataset: { block: 'wipe' } },
       h('h2.card-title', 'Borrar todos los datos'),
-      h('p.cfg-why', 'Elimina sesiones, actividades, pesajes, check-ins, objetivos, plantillas, ejercicios propios y ajustes. Se pide confirmación dos veces.'),
+      h('p.cfg-why', 'Elimina sesiones, actividades, pesajes, check-ins, objetivos, plantillas, ejercicios propios y ajustes. Se pide confirmación dos veces y antes se guarda un punto de restauración en este iPhone.'),
       h('button.btn.btn-danger-ghost.btn-block.cfg-wipe', { type: 'button', onClick: onWipe }, icon('trash', 20), 'Borrar todos los datos')));
 
-  return () => offPersist();
+  paintRestore();
+  return () => { offPersist(); offRp(); };
 }
 
 // ===========================================================================

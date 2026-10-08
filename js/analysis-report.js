@@ -16,7 +16,7 @@ import { fmtNum, fmtDate, fmtDuration } from './util.js';
 import { SEXES, GOALS, SECONDARY_GOALS, EXPERIENCES, CONTRACEPTION, SPORTS as PROFILE_SPORTS, label, g, isFemale } from './profile.js';
 import { MUSCLE_LABEL } from './seed.js';
 import { LEVEL_LABEL, DISCLAIMER, isPlaceholder } from './analysis.js';
-import { REPORT_HISTORY_MAX } from './race-predict.js';
+import { REPORT_HISTORY_MAX, rangeText } from './race-predict.js';
 
 /** Insights de peso que revelan datos del ciclo (fuera del informe sin permiso). */
 export const CYCLE_WEIGHT_IDS = ['weight-cycle-retention', 'weight-reds-cycle'];
@@ -236,7 +236,8 @@ function runPredictionSection(a) {
   if (r.duplicates?.length) lines.push(`- ${r.duplicates.length === 1 ? '1 resultado apuntado coincide' : `${r.duplicates.length} resultados apuntados coinciden`} con una carrera registrada: se cuenta una sola vez`);
   const pred = (r.predictions || []).map((p) => {
     if (p.mid == null) return `${p.label}: sin previsión útil`;
-    return `${p.label} ≈ ${fmtDuration(p.mid)} (${p.status === 'tentative' ? 'orientativo, ' : ''}confianza ${p.confidence})`;
+    // El mismo trío que las pantallas: previsto (rango, confianza)
+    return `${p.label} ≈ ${fmtDuration(p.mid)} (${rangeText(p)}, ${p.status === 'tentative' ? 'orientativo, ' : ''}confianza ${p.confidence})`;
   });
   if (pred.length) lines.push(`- Tiempo previsto hoy: ${pred.join(' · ')}`);
   return section('REFERENCIAS PARA LA PREDICCIÓN ACTUAL (aquí sí importa cuándo fue y qué he hecho después: lo reciente pesa más y lo anterior a un parón, menos)', lines);
@@ -251,7 +252,9 @@ function sportSections(a) {
       const it = e.intensity;
       if (it && isNum(it.easyShare) && (it.easyMin + it.hardMin) > 0) lines.push(`- Reparto de intensidad de la resistencia (4 semanas): ${pct(it.easyShare * 100)} suave / ${pct(100 - it.easyShare * 100)} intenso`);
       const fit = e.fitness || [];
-      if (fit.length) lines.push(`- 5 km previsto por bloques de 4 semanas: ${fit.map((b) => fmtDuration(b.pred5kSec)).join(' → ')}`);
+      // Forma por bloques (solo carreras registradas de cada bloque): NO es el 5 km previsto de hoy (ese va en
+      // «Referencias para la predicción actual»)
+      if (fit.length) lines.push(`- Forma en 5 km por bloques de 4 semanas: ${fit.map((b) => fmtDuration(b.pred5kSec)).join(' → ')}`);
     }
     return lines.length ? section(title, lines) : [];
   });
@@ -360,7 +363,7 @@ function eventsSection(a) {
     if (isNum(r.distanceKm) && !['5k', '10k', 'half', 'marathon'].includes(r.type)) bits.push(`${fmtNum(r.distanceKm, 1)} km`);
     if (isNum(r.targetSec)) bits.push(`objetivo <${fmtDuration(r.targetSec)}`);
     const p = x.prediction;
-    if (p && p.range) bits.push(`previsto hoy ${p.range}${p.verdict !== 'prevision' ? ` (${p.label.toLowerCase()})` : ''}`);
+    if (p && p.range) bits.push(`previsto hoy ${fmtDuration(p.mid)} (${p.range}${p.confidence ? `, confianza ${p.confidence}` : ''})${p.verdict !== 'prevision' ? ` · ${p.label.toLowerCase()}` : ''}`);
     return `- ${bits.join(' · ')}`;
   }));
 }
@@ -372,7 +375,7 @@ function trendsSection(a, includeCycle) {
   const sum = a.strength?.summary;
   if (sum && isNum(sum.trendPctPerWeek)) lines.push(`- Fuerza: ${rate(sum.trendPctPerWeek)} de ritmo típico; ${sum.improving} mejoran, ${sum.stalled} estancados, ${sum.down} bajando`);
   const fit = a.endurance?.fitness || [];
-  if (fit.length >= 2) lines.push(`- 5 km previsto: ${fmtDuration(fit[0].pred5kSec)} → ${fmtDuration(fit[fit.length - 1].pred5kSec)}`);
+  if (fit.length >= 2) lines.push(`- Forma en 5 km por bloques de 4 semanas: ${fmtDuration(fit[0].pred5kSec)} → ${fmtDuration(fit[fit.length - 1].pred5kSec)}`);
   const sl = a.hybrid?.sportLoad;
   if (sl && sl.total4w > 0) {
     const prev = (sl.rows || []).reduce((s, r) => s + (r.prevLoad4w || 0), 0) / 4;

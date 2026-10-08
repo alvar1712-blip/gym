@@ -97,6 +97,13 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
 - Hecho, saltado o descanso: no queda nada que empezar, así que «Lo importante esta semana» sube por encima de
   «Registrar».
 - Evento a 14 días o menos: tarjeta debajo de «Te toca hoy» («10K · En 5 días»); más lejos, una línea.
+- Sin semana tipo (ronda 8, B2): un perfil nuevo ya no hereda la semana de ejemplo (`defaultSettings().weekPatterns`
+  es `[]`; la de ejemplo es `seed.exampleWeekPatterns()`, solo en Ajustes › Semana tipo «Usar la semana de ejemplo» y en
+  datos antiguos cuyos ajustes no guardaban semana). La bienvenida tiene un paso «Tu semana» (solo si no hay semana
+  tipo): días de entreno y, por día, una rutina o una sesión libre; «Saltar» no guarda nada. Sin semana, Hoy no dice
+  «Te toca hoy · Descanso»: «Sin semana planificada · ¿Qué entrenas hoy?» con «Empezar sesión libre» (verde), «Elegir
+  una rutina» y «Planificar tu semana»; la mini semana no muestra «Mañana». `plan.hasWeekPattern()` es la única
+  comprobación. Usuarios existentes y copias restauradas conservan su semana tal cual (tests/e2e/week-setup.test).
 - Verde (ronda 8, A3): solo la acción principal («Empezar» / «Continuar», el único botón verde), lo seleccionado
   (hoy en la mini semana, el check-in) y los estados positivos («Subir peso», el progreso de un objetivo). Los enlaces
   secundarios («Ver ciclo», «Importar desde un archivo», «Ver todo», «Calendario», «Panel semanal»…) van en texto
@@ -134,6 +141,15 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
   «Objetivo 3×4–6 · ↑ Sube a 82,5 kg» o «Objetivo 3×4–6 · ◎ 6/6/6 → +2,5 kg» (al completar 6/6/6, +2,5 kg). Es la
   MISMA regla e incrementos que el panel semanal (js/progression.js, que el panel reexporta) y lleva la frase entera
   para VoiceOver («Siguiente paso: +2,5 kg cuando completes 6/6/6»).
+- Ronda 8 (B4) · estancamiento frente a doble progresión: UNA decisión (`progression.progressionHint`, con el
+  historial del ejercicio) para la sesión y el panel; consulta progreso reciente y estancamiento
+  (`progressStatus`/`stallEval`, la regla de «Ejercicios estancados», que también usa el análisis), RIR, tope del
+  rango y confianza. Por orden: estancado → «Estancado · revisar» (icono de gráfica; botón discreto, neutro, al progreso del
+  ejercicio; VoiceOver: «Llevas 3 sesiones sin progresar»; el panel no lo pone en «Subir»/«Mantener» y en
+  «Ejercicios estancados» añade su siguiente paso y, si llegó al tope, que quizá solo falta subir el peso); datos
+  ambiguos (al tope sin RIR registrado, o la última vez hace ≥ 4 semanas) → «Mantén y reevalúa» (panel: «Mantén y
+  vuelve a evaluar»); al tope → «Sube a …»; si no → «6/6/6 → +2,5 kg». Las formas cortas caben junto a «Objetivo
+  3×4–6» a 375 px (progression-decision.test, también al 150 %). Nada cambia la rutina ni el volumen: sugiere.
 - Resumen: dos cifras protagonistas (duración y series de trabajo; «1 h 10 min» en una línea, sin partir) y una
   línea con esfuerzo, volumen y carga. Récords (ronda 8, A6): sin récord no sale nada (ni «Récords 0 / ninguno esta
   vez»); con récord, tarjeta dorada `.ses-sum-prs` justo bajo la cabecera, «🏆 2 récords en esta sesión» y, por
@@ -329,3 +345,42 @@ Chips: `deltaChip(d, fmt, rule)` (views/summary.js) pone `data-tone` y `.sum-del
   menos el 20 % del valor: 5 kg, 4 reps, 10 s, 5 cm…). Antes, 45 → 40 kg ocupaba todo el alto (eje 40–45).
 
 Pruebas: tests/unit/exercise-glance.test.mjs y tests/e2e/exercise-glance.test.cjs (Chromium y WebKit).
+
+## 22. Punto de restauración antes de importar o «Borrar todo» (ronda 8, B3)
+
+En iOS no hay una descarga automática fiable sin un gesto del usuario, así que la protección tiene dos partes, y
+ninguna promete más de lo que da:
+
+- **Punto de restauración local, automático y comprobado** (`store.importData` y `store.wipeAll`, la única vía de
+  ambos): antes de destruir nada, `createRestorePoint` guarda una copia completa (la misma de `exportData`) en dos
+  registros reservados de `meta` (`~restorePoint`: fecha, motivo y recuentos; `~restorePoint:data`: la copia), la
+  RELEE del disco y comprueba recuento por almacén y contenido idéntico. Si no se puede escribir (p. ej. sin espacio,
+  `QuotaExceededError`) o no coincide, lanza `RestorePointError` y no se toca nada; la pantalla lo explica («No se ha
+  borrado nada… Tus datos siguen intactos») y ofrece exportar una copia.
+- **Exportar antes** (gesto del usuario): la primera confirmación de importar y de borrar todo tiene «Exportar copia
+  antes» (la hoja de compartir sale del propio toque). Solo se sigue si la copia se guardó.
+
+Reglas:
+
+- **Sin subir la versión de la BD**: los registros con id que empieza por «~» (db.js `RESERVED_PREFIX`) quedan fuera
+  de la carga inicial (`getAll` de `meta` con rango de claves), de la memoria, de las copias exportadas y de
+  «sustituir todo» (`replaceAll` borra solo el rango de la app). Una copia importada no puede traer uno (se quitan).
+- **Uno solo, el último**. Si ahora no hay nada que proteger (la app está como recién instalada) se conserva el
+  anterior: borrar dos veces seguidas no pisa los datos de verdad. «Algo que proteger» (`store.hasDataToProtect`) es
+  cualquier diferencia con lo sembrado: registros, ejercicios propios o editados, rutinas propias, editadas o borradas,
+  la semana tipo o el perfil (revisión de B3: antes solo miraba registros y ejercicios propios, y quien había
+  preparado rutinas, semana y perfil sin entrenar aún los perdía sin punto). Lo que se guarda solo (fecha de la
+  última copia, avisos descartados) no cuenta, para no pisar el punto con una app vacía.
+- **Recuperar** (Ajustes › Copias y datos › «Punto de restauración», con fecha, motivo y recuentos; doble
+  confirmación): en UNA transacción vuelven los datos del punto y lo de ahora pasa a ser el nuevo punto (se puede
+  volver); si lo de ahora no tenía datos, el punto se consume. «Eliminar este punto» lo quita del dispositivo (p. ej.
+  tras borrar todo para no dejar nada).
+- **Honestidad**: la tarjeta y las confirmaciones dicen que vive solo en este iPhone, dentro de la app, y que si se
+  borran los datos del sitio (o el sistema los elimina) también se pierde: no sustituye a una copia exportada.
+- Doble confirmación conservada: borrar todo sigue pidiendo escribir BORRAR; importar exige elegir un archivo y
+  confirmar «Sustituir todo» (y otra vez si antes se exportó, porque ese toque fue para exportar).
+
+Pruebas: tests/e2e/restore-point.test.cjs (Chromium y WebKit): cancelar no crea punto; borrar → recuperar y
+importar → recuperar → volver dejan memoria y disco idénticos por almacén; el punto no va en la copia; sin espacio o
+con una relectura distinta no se borra ni se importa nada; exportar antes; sin datos se conserva el punto; eliminar.
+La guarda visual recorre `settings-data-rp`.

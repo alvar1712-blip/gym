@@ -7,7 +7,8 @@ import {
   splitGoals, fmtTimeWords, fmtDistance, goalWeightText, goalEmoji, createdDateOf, fmtDay, NONLINEAR_NOTE,
   TREND_WEEKS, RECENT_DAYS, MIN_MARGIN, LONG_DAYS, MIN_KM, DEFAULT_RULES,
 } from '../../js/goals-logic.js';
-import { e1rm, riegel, linearRegression, dayIndex } from '../../js/calc.js';
+import { e1rm, linearRegression, dayIndex } from '../../js/calc.js';
+import { predictFor, predictionSeries, baseOf, rangeText } from '../../js/race-predict.js';
 import { bwStats } from '../../js/activity-logic.js';
 import { defaultSettings } from '../../js/seed.js';
 import { tsFromDate, addDays, weekStart } from '../../js/util.js';
@@ -525,8 +526,11 @@ test('sin inicio (nada en los 28 días antes de crearlo ni después): progreso �
   assert.equal(p.startLabel, '—');
   assert.equal(p.current, e1rm(80, 5, 0));
   assert.equal(p.progressPct, null, 'antes: 93 / 105 = 89 %');
+  // Carrera: el inicio es el tiempo previsto del motor el día en que se creó (2 carreras en sus 12 semanas); hoy ya no
+  // hay previsión (solo 1 carrera en la ventana): sin «Actual», el progreso sigue siendo «—»
   const q = goalProgress(d, runGoal({ createdAt: created('2026-09-20') }));
-  assert.equal(q.start, null);
+  assert.equal(q.start, predictionSeries(d, 10, ['2026-09-20'])[0].mid);
+  assert.equal(q.current, null);
   assert.equal(q.progressPct, null);
   // Con un registro desde la creación, ese es el inicio
   const r = goalProgress(data({ sessions: [...sessions, ses('2026-09-22', 'row', [set(78, 5)])] }), strengthGoal({ weight: 90, reps: 5, createdAt: created('2026-09-20') }));
@@ -545,39 +549,48 @@ function runsWeekly(n = 8, pace = 330) {
   return out.filter((a) => a.date <= TODAY);
 }
 
-test('carrera: predicción de Riegel (1,06) desde carreras ≥ 3 km, la mejor por semana; rango hasta cruzar el objetivo', () => {
+// Ronda 8 (B1): un objetivo de carrera con tiempo consume el motor de Tiempos previstos (race-predict.js): «Actual» =
+// el tiempo previsto de hoy, veredicto = checkTarget, tendencia = fotos semanales del mismo motor. Antes: un Riegel
+// propio de la mejor carrera de 28 días (sin volumen, recencia, contexto, filtro de ritmo, rango ni confianza).
+test('carrera: «Actual» = tiempo previsto del motor; tendencia = sus fotos semanales; rango hasta cruzar el objetivo', () => {
   const sessions = [
     ...runsWeekly(8),
     act('run', '2026-09-22', 2.5, 600), // < 3 km: no cuenta
-    act('run', addDays(monday(0), 1), 12, 12 * 360), // misma semana que la última de 6 km: peor predicción
+    act('run', addDays(monday(0), 1), 12, 12 * 360), // misma semana que la última de 6 km
   ];
-  const p = goalProgress(data({ sessions }), runGoal());
+  const d = data({ sessions });
+  const p = goalProgress(d, runGoal());
+  const engine = predictFor(d, 10).prediction;
   assert.equal(p.metric, 'time');
   assert.equal(p.dir, -1);
   assert.equal(p.status, 'estimate');
+  assert.equal(p.verdict, 'hoy_no');
   assert.equal(p.warning, null);
   assert.equal(p.target, 2700);
   assert.equal(p.targetLabel, '45:00');
-  const last = 6 * (330 - 21); // 6 km en 30:54 (5:09 /km)
-  const pred = Math.round(riegel(last, 6, 10, 1.06));
-  assert.equal(p.current, pred);
-  assert.equal(p.currentLabel, '53:06');
-  assert.match(p.currentNote, /^predicción · /);
+  assert.equal(p.current, engine.mid);
+  assert.equal(p.currentLabel, '53:35');
+  assert.equal(p.currentNote, `previsto hoy · ${rangeText(engine)} · confianza alta`);
+  assert.deepEqual(p.prediction, baseOf(engine));
   assert.equal(p.counts.records, 9, '8 de 6 km + la de 12 km (la de 2,5 km no)');
-  assert.equal(p.dataUsed.length, 8, 'una fila por semana');
-  assert.match(p.dataUsed.at(-1).value, /desde 6 km en 30:54 \(5:09 \/km\) · mejor de 2/);
-  // Pendiente = la de las predicciones semanales (redondeadas a segundos)
-  const weekly = runsWeekly(8).map((a) => [dayIndex(a.date), Math.round(riegel(a.movingSec, 6, 10, 1.06))]);
-  const reg = linearRegression(weekly.map((x) => x[0]), weekly.map((x) => x[1]));
+  const weeks = p.dataUsed.filter((x) => /^Semana /.test(x.label));
+  assert.equal(weeks.length, 7, 'una fila por semana con previsión (la primera semana, con 1 carrera, aún no tiene)');
+  assert.equal(weeks.at(-1).value, 'previsto 53:35 · 2 carreras');
+  // Pendiente = la de las fotos semanales del motor (domingo; hoy en la semana actual)
+  const snapDates = [6, 5, 4, 3, 2, 1].map((w) => addDays(monday(w), 6)).concat(TODAY);
+  const snaps = predictionSeries(d, 10, snapDates);
+  assert.ok(snaps.every((x) => x.usable));
+  const reg = linearRegression(snaps.map((x) => dayIndex(x.date)), snaps.map((x) => x.midExact));
   assert.ok(Math.abs(p.trend.slopePerWeek - reg.slope * 7) < 1e-9);
-  const exp = expectedRange(pred - 2700, -reg.slope, reg.seSlope);
+  const exp = expectedRange(engine.mid - 2700, -reg.slope, reg.seSlope);
   assert.deepEqual([p.eta.fromDays, p.eta.toDays], [exp.fromDays, exp.toDays]);
-  assert.match(p.explanation, /^Tu predicción actual para 10 km es 53:06: faltan 8 min 6 s por bajar\. Al ritmo de −\d+ s\/sem/);
-  assert.match(p.method, /Riegel \(T₂ = T₁ × \(D₂ \/ D₁\)\^1,06\).*3 km o más/);
+  assert.match(p.explanation, /^Tu tiempo previsto para 10 km es 53:35 \(51:55–55:15, confianza alta\): faltan 8 min 35 s por bajar\. Al ritmo de −\d+ s\/sem/);
+  assert.match(p.method, /^Tiempo previsto con el mismo cálculo que Tiempos previstos: Fórmula de Riegel/);
+  assert.ok(p.dataUsed.some((x) => x.label === 'Estimación actual (media ponderada)'), 'el «¿Por qué?» del motor');
   assert.equal(MIN_KM.run, 3);
 });
 
-test('carrera: conseguido con una sesión ≥ distancia por debajo del tiempo (a ritmo medio), desde que se creó', () => {
+test('carrera: conseguido con una sesión ≥ distancia por debajo del tiempo (a ritmo medio, ritmo creíble), desde que se creó', () => {
   const sessions = [
     act('run', '2026-06-20', 10, 2600), // antes de crearlo
     act('run', '2026-09-06', 10, 2700), // igual al objetivo: «en menos de» no se cumple
@@ -591,24 +604,35 @@ test('carrera: conseguido con una sesión ≥ distancia por debajo del tiempo (a
   // Una de 9,9 km no llega a la distancia
   const short = [act('run', '2026-09-20', 9.9, 2400)];
   assert.notEqual(goalProgress(data({ sessions: short }), runGoal()).status, 'achieved');
-  // Antes de crearlo no cuenta → «al alcance» (la predicción ya baja del objetivo)
-  const before = [act('run', '2026-09-10', 10, 2600)];
+  // Ritmo imposible (1:50 /km, un error de datos): no lo consigue (Tiempos previstos la marca como sospechosa)
+  assert.notEqual(goalProgress(data({ sessions: [act('run', '2026-09-20', 10, 1100)] }), runGoal()).status, 'achieved');
+  // Antes de crearlo no cuenta → «al alcance» si el veredicto del motor es «probable»
+  const before = [act('run', '2026-09-03', 8, 2050), act('run', '2026-09-10', 10, 2600)];
   const q = goalProgress(data({ sessions: before }), runGoal({ createdAt: created('2026-09-15') }));
   assert.equal(q.status, 'estimate');
   assert.equal(q.ready, true);
-  assert.match(q.explanation, /ya baja del objetivo/);
+  assert.equal(q.verdict, 'probable');
+  assert.equal(q.statusLabel, 'Al alcance');
+  assert.match(q.explanation, /^Tu tiempo previsto para 10 km es 43:20 .*está a tu alcance; se marcará como conseguido cuando registres 10 km o más en menos de 45:00\./);
+  // Con una sola carrera el motor no predice: datos insuficientes con su mensaje (antes, «al alcance» desde 1 carrera)
+  const one = goalProgress(data({ sessions: [act('run', '2026-09-10', 10, 2600)] }), runGoal({ createdAt: created('2026-09-15') }));
+  assert.equal(one.status, 'insufficient');
+  assert.equal(one.current, null);
+  assert.ok(one.explanation.includes(predictFor(data({ sessions: [act('run', '2026-09-10', 10, 2600)] }), 10).message));
 });
 
-test('carrera: sin tendencia si las predicciones empeoran; insuficiente con recuentos', () => {
+test('carrera: sin tendencia si el tiempo previsto empeora; insuficiente con recuentos (con el previsto de hoy delante)', () => {
   const worse = [];
   for (let i = 5; i >= 0; i--) worse.push(act('run', addDays(monday(i), 2), 6, 6 * (300 + 5 * (5 - i))));
   const p = goalProgress(data({ sessions: worse }), runGoal());
   assert.equal(p.status, 'no_trend');
-  assert.match(p.explanation, /tu predicción va en contra del objetivo \(\+\d+ s\/sem\)/);
+  assert.match(p.explanation, /^Tu tiempo previsto para 10 km es 52:25 .*\. Con la tendencia actual no se acerca: tu tiempo previsto va en contra del objetivo \(\+[\d,]+ s\/sem\)/);
+  // Con 2 carreras el motor ya predice, pero no hay tendencia: insuficiente con los recuentos de siempre
   const few = [act('run', '2026-09-09', 6, 1900), act('run', '2026-09-16', 8, 2600)];
   const q = goalProgress(data({ sessions: few }), runGoal());
   assert.equal(q.status, 'insufficient');
-  assert.match(q.explanation, /2 carreras de 3 km o más en 2 semanas \(las últimas 12 semanas\)\. Hacen falta 4 registros en al menos 3 semanas distintas, con 14 días o más entre el primero y el último: faltan 2 carreras y 1 semana más con registros\./);
+  assert.equal(q.current, predictFor(data({ sessions: few }), 10).prediction.mid);
+  assert.match(q.explanation, /^Tu tiempo previsto para 10 km es 54:40 \(53:00–56:20, confianza media\)\. Datos insuficientes para estimar: 2 carreras de 3 km o más en 2 semanas \(las últimas 12 semanas\)\. Hacen falta 4 registros en al menos 3 semanas distintas, con 14 días o más entre el primero y el último: faltan 2 carreras y 1 semana más con registros\./);
 });
 
 test('bici y natación con tiempo: Riegel con aviso de menor fiabilidad; natación en metros', () => {

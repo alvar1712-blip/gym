@@ -105,25 +105,35 @@ export const OTHER_TYPES = [
 /** Ids de las plantillas precargadas (estables). */
 export const TEMPLATE_IDS = { d1: 'tpl_d1', d2: 'tpl_d2', d3: 'tpl_d3', d4: 'tpl_d4', d6: 'tpl_d6' };
 
+/**
+ * Semana de ejemplo con las rutinas precargadas (L D1 · M D2 · X D3 · J D4 · V — · S D6 · D —). Ya no se siembra en
+ * los perfiles nuevos (ronda 8, B2): solo se ofrece en Ajustes › Semana tipo y se conserva en los datos antiguos que
+ * no tenían semana tipo guardada (era la que veían). days[0] = lunes … days[6] = domingo.
+ */
+export function exampleWeekPatterns() {
+  return [
+    {
+      from: '2000-01-01',
+      days: [
+        { kind: 'template', templateId: TEMPLATE_IDS.d1 },
+        { kind: 'template', templateId: TEMPLATE_IDS.d2 },
+        { kind: 'template', templateId: TEMPLATE_IDS.d3 },
+        { kind: 'template', templateId: TEMPLATE_IDS.d4 },
+        { kind: 'rest' },
+        { kind: 'template', templateId: TEMPLATE_IDS.d6 },
+        { kind: 'rest' },
+      ],
+    },
+  ];
+}
+
 /** Ajustes por defecto. Toda clave nueva debe añadirse aquí (se rellena en datos antiguos). */
 export function defaultSettings() {
   return {
     id: 'settings',
-    // Semana tipo: lista de vigencias; days[0] = lunes … days[6] = domingo.
-    weekPatterns: [
-      {
-        from: '2000-01-01',
-        days: [
-          { kind: 'template', templateId: TEMPLATE_IDS.d1 },
-          { kind: 'template', templateId: TEMPLATE_IDS.d2 },
-          { kind: 'template', templateId: TEMPLATE_IDS.d3 },
-          { kind: 'template', templateId: TEMPLATE_IDS.d4 },
-          { kind: 'rest' },
-          { kind: 'template', templateId: TEMPLATE_IDS.d6 },
-          { kind: 'rest' },
-        ],
-      },
-    ],
+    // Semana tipo: lista de vigencias; days[0] = lunes … days[6] = domingo. Vacía = sin planificar (ronda 8, B2):
+    // un perfil nuevo no hereda la semana de ejemplo; la elige en la bienvenida («Tu semana») o en Ajustes.
+    weekPatterns: [],
     // Rango objetivo de series efectivas semanales por músculo [mín, máx] (REQUISITOS §10): 10–20 en los que
     // se entrenan de forma directa; más alto en espalda, core y pecho (prioridades); 0–X en los que solo
     // reciben trabajo indirecto o de accesorio (deltoides anterior, antebrazo, aductores, tibial, lumbar).

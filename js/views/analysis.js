@@ -20,6 +20,7 @@ import { buildAnalysis, areaInsights, isPlaceholder, AREA_LABEL, LEVEL_LABEL, DI
 import { reportText } from '../analysis-report.js';
 import { createAnalysisCache } from '../analysis-cache.js';
 import { rateText } from '../analysis-training.js';
+import { predictionDataset } from '../race-predict.js';
 import { getProfile, profileExtrasMissing } from '../profile.js';
 import { weekFocus } from '../focus.js';
 
@@ -490,10 +491,17 @@ function enduranceCard(a) {
   const it = e.intensity;
   if (it && isNum(it.easyShare) && it.easyMin + it.hardMin > 0) tiles.push(kpi('Suave', `${fmtNum(it.easyShare * 100, 0)}${NB}%`, 'referencia ~80 %', 'easy'));
   const last = (e.fitness || []).at(-1);
-  if (last && isNum(last.pred5kSec)) tiles.push(kpi('5 km previsto', fmtDuration(last.pred5kSec), 'bloque de 4 semanas', 'fivek'));
+  // «5 km previsto» = el de Tiempos previstos (race-predict, vía runningSummary), no el de un bloque: la forma por
+  // bloques va en su insight («Forma en 5 km por bloques…»)
+  const now5 = (a.running?.predictions || []).find((x) => x.id === '5k');
+  if (now5 && isNum(now5.mid)) {
+    const t = kpi('5 km previsto', fmtDuration(now5.mid), `confianza ${now5.confidence}`, 'fivek');
+    Object.assign(t.dataset, predictionDataset(now5));
+    tiles.push(t);
+  }
   const list = areaInsights(a, 'endurance');
   const loadTable = sportLoadTable(a.hybrid?.sportLoad);
-  if (!e.weeklyMinutes4w && !list.length && !last) {
+  if (!e.weeklyMinutes4w && !list.length && !last && !(now5 && isNum(now5.mid))) {
     el.appendChild(note('Sin carreras, bici, natación ni rutas en las últimas semanas. Cuando las registres verás aquí tu forma y tu reparto suave / intenso.'));
     if (loadTable) el.appendChild(loadTable);
     return el;

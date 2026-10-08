@@ -17,9 +17,12 @@ const settingsOf = (page) => page.evaluate(() => JSON.parse(JSON.stringify(windo
 const byId = (arr) => [...arr].sort((a, b) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
 const sheetPanel = (page) => page.locator('.sheet-overlay.open .sheet-panel').last();
 const sheetBtn = (page, text) => sheetPanel(page).locator('button', { hasText: text });
+/** Registros de la app en disco: sin los reservados de 'meta' (el punto de restauración, ronda 8 B3). */
+const appDisk = async (page, st) => (await idbAll(page, st)).filter((o) => !String(o.id).startsWith('~'));
 
 async function setup() {
-  const app = await openApp();
+  // Usuario con la semana de ejemplo como semana tipo (ronda 8, B2: un perfil nuevo empieza sin ella; se siembra).
+  const app = await openApp({ exampleWeek: true });
   await app.page.clock.setFixedTime(NOW);
   await reload(app.page);
   return app;
@@ -287,7 +290,9 @@ test('semana tipo: cambiar un día crea una vigencia desde el lunes (el pasado n
     assert.strictEqual(disk.weekPatterns.length, 2);
     assert.strictEqual(disk.weekPatterns[1].days[4].activityKind, 'bike');
 
-    // Restaurar por defecto (con confirmación; cancelar no cambia nada).
+    // Volver a la semana de ejemplo (con confirmación; cancelar no cambia nada). Ronda 8 (B2): ya no es «la semana por
+    // defecto» (un perfil nuevo empieza sin semana tipo), así que el botón dice «Usar la semana de ejemplo».
+    assert.match(await page.locator('.cfg-restore').innerText(), /Usar la semana de ejemplo/);
     await page.locator('.cfg-restore').click();
     await sheetPanel(page).waitFor();
     assert.match(await sheetPanel(page).innerText(), /L D1 · M D2 · X D3 · J D4 · V — · S D6 · D —/);
@@ -295,12 +300,12 @@ test('semana tipo: cambiar un día crea una vigencia desde el lunes (el pasado n
     await waitNoSheet(page);
     assert.strictEqual((await settingsOf(page)).weekPatterns[1].days[4].kind, 'free');
     await page.locator('.cfg-restore').click();
-    await sheetBtn(page, 'Restaurar').click();
+    await sheetBtn(page, 'Usar').click();
     await waitNoSheet(page);
     await settle(page);
     s = await settingsOf(page);
     const def = s.weekPatterns[0].days;
-    assert.deepStrictEqual(s.weekPatterns.find((p) => p.from === WS).days, def, 'la semana por defecto rige desde esta semana');
+    assert.deepStrictEqual(s.weekPatterns.find((p) => p.from === WS).days, def, 'la semana de ejemplo rige desde esta semana');
     assert.match(await page.locator('.cfg-day').nth(4).innerText(), /Descanso/);
     assert.ok(await noHScroll(page));
     assert.deepStrictEqual(app.errors, []);
@@ -498,7 +503,7 @@ test('CRITERIO: exportar copia → borrar todo (doble confirmación) → importa
     s = await settingsOf(page);
     assert.strictEqual(s.secondaryFactor, 0.5, 'ajustes por defecto');
     assert.strictEqual(s.lastBackupAt, null);
-    assert.strictEqual(s.weekPatterns.length, 1);
+    assert.deepStrictEqual(s.weekPatterns, [], 'como un perfil nuevo: sin semana tipo (ronda 8, B2)');
     assert.ok((await storeAll(page, 'templates')).length === 5, 'plantillas iniciales');
     assert.ok(!(await storeAll(page, 'exercises')).some((e) => e.id === 'ex_custom'));
 
@@ -524,8 +529,8 @@ test('CRITERIO: exportar copia → borrar todo (doble confirmación) → importa
     const after = await page.evaluate(() => window.__app.store.exportData().data);
     assert.deepStrictEqual(after, backup.data, 'store.exportData().data idéntico al exportado');
     for (const st of STORES) {
-      assert.deepStrictEqual(byId(await idbAll(page, st)), byId(backup.data[st]), `IndexedDB «${st}» idéntico`);
-      assert.deepStrictEqual(byId(await idbAll(page, st)), diskAtExport[st], `IndexedDB «${st}» igual que al exportar`);
+      assert.deepStrictEqual(byId(await appDisk(page, st)), byId(backup.data[st]), `IndexedDB «${st}» idéntico`);
+      assert.deepStrictEqual(byId(await appDisk(page, st)), diskAtExport[st], `IndexedDB «${st}» igual que al exportar`);
     }
     // Tras recargar (cerrar y abrir la app) sigue idéntico y coherente: última copia = la importada.
     await reload(page);

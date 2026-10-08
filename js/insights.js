@@ -20,18 +20,18 @@
 //     fila anterior (p. ej. las series de un ejercicio). tag = texto corto opcional para la etiqueta de nivel.
 //   - Todos los umbrales salen de `settings` (Ajustes › Umbrales); si falta alguno, el de defaultSettings().
 import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtPct, fmtWeekRange } from './util.js';
-import { isWorkSet, muscleContrib, workSetCount, setMetrics } from './calc.js';
+import { muscleContrib, workSetCount } from './calc.js';
 import {
   weeklySeries, muscleTable, exerciseHistory, exercisesWithHistory, dataRange, fmtMetric, fmtNumFast, KINDS,
 } from './stats.js';
 import { PATTERNS, PATTERN_LABEL, defaultSettings } from './seed.js';
-import { formatSet, targetText, LOAD_REP_TYPES } from './session-logic.js';
+import { targetText, LOAD_REP_TYPES } from './session-logic.js';
 import { joinList } from './activity-logic.js';
 import { checkinsBetween, isLowCheckin, valueText, areasText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
-import { incrementFor, upAction, progressionCheck } from './progression.js';
+import { incrementFor, upAction, progressionHint, progressStatus, stallThresholds, MIN_SESSIONS, GAP_DAYS } from './progression.js';
 
-// Doble progresión: la regla vive en progression.js (la usa también la sesión en curso); se reexporta aquí.
-export { incrementFor, progressionCheck, progressionHint } from './progression.js';
+// Doble progresión y estancamiento: la regla vive en progression.js (la usa también la sesión en curso); se reexporta aquí.
+export { incrementFor, progressionCheck, progressionHint, progressStatus, MIN_SESSIONS, GAP_DAYS } from './progression.js';
 
 // ===========================================================================
 // Constantes y formato
@@ -40,8 +40,6 @@ export { incrementFor, progressionCheck, progressionHint } from './progression.j
 export const LEVELS = ['neutral', 'good', 'warn'];
 /** Texto de cada nivel (la vista lo muestra junto al color: nunca solo color). */
 export const LEVEL_LABEL = { neutral: 'Info', good: 'Bien', warn: 'Atención' };
-/** Mínimo de sesiones de un ejercicio para valorar si progresa, se mantiene o se estanca (docs/FASE3.md). */
-export const MIN_SESSIONS = 3;
 /** Mínimo de sesiones con esfuerzo registrado para hablar de «esfuerzo alto sostenido» en la descarga. */
 export const MIN_RPE_SESSIONS = 2;
 
@@ -575,111 +573,32 @@ function kmMessage(ctx) {
 // INFORMACIÓN 6 · Ejercicios que progresan, se mantienen o se estancan
 // ===========================================================================
 
-/** Días seguidos sin un ejercicio a partir de los cuales su comparación vuelve a empezar (parón, vacaciones…). */
-export const GAP_DAYS = 28;
-
 /**
- * Mejor serie de una sesión de peso corporal por 1RM estimado con el peso corporal `bw` (calc.setMetrics):
- * { value, label } o null. Etiqueta como stats.js («+5 kg × 8 @1», «Sin lastre · 10 reps @1»).
- */
-function bestAtBodyweight(sets, ex, bw) {
-  let best = null;
-  for (const st of sets || []) {
-    if (!isWorkSet(st)) continue;
-    const v = setMetrics(st, ex, bw).e1rm;
-    if (v != null && (!best || v > best.value + EPS)) best = { value: v, set: st };
-  }
-  if (!best) return null;
-  const txt = formatSet(best.set, 'bodyweight', { kg: true });
-  return { value: best.value, label: best.set.weight ? txt : `Sin lastre · ${txt}` };
-}
-
-/**
- * Evalúa un tramo de sesiones frente a su referencia. Una sesión «mejora» si su 1RM estimado supera al de todas
- * las sesiones de la referencia y al de las anteriores del tramo.
- * @returns {{tramo, refs, marks:boolean[], prev:({value, entry}|null)[], improved:boolean}}
- */
-function evalTramo(tramo, refs) {
-  const prev = tramo.map((e, i) => {
-    let best = null;
-    for (const r of refs.concat(tramo.slice(0, i))) if (!best || r.e1rm > best.value) best = { value: r.e1rm, entry: r };
-    return best;
-  });
-  const marks = tramo.map((e, i) => !!prev[i] && e.e1rm > prev[i].value + EPS);
-  return { tramo, refs, marks, prev, improved: marks.some(Boolean) };
-}
-
-const maxBy = (list) => list.reduce((b, e) => (!b || e.e1rm > b.e1rm + EPS ? e : b), null);
-
-/**
- * Clasificación de los ejercicios con 1RM estimado hasta `ctx.ref`: progress | maintain | stalled.
- * Solo ejercicios con ≥ MIN_SESSIONS sesiones con 1RM estimado y alguna en las últimas stall.weeks semanas.
- * Se compara lo reciente con lo inmediatamente anterior (referencia acotada, no el mejor de siempre):
- *  - por sesiones: las últimas S sesiones frente a las S anteriores;
- *  - por semanas: las sesiones de las últimas W semanas frente a las de las W semanas anteriores (si en esas W
- *    semanas no hubo sesiones, frente a las anteriores del propio tramo, y no se puede hablar de estancamiento).
- * Tras un parón de GAP_DAYS o más sin el ejercicio, lo de antes deja de ser referencia (vuelta de vacaciones, de
- * una lesión…: si mejora sesión a sesión, progresa, aunque siga por debajo de su nivel de antes).
- * Peso corporal: el 1RM de TODAS las sesiones se recalcula con un mismo peso corporal (el de la última sesión),
- * así que si solo cambia la báscula no hay mejora ni empeora (la idea de los récords de calc.detectPRs) y las
- * cifras del «¿Por qué?» se pueden comparar entre sí.
- * Estancado = sin mejora por sesiones (con S anteriores) o por semanas (con ≥ 2 sesiones en el tramo y alguna en
- * la referencia). Progresa = alguna mejora. Se mantiene = el resto.
+ * Clasificación de los ejercicios con 1RM estimado hasta `ctx.ref`: progress | maintain | stalled. La regla es
+ * progression.progressStatus (la misma que consulta el «Siguiente paso» de la sesión: una sola decisión):
+ * ≥ MIN_SESSIONS sesiones y alguna en las últimas stall.weeks semanas; lo reciente frente a lo inmediatamente
+ * anterior (por sesiones y por semanas); tras un parón, de cero; peso corporal, con un mismo peso corporal.
  */
 function classify(ctx) {
   if (ctx.memo.classes) return ctx.memo.classes;
-  const S = Math.max(1, Math.round(ctx.cfg.stall.sessions));
-  const W = Math.max(1, Math.round(ctx.cfg.stall.weeks));
+  const { S, W } = stallThresholds(ctx.cfg.stall);
   const from = addDays(ctx.ref, -7 * W + 1);
   const priorFrom = addDays(from, -7 * W);
   const out = [];
   for (const it of exercisesWithHistory(ctx.d)) {
-    const ex = it.exercise;
-    const isBw = ex.logType === 'bodyweight';
-    const hist = exerciseHistory(ctx.d, it.exerciseId, { labels: false }).filter((e) => e.date <= ctx.ref && e.e1rm != null);
-    if (hist.length < MIN_SESSIONS || hist[hist.length - 1].date < from) continue;
-    let start = 0;
-    for (let i = 1; i < hist.length; i++) if (diffDays(hist[i - 1].date, hist[i].date) >= GAP_DAYS) start = i;
-    const lastH = hist[hist.length - 1];
-    const bwRef = isBw && lastH.bw > 0 ? lastH.bw : null;
-    const era = hist.slice(start).map((e) => {
-      const o = { date: e.date, sessionId: e.sessionId, e1rm: e.e1rm, label: e.bestSetLabel };
-      const b = bwRef != null ? bestAtBodyweight(e.sets, ex, bwRef) : null;
-      if (b) { o.e1rm = b.value; o.label = b.label; }
-      return o;
-    });
-    const n = era.length;
-    const lastS = era.slice(-S);
-    const prevS = era.slice(Math.max(0, n - 2 * S), n - lastS.length);
-    const bySes = { kind: 'sessions', ...evalTramo(lastS, prevS) };
-    const win = era.filter((e) => e.date >= from);
-    const prior = era.filter((e) => e.date >= priorFrom && e.date < from);
-    const byWk = { kind: 'weeks', ...evalTramo(win, prior) };
-    // Tras un parón, con menos de MIN_SESSIONS sesiones desde entonces aún no se valora (como un ejercicio nuevo).
-    const fresh = n < MIN_SESSIONS;
-    const bySessions = !fresh && prevS.length > 0 && !bySes.improved;
-    const byWeeks = !fresh && prior.length > 0 && win.length >= 2 && !byWk.improved;
-    const status = bySessions || byWeeks ? 'stalled' : !fresh && (bySes.improved || byWk.improved) ? 'progress' : 'maintain';
-    // Tramo que se enseña en el «¿Por qué?»: el que decide el estado (el más largo si deciden los dos).
-    const longer = (a, b) => (a.tramo.length >= b.tramo.length ? a : b);
-    let sh;
-    if (status === 'stalled') sh = bySessions && byWeeks ? longer(bySes, byWk) : bySessions ? bySes : byWk;
-    else if (status === 'progress') sh = bySes.improved && byWk.improved ? longer(bySes, byWk) : bySes.improved ? bySes : byWk;
-    else sh = bySes;
-    if (fresh) sh = { kind: 'sessions', tramo: era, refs: [], marks: era.map(() => false), prev: era.map(() => null) };
-    const shown = sh.tramo.map((e, i) => ({ ...e, record: sh.marks[i] }));
-    const recIdx = sh.marks.lastIndexOf(true);
-    out.push({
-      exerciseId: it.exerciseId, name: it.name, archived: !!it.archived, isBw: bwRef != null, bwRef, status, bySessions, byWeeks, fresh, eraSessions: n,
-      sessions: hist.length, gapFrom: start > 0 ? hist[start - 1].date : null,
-      refKind: sh.kind, refs: sh.refs, refBest: maxBy(sh.refs), shown,
-      rec: recIdx >= 0 ? shown[recIdx] : null, recPrev: recIdx >= 0 ? sh.prev[recIdx] : null,
-      best: maxBy(era), last: era[n - 1],
-    });
+    const st = progressStatus({ exercise: it.exercise, history: historyOf(ctx, it.exerciseId), ref: ctx.ref, stall: ctx.cfg.stall });
+    if (st) out.push({ exerciseId: it.exerciseId, name: it.name, archived: !!it.archived, ...st });
   }
   out.sort((a, b) => (a.last.date === b.last.date ? a.name.localeCompare(b.name, 'es') : a.last.date < b.last.date ? 1 : -1));
   ctx.memo.classes = { list: out, S, W, from, priorFrom };
   return ctx.memo.classes;
+}
+
+/** Historial de un ejercicio (stats.exerciseHistory), memorizado por pantalla: lo leen la clasificación y la doble progresión. */
+function historyOf(ctx, exerciseId) {
+  const memo = ctx.memo.hist || (ctx.memo.hist = new Map());
+  if (!memo.has(exerciseId)) memo.set(exerciseId, exerciseHistory(ctx.d, exerciseId, { labels: false }));
+  return memo.get(exerciseId);
 }
 
 function progressRule(S, W) {
@@ -772,7 +691,7 @@ function progressMessages(ctx) {
       tag: 'Estancado',
       title: one ? `${one.name} estancado` : `${stall.length} ejercicios estancados`,
       text: one ? oneText(one) : `Sin mejora del 1RM estimado en ${recent}: ${names(stall)}.`,
-      rule, data: classWhyRows(stall, cls), items: stall.map(item),
+      rule, data: [...classWhyRows(stall, cls), ...stalledNextRows(ctx, stall)], items: stall.map(item),
     }));
   }
   return out;
@@ -782,36 +701,59 @@ function progressMessages(ctx) {
 // SUGERENCIA 1 · Doble progresión
 // ===========================================================================
 
-/** Evaluación de la última sesión de cada ejercicio con rango de repeticiones (esta semana o la anterior). */
+/**
+ * Evaluación de la última sesión de cada ejercicio con rango de repeticiones (esta semana o la anterior), con la
+ * MISMA decisión que el «Siguiente paso» de la sesión (progression.progressionHint: progreso reciente,
+ * estancamiento, RIR, tope del rango y confianza). decision = 'up' | 'hold' | 'review' | 'stalled'.
+ */
 function dpEvaluations(ctx) {
-  const minRir = Number(ctx.cfg.progression.minRir) || 0;
+  if (ctx.memo.dp) return ctx.memo.dp;
   const out = [];
   for (const it of exercisesWithHistory(ctx.d)) {
     const ex = it.exercise;
     // Archivado = ya no está en tu rutina: no se sugiere nada para él.
     if (!ex || ex.archived || !LOAD_REP_TYPES.includes(ex.logType)) continue;
-    const hist = exerciseHistory(ctx.d, it.exerciseId, { labels: false }).filter((e) => e.date <= ctx.ref);
+    const full = historyOf(ctx, it.exerciseId);
+    const hist = full.filter((e) => e.date <= ctx.ref);
     const last = hist[hist.length - 1];
     if (!last || last.date < ctx.prevWeek) continue;
     const s = ctx.byId.get(last.sessionId);
     const se = (s?.exercises || []).find((x) => x.exerciseId === ex.id && x.target && (x.target.repMax != null || x.target.repMin != null));
     if (!se) continue;
-    const pc = progressionCheck({ logType: ex.logType, target: se.target, sets: last.sets, minRir });
-    if (!pc) continue;
+    const hint = progressionHint({ exercise: ex, target: se.target, lastSets: last.sets, settings: ctx.cfg, history: full, ref: ctx.ref, lastDate: last.date });
+    if (!hint) continue;
     out.push({
       exercise: ex, exerciseId: ex.id, name: ex.name || ex.id, logType: ex.logType, date: last.date, sessionId: last.sessionId,
-      templateName: s?.templateName || 'Sesión libre', target: se.target, targetLabel: targetText(se.target, ex.logType), ...pc,
+      templateName: s?.templateName || 'Sesión libre', target: se.target, targetLabel: targetText(se.target, ex.logType), ...hint.check,
+      decision: hint.kind, hint,
     });
   }
   out.sort((a, b) => (a.date === b.date ? a.name.localeCompare(b.name, 'es') : a.date < b.date ? 1 : -1));
+  ctx.memo.dp = out;
   return out;
+}
+
+/**
+ * Filas «Siguiente paso» de los estancados con rango de repeticiones (la misma decisión que ve la sesión) y, si en
+ * la última sesión llegaron al tope con RIR suficiente, la pista de que quizá solo falta subir el peso.
+ */
+function stalledNextRows(ctx, stall) {
+  const evs = new Map(dpEvaluations(ctx).filter((e) => e.decision === 'stalled').map((e) => [e.exerciseId, e]));
+  const rows = [];
+  for (const x of stall) {
+    const ev = evs.get(x.exerciseId);
+    if (!ev) continue;
+    const tip = ev.up ? ` · en la última sesión llegaste al tope del rango: si llevas varias sesiones con el mismo peso, quizá solo falta subirlo (${upAction(ev, incrementFor(ev.exercise, ctx.cfg.increments)).short})` : '';
+    rows.push({ label: `${x.name} · siguiente paso`, value: `${ev.hint.text} · ${ev.hint.action}${tip}` });
+  }
+  return rows;
 }
 
 function dpRule(ctx) {
   const inc = ctx.cfg.increments;
   const minRir = num(Number(ctx.cfg.progression.minRir) || 0, 0);
   const iso = Number(inc.isolation) === 1 ? '1–2 kg' : kg(Number(inc.isolation) || 0);
-  return `Doble progresión (última sesión de cada ejercicio con rango de repeticiones, de esta semana o la anterior): si hiciste al menos las series del objetivo y TODAS las series efectivas (efectiva, al fallo o drop; sin calentamientos) llegaron al tope del rango con RIR ≥ ${minRir}, se sugiere subir el peso: ${kg(Number(inc.upperCompound) || 0)} en compuestos de tren superior, ${kg(Number(inc.lowerCompound) || 0)} en compuestos de tren inferior y ${iso} en aislamiento y core (peso corporal: añade lastre o reduce asistencia; unilateral: por lado). Si no, se mantiene el peso: si faltan repeticiones, se buscan más hasta el tope; si ya estás en el tope pero con RIR por debajo de ${minRir}, se busca completarlo con RIR ≥ ${minRir}; si faltaron series, se completan todas. Incrementos y RIR mínimo en Ajustes › Umbrales › Doble progresión.`;
+  return `Doble progresión (última sesión de cada ejercicio con rango de repeticiones, de esta semana o la anterior): si hiciste al menos las series del objetivo y TODAS las series efectivas (efectiva, al fallo o drop; sin calentamientos) llegaron al tope del rango con RIR ≥ ${minRir}, se sugiere subir el peso: ${kg(Number(inc.upperCompound) || 0)} en compuestos de tren superior, ${kg(Number(inc.lowerCompound) || 0)} en compuestos de tren inferior y ${iso} en aislamiento y core (peso corporal: añade lastre o reduce asistencia; unilateral: por lado). Si no, se mantiene el peso: si faltan repeticiones, se buscan más hasta el tope; si ya estás en el tope pero con RIR por debajo de ${minRir}, se busca completarlo con RIR ≥ ${minRir}; si faltaron series, se completan todas; si llegaste al tope sin RIR registrado, no se sabe si sobró margen: mantén y vuelve a evaluar. Si el ejercicio está estancado (ver «Ejercicios estancados»), no se sugiere subir ni mantener: se sugiere revisarlo (la sesión dice lo mismo). Incrementos y RIR mínimo en Ajustes › Umbrales › Doble progresión.`;
 }
 
 function setRows(ev) {
@@ -819,11 +761,12 @@ function setRows(ev) {
 }
 
 function doubleProgressionMessages(ctx) {
-  const evs = dpEvaluations(ctx);
+  // Estancados: no van aquí (ni «subir» ni «mantener»): los cuenta «Ejercicios estancados», con su «Siguiente paso».
+  const evs = dpEvaluations(ctx).filter((e) => e.decision !== 'stalled');
   if (!evs.length) return [];
   const rule = dpRule(ctx);
   const out = [];
-  for (const ev of evs.filter((e) => e.up)) {
+  for (const ev of evs.filter((e) => e.decision === 'up')) {
     const inc = incrementFor(ev.exercise, ctx.cfg.increments);
     const act = upAction(ev, inc);
     out.push(sugg(`dp-up-${ev.exerciseId}`, 'good', {
@@ -842,10 +785,13 @@ function doubleProgressionMessages(ctx) {
       exerciseId: ev.exerciseId,
     }));
   }
-  const hold = evs.filter((e) => !e.up);
+  const hold = evs.filter((e) => e.decision === 'hold' || e.decision === 'review');
   if (hold.length) {
     const rir = num(hold[0].minRir, 0);
+    // Grupo: el motivo de mantener; «review» = datos ambiguos (al tope, pero sin RIR registrado): mantener y volver a evaluar
+    const grp = (ev) => (ev.decision === 'review' ? 'review' : ev.hold);
     const reason = (ev) => {
+      if (grp(ev) === 'review') return `todas en el tope, pero ${ev.checks.length === 1 ? 'sin' : 'alguna sin'} RIR registrado`;
       if (ev.hold === 'sets') {
         const done = ev.checks.length;
         return `${done} de ${ev.reqSets} series del objetivo registradas${ev.nTop < done ? ` (${ev.nTop} en el tope)` : done === 1 ? ' (en el tope)' : ' (todas en el tope)'}`;
@@ -858,31 +804,33 @@ function doubleProgressionMessages(ctx) {
       reps: 'intenta sumar repeticiones hasta el tope',
       rir: `busca completar el tope con RIR ≥ ${rir}`,
       sets: 'completa todas las series del objetivo en el tope',
+      review: 'registra el RIR y vuelve a evaluar',
     };
     const TITLE = {
       reps: 'Mantén el peso y busca más repeticiones',
       rir: `Mantén el peso y termina con RIR ≥ ${rir}`,
       sets: 'Mantén el peso y completa las series',
+      review: 'Mantén y vuelve a evaluar',
     };
-    const kinds = ['reps', 'rir', 'sets'].filter((k) => hold.some((ev) => ev.hold === k));
+    const kinds = ['reps', 'rir', 'sets', 'review'].filter((k) => hold.some((ev) => grp(ev) === k));
     const one = hold.length === 1 ? hold[0] : null;
     const data = [];
     for (const ev of hold) {
       data.push({ label: `${ev.name} · ${ev.targetLabel || `tope ${num(ev.top, 0)}`}`, value: `${day(ev.date)} · ${reason(ev)}` });
       data.push(...setRows(ev));
     }
-    const groups = kinds.map((k) => `${ADVICE[k]}: ${shortList(hold.filter((ev) => ev.hold === k).map((ev) => ev.name), 3)}`);
+    const groups = kinds.map((k) => `${ADVICE[k]}: ${shortList(hold.filter((ev) => grp(ev) === k).map((ev) => ev.name), 3)}`);
     out.push(sugg('dp-hold', 'neutral', {
       tag: 'Mantener',
       title: kinds.length === 1 ? TITLE[kinds[0]] : 'Mantén el peso',
       text: one
-        ? `${one.name}: ${reason(one)} en la última sesión (${day(one.date)}). Con el mismo peso, ${ADVICE[one.hold]}.`
+        ? `${one.name}: ${reason(one)} en la última sesión (${day(one.date)}). Con el mismo peso, ${ADVICE[grp(one)]}.`
         : kinds.length === 1
           ? `En ${hold.length} ejercicios aún no toca subir (${shortList(hold.map((ev) => ev.name), 3)}); con el mismo peso, ${ADVICE[kinds[0]]}.`
           : `En ${hold.length} ejercicios aún no toca subir. Con el mismo peso, ${groups.join('; ')}.`,
       rule,
       data,
-      items: hold.map((ev) => ({ exerciseId: ev.exerciseId, label: ev.name, value: reason(ev), date: ev.date, sessionId: ev.sessionId, weight: ev.weight, hold: ev.hold })),
+      items: hold.map((ev) => ({ exerciseId: ev.exerciseId, label: ev.name, value: reason(ev), date: ev.date, sessionId: ev.sessionId, weight: ev.weight, hold: grp(ev) })),
     }));
   }
   return out;

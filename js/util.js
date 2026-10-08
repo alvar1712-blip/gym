@@ -266,6 +266,19 @@ export function fmtPaceRange(a, b) {
   const t = (s) => `${Math.floor(s / 60)}:${pad(s % 60)}`;
   return `${t(Math.min(x, y))}–${t(Math.max(x, y))}/km`;
 }
+/** Duración en palabras: «45 min», «1 h 05 min», «22 min 30 s», «40 s» (objetivos, eventos y tiempos previstos). */
+export function fmtTimeWords(sec) {
+  if (typeof sec !== 'number' || !Number.isFinite(sec)) return '—';
+  const s = Math.max(0, Math.round(sec));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const parts = [];
+  if (hh) parts.push(`${hh} h`);
+  if (mm || (hh && ss)) parts.push(hh ? `${String(mm).padStart(2, '0')} min` : `${mm} min`);
+  if (ss || !parts.length) parts.push(`${ss} s`);
+  return parts.join(' ');
+}
 /** 65 → '1 h 05 min' ; 45 → '45 min' */
 export function fmtMinutes(min) {
   if (min == null || !Number.isFinite(min)) return '—';

@@ -4,13 +4,17 @@ import assert from 'node:assert/strict';
 import {
   patternFor, patternDay, effectiveDay, daySessions, completeness, dayStatus, weekPlan, adherence, adherenceText,
   STATUS_LABEL, planLabel, planEmoji, makeCtx, samePlan, normalizePlan, monthWeeks, trackingSince,
-  recordWithPlan, recordWithStatus, recordWithoutPlan, swapRecords, MISSING_TEMPLATE_LABEL, idTime,
+  recordWithPlan, recordWithStatus, recordWithoutPlan, swapRecords, MISSING_TEMPLATE_LABEL, idTime, hasWeekPattern,
 } from '../../js/plan.js';
 import {
   filterSessions, groupByMonth, keyStat, sessionTitle, sessionSummary, workSets, monthLabel,
 } from '../../js/history-logic.js';
-import { defaultSettings, SEED_TEMPLATES, SEED_EXERCISES, TEMPLATE_IDS } from '../../js/seed.js';
+import { defaultSettings, exampleWeekPatterns, SEED_TEMPLATES, SEED_EXERCISES, TEMPLATE_IDS } from '../../js/seed.js';
 import { deepClone } from '../../js/util.js';
+
+// Ajustes con la semana de ejemplo (L D1 · M D2 · X D3 · J D4 · V — · S D6 · D —): desde la ronda 8 (B2) ya no es la de
+// por defecto, así que estas pruebas la siembran explícitamente.
+const weekSettings = () => ({ ...defaultSettings(), weekPatterns: exampleWeekPatterns() });
 
 // Semana del lunes 21 al domingo 27 de septiembre de 2026; «hoy» = miércoles 23.
 const WS = '2026-09-21';
@@ -50,7 +54,7 @@ const activity = (id, kind, date, extra = {}) => ({
   id, kind, date, planDate: date, status: 'done', parentId: null, createdAt: 6_000, movingSec: 3600, durationMin: 60, rpe: 5, ...extra,
 });
 
-function ctx({ sessions = [], plan = [], settings = defaultSettings(), tpls = tplMap(), today = TODAY, since = null, exercises = undefined } = {}) {
+function ctx({ sessions = [], plan = [], settings = weekSettings(), tpls = tplMap(), today = TODAY, since = null, exercises = undefined } = {}) {
   return makeCtx({ settings, plan, sessions, templates: tpls, today, since, exercises });
 }
 
@@ -58,7 +62,7 @@ function ctx({ sessions = [], plan = [], settings = defaultSettings(), tpls = tp
 // Semana tipo y plan efectivo
 // ---------------------------------------------------------------------------
 
-test('semana tipo por defecto: L D1 · M D2 · X D3 · J D4 · V descanso · S D6 · D descanso', () => {
+test('semana tipo de ejemplo: L D1 · M D2 · X D3 · J D4 · V descanso · S D6 · D descanso', () => {
   const c = ctx();
   const labels = weekPlan(WS, c).map((d) => (d.plan.kind === 'template' ? d.plan.templateId : d.plan.kind));
   assert.deepEqual(labels, ['tpl_d1', 'tpl_d2', 'tpl_d3', 'tpl_d4', 'rest', 'tpl_d6', 'rest']);
@@ -69,7 +73,7 @@ test('semana tipo por defecto: L D1 · M D2 · X D3 · J D4 · V descanso · S D
 });
 
 test('vigencias de la semana tipo: manda la de mayor «from» ≤ fecha', () => {
-  const s = defaultSettings();
+  const s = weekSettings();
   const days = deepClone(s.weekPatterns[0].days);
   days[5] = { kind: 'template', templateId: TEMPLATE_IDS.d1 }; // desde el 28 sep, sábado = D1
   s.weekPatterns.push({ from: '2026-09-28', days });
@@ -338,7 +342,7 @@ test('estados: entreno extra en descanso → hecho (y excepción a descanso)', (
 });
 
 test('estados: sesión libre planificada en la semana tipo → hecho si coincide el tipo', () => {
-  const s = defaultSettings();
+  const s = weekSettings();
   s.weekPatterns[0].days[6] = { kind: 'free', label: 'Carrera larga', activityKind: 'run' };
   assert.equal(dayStatus(SUN, ctx({ settings: s, sessions: [activity('r', 'run', SUN)], today: SUN })).status, 'done');
   assert.equal(dayStatus(SUN, ctx({ settings: s, sessions: [activity('b', 'bike', SUN)], today: SUN })).status, 'substituted');
@@ -385,6 +389,23 @@ test('weekPlan: 7 días con plan, estado y sesiones', () => {
   assert.equal(wk[0].sessions[0].id, 's1');
 });
 
+test('sin semana tipo (perfil nuevo, ronda 8 B2): nada planificado; un cambio de un día sí cuenta', () => {
+  const none = { ...defaultSettings() };
+  assert.equal(hasWeekPattern(none), false);
+  assert.equal(hasWeekPattern({}), false);
+  assert.equal(hasWeekPattern(weekSettings()), true);
+  const c = ctx({ settings: none, sessions: [strength('s1', null, MON)] });
+  assert.deepEqual(weekPlan(WS, c).map((d) => d.plan.kind), Array(7).fill('rest'));
+  assert.equal(dayStatus(TUE, c).status, 'rest', 'un día sin plan no es «saltado»');
+  const a = adherence(WS, c);
+  assert.equal(a.planned, 0);
+  assert.equal(a.pct, null);
+  assert.equal(a.extra, 1);
+  const c2 = ctx({ settings: none, plan: [{ id: THU, kind: 'template', templateId: TEMPLATE_IDS.d1 }] });
+  assert.equal(effectiveDay(THU, c2).source, 'override');
+  assert.equal(adherence(WS, c2).planned, 1);
+});
+
 test('adherencia: planificados frente a hechos, parciales y sustituidos («3 de 5 hechas · 1 parcial»)', () => {
   const sessions = [
     strength('s1', 'tpl_d1', MON),
@@ -411,7 +432,7 @@ test('adherencia: planificados frente a hechos, parciales y sustituidos («3 de 
 // ---------------------------------------------------------------------------
 
 test('CRITERIO: sustituir el Día 6 de esta semana por una ruta en bici NO modifica la semana tipo', () => {
-  const settings = defaultSettings();
+  const settings = weekSettings();
   const before = deepClone(settings.weekPatterns);
   const rec = recordWithPlan(null, SAT, { kind: 'free', label: 'Ruta en bici', activityKind: 'bike' }, settings);
   assert.deepEqual(rec, { id: SAT, kind: 'free', label: 'Ruta en bici', activityKind: 'bike' });
@@ -424,7 +445,7 @@ test('CRITERIO: sustituir el Día 6 de esta semana por una ruta en bici NO modif
 });
 
 test('recordWithPlan: igual a la semana tipo → sin excepción; conserva estado y nota', () => {
-  const s = defaultSettings();
+  const s = weekSettings();
   assert.equal(recordWithPlan(null, SAT, { kind: 'template', templateId: 'tpl_d6' }, s), null);
   const kept = recordWithPlan({ id: SAT, kind: 'rest', status: 'skipped', note: 'lluvia' }, SAT, { kind: 'template', templateId: 'tpl_d6' }, s);
   assert.deepEqual(kept, { id: SAT, status: 'skipped', note: 'lluvia' });
@@ -436,7 +457,7 @@ test('recordWithPlan: igual a la semana tipo → sin excepción; conserva estado
 });
 
 test('swapRecords: mover días intercambia los planes efectivos (y deshacer el cambio lo limpia)', () => {
-  const settings = defaultSettings();
+  const settings = weekSettings();
   const before = deepClone(settings.weekPatterns);
   const [a, b] = swapRecords(MON, TUE, ctx({ settings }));
   assert.deepEqual(a, { id: MON, kind: 'template', templateId: 'tpl_d2' });

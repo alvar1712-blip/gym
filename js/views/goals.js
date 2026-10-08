@@ -11,6 +11,7 @@ import { bwStats } from '../activity-logic.js';
 import { e1rm } from '../calc.js';
 import { uid, todayStr, fmtNum, numToInput, fmtPace, fmtSigned, round, diffDays, parseNum } from '../util.js';
 import * as G from '../goals-logic.js';
+import { predictionDataset } from '../race-predict.js';
 import { racesLink } from './races.js';
 
 const DRAFT_KEY = 'entreno.goalDraft';
@@ -19,7 +20,8 @@ const SPORT_LABEL = Object.fromEntries(G.GOAL_SPORTS.map((s) => [s.value, s.labe
 const DEFAULT_DIST = { run: 10, bike: 40, swim: 1.5, hike: 15 };
 const KIND_NAME = { strength: 'Fuerza', endurance: 'Resistencia', bodyweight: 'Peso corporal' };
 const BADGE = { achieved: 'badge-ok', ready: 'badge-accent', estimate: 'badge-info', insufficient: '', no_trend: 'badge-warn' };
-const WATCHED = new Set(['goals', 'sessions', 'bodyweight', 'exercises', 'meta']);
+// context: tus resultados de carrera y parones cambian el tiempo previsto de los objetivos de carrera
+const WATCHED = new Set(['goals', 'sessions', 'bodyweight', 'exercises', 'meta', 'context']);
 /** Secciones plegadas de #/goals (se conservan mientras la app está abierta). */
 const fold = { achieved: false, archived: false };
 
@@ -65,7 +67,10 @@ function progressAll(data, goals) {
 
 function kindLabel(goal, p) {
   if (goal.kind === 'strength') return p.metric === 'reps' ? 'Fuerza · repeticiones' : 'Fuerza · 1RM estimado';
-  if (goal.kind === 'endurance') return `${SPORT_LABEL[goal.sport] || 'Resistencia'} · ${goal.timeSec > 0 ? 'predicción de Riegel' : 'distancia'}`;
+  if (goal.kind === 'endurance') {
+    const how = !(goal.timeSec > 0) ? 'distancia' : goal.sport === 'run' ? 'tiempo previsto' : 'predicción de Riegel';
+    return `${SPORT_LABEL[goal.sport] || 'Resistencia'} · ${how}`;
+  }
   return 'Peso corporal · media de 7 días';
 }
 
@@ -74,12 +79,14 @@ function etaLine(p, today) {
   if (p.invalid) return p.explanation;
   switch (statusKey(p)) {
     case 'achieved': return `Conseguido el ${G.fmtDay(p.achievedOn, today)}`;
-    case 'ready': return 'Al alcance: tu nivel actual ya llega al objetivo';
-    case 'estimate': return `Estimación: ${p.etaText}`;
+    case 'ready': return p.verdict ? 'Al alcance: tu tiempo previsto ya baja del objetivo' : 'Al alcance: tu nivel actual ya llega al objetivo';
+    // Carrera con tiempo: «Ajustado…» u «Orientativo…» (el motor no da fecha con esa previsión)
+    case 'estimate': return p.stateLine || `Estimación: ${p.etaText}`;
     case 'no_trend': return p.stall
       ? `Sin tendencia: estancado desde el ${G.fmtDay(p.stall.since, today)} (${p.stall.bestLabel})`
       : 'Sin tendencia: al ritmo actual no te acercas';
     default: {
+      if (p.verdict === 'insuficiente') return `Datos insuficientes: ${p.prediction ? 'sin una previsión útil' : 'todavía sin tiempo previsto'}`;
       const c = p.counts;
       const parts = [];
       if (c && c.missingRecords) parts.push(`${c.records} de ${c.minRecords} registros`);
@@ -105,6 +112,18 @@ function whyContent(p) {
   return h('div.goal-why', items);
 }
 
+/** Veredicto del motor de tiempos previstos (carrera con tiempo): mismas etiquetas y clases que Eventos. */
+const VERDICT_CLASS = { probable: 'ok', ajustado: 'warn', hoy_no: 'danger' };
+const VERDICT_TEXT = {
+  probable: 'tu objetivo es más lento que todo el rango previsto',
+  ajustado: 'tu objetivo cae dentro del rango previsto',
+  hoy_no: 'tu objetivo es más rápido que todo el rango previsto',
+};
+function verdictLine(p) {
+  if (!VERDICT_CLASS[p.verdict] || p.status === 'achieved') return null;
+  return h('p.goal-verdict', h(`b.rc-verdict.rc-verdict-${VERDICT_CLASS[p.verdict]}`, p.verdictLabel), keep(` · ${VERDICT_TEXT[p.verdict]}`));
+}
+
 /** Valores, barra de progreso, línea de estado y «¿Por qué?» de un objetivo (lista sin huecos: se usa con replaceChildren). */
 function goalBody(goal, p, today) {
   const k = statusKey(p);
@@ -121,6 +140,7 @@ function goalBody(goal, p, today) {
       'aria-label': `Progreso hacia «${goal.title}»`,
     }, h('span.goal-bar-fill', { style: { width: `${w.toFixed(1)}%` } })),
     h('div.goal-bar-meta', h('span.goal-pct', pctTxt), right ? h('span', right) : null),
+    verdictLine(p),
     h(`p.goal-eta.goal-eta-${k}`, keep(etaLine(p, today))),
     p.warning && k !== 'achieved'
       ? h('p.goal-warn', `Riegel está pensada para carrera: en ${goal.sport === 'bike' ? 'bici' : 'natación'} tómalo como una referencia aproximada.`)
@@ -131,7 +151,9 @@ function goalBody(goal, p, today) {
 
 function goalCard(goal, p, today) {
   const k = statusKey(p);
-  return h('section.card.goal-card', { dataset: { goal: goal.id, status: k } },
+  // Carrera con tiempo: el resultado base del motor, el mismo que Tiempos previstos y Eventos (para las pruebas E2E)
+  const run = p.verdict ? { verdict: p.verdict, ...predictionDataset(p.prediction) } : {};
+  return h('section.card.goal-card', { dataset: { goal: goal.id, status: k, ...run } },
     h('button.goal-head', { type: 'button', onClick: () => navigate(`#/goal/${goal.id}`) },
       h('span.goal-emoji', { 'aria-hidden': 'true' }, G.goalEmoji(goal)),
       h('span.goal-titles',
@@ -602,7 +624,7 @@ export function mountGoalEdit(root, params = {}) {
       } else pace.hidden = true;
       how.textContent = T > 0
         ? sport === 'run'
-          ? `Se estima con la fórmula de Riegel a partir de tus carreras de ${G.fmtDistance('run', Math.min(G.MIN_KM.run, D || G.MIN_KM.run))} o más.`
+          ? 'Se estima con tu tiempo previsto (el mismo de Tiempos previstos).'
           : `Se estima con la fórmula de Riegel, pensada para carrera: en ${{ bike: 'bici', swim: 'natación', hike: 'senderismo' }[sport]} es menos fiable.`
         : 'Sin tiempo, el objetivo es completar la distancia en una sesión.';
       how.classList.toggle('goal-how-warn', T > 0 && sport !== 'run');
@@ -668,7 +690,7 @@ export function mountGoalEdit(root, params = {}) {
 /** Qué mide la cifra «actual / objetivo» de la fila resumen (sin la ficha al lado, «107,7 kg / 105 kg» no se entiende). */
 const SUM_METRIC = { e1rm: '1RM est. ', time: 'Predicción ', bodyweight: 'Media 7 días ' };
 function sumValues(p) {
-  const pre = p.currentLabel && p.currentLabel !== '—' ? SUM_METRIC[p.metric] || '' : '';
+  const pre = p.currentLabel && p.currentLabel !== '—' ? (p.verdict ? 'Previsto ' : SUM_METRIC[p.metric] || '') : '';
   return `${pre}${p.currentLabel} / ${p.targetLabel}`;
 }
 

@@ -44,12 +44,15 @@
 //    corporal, la media de 7 días llega al objetivo desde que se creó.
 //  - «Al alcance» (ready): el valor actual ya llega al objetivo pero no hay un registro que lo consiga desde que se
 //    creó (p. ej. 1RM estimado de 90 × 3 frente a un objetivo de 80 × 5). status 'estimate', eta null.
-import { addDays, diffDays, weekStart, dateFromTs, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, fmtSigned, round, plural, MONTH_SHORT, parseDate } from './util.js';
-import { e1rm, setMetrics, riegel, linearRegression, dayIndex, movingAverage, makeBodyweightFn } from './calc.js';
+import { addDays, diffDays, weekStart, dateFromTs, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtRaceTime, fmtPace, fmtWeekRange, fmtSigned, round, plural, MONTH_SHORT, parseDate, fmtTimeWords } from './util.js';
+import { e1rm, setMetrics, riegel, linearRegression, dayIndex, movingAverage, makeBodyweightFn, RIEGEL_K } from './calc.js';
 import { exerciseHistory, runPaceSeries, bikeSpeedSeries, swimPaceSeries, hikePaceSeries } from './stats.js';
 import { bwPoints, bwTrend, BW_TREND } from './activity-logic.js';
 import { formatSet, fmtLastre } from './session-logic.js';
 import { defaultSettings } from './seed.js';
+import {
+  MIN_KM as RUN_MIN_KM, predictFor, predictionSeries, checkTarget, baseOf, plausibleRunPace, rangeText, VERDICT_LABEL, METHOD as RUN_METHOD,
+} from './race-predict.js';
 
 // ===========================================================================
 // Constantes
@@ -77,10 +80,10 @@ export const RECENT_DAYS = 28;
 export const MIN_MARGIN = 0.2;
 /** Más allá de estos días se dice «más de 2 años al ritmo actual». */
 export const LONG_DAYS = 730;
-/** Exponente de Riegel. */
-export const RIEGEL_K = 1.06;
-/** Distancia mínima de una sesión para predecir con Riegel (km). */
-export const MIN_KM = { run: 3, bike: 10, swim: 0.4, hike: 5 };
+/** Exponente de Riegel (vive en calc.js; se reexporta). */
+export { RIEGEL_K };
+/** Distancia mínima de una sesión para predecir (km). Carrera: la del motor de tiempos previstos (race-predict.MIN_KM). */
+export const MIN_KM = { run: RUN_MIN_KM, bike: 10, swim: 0.4, hike: 5 };
 /** Distancias habituales (km) para los atajos del formulario. */
 export const DISTANCE_PRESETS = {
   run: [5, 10, 21.0975, 42.195],
@@ -128,19 +131,8 @@ export function fmtDistance(sport, km, { named = false } = {}) {
   return `${fmtNum(km, 2)} km`;
 }
 
-/** Duración en palabras: «45 min», «1 h 05 min», «22 min 30 s», «40 s». */
-export function fmtTimeWords(sec) {
-  if (!isNum(sec)) return '—';
-  const s = Math.max(0, Math.round(sec));
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const parts = [];
-  if (hh) parts.push(`${hh} h`);
-  if (mm || (hh && ss)) parts.push(hh ? `${String(mm).padStart(2, '0')} min` : `${mm} min`);
-  if (ss || !parts.length) parts.push(`${ss} s`);
-  return parts.join(' ');
-}
+/** Duración en palabras (vive en util.js; se reexporta aquí para quien ya la importaba de este módulo). */
+export { fmtTimeWords };
 
 /** Texto del peso de un objetivo de fuerza: «80 kg»; peso corporal: «+10 kg», «−15 kg asist.» o '' (sin lastre). */
 export function goalWeightText(logType, w) {
@@ -473,7 +465,12 @@ function enduranceModel(data, goal, today) {
   const warning = sport === 'run' ? null
     : `La fórmula de Riegel está pensada para carrera: en ${why[0]} la predicción es menos fiable (influyen ${why[1]}), así que tómala como una referencia aproximada.`;
 
+  // Carrera con tiempo: el motor único de tiempos previstos (race-predict.js), no un Riegel propio (ronda 8, B1)
+  if (T && sport === 'run') return runTimeModel(data, goal, today, { D, T, acts, Dtxt, createdDate });
+
   if (T) {
+    // Bici, natación y senderismo con tiempo: Riegel propio (NO es el motor de carrera; ninguna otra pantalla predice
+    // tiempos de estos deportes, así que no hay una segunda verdad).
     const minKm = Math.min(MIN_KM[sport], D);
     const records = [];
     for (const a of acts) {
@@ -521,6 +518,106 @@ function enduranceModel(data, goal, today) {
     method: `Progreso: la ${sportOne} más larga de las últimas 4 semanas frente a ${Dtxt}. Tendencia: regresión lineal de la sesión más larga de cada semana en las últimas ${TREND_WEEKS} semanas.`,
     achievedText: (a) => `Conseguido el ${fmtDay(a.date, today)}: ${a.label} (objetivo ${Dtxt}).`,
     readyText: (cur) => `Ya hiciste ${cur.src} el ${fmtDay(cur.date, today)}, antes de crear el objetivo: se marcará como conseguido con la próxima ${sportOne} de ${Dtxt} o más.`,
+  };
+}
+
+/** Domingo de la semana de `date`, o `today` si es la semana actual (la foto semanal del motor). */
+const weekSnapDate = (date, today) => { const sun = addDays(weekStart(date), 6); return sun > today ? today : sun; };
+
+/**
+ * Objetivo de carrera con tiempo: TODO sale del motor de Tiempos previstos (race-predict.js), el mismo de Eventos,
+ * Análisis y el informe. «Actual» = predictFor(hoy).mid; veredicto = checkTarget (probable · ajustado · hoy no);
+ * tendencia = regresión de las fotos del motor al final de cada semana con carreras válidas (≥ 3 km, ritmo creíble);
+ * inicio = la foto el día en que se creó (o la primera semana con previsión después). Conseguido: una carrera de la
+ * distancia o más, desde que se creó, por debajo del tiempo a ritmo medio y con un ritmo creíble.
+ */
+function runTimeModel(data, goal, today, { D, T, acts, Dtxt, createdDate }) {
+  const opts = { today };
+  const r = predictFor(data, D, opts);
+  const p = r.ok ? r.prediction : null;
+  const check = checkTarget(data, D, T, opts);
+  const tTxt = fmtDuration(T);
+  const runTxt = (a) => `${fmtDistance('run', a.km)} en ${fmtDuration(a.sec)}`;
+  // Carreras que el motor puede usar: lo que cuenta para los recuentos, las pausas y las semanas de la tendencia
+  const valid = acts.filter((a) => a.km + EPS >= RUN_MIN_KM && plausibleRunPace(a.sec / a.km));
+  const records = valid.map((a) => ({ date: a.x, value: null, label: runTxt(a), sessionId: a.sessionId }));
+
+  let achieved = null;
+  for (const a of acts) {
+    if (createdDate && a.x < createdDate) continue;
+    if (a.km + EPS < D || !plausibleRunPace(a.sec / a.km)) continue;
+    const scaled = Math.round((a.sec * D) / a.km);
+    if (scaled < T) {
+      const est = a.km > D * 1.02;
+      achieved = { date: a.x, label: est ? `${runTxt(a)}: ${Dtxt} a ritmo medio en ${fmtDuration(scaled)}` : runTxt(a) };
+      break;
+    }
+  }
+
+  const usable = !!p && p.usable;
+  const confTxt = p ? `confianza ${p.confidenceLabel.toLowerCase()}` : '';
+  const prefix = usable ? `Tu tiempo previsto para ${Dtxt} es ${fmtRaceTime(p.mid)} (${rangeText(p)}, ${confTxt})` : null;
+  const reach = `se marcará como conseguido cuando registres ${Dtxt} o más en menos de ${tTxt}`;
+  const lowNote = usable && p.confidence === 'baja' ? ` Ojo: la confianza es baja. ${p.advice.note || ''}`.trimEnd() : '';
+  // Estado que decide el motor (null → la tendencia de siempre: fecha estimada, sin tendencia o datos insuficientes)
+  let engine = null;
+  if (!r.ok) {
+    engine = { status: 'insufficient', explanation: `Todavía no hay un tiempo previsto para ${Dtxt}. ${r.message}` };
+  } else if (!usable) {
+    engine = { status: 'insufficient', explanation: `No hay una previsión útil para ${p.noun}. ${p.advice.note}` };
+  } else if (check.verdict === 'probable') {
+    engine = { status: 'estimate', ready: true, explanation: `${prefix}: tu objetivo (${tTxt}) es más lento que todo el rango, así que está a tu alcance; ${reach}.${lowNote}` };
+  } else if (check.verdict === 'ajustado' && p.mid <= T) {
+    const line = 'Ajustado: tu tiempo previsto ya está en el objetivo, sin margen';
+    engine = { status: 'estimate', label: VERDICT_LABEL.ajustado, line, explanation: `${prefix}. ${line}: dependerá del día; ${reach}.${lowNote}` };
+  } else if (p.status === 'tentative') {
+    const line = `Orientativo: previsto hoy ${fmtRaceTime(p.mid)} (confianza baja)`;
+    engine = { status: 'estimate', label: 'Orientativo', line, explanation: `${prefix}. ${line}. ${p.advice.note} Con una previsión todavía poco fiable no se estima una fecha.` };
+  }
+
+  // Tendencia: una foto del motor por semana con carreras válidas (domingo, u hoy en la semana actual)
+  const trendOf = (winRecs) => {
+    const byWeek = new Map();
+    for (const x of winRecs) {
+      const w = weekStart(x.date);
+      byWeek.set(w, (byWeek.get(w) || 0) + 1);
+    }
+    const weeks = [...byWeek.keys()].sort();
+    const snaps = predictionSeries(data, D, weeks.map((w) => weekSnapDate(w, today)));
+    return snaps.map((x, i) => ({ ...x, week: weeks[i], n: byWeek.get(weeks[i]) }))
+      .filter((x) => x.ok && x.usable)
+      .map((x) => ({ date: x.date, week: x.week, value: x.midExact, label: `previsto ${fmtRaceTime(x.mid)} · ${plural(x.n, 'carrera', 'carreras')}` }));
+  };
+
+  // Inicio: la foto el día en que se creó; si no había previsión, la primera semana con carreras después que la tenga
+  let start = null;
+  if (createdDate) {
+    const at = predictionSeries(data, D, [createdDate])[0];
+    if (at.ok && at.usable) start = { date: createdDate, value: at.mid };
+    else {
+      const weeks = [...new Set(valid.filter((a) => a.x > createdDate).map((a) => weekStart(a.x)))].sort();
+      for (const w of weeks) {
+        const x = predictionSeries(data, D, [weekSnapDate(w, today)])[0];
+        if (x.ok && x.usable) { start = { date: x.date, value: x.mid }; break; }
+      }
+    }
+  }
+
+  const rule = p ? p.why.rule : r.why?.rule || '';
+  const shortNote = D < RUN_MIN_KM - EPS ? ` Para menos de ${fmtDistance('run', RUN_MIN_KM)} se predice desde tus carreras de ${fmtDistance('run', RUN_MIN_KM)} o más (por debajo de 1,5 km, con confianza baja).` : '';
+  return {
+    metric: 'time', dir: -1, target: T, targetLabel: fmtDuration(T), targetNote: `tiempo en ${Dtxt}`,
+    currentNoun: 'tiempo previsto', fmt: (v) => fmtDuration(v), fmtGap: (v) => `${fmtTimeWords(v)} por bajar`, records, achieved, warning: null,
+    weekly: true, trendOf, strict: true, noun: ['carrera', 'carreras'], subject: `de ${fmtDistance('run', RUN_MIN_KM)} o más`,
+    current: usable ? { date: today, value: p.mid, stale: false } : null,
+    start,
+    engine, prefix,
+    run: { prediction: baseOf(p), verdict: check.verdict, verdictLabel: VERDICT_LABEL[check.verdict], why: p ? p.why : r.why || null },
+    currentNoteText: () => `previsto hoy · ${rangeText(p)} · ${confTxt}`,
+    nowText: () => prefix,
+    method: `Tiempo previsto con el mismo cálculo que Tiempos previstos: ${rule}${shortNote} Tendencia: regresión lineal de ese mismo tiempo previsto al final de cada semana con carreras válidas, en las últimas ${TREND_WEEKS} semanas.`,
+    achievedText: (a) => `Conseguido el ${fmtDay(a.date, today)}: ${a.label} (objetivo ${Dtxt} en menos de ${tTxt}).`,
+    readyText: () => engine?.explanation || prefix,
   };
 }
 
@@ -623,7 +720,8 @@ export function goalProgress(data, goal) {
   const progressPct = progressPercent({ start: startRec?.value ?? null, current: current?.value ?? null, target, dir, achieved: !!achieved, ratio: !!m.ratio });
 
   // Puntos de la tendencia: semanal (resistencia: la mejor sesión de cada semana) o cada registro.
-  const trendRecs = m.weekly ? weeklyBest(winRecs, dir) : winRecs;
+  // (Carrera con tiempo: una foto semanal del motor de tiempos previstos, m.trendOf.)
+  const trendRecs = m.trendOf ? m.trendOf(winRecs) : m.weekly ? weeklyBest(winRecs, dir) : winRecs;
   const dataUsed = m.weekly
     ? trendRecs.map((r) => ({ date: r.date, label: `Semana ${fmtWeekRange(r.week)}`, value: `${r.label}${r.count > 1 ? ` · mejor de ${r.count}` : ''}` }))
     : m.metric === 'bodyweight'
@@ -672,6 +770,12 @@ export function goalProgress(data, goal) {
   if (achieved) {
     status = 'achieved';
     explanation = m.achievedText(achieved);
+  } else if (m.engine) {
+    // Carrera con tiempo: el estado lo decide el motor de tiempos previstos (sin datos, sin previsión útil, al
+    // alcance, ajustado u orientativo); sin fecha estimada.
+    status = m.engine.status;
+    ready = !!m.engine.ready;
+    explanation = m.engine.explanation;
   } else if (reaches) {
     status = 'estimate';
     ready = true;
@@ -706,6 +810,8 @@ export function goalProgress(data, goal) {
     }
   }
 
+  // Carrera con tiempo: toda explicación (salvo «conseguido») empieza por el tiempo previsto de hoy
+  if (m.prefix && status !== 'achieved' && !explanation.startsWith(m.prefix)) explanation = `${m.prefix}. ${explanation}`;
   const statusKey = ready ? 'ready' : status;
   const spanRule = counts.minSpanDays > 0 ? ` y con ${plural(counts.minSpanDays, 'día', 'días')} o más entre el primero y el último` : '';
   const stallRule = m.stall ? ` Si el ejercicio está estancado (${plural(stallCfg.sessions, 'sesión', 'sesiones')} o ${plural(stallCfg.weeks, 'semana', 'semanas')} sin superar su mejor marca, Ajustes › Umbrales › Estancamiento), no se estima una fecha.` : '';
@@ -713,10 +819,10 @@ export function goalProgress(data, goal) {
   const method = pause
     ? `${m.method} Hubo una pausa sin registros entre el ${fmtDay(pause.from, today)} y el ${fmtDay(pause.to, today)} (${plural(pause.days, 'día', 'días')}): la tendencia solo usa lo registrado desde el ${fmtDay(pause.to, today)}.`
     : m.method;
-  return {
+  const out = {
     status,
     ready,
-    statusLabel: STATUS_LABEL[statusKey],
+    statusLabel: status !== 'achieved' && !ready && m.engine?.label ? m.engine.label : STATUS_LABEL[statusKey],
     current: current ? current.value : null,
     target,
     start: startRec ? startRec.value : null,
@@ -740,9 +846,17 @@ export function goalProgress(data, goal) {
     stall,
     counts,
   };
+  if (m.run) {
+    // Carrera con tiempo: el resultado base del motor (el mismo DTO que Tiempos previstos y Eventos) y su veredicto
+    Object.assign(out, m.run);
+    out.stateLine = status !== 'achieved' && !ready ? m.engine?.line || null : null;
+    if (m.run.why?.data?.length) out.dataUsed = [...dataUsed, ...m.run.why.data.map((x) => ({ date: null, label: x.label, value: x.value }))];
+  }
+  return out;
 }
 
 function currentNote(m, cur, today) {
+  if (m.currentNoteText) return m.currentNoteText(cur);
   const when = cur.stale ? `último registro ${fmtDay(cur.date, today)}` : fmtDay(cur.date, today);
   if (m.metric === 'bodyweight') return `media 7 días · ${fmtDay(cur.date, today)}`;
   if (m.metric === 'time') return `predicción · ${when}`;

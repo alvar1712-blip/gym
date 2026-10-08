@@ -11,7 +11,7 @@ const { pathToFileURL } = require('url');
 // Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
 const playwright = require('playwright');
 const { devices } = playwright;
-const { waitReady, go, BROWSER } = require('./helpers.cjs');
+const { waitReady, go, BROWSER, useExampleWeek } = require('./helpers.cjs');
 
 const RESULTS = path.join(__dirname, '..', '..', 'test-results');
 const TODAY = '2026-09-24'; // jueves
@@ -45,6 +45,8 @@ async function launch({ width = 390, height = 844, time = madrid(TODAY, 12) } = 
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
   await page.goto(server.url);
   await waitReady(page);
+  // Usuario con la semana de ejemplo (ronda 8, B2: un perfil nuevo empieza sin semana tipo; se siembra explícitamente).
+  await useExampleWeek(page);
   return { browser, context, page, errors, close: async () => { await browser.close(); await server.close(); } };
 }
 

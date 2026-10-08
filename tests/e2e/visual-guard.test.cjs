@@ -14,7 +14,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { openApp, go, engineAvailable } = require('./helpers.cjs');
+const { openApp, go, settle, engineAvailable } = require('./helpers.cjs');
 const playwright = require('playwright');
 const { seedRealistic } = require('./realistic-data.cjs');
 
@@ -23,18 +23,49 @@ const OUT = path.join(__dirname, '..', '..', 'test-results', 'visual');
 const TODAY = '2026-10-07';
 const madrid = (date, hh = 12) => new Date(`${date}T${String(hh).padStart(2, '0')}:00:00+02:00`).getTime();
 
-/** Pantallas: [clave, hash]; `ids` da las que dependen de los datos (null → se omiten con la app vacía). */
+/**
+ * Paso «Tu semana» de la bienvenida (ronda 8, B2; solo sin semana tipo, o sea con la app vacía) con tres días elegidos.
+ */
+async function weekStep(page) {
+  await page.locator('.wel-skip').click();
+  await page.locator('.wel-skip').click();
+  await page.waitForSelector('.wel-title[data-id="week"]');
+  for (const d of ['Lun', 'Mié', 'Vie']) await page.locator('.wel-days .chip', { hasText: d }).click();
+  await settle(page);
+}
+
+/**
+ * Punto de restauración (ronda 8, B3): importar la misma copia deja los datos igual y guarda el punto; la tarjeta
+ * aparece en Copias y datos (con la app vacía no hay nada que proteger y no sale).
+ */
+async function restorePoint(page) {
+  const protect = await page.evaluate(async () => {
+    const st = window.__app.store;
+    await st.importData(st.exportData());
+    return st.hasDataToProtect();
+  });
+  await page.waitForFunction(() => location.hash === '#/today');
+  await go(page, '#/settings/data');
+  if (protect) await page.locator('.cfg-rp').waitFor();
+}
+
+/**
+ * Pantallas: [clave, hash, preparar?]; `ids` da las que dependen de los datos (null → se omiten con la app vacía).
+ * `preparar(page)` deja la pantalla en el estado que se mide (p. ej. un paso concreto de la bienvenida).
+ */
 const routes = (ids) => [
   ['today', '#/today'], ['calendar', '#/calendar'], ['day', `#/day/${ids.doneDate || TODAY}`], ['history', '#/history'],
   ids.activeId && ['session', `#/session/${ids.activeId}`], ids.done && ['summary', `#/session/${ids.done}/summary`],
   ['activity-new', '#/activity/new?kind=run'], ['activity-new-hike', '#/activity/new?kind=hike'], ids.run && ['activity', `#/activity/${ids.run}`],
   ['bodyweight', '#/bodyweight'], ['exercises', '#/exercises'], ['exercise', '#/exercise/press_banca'], ['exercise-edit', '#/exercise/press_banca/edit'],
   ['templates', '#/templates'], ['template', '#/template/tpl_d1'],
-  ['settings', '#/settings'], ['settings-week', '#/settings/week'], ['settings-thresholds', '#/settings/thresholds'], ['settings-data', '#/settings/data'], ['profile', '#/settings/profile'],
+  ['settings', '#/settings'], ['settings-week', '#/settings/week'], ['settings-thresholds', '#/settings/thresholds'], ['settings-data', '#/settings/data'],
+  ['settings-data-rp', '#/settings/data', restorePoint], ['profile', '#/settings/profile'],
   ['progress', '#/progress'], ['progress-exercise', '#/progress/exercise/press_banca'], ['records', '#/records'], ['records-past', '#/records/past'], ['records-past-new', '#/records/past/new'],
   ['races', '#/races'], ['race-new', '#/races/new'], ['weekly', '#/weekly'], ['goals', '#/goals'], ['goal-new', '#/goal/new'],
   ['import', '#/import'], ['predictions', '#/predictions'], ['summary-period', '#/summary'], ['analysis', '#/analysis'],
   ids.female && ['cycle', '#/cycle'], ['context', '#/context'], ['context-new', '#/context/new?kind=event&type=race_result'],
+  ['welcome', '#/welcome'], !ids.done && ['welcome-week', '#/welcome', weekStep],
 ].filter(Boolean);
 
 /** Medición en la página (pantalla arriba del todo): devuelve la lista de problemas. */
@@ -252,9 +283,10 @@ async function sweep(app, { tag, widths, ids }) {
   const problems = [];
   for (const w of widths) {
     await page.setViewportSize({ width: w, height: 844 });
-    for (const [key, hash] of routes(ids)) {
+    for (const [key, hash, prepare] of routes(ids)) {
       await go(page, '#/today'); // se entra siempre desde Hoy (como en el uso real)
       await go(page, hash);
+      if (prepare) await prepare(page);
       await page.evaluate(() => window.scrollTo(0, 0));
       const top = await measureTop(page);
       await page.screenshot({ path: path.join(OUT, `${tag}-${key}-${w}.png`) });

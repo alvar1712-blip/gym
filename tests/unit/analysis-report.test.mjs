@@ -71,7 +71,7 @@ test('informe completo: las secciones pedidas, en orden, con el contexto que otr
   assert.match(txt, /- Zonas apuntadas \(4 semanas\): Cuádriceps: agujetas 8 días, media 6\/10 \(máx\. 6\) · Rodilla: molestia 8 días, media 3\/10/);
   assert.match(txt, /- Aún sin datos suficientes para relacionar \(hacen falta 6 veces con y 6 sin\): pierna con resistencia exigente el día antes/);
   // Evento con su tiempo previsto (race-predict) y prioridad
-  assert.match(txt, /EVENTOS FUTUROS .*\n- San Silvestre \(10K\) · .* \(en 73 días\) · prioridad A · objetivo <50:00 · previsto hoy \d+:\d\d–\d+:\d\d \((probable|ajustado|hoy no)\)/);
+  assert.match(txt, /EVENTOS FUTUROS .*\n- San Silvestre \(10K\) · .* \(en 73 días\) · prioridad A · objetivo <50:00 · previsto hoy \d+:\d\d \(\d+:\d\d–\d+:\d\d, confianza \w+\) · (probable|ajustado|hoy no)/);
   assert.match(txt, /- Evento principal: San Silvestre \(10K\)/);
   assert.match(txt, /- Objetivo apuntado: Press banca 100 kg × 5/);
   // Confianza: las de confianza baja con su motivo; las previsiones no se repiten ahí

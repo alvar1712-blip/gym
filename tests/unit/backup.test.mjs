@@ -11,7 +11,7 @@ import {
   THRESHOLD_KEYS, thresholdDefaults, getPath, setPath, fixPair, planLabel, shortPlanLabel, weekSummaryText, patternFromDate,
 } from '../../js/settings-logic.js';
 import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT } from '../../js/store.js';
-import { defaultSettings, SEED_EXERCISES, SEED_TEMPLATES, TEMPLATE_IDS } from '../../js/seed.js';
+import { defaultSettings, exampleWeekPatterns, SEED_EXERCISES, SEED_TEMPLATES, TEMPLATE_IDS } from '../../js/seed.js';
 import { deepClone } from '../../js/util.js';
 
 const BOM = '\uFEFF';
@@ -515,7 +515,7 @@ test('fixPair: mantiene mín ≤ máx moviendo el otro valor', () => {
 
 test('planLabel / shortPlanLabel / weekSummaryText de la semana tipo', () => {
   const tpls = SEED_TEMPLATES.map((t) => ({ ...t, archived: false }));
-  const days = defaultSettings().weekPatterns[0].days;
+  const days = exampleWeekPatterns()[0].days;
   assert.equal(weekSummaryText(days, tpls), 'L D1 · M D2 · X D3 · J D4 · V — · S D6 · D —');
   assert.deepEqual(planLabel({ kind: 'rest' }, tpls), { kind: 'rest', text: 'Descanso', emoji: '😴', items: null, missing: false, archived: false });
   const d1 = planLabel({ kind: 'template', templateId: TEMPLATE_IDS.d1 }, tpls);

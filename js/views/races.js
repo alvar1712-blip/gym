@@ -11,11 +11,13 @@ import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, 
 import { uid, todayStr, fmtDate, addDays } from '../util.js';
 import * as R from '../races-logic.js';
 import { racePrediction, linkedGoalProgress } from '../races-progress.js';
+import { predictionDataset } from '../race-predict.js';
 import { dataFromStore } from '../progress-ui.js';
 import { fmtTimeWords } from '../goals-logic.js';
 
 const LIST = '#/races';
-const RACE_STORES = new Set(['races', 'sessions', 'goals']);
+// context: tus resultados de carrera y parones cambian el tiempo previsto
+const RACE_STORES = new Set(['races', 'sessions', 'goals', 'context']);
 const VERDICT_CLASS = { probable: 'ok', ajustado: 'warn', hoy_no: 'danger', insuficiente: 'info', prevision: 'info' };
 
 /** Línea del tiempo previsto bajo el evento (solo carreras a pie): «Objetivo <50:00 · previsto 48:30–51:10 · Ajustado». */
@@ -23,7 +25,7 @@ function predictionLine(p, race) {
   if (!p) return null;
   const tgt = R.targetText(race);
   const bits = [tgt ? `Objetivo ${tgt}` : null, p.range ? `previsto ${p.range}` : null].filter(Boolean);
-  return h('span.list-item-sub.rc-row-pred', { dataset: { verdict: p.verdict } },
+  return h('span.list-item-sub.rc-row-pred', { dataset: { verdict: p.verdict, ...predictionDataset(p.base) } },
     bits.join(' · '), bits.length ? ' · ' : '', h(`b.rc-verdict.rc-verdict-${VERDICT_CLASS[p.verdict] || 'info'}`, p.label));
 }
 
@@ -131,7 +133,7 @@ export function mountRaceEdit(root, params = {}) {
     const blocks = [];
     const p = race ? racePrediction(data, race, { today }) : null;
     if (p) {
-      blocks.push(h('div.rc-how-pred', { dataset: { verdict: p.verdict } },
+      blocks.push(h('div.rc-how-pred', { dataset: { verdict: p.verdict, ...predictionDataset(p.base) } },
         h('p.rc-how-line', h(`b.rc-verdict.rc-verdict-${VERDICT_CLASS[p.verdict] || 'info'}`, p.label), p.range ? ` · previsto ${p.range}` : ''),
         h('p.rc-how-text', p.text),
         p.why ? whyBox(h('div.wk-why', h('p.wk-why-rule', p.why.rule), h('ul.wk-why-data', (p.why.data || []).map((d) => h('li.wk-why-row', h('span.wk-why-label', d.label), h('span.wk-why-value', d.value)))))) : null));
@@ -139,9 +141,10 @@ export function mountRaceEdit(root, params = {}) {
     const lg = race ? linkedGoalProgress(data, race, goals) : null;
     if (lg) {
       const gp = lg.progress;
-      blocks.push(h('div.rc-how-goal', { dataset: { status: gp.status } },
+      // Carrera con tiempo: el objetivo usa el mismo tiempo previsto que el bloque de arriba (no se repite la cifra)
+      blocks.push(h('div.rc-how-goal', { dataset: { status: gp.status, ...(gp.verdict ? { verdict: gp.verdict } : {}), ...predictionDataset(gp.prediction) } },
         h('p.rc-how-line', h('b', lg.goal.title), ` · ${gp.statusLabel}`),
-        gp.etaText ? h('p.rc-how-text', gp.etaText) : null,
+        gp.etaText || gp.stateLine ? h('p.rc-how-text', gp.etaText || gp.stateLine) : null,
         h('button.cal-link-btn', { type: 'button', onClick: () => navigate('#/goals') }, 'Ver objetivo', icon('chevron-right', 18))));
     }
     how.replaceChildren(...(blocks.length ? [h('section.card.rc-block.rc-how', { dataset: { block: 'how' } }, h('h2.card-title', 'Cómo vas'), ...blocks)] : []));

@@ -10,6 +10,7 @@ import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClon
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress } from '../calc.js';
 import { navigate, back, refresh, screenToken, backFrom, navigateFrom } from '../router.js';
 import { pickExercise } from '../pickers.js';
+import { exerciseHistory } from '../stats.js';
 import {
   lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, finishSession,
   pendingCount, doneCount, templateDiff, applyTemplateDiff, autoDuration, syncAutoDuration,
@@ -58,6 +59,7 @@ export function mountSession(root, params = {}) {
       bwFn: makeBodyweightFn(store.bodyweightList(), store.settings()?.bodyweightDefault ?? 75),
       last: new Map(),
       bests: new Map(),
+      hist: null, // datos para stats.exerciseHistory (al pedir el primero)
     };
   }
   buildSnapshot();
@@ -74,6 +76,11 @@ export function mountSession(root, params = {}) {
       const key = `${se.id}|${se.exerciseId}`;
       if (!snap.last.has(key)) snap.last.set(key, lastFor(se, session, snap.sessions));
       return snap.last.get(key);
+    },
+    /** Historial de un ejercicio (stats.exerciseHistory; solo sesiones terminadas): el «Siguiente paso» mira su progreso reciente. */
+    historyFor(eid) {
+      if (!snap.hist) snap.hist = { sessions: snap.sessions, exercises: store.all('exercises'), settings: store.settings(), bodyweight: store.bodyweightList() };
+      return exerciseHistory(snap.hist, eid, { labels: false });
     },
     /** Récords de las series hechas de ese ejercicio en esta sesión: Map(setId → récords). */
     prsFor(eid) {

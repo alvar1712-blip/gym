@@ -15,16 +15,17 @@
 // y cuándo subir peso; aquí se mide el RITMO (pendiente robusta de 6–12 semanas), se compara con lo habitual para tu
 // nivel, se estima el rendimiento de las próximas semanas y se sugiere qué probar, con la evidencia.
 // Reutiliza stats.js (historial por ejercicio con 1RM estimado, series semanales por músculo, ritmos), race-predict.js
-// (5 km previsto con Riegel), checkin-logic.js y profile.js; los umbrales de estancamiento y descarga salen de settings.
+// (forma en 5 km por bloques con predictWindow y el 5 km previsto de hoy con predictFor), checkin-logic.js y profile.js; los umbrales de estancamiento y descarga salen de settings.
 import { addDays, diffDays, weekStart, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtPace, round } from './util.js';
 import { isWorkSet, setMetrics, sessionDurationMin, pace } from './calc.js';
 import { exercisesWithHistory, exerciseHistory, weeklySeries, runPaceSeries, dataRange, adherenceSeries, adherenceTotals } from './stats.js';
-import { analyzeRuns, predictDistance, raceFor, MIN_KM as RUN_MIN_KM, MIN_VALID, MAX_SPREAD, plausibleRunPace } from './race-predict.js';
+import { predictWindow, predictFor, MIN_KM as RUN_MIN_KM, MIN_VALID, MAX_SPREAD, TOP_N, plausibleRunPace } from './race-predict.js';
 import { getProfile, isFemale, g } from './profile.js';
 import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin, areasOf } from './checkin-logic.js';
 import { defaultSettings, MUSCLE_LABEL } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
 import { exerciseRecovery, markLabel, markWhen } from './past-records-logic.js';
+import { stallEval } from './progression.js';
 import { combine, byCount, bySpan, byNoise, capAt, insufficient as confInsufficient, confidenceRow, minLevel } from './confidence.js';
 
 // ===========================================================================
@@ -82,7 +83,7 @@ export const EASY_TARGET = 0.8;
 export const EASY_SUBTYPES = ['z2', 'long', 'easy', 'route'];
 export const HARD_SUBTYPES = ['intervals', 'tempo', 'race'];
 export const ENDURANCE_KINDS = ['run', 'bike', 'swim', 'hike'];
-/** Forma: 5 km previsto por bloques de 4 semanas (lunes a domingo), hasta 6 bloques. */
+/** Forma: 5 km por bloques de 4 semanas (lunes a domingo), hasta 6 bloques (no es el 5 km previsto de hoy). */
 export const BLOCK_WEEKS = 4;
 export const FITNESS_BLOCKS = 6;
 /** Interferencia: se mira en 8 semanas y solo se comenta si se repite (≥ 2) y la última es de las 4 últimas semanas. */
@@ -353,28 +354,12 @@ export function exerciseTrend(points, { today } = {}) {
  * @returns {{ stalled, bySessions, byWeeks, S, W, best:{date, e1rm}|null }}
  */
 export function stallState(era, today, stall = {}) {
-  const def = defaultSettings().stall;
-  const S = Math.max(1, Math.round(Number(stall.sessions) || def.sessions));
-  const W = Math.max(1, Math.round(Number(stall.weeks) || def.weeks));
+  // La regla es la del panel y del «Siguiente paso» de la sesión (progression.stallEval): una sola fuente.
   const pts = era || [];
-  const n = pts.length;
-  const improved = (tramo, refs) => tramo.some((e, i) => {
-    let best = null;
-    for (const r of refs.concat(tramo.slice(0, i))) if (best == null || r.e1rm > best) best = r.e1rm;
-    return best != null && e.e1rm > best + EPS;
-  });
-  const lastS = pts.slice(-S);
-  const prevS = pts.slice(Math.max(0, n - 2 * S), n - lastS.length);
-  const from = addDays(today, -7 * W + 1);
-  const priorFrom = addDays(from, -7 * W);
-  const win = pts.filter((p) => p.date >= from);
-  const prior = pts.filter((p) => p.date >= priorFrom && p.date < from);
-  const fresh = n < 3;
-  const bySessions = !fresh && prevS.length > 0 && !improved(lastS, prevS);
-  const byWeeks = !fresh && prior.length > 0 && win.length >= 2 && !improved(win, prior);
+  const { S, W, bySessions, byWeeks, stalled } = stallEval(pts, today, stall);
   let best = null;
   for (const p of pts) if (!best || p.e1rm > best.e1rm + EPS) best = { date: p.date, e1rm: p.e1rm };
-  return { stalled: bySessions || byWeeks, bySessions, byWeeks, S, W, best };
+  return { stalled, bySessions, byWeeks, S, W, best };
 }
 
 /**
@@ -1083,22 +1068,19 @@ export function findInterference(d, { today, weeks = INTERFERENCE_WEEKS } = {}) 
 }
 
 /**
- * 5 km previsto de un bloque [from, to] con race-predict (solo carreras de ese bloque; ≥ 2 válidas). null también si
- * la predicción no es útil (carreras del bloque que se contradicen: dispersión > ±25 %).
+ * Forma en 5 km de un bloque [from, to]: race-predict.predictWindow (solo las carreras registradas del bloque, ≥ 2
+ * válidas; sin resultados de tu contexto). null también si la predicción no es útil (dispersión > ±25 %).
  */
 function blockPrediction(d, from, to) {
-  const ctx = analyzeRuns(d, { today: to });
-  // Solo lo registrado en el bloque: los resultados apuntados en tu contexto no entran en la forma por bloques
-  const valid = ctx.valid.filter((e) => e.source === 'run' && e.date >= from);
-  if (valid.length < MIN_VALID) return null;
-  const p = predictDistance({ ...ctx, valid, basis: valid.slice(0, 3), history: [], duplicates: [] }, 5, raceFor(5));
-  if (!p.usable) return null;
-  return { pred5kSec: p.mid, low: p.low, high: p.high, runs: valid.length, efforts: p.efforts.map((e) => e.label) };
+  const p = predictWindow(d, 5, { from, to });
+  if (!p) return null;
+  return { pred5kSec: p.mid, low: p.low, high: p.high, runs: p.runs, efforts: p.efforts.map((e) => e.label) };
 }
 
 /**
- * Forma en carrera: 5 km previsto (race-predict: Riegel con los 3 mejores esfuerzos del bloque) por bloques de 4
- * semanas de lunes a domingo; el último termina hoy. Solo carrera (≥ 3 km). Devuelve solo los bloques con previsión.
+ * Forma en carrera: tiempo en 5 km de cada bloque de 4 semanas (race-predict.predictWindow: el mismo cálculo que
+ * Tiempos previstos, pero solo con las carreras registradas del bloque) de lunes a domingo; el último termina hoy.
+ * Es una tendencia de forma, NO el 5 km previsto de hoy (ese es predictFor, con tu contexto y 12 semanas). Solo carrera (≥ 3 km). Devuelve solo los bloques con previsión.
  * @returns {{weekStart, weekEnd, pred5kSec, low, high, runs}[]} (de más antiguo a más reciente)
  */
 export function fitnessBlocks(d, { today, blocks = FITNESS_BLOCKS } = {}) {
@@ -1116,7 +1098,7 @@ export function fitnessBlocks(d, { today, blocks = FITNESS_BLOCKS } = {}) {
 const timeTxt = (sec) => fmtDuration(sec);
 
 /**
- * Resistencia: tendencia de forma (5 km previsto por bloques de 4 semanas), reparto suave/intenso de las 4 últimas
+ * Resistencia: tendencia de forma (5 km por bloques de 4 semanas), reparto suave/intenso de las 4 últimas
  * semanas frente a ~80/20, interferencia con la pierna y ritmo de los rodajes suaves.
  * @returns {{ fitness:{weekStart, weekEnd, pred5kSec, low, high, runs}[], intensity:{ easyMin, hardMin, easyShare, weeks, … },
  *   interference:{date, text, kind, …}[], insights: Insight[] }}
@@ -1128,7 +1110,7 @@ export function analyzeEndurance(data, opts = {}) {
   const interference = findInterference(d, { today });
   const insights = [];
 
-  // --- Forma (5 km previsto) ----------------------------------------------------
+  // --- Forma (5 km por bloques; no es el 5 km previsto de hoy) -----------------------
   const last = fitness[fitness.length - 1];
   const curBlockStart = addDays(weekStart(today), -7 * (BLOCK_WEEKS - 1));
   if (last && last.weekStart === curBlockStart && fitness.length >= 2) {
@@ -1138,17 +1120,17 @@ export function analyzeEndurance(data, opts = {}) {
     const prevTxt = gapW === BLOCK_WEEKS ? 'en el bloque anterior' : `hace ${weeksTxt(gapW)}`;
     const pct = (diff / prev.pred5kSec) * 100;
     const rows = fitness.map((b) => ({ label: `${dayTxt(b.weekStart, today)} – ${dayTxt(b.weekEnd, today)}`, value: `${timeTxt(b.pred5kSec)} (${timeTxt(b.low)}–${timeTxt(b.high)}) · ${plural(b.runs, 'carrera', 'carreras')}` }));
-    const rule = `5 km previsto con la misma fórmula que Tiempos previstos (Riegel, k = 1,06, con los 3 mejores esfuerzos de ${RUN_MIN_KM} km o más), pero solo con las carreras de cada bloque de ${BLOCK_WEEKS} semanas (lunes a domingo; el último termina hoy) y al menos ${MIN_VALID} carreras por bloque. Se compara el bloque actual con el anterior que tenga previsión: mejora o empeora si cambia un 1,5 % o más. El senderismo, la bici y la natación no cuentan. Si en un bloque solo hiciste rodajes suaves, la previsión sale más lenta de lo que podrías correr.`;
+    const rule = `Forma en 5 km: el mismo cálculo que Tiempos previstos (Riegel ponderado, con los ${TOP_N} mejores esfuerzos de ${RUN_MIN_KM} km o más), pero solo con las carreras registradas de cada bloque de ${BLOCK_WEEKS} semanas (lunes a domingo; el último termina hoy) y al menos ${MIN_VALID} carreras por bloque. Se compara el bloque actual con el anterior que tenga previsión: mejora o empeora si cambia un 1,5 % o más. Es una tendencia: tu 5 km previsto de hoy (con tus resultados apuntados y las últimas 12 semanas) está en Tiempos previstos. El senderismo, la bici y la natación no cuentan. Si en un bloque solo hiciste rodajes suaves, la previsión sale más lenta de lo que podrías correr.`;
     let lvl; let title; let text; let prio;
     if (pct >= 1.5) {
       lvl = 'good'; prio = 50; title = 'Tu forma en carrera mejora';
-      text = `5 km previsto ~${timeTxt(last.pred5kSec)}, frente a ~${timeTxt(prev.pred5kSec)} ${prevTxt} (${timeTxt(Math.abs(diff))} menos, un ${pctTxt(pct, 1)}).`;
+      text = `Forma en 5 km por bloques de ${BLOCK_WEEKS} semanas: ~${timeTxt(last.pred5kSec)}, frente a ~${timeTxt(prev.pred5kSec)} ${prevTxt} (${timeTxt(Math.abs(diff))} menos, un ${pctTxt(pct, 1)}).`;
     } else if (pct <= -1.5) {
-      lvl = 'neutral'; prio = 40; title = 'Tu 5 km previsto va algo más lento';
-      text = `~${timeTxt(last.pred5kSec)} frente a ~${timeTxt(prev.pred5kSec)} ${prevTxt} (+${timeTxt(Math.abs(diff))}). Puede ser que este bloque hayas corrido más suave, con calor o cansancio: no es preocupante si tus carreras fueron rodajes.`;
+      lvl = 'neutral'; prio = 40; title = 'Tu forma en 5 km va algo más lenta';
+      text = `Forma en 5 km por bloques de ${BLOCK_WEEKS} semanas: ~${timeTxt(last.pred5kSec)} frente a ~${timeTxt(prev.pred5kSec)} ${prevTxt} (+${timeTxt(Math.abs(diff))}). Puede ser que este bloque hayas corrido más suave, con calor o cansancio: no es preocupante si tus carreras fueron rodajes.`;
     } else {
       lvl = 'neutral'; prio = 22; title = 'Tu forma en carrera se mantiene';
-      text = `5 km previsto ~${timeTxt(last.pred5kSec)} (${prevTxt} ~${timeTxt(prev.pred5kSec)}).`;
+      text = `Forma en 5 km por bloques de ${BLOCK_WEEKS} semanas: ~${timeTxt(last.pred5kSec)} (${prevTxt} ~${timeTxt(prev.pred5kSec)}).`;
     }
     insights.push(insight({
       id: 'endurance-fitness', area: 'endurance', level: lvl, priority: prio, title, text, rule, data: rows, sources: [],
@@ -1161,14 +1143,18 @@ export function analyzeEndurance(data, opts = {}) {
 
     // Previsión a 4 semanas (solo si mejora con ≥ 3 bloques y los bloques no se contradicen: con una dispersión de
     // más de ±25 % —el mismo tope que race-predict— el rango mid × (1 ± margen) no significa nada y podía salir negativo).
-    if (fitness.length >= 3 && pct > 0) {
+    // Parte del 5 km previsto de HOY (race-predict.predictFor, el mismo número que Tiempos previstos: «ahora ~X»); de
+    // los bloques sale solo la pendiente. Sin una previsión útil y fiable hoy (no útil u orientativa), no se proyecta.
+    const now5 = fitness.length >= 3 && pct > 0 ? predictFor(d, 5, { today }) : null;
+    const cur5 = now5 && now5.ok && now5.prediction.status === 'ok' ? now5.prediction : null;
+    if (cur5) {
       const xy = fitness.map((b) => ({ x: diffDays(fitness[0].weekStart, b.weekStart) / 7, y: b.pred5kSec }));
       const fit = theilSen(xy);
       const disp = fit ? (fit.sd / last.pred5kSec) || 0 : 0;
       if (fit && fit.slope < 0 && disp <= MAX_SPREAD) {
         const rPct = Math.min((-fit.slope / last.pred5kSec) * 100, 0.75);
         const decay = TAU_WEEKS * Math.log(1 + BLOCK_WEEKS / TAU_WEEKS);
-        const mid = last.pred5kSec * (1 - (rPct / 100) * decay);
+        const mid = cur5.midExact * (1 - (rPct / 100) * decay);
         const margin = Math.max(0.03, disp);
         const lo = Math.floor((mid * (1 - margin)) / 5) * 5;
         const hi = Math.ceil((mid * (1 + margin)) / 5) * 5;
@@ -1177,9 +1163,9 @@ export function analyzeEndurance(data, opts = {}) {
           id: 'forecast-5k', area: 'forecast', level: 'info', priority: 36,
           confidence: combine([byCount(fitness.length, { low: 3, medium: 4, high: 6 }, (k) => `${k} bloques`, 'blocks'), capAt('medium', 'es una proyección: el ritmo cambia', 'forecast')]),
           title: `5 km: ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)}`,
-          text: `Si sigues así, tu 5 km previsto podría estar en ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)} (ahora ~${timeTxt(last.pred5kSec)}). Es una estimación.`,
-          rule: `Pendiente robusta (Theil–Sen) del 5 km previsto de tus bloques de ${BLOCK_WEEKS} semanas, en % por semana, con un tope prudente de 0,75 %/sem y rendimientos decrecientes (τ = ${TAU_WEEKS} semanas); rango ±3 % como mínimo (o la dispersión de los bloques si es mayor), redondeado a 5 s. Con una dispersión de más de ±${Math.round(MAX_SPREAD * 100)} % entre bloques no se da previsión.`,
-          data: [...rows, { label: 'Mejora usada', value: `${fmtNum(rPct, 2)} %/sem` }],
+          text: `Si sigues así, tu 5 km previsto podría estar en ${timeTxt(lo)}–${timeTxt(hi)} hacia el ${dayTxt(date, today)} (ahora ~${timeTxt(cur5.mid)}). Es una estimación.`,
+          rule: `Parte de tu 5 km previsto de hoy (${timeTxt(cur5.mid)}, el de Tiempos previstos). Pendiente robusta (Theil–Sen) de tu forma en 5 km por bloques de ${BLOCK_WEEKS} semanas, en % por semana, con un tope prudente de 0,75 %/sem y rendimientos decrecientes (τ = ${TAU_WEEKS} semanas); rango ±3 % como mínimo (o la dispersión de los bloques si es mayor), redondeado a 5 s. Con una dispersión de más de ±${Math.round(MAX_SPREAD * 100)} % entre bloques no se da previsión.`,
+          data: [{ label: '5 km previsto hoy', value: `${timeTxt(cur5.mid)} (${timeTxt(cur5.low)}–${timeTxt(cur5.high)}, confianza ${cur5.confidence})` }, ...rows, { label: 'Mejora usada', value: `${fmtNum(rPct, 2)} %/sem` }],
           sources: [],
           action: { label: 'Tiempos previstos', href: '#/predictions' },
         }));

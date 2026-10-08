@@ -10,6 +10,12 @@ export const DB_VERSION = 3;
 export const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle',
   'context', 'pastRecords', 'races'];
 
+// Claves reservadas (ronda 8, B3): en 'meta', los registros cuyo id empieza por «~» no son datos de la app sino del
+// propio dispositivo (el punto de restauración). Quedan fuera de la carga inicial, de las copias y de «sustituir todo».
+// Los ids de 'meta' de la app ('app', 'settings') son menores que «~»: `appKeys()` los abarca a todos.
+export const RESERVED_PREFIX = '~';
+const appKeys = () => IDBKeyRange.upperBound(RESERVED_PREFIX, true);
+
 let dbPromise = null;
 
 function openOnce() {
@@ -82,10 +88,20 @@ function runTx(db, storeNames, mode, body) {
   });
 }
 
+/** Todos los registros de una store. En 'meta', sin los reservados (ver RESERVED_PREFIX). */
 export function getAll(store) {
   return withRetry((db) => new Promise((resolve, reject) => {
-    const r = db.transaction(store, 'readonly').objectStore(store).getAll();
+    const r = db.transaction(store, 'readonly').objectStore(store).getAll(store === 'meta' ? appKeys() : undefined);
     r.onsuccess = () => resolve(r.result || []);
+    r.onerror = () => reject(r.error);
+  }));
+}
+
+/** Un registro por id (o undefined). */
+export function get(store, id) {
+  return withRetry((db) => new Promise((resolve, reject) => {
+    const r = db.transaction(store, 'readonly').objectStore(store).get(id);
+    r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   }));
 }
@@ -121,15 +137,19 @@ export function del(store, id) {
 
 /**
  * Sustituye TODO el contenido en una única transacción (atómica):
- * si algo falla, no se borra nada.
+ * si algo falla, no se borra nada. Los registros reservados de 'meta' se conservan; `reserved` los sustituye en la
+ * misma transacción (recuperar el punto de restauración: el estado de ahora pasa a ser el nuevo punto).
  * @param {Record<string, object[]>} data  { store: [registros] }
+ * @param {{reserved?: object[]|null}} [opts]  null: los reservados no se tocan; [..]: se borran y se escriben estos
  */
-export function replaceAll(data) {
+export function replaceAll(data, { reserved = null } = {}) {
   return withRetry((db) => runTx(db, STORES, 'readwrite', (t) => {
     for (const s of STORES) {
       const os = t.objectStore(s);
-      os.clear();
+      if (s === 'meta' && !reserved) os.delete(appKeys());
+      else os.clear();
       for (const v of data[s] || []) os.put(v);
+      if (s === 'meta' && reserved) for (const v of reserved) os.put(v);
     }
   }));
 }

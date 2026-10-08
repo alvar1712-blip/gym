@@ -466,3 +466,9 @@
 .focus-item > .why { align-self: stretch; }
 .focus .why-body { padding: 10px 12px 8px; }
 .focus-links { display: flex; flex-wrap: wrap; column-gap: 18px; border-top: 1px solid var(--border); padding-top: 2px; }
+/* Veredicto del tiempo previsto (objetivo de carrera con tiempo; mismas clases que Eventos) */
+.goal-verdict { margin-top: -4px; font-size: calc(14px * var(--ts)); line-height: 1.35; color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+/* Hoy (verde solo para la acción principal, la selección y los estados positivos): una estimación en curso va en el
+   azul de su insignia «Estimación»; «al alcance» y «conseguido» siguen en verde */
+.today .goal-sum-row[data-status="estimate"] .goal-bar-fill { background: var(--info); }
+.today .goal-sum-row[data-status="ready"] .goal-bar-fill { background: var(--ok); }

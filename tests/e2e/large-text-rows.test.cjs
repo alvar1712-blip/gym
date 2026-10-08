@@ -56,5 +56,35 @@ async function run(browser) {
   }
 }
 
+/**
+ * Regresión (ronda 8, B2): con texto grande el subtítulo de la cabecera se parte en dos líneas; al compactarse se
+ * ensanchaba hasta caber en una, la cabecera perdía una línea de alto y, con el anclaje del scroll, la página volvía
+ * arriba, la cabecera crecía, bajaba otra vez… sin fin (en la bienvenida, «Saltar» nunca dejaba de moverse).
+ */
+async function compactHeader(browser) {
+  const app = await openApp({ browser, beforeLoad: async (p) => { await p.evaluate(() => localStorage.setItem('entreno.textScale', '1.5')); } });
+  const { page } = app;
+  try {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await go(page, '#/welcome');
+    const measure = () => page.evaluate(() => {
+      const bar = document.querySelector('#view .topbar');
+      return { bar: bar.offsetHeight, sub: bar.querySelector('.topbar-sub').offsetHeight, page: document.documentElement.scrollHeight };
+    });
+    const big = await measure();
+    assert.ok(big.sub > 30, `el subtítulo ocupa dos líneas al 150 % (${big.sub} px)`);
+    await page.evaluate(() => window.scrollTo(0, 60));
+    await page.waitForFunction(() => document.querySelector('#view .topbar').classList.contains('is-compact'));
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    assert.deepStrictEqual(await measure(), big, 'la cabecera compacta mide lo mismo (no cambia el alto de la página)');
+    assert.ok(await page.evaluate(() => document.querySelector('#view .topbar').classList.contains('is-compact')), 'y se queda compacta');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+}
+
 test('texto al 150 %: una palabra más ancha que la fila no saca el texto de la fila', () => run('chromium'));
 test('WebKit: texto al 150 %, palabra más ancha que la fila', { skip: skipWebkit }, () => run('webkit'));
+test('texto al 150 %: la cabecera no cambia de alto al compactarse (subtítulo en dos líneas)', () => compactHeader('chromium'));
+test('WebKit: texto al 150 %, la cabecera no cambia de alto al compactarse', { skip: skipWebkit }, () => compactHeader('webkit'));

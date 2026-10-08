@@ -282,7 +282,7 @@ test('fuerza: crear desde la interfaz con datos sembrados → rango de fechas, �
   }
 });
 
-test('resistencia (Riegel, bici con aviso, solo distancia) y peso corporal: crear cada uno y ver su progreso', async () => {
+test('resistencia (tiempo previsto del motor, bici con aviso, solo distancia) y peso corporal: crear cada uno y ver su progreso', async () => {
   const app = await launch();
   const { page } = app;
   try {
@@ -302,13 +302,16 @@ test('resistencia (Riegel, bici con aviso, solo distancia) y peso corporal: crea
     await shot(page, 'goals-new-run');
     await createGoal(page);
     let c = card(page, '10 km en menos de 45 min');
-    assert.match(await c.locator('.goal-kind').innerText(), /Carrera · predicción de Riegel/);
+    // Ronda 8 (B1): un objetivo de carrera con tiempo usa el tiempo previsto de Tiempos previstos (mismo motor)
+    assert.match(await c.locator('.goal-kind').innerText(), /Carrera · tiempo previsto/);
+    assert.match(await c.locator('.goal-val').first().innerText(), /previsto hoy · \d+:\d\d–\d+:\d\d · confianza \w+/);
+    assert.match(await c.getAttribute('data-verdict'), /^(probable|ajustado|hoy_no)$/);
     assert.strictEqual(await c.getAttribute('data-status'), 'estimate');
     assert.match(await c.locator('.goal-eta').innerText(), /^Estimación: /);
     assert.match(await c.locator('.goal-val').nth(1).innerText(), /45:00/);
     let why = await (await openWhy(c)).innerText();
-    assert.match(why, /Riegel/);
-    assert.match(why, /Semana \d/);
+    assert.match(why, /Tiempo previsto con el mismo cálculo que Tiempos previstos: Fórmula de Riegel/);
+    assert.match(why, /Semana \d.*: previsto \d+:\d\d · \d carreras?/);
 
     // Solo distancia: media maratón
     await newGoal(page);

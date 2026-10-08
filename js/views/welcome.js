@@ -1,19 +1,24 @@
-// welcome.js — bienvenida para perfiles nuevos (ronda 6, docs/MEJORAS6.md): 3 pasos cortos y saltables.
+// welcome.js — bienvenida para perfiles nuevos (ronda 6, docs/MEJORAS6.md): pasos cortos y saltables.
 //   1 · Tú: sexo y fecha de nacimiento
 //   2 · Tu entrenamiento: objetivo, experiencia, deportes, días por semana y (opcional) otros objetivos
-//   3 · Ahora mismo: la fase actual (crea una fase en «Tu contexto») y molestias o limitaciones
-// Cada respuesta se guarda al momento en el perfil; «Listo» o «Saltar» en el último paso marcan profile.onboardedAt.
+//   3 · Tu semana (ronda 8, B2; solo si aún no hay semana tipo): qué días entrenas y, si quieres, qué rutina o
+//       sesión libre cada día. Se guarda al pulsar «Siguiente»; «Saltar» deja la app sin planificación.
+//   4 · Ahora mismo: la fase actual (crea una fase en «Tu contexto») y molestias o limitaciones
+// Cada respuesta del perfil se guarda al momento; «Listo» o «Saltar» en el último paso marcan profile.onboardedAt.
 // Nunca se obliga: se llega desde la tarjeta «Completa tu perfil» de Hoy (solo con el perfil vacío).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, segmented, chips, textInput, toast } from '../ui.js';
-import { uid, todayStr } from '../util.js';
+import { uid, todayStr, DAY_LONG, DAY_SHORT } from '../util.js';
+import { cap } from '../plan-ui.js';
 import {
   getProfile, SEXES, GOALS, EXPERIENCES, SECONDARY_GOALS, SPORTS, ageOn, validBirthDate, isFemale,
 } from '../profile.js';
 import { entryRecord, phaseType } from '../context-logic.js';
+import { hasWeekPattern, setWeekPattern } from '../plan.js';
+import { FREE_PLANS } from '../pickers.js';
 
-const STEPS = 3;
+const TITLES = { you: 'Sobre ti', training: 'Tu entrenamiento', week: 'Tu semana', now: 'Ahora mismo' };
 /** Fases que se ofrecen en el paso 3 (la lista completa está en «Tu contexto»). */
 const NOW_PHASES = ['gain', 'deficit', 'maintain', 'recomp', 'return', 'prep_5k', 'prep_10k', 'prep_half', 'prep_marathon', 'hybrid', 'injury'];
 
@@ -25,13 +30,19 @@ function saveProfile(patch, { soon = false } = {}) {
 
 export function mountWelcome(root) {
   const today = todayStr();
-  const c = screen(root, { title: 'Bienvenida', subtitle: 'Tres pasos cortos · todo es opcional', back: '#/today' });
+  // «Tu semana» solo si aún no hay semana tipo: quien ya la tiene (datos antiguos, una copia restaurada o la que se
+  // puso en Ajustes) no la ve y su semana no cambia.
+  const steps = ['you', 'training', ...(hasWeekPattern(store.settings()) ? [] : ['week']), 'now'];
+  const STEPS = steps.length;
+  const c = screen(root, { title: 'Bienvenida', subtitle: `${STEPS === 4 ? 'Cuatro' : 'Tres'} pasos cortos · todo es opcional`, back: '#/today' });
   c.classList.add('wel');
   const body = h('div.wel-body');
   c.appendChild(body);
   let step = 1;
   let phase = null; // fase elegida en el paso 3 (se crea al terminar)
   let limitations = getProfile(store.settings()).limitations;
+  // «Tu semana»: plan de cada día (índice 0 = lunes) o null = descanso. Se guarda al pulsar «Siguiente».
+  const week = Array(7).fill(null);
 
   function finish() {
     const s = store.settings();
@@ -51,10 +62,28 @@ export function mountWelcome(root) {
     window.scrollTo(0, 0);
   }
 
+  /** Guarda la semana elegida (desde esta semana); sin ningún día, la deja sin planificar. */
+  async function saveWeek() {
+    if (week.some(Boolean)) await setWeekPattern(week.map((d) => d || { kind: 'rest' }));
+    else if (hasWeekPattern(store.settings())) await store.saveSettings({ weekPatterns: [] });
+  }
+
+  let moving = false; // un doble toque mientras se guarda la semana no salta dos pasos
+  async function next() {
+    if (moving) return;
+    moving = true;
+    try {
+      if (steps[step - 1] === 'week') await saveWeek();
+      if (step === STEPS) finish(); else go(step + 1);
+    } finally {
+      moving = false;
+    }
+  }
+
   function nav() {
     const last = step === STEPS;
     return h('div.wel-nav',
-      h('button.btn.btn-primary.btn-lg.btn-block.wel-next', { type: 'button', onClick: () => (last ? finish() : go(step + 1)) },
+      h('button.btn.btn-primary.btn-lg.btn-block.wel-next', { type: 'button', onClick: next },
         last ? 'Listo' : 'Siguiente', last ? null : icon('chevron-right', 20)),
       h('div.wel-nav-row',
         step > 1 ? h('button.btn.btn-ghost.wel-prev', { type: 'button', onClick: () => go(step - 1) }, 'Atrás') : h('span'),
@@ -114,6 +143,57 @@ export function mountWelcome(root) {
     ];
   }
 
+  /** Sesión libre por defecto para un día nuevo: la del primer deporte que practica (Fuerza si no dijo ninguno). */
+  function defaultFree(p) {
+    const kind = (p.sports || []).find((k) => FREE_PLANS.some((f) => f.activityKind === k)) || 'strength';
+    const f = FREE_PLANS.find((x) => x.activityKind === kind);
+    return { kind: 'free', label: f.label, activityKind: f.activityKind };
+  }
+  const planKey = (d) => (d.kind === 'template' ? `tpl:${d.templateId}` : `free:${d.activityKind}`);
+  function planFromKey(key) {
+    const [k, id] = key.split(':');
+    if (k === 'tpl') return { kind: 'template', templateId: id };
+    const f = FREE_PLANS.find((x) => x.activityKind === id) || FREE_PLANS.find((x) => x.activityKind === 'strength');
+    return { kind: 'free', label: f.label, activityKind: f.activityKind };
+  }
+
+  function stepWeek(p) {
+    const templates = store.templatesList();
+    const perDay = h('section.card.wel-block', { dataset: { block: 'week-plan' } });
+    // Un selector por día de entreno: una rutina tuya o una sesión libre (como en Ajustes › Semana tipo).
+    function paintDays() {
+      const idx = week.map((d, i) => (d ? i : -1)).filter((i) => i >= 0);
+      perDay.hidden = !idx.length;
+      perDay.replaceChildren(
+        h('h2.card-title', 'Qué haces cada día (opcional)'),
+        ...idx.map((i) => {
+          const sel = h('select.input.wel-day-select', { 'aria-label': `${cap(DAY_LONG[i])}: qué entrenas`, dataset: { day: String(i) } },
+            templates.length ? h('optgroup', { label: 'Tus rutinas' }, templates.map((t) => h('option', { value: `tpl:${t.id}` }, t.name))) : null,
+            h('optgroup', { label: 'Sesión libre' }, FREE_PLANS.map((f) => h('option', { value: `free:${f.activityKind}` }, `${f.emoji} ${f.label}`))));
+          sel.value = planKey(week[i]);
+          sel.addEventListener('change', () => { week[i] = planFromKey(sel.value); });
+          return h('label.wel-day-row', h('span.wel-day-name', cap(DAY_LONG[i])), sel);
+        }),
+        h('p.cfg-why', 'Puedes cambiarlo cuando quieras en Ajustes › Semana tipo o mover un día concreto en el Calendario.'));
+    }
+    paintDays();
+    const freq = p.weeklyFrequency ? `Has dicho ${p.weeklyFrequency} ${p.weeklyFrequency === 1 ? 'día' : 'días'} por semana. ` : '';
+    return [
+      h('section.card.wel-block', { dataset: { block: 'week-days' } },
+        h('h2.card-title', '¿Qué días sueles entrenar?'),
+        chips({
+          options: DAY_SHORT.map((d, i) => ({ value: i, label: cap(d) })),
+          value: week.map((d, i) => (d ? i : -1)).filter((i) => i >= 0), multi: true, className: 'wel-days', ariaLabel: 'Días de entreno',
+          onChange: (v) => {
+            for (let i = 0; i < 7; i++) week[i] = v.includes(i) ? week[i] || defaultFree(getProfile(store.settings())) : null;
+            paintDays();
+          },
+        }),
+        h('p.cfg-why', `${freq}Los demás días quedan como descanso. Si prefieres no planificar, pulsa «Saltar»: Hoy te dejará empezar una sesión libre.`)),
+      perDay,
+    ];
+  }
+
   function stepNow() {
     const lim = textInput({ value: limitations, multiline: true, rows: 3, maxlength: 500, placeholder: 'p. ej. Molestia en el hombro derecho al hacer press', ariaLabel: 'Molestias o limitaciones', onInput: (v) => { limitations = v; } });
     return [
@@ -132,12 +212,13 @@ export function mountWelcome(root) {
 
   function paint() {
     const p = getProfile(store.settings());
-    const title = ['Sobre ti', 'Tu entrenamiento', 'Ahora mismo'][step - 1];
-    const content = step === 1 ? stepYou(p) : step === 2 ? stepTraining(p) : stepNow();
+    const id = steps[step - 1];
+    const title = TITLES[id];
+    const content = id === 'you' ? stepYou(p) : id === 'training' ? stepTraining(p) : id === 'week' ? stepWeek(p) : stepNow();
     body.replaceChildren(
       h('div.wel-progress', { role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': String(STEPS), 'aria-valuenow': String(step), 'aria-label': `Paso ${step} de ${STEPS}` },
         Array.from({ length: STEPS }, (_, i) => h(`span.wel-dot${i < step ? '.on' : ''}`))),
-      h('h2.wel-title', { dataset: { step: String(step) } }, `${step}. ${title}`),
+      h('h2.wel-title', { dataset: { step: String(step), id } }, `${step}. ${title}`),
       ...content,
       nav());
   }

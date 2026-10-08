@@ -9,7 +9,7 @@ import { navigate, refresh } from '../router.js';
 import { h, icon, screen } from '../ui.js';
 import { todayStr, fmtDate, fmtDuration, addDays, diffDays, weekStart, parseDate, DAY_LETTER } from '../util.js';
 import {
-  ctxFromStore, dayStatus, weekPlan, effectiveDay, adherence, adherenceText, planEmoji, planLabel, STATUS_LABEL,
+  ctxFromStore, dayStatus, weekPlan, effectiveDay, adherence, adherenceText, planEmoji, planLabel, STATUS_LABEL, hasWeekPattern,
 } from '../plan.js';
 import {
   cap, statusPill, sessionRow, summaryOpts, templatePreview, startStrength, pickAndStart, otherSessionMenu,
@@ -72,7 +72,9 @@ export async function mountToday(root) {
   const extra = h('div.today-extra');
   // Nada que empezar: hecho, saltado, descanso o la rutina de hoy ya terminada (aunque quede «parcial»)
   const ownDone = st.plan.kind === 'template' && st.sessions.some((s) => s.kind === 'strength' && s.status === 'done' && s.templateId === st.plan.templateId);
-  const settled = !active && (st.status === 'done' || st.status === 'skipped' || ownDone || (st.plan.kind === 'rest' && !st.sessions.length));
+  // Sin semana planificada (ronda 8, B2) no es un descanso: «Empezar sesión libre» sigue mandando.
+  const restDay = st.plan.kind === 'rest' && !st.sessions.length && !unplanned(ctx, st);
+  const settled = !active && (st.status === 'done' || st.status === 'skipped' || ownDone || restDay);
   if (settled) content.appendChild(extra);
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
@@ -298,6 +300,7 @@ function raceCard(race, today) {
  * no se pinta: la tarjeta de la sesión (arriba) ya dice qué es y lleva «Continuar».
  */
 function planCard(today, ctx, active, st = dayStatus(today, ctx)) {
+  if (unplanned(ctx, st)) return freeCard(today, active, st);
   const eff = st.plan;
   const liveToday = !!active && (active.planDate ?? active.date) === today;
   let pill = statusPill(st.status, { manual: st.manual });
@@ -365,6 +368,42 @@ function planCard(today, ctx, active, st = dayStatus(today, ctx)) {
   return card;
 }
 
+/**
+ * ¿Hoy no hay nada planificado porque no hay semana tipo? (perfil nuevo que saltó «Tu semana», ronda 8 B2). Un
+ * cambio de ese día en el calendario o un estado marcado a mano sí cuentan como plan.
+ */
+function unplanned(ctx, st) {
+  return !hasWeekPattern(ctx.settings) && st.plan.source === 'pattern' && !st.manual;
+}
+
+/**
+ * Hoy sin semana planificada: en lugar de «Te toca hoy» (que diría «Descanso» sin que nadie lo haya decidido),
+ * «Empezar sesión libre» (la acción principal), elegir una rutina y el acceso para planificar la semana.
+ */
+function freeCard(today, active, st) {
+  const done = st.sessions.length > 0;
+  const card = h('section.card.today-plan.today-free', { dataset: { kind: 'none', status: st.status } },
+    h('div.today-plan-top', h('span.today-kicker', 'Sin semana planificada')),
+    h('div.today-plan-title', h('h2.today-plan-name', done ? 'Hoy has entrenado' : '¿Qué entrenas hoy?')));
+  const busy = h('p.small.text-2.today-busy', 'Termina la sesión en curso (arriba) para empezar otra.');
+  if (done) {
+    card.append(
+      h('div.list.today-sessions', st.sessions.map((s) => sessionRow(s, summaryOpts()))),
+      h('button.btn.btn-secondary.btn-lg.btn-block', { type: 'button', onClick: () => otherSessionMenu({ date: today }) }, icon('plus', 20), 'Otra sesión'));
+  } else {
+    card.append(...[
+      active ? busy : h('button.btn.btn-primary.btn-lg.btn-block.today-start', { type: 'button', onClick: () => startStrength({ templateId: null, date: today }) },
+        icon('play', 20), 'Empezar sesión libre'),
+      !active && store.templatesList().length
+        ? h('button.btn.btn-secondary.btn-block.today-pick', { type: 'button', onClick: () => pickAndStart({ date: today, title: '¿Qué rutina vas a hacer?' }) }, icon('dumbbell', 20), 'Elegir una rutina')
+        : null,
+    ].filter(Boolean));
+  }
+  card.append(h('button.cal-link-btn.today-plan-week', { type: 'button', onClick: () => navigate('#/settings/week') },
+    'Planificar tu semana', icon('chevron-right', 18)));
+  return card;
+}
+
 function dayLink(date) {
   return h('button.cal-link-btn', { type: 'button', onClick: () => navigate(`#/day/${date}`) },
     'Cambiar, mover o marcar este día', icon('chevron-right', 18));
@@ -400,15 +439,17 @@ function weekCard(today, ctx) {
   h(`span.cal-dot.st-${d.status}`))));
   const tomorrow = addDays(today, 1);
   const t = effectiveDay(tomorrow, ctx);
+  // Sin semana planificada, «Mañana: 😴 Descanso» sería un plan que nadie ha decidido (salvo un cambio de ese día).
+  const showTomorrow = hasWeekPattern(ctx.settings) || t.source === 'override';
   return h('section.card.today-weekcard',
     h('div.card-head',
       h('div.card-title', 'Esta semana'),
       h('button.cal-link-btn', { type: 'button', onClick: () => navigate(`#/calendar?week=${ws}`) }, 'Calendario', icon('chevron-right', 18))),
     strip,
     h('p.small.text-2.today-adherence', adherenceText(adherence(ws, ctx))),
-    h('button.list-item.today-tomorrow', { type: 'button', onClick: () => navigate(`#/day/${tomorrow}`) },
+    showTomorrow ? h('button.list-item.today-tomorrow', { type: 'button', onClick: () => navigate(`#/day/${tomorrow}`) },
       h('span.list-item-main',
         h('span.list-item-sub', 'Mañana'),
         h('span.list-item-title', `${planEmoji(t)} ${t.label}`)),
-      icon('chevron-right', 20, 'chev')));
+      icon('chevron-right', 20, 'chev')) : null);
 }

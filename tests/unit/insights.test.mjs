@@ -865,11 +865,18 @@ test('ejercicios archivados: sin sugerencia de subir peso y sin contar para la d
   const sessions = ['w1', 'w2', 'w3', 'w4'].map((wk) => ses(`r_${wk}`, W[wk], [['remo_barra', [set(70, 10), set(70, 10), set(70, 10)]]], { rpe: 9 }));
   const base = mk({ sessions, settings: settingsWith({ deload: { minStalled: 1 } }) });
   const live = weeklyInsights(base, W.w4);
-  assert.ok(live.suggestions.find((x) => x.id === 'dp-up-remo_barra'), 'sin archivar: sube');
+  // Ronda 8 (B4): 4 semanas iguales al tope = estancado → ni «sube» ni «mantén»: su siguiente paso es revisarlo
+  assert.equal(live.suggestions.find((x) => x.id === 'dp-up-remo_barra'), undefined, 'estancado: no se sugiere subir');
+  assert.match(whyText(byId(live, 'ex-stalled')), /Remo con barra · siguiente paso: Llevas 3 sesiones sin progresar · revisar · en la última sesión llegaste al tope del rango/);
   assert.equal(byId(live, 'deload').stalledCount, 1);
   const arch = weeklyInsights({ ...base, exercises: archived }, W.w4);
   assert.equal(arch.suggestions.find((x) => x.id === 'dp-up-remo_barra'), undefined, 'archivado: nada que sugerir');
   assert.ok(byId(arch, 'ex-stalled').items.some((x) => x.exerciseId === 'remo_barra'), 'en la información sigue apareciendo');
+  assert.doesNotMatch(whyText(byId(arch, 'ex-stalled')), /siguiente paso/, 'archivado: sin siguiente paso');
+  // Sin estancar (dos sesiones al tope): sin archivar sube; archivado, nada
+  const two = mk({ sessions: sessions.slice(2) });
+  assert.ok(weeklyInsights(two, W.w4).suggestions.find((x) => x.id === 'dp-up-remo_barra'), 'sin archivar: sube');
+  assert.equal(weeklyInsights({ ...two, exercises: archived }, W.w4).suggestions.find((x) => x.id === 'dp-up-remo_barra'), undefined, 'archivado: nada que sugerir');
   const dl = byId(arch, 'deload-none');
   assert.equal(dl.stalledCount, 0);
   assert.match(dl.why.rule, /los archivados no cuentan/);
@@ -1197,11 +1204,12 @@ test('progressionHint: «Sube a …» / cuánto y cuándo se sube; peso corporal
   const set = (weight, reps, rir = 2, extra = {}) => ({ id: `x${Math.random()}`, type: 'effective', done: true, weight, reps, rir, ...extra });
   const bench = { id: 'press_banca', logType: 'weight_reps', category: 'compound', region: 'upper', pattern: 'horizontal_push' };
   const target = { sets: 3, repMin: 4, repMax: 6 };
+  const pick = (x) => ({ kind: x.kind, text: x.text, label: x.label });
   // Las tres al tope (6) con RIR ≥ 1 → sube 2,5 kg
-  assert.deepEqual(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 6), set(80, 6, 1)], settings }),
+  assert.deepEqual(pick(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 6), set(80, 6, 1)], settings })),
     { kind: 'up', text: 'Sube a 82,5 kg', label: 'Siguiente paso: sube a 82,5 kg' });
   // Falta una rep → mantener, y cuándo se sube
-  assert.deepEqual(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 5), set(80, 5)], settings }),
+  assert.deepEqual(pick(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 5), set(80, 5)], settings })),
     { kind: 'hold', text: '6/6/6 → +2,5 kg', label: 'Siguiente paso: +2,5 kg cuando completes 6/6/6' });
   // Todas al tope pero una con RIR 0 → «con RIR ≥ 1»
   assert.match(progressionHint({ exercise: bench, target, lastSets: [set(80, 6), set(80, 6), set(80, 6, 0)], settings }).text, /^6\/6\/6 con RIR ≥ 1 → \+2,5 kg$/);

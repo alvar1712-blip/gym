@@ -7,6 +7,9 @@ async function seedRealistic(page, { months = 6, female = true, activeSession = 
     const db = await import('./js/db.js');
     const util = await import('./js/util.js');
     const { store } = window.__app;
+    // Un usuario con meses de datos tiene semana tipo: la de ejemplo (ronda 8, B2: ya no se siembra por defecto).
+    const { exampleWeekPatterns } = await import('./js/seed.js');
+    await store.saveSettings({ weekPatterns: exampleWeekPatterns() });
     const templates = store.all('templates');
     const ex = new Map(store.all('exercises').map((e) => [e.id, e]));
     const today = util.todayStr();

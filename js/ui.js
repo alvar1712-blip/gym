@@ -254,8 +254,13 @@ function layoutCompact(bar) {
   if (sub && sub.offsetHeight) items.push([sub, COMPACT_SUB_PX]);
   const boxes = items.map(([el, px]) => {
     const b = boxIn(el, bar);
-    const fs = parseFloat(getComputedStyle(el).fontSize) || px;
+    const cs = getComputedStyle(el);
+    const fs = parseFloat(cs.fontSize) || px;
     const s = Math.min(1, px / fs);
+    // Un texto que se parte en líneas (texto grande: html.text-large; título largo) conserva su ancho: ensancharlo lo
+    // dejaba en menos líneas, la cabecera cambiaba de alto al compactarse y, con el anclaje del scroll, la página
+    // oscilaba sin fin entre compacta y grande (subtítulo de la bienvenida al 150 %).
+    if (cs.whiteSpace !== 'nowrap') return { el, b, s };
     // Más pequeño cabe más texto: el ancho crece hasta el texto entero o hasta llenar el hueco.
     el.style.width = 'max-content';
     el.style.maxWidth = 'none';

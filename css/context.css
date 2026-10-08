@@ -48,6 +48,13 @@
 .wel-nav { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
 .wel-nav-row { display: flex; justify-content: space-between; }
 .wel-nav-row .btn { min-height: 44px; }
+/* «Tu semana» (ronda 8, B2): días de entreno y, por día, una rutina o una sesión libre. */
+.wel-block[hidden] { display: none; }
+.wel-day-row { display: flex; align-items: center; gap: 12px; }
+.wel-day-name { flex: 0 0 calc(96px * var(--ts)); font-weight: 600; }
+.wel-day-select { flex: 1; min-width: 0; }
+html.text-large .wel-day-row { flex-direction: column; align-items: stretch; gap: 4px; }
+html.text-large .wel-day-name, html.text-large .wel-day-select { flex: none; }
 
 /* ---------- Resultado de carrera (hecho 'race_result') ---------- */
 .ctx-result-custom { margin-top: 8px; max-width: 220px; }

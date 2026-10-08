@@ -19,6 +19,7 @@ const TYPE_OPTS = [
   { value: 'failure', label: 'Al fallo' },
   { value: 'drop', label: 'Drop' },
 ];
+const NEXT_ICON = { up: 'arrow-up', hold: 'target', review: 'refresh', stalled: 'chart' };
 const TYPE_BADGE = { warmup: 'Calent.', failure: 'Fallo', drop: 'Drop' };
 const RIR_OPTS = [{ value: 'F', label: 'Fallo' }, ...[0, 1, 2, 3, 4, 5].map((n) => ({ value: n, label: String(n) }))];
 const SPORT_BTN = {
@@ -64,9 +65,17 @@ export function renderCard(ctx, se) {
   // Siguiente paso (doble progresión, la misma regla que el panel semanal): discreto, no una orden; en la línea del
   // objetivo (no añade altura: en un iPhone SE «Registrar serie» sigue a la vista sin desplazar)
   const last = logType === 'cardio' ? null : ctx.lastFor(se);
-  const hint = last && ctx.session.status === 'active'
-    ? progressionHint({ exercise: ex, target: se.target, lastSets: last.sets, settings: ctx.settings?.() }) : null;
-  const next = hint ? h('span.ses-next', { dataset: { kind: hint.kind }, role: 'note', 'aria-label': hint.label }, icon(hint.kind === 'up' ? 'arrow-up' : 'target', 14), h('span', { 'aria-hidden': 'true' }, hint.text)) : null;
+  // Ronda 8 (B4): la MISMA decisión que el panel (progreso reciente, estancamiento, RIR, tope y confianza): sube ·
+  // mantén hasta el tope · «Mantén y vuelve a evaluar» · «Llevas N sesiones sin progresar · revisar» (al progreso del ejercicio)
+  const hint = last && ctx.session.status === 'active' && ex
+    ? progressionHint({
+      exercise: ex, target: se.target, lastSets: last.sets, settings: ctx.settings?.(),
+      history: ctx.historyFor?.(ex.id) ?? null, ref: ctx.session.date, lastDate: last.session?.date ?? null,
+    }) : null;
+  const next = !hint ? null : hint.action
+    ? h('button.ses-next.ses-next-btn', { type: 'button', dataset: { kind: hint.kind }, 'aria-label': hint.label, onClick: () => navigate(`#/progress/exercise/${encodeURIComponent(ex.id)}`) },
+      icon(NEXT_ICON[hint.kind], 14), h('span', { 'aria-hidden': 'true' }, `${hint.short || hint.text} · `, h('span.ses-next-act', hint.action)))
+    : h('span.ses-next', { dataset: { kind: hint.kind }, role: 'note', 'aria-label': hint.label }, icon(NEXT_ICON[hint.kind], 14), h('span', { 'aria-hidden': 'true' }, hint.short || hint.text));
   if (tgt || se.notes || next) {
     card.appendChild(h('div.ses-target',
       tgt ? h('span.ses-target-txt', `Objetivo ${tgt}`) : null,

@@ -10,7 +10,7 @@ import {
 import { e1rm, sessionVolume, sessionLoad, sessionPRs, makeBodyweightFn, movingAverage, weeklyMuscleSets } from '../../js/calc.js';
 import { bwStats, bwPoints } from '../../js/activity-logic.js';
 import { adherence, makeCtx, trackingSince } from '../../js/plan.js';
-import { defaultSettings, SEED_TEMPLATES, SEED_EXERCISES } from '../../js/seed.js';
+import { defaultSettings, exampleWeekPatterns, SEED_TEMPLATES, SEED_EXERCISES } from '../../js/seed.js';
 import { tsFromDate, fmtNum, addDays, deepClone, weekStart } from '../../js/util.js';
 
 // ---------------------------------------------------------------------------
@@ -779,7 +779,7 @@ function adherenceData(extra = {}) {
       tplSession('d2b', 'tpl_d2', '2026-09-22', [], { status: 'active' }),
     ],
     exercises: seedExMap(), templates: tplMap(), plan: new Map([['2026-09-23', { id: '2026-09-23', kind: 'rest', updatedAt: 1 }]]),
-    settings: defaultSettings(), bodyweight: [], today: TODAY, ...extra,
+    settings: { ...defaultSettings(), weekPatterns: exampleWeekPatterns() }, bodyweight: [], today: TODAY, ...extra,
   };
 }
 

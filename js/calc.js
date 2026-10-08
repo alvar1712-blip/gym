@@ -220,8 +220,10 @@ export function speed(sec, km) {
 export function pace100(sec, km) {
   return km > 0 && sec > 0 ? sec / (km * 10) : null;
 }
+/** Exponente de Riegel (1,06): el de race-predict.js (motor de carrera) y el de los objetivos de bici, natación y senderismo. */
+export const RIEGEL_K = 1.06;
 /** Riegel: tiempo estimado en d2 a partir de t1 en d1. */
-export function riegel(t1, d1, d2, k = 1.06) {
+export function riegel(t1, d1, d2, k = RIEGEL_K) {
   if (!(t1 > 0 && d1 > 0 && d2 > 0)) return null;
   return t1 * (d2 / d1) ** k;
 }

@@ -31,7 +31,9 @@ const strayText = (page, sel) => page.evaluate((s) => {
 
 /** Abre la app con la fecha fijada y un inicio de registro antiguo (para que haya días «saltados»). */
 async function setup(date = WED) {
-  const app = await openApp();
+  // Con la semana de ejemplo (L D1 · M D2 · X D3 · J D4 · V — · S D6 · D —): desde la ronda 8 (B2) un perfil nuevo
+  // empieza sin semana tipo, así que estas pruebas la siembran explícitamente.
+  const app = await openApp({ exampleWeek: true });
   await app.page.clock.setFixedTime(at(date));
   await reload(app.page);
   await app.page.evaluate(async () => {
@@ -464,7 +466,7 @@ test('historial: todas las sesiones por mes, filtros por tipo y apertura de cada
 });
 
 test('plantilla archivada en la semana tipo → «Plantilla eliminada» sin romper; primer uso sin días «saltados»', async () => {
-  const app = await openApp();
+  const app = await openApp({ exampleWeek: true }); // con la semana de ejemplo (ronda 8, B2: ya no es la de por defecto)
   const { page } = app;
   try {
     // Primer uso (instalada hoy miércoles): lunes y martes no salen como saltados.

@@ -8,8 +8,9 @@
 //  - stats.js: runPaceSeries (carreras terminadas con distancia y tiempo en movimiento —o duración en registros
 //    antiguos—, incluidas las enlazadas a una sesión de fuerza; SOLO kind 'run': senderismo, bici… no cuentan),
 //    enduranceRecords (mejor marca registrada en cada distancia, como contexto en «¿Por qué?») y RACE_DISTANCES.
-//  - calc.js: riegel y pace.
-//  - goals-logic.js: RIEGEL_K (1,06), MIN_KM.run (3 km) y fmtTimeWords, los mismos que usan los objetivos de carrera.
+//  - calc.js: riegel, pace y RIEGEL_K (1,06); util.js: fmtTimeWords.
+//  Dirección de dependencias: calc ← race-predict ← goals-logic (los objetivos de carrera con tiempo consumen este
+//  motor: predictFor, predictionSeries, checkTarget, baseOf). Este módulo NO importa goals-logic.
 //
 // REGLAS
 //  1. Esfuerzos válidos: carreras con fecha en las últimas 12 semanas (hoy y los 83 días anteriores), distancia
@@ -64,11 +65,10 @@
 //     fmtRaceRange / fmtPaceRange (siempre de menor a mayor). Nunca negativos ni «h:mm:ss /km».
 // Tono: siempre estimación, nunca promesa.
 import {
-  addDays, diffDays, todayStr, isDateStr, fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange, fmtPaceRange,
+  addDays, diffDays, todayStr, isDateStr, fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange, fmtPaceRange, fmtTimeWords,
 } from './util.js';
-import { riegel, pace, RUN_PACE_MIN, RUN_PACE_MAX } from './calc.js';
+import { riegel, pace, RUN_PACE_MIN, RUN_PACE_MAX, RIEGEL_K } from './calc.js';
 import { runPaceSeries, enduranceRecords, RACE_DISTANCES } from './stats.js';
-import { RIEGEL_K, MIN_KM as GOAL_MIN_KM, fmtTimeWords } from './goals-logic.js';
 import { raceResults, normalizeAll, entryRange, entryTitle, entryWhen, approxLabel, matchesRun, RESULT_DUP_TOL } from './context-logic.js';
 
 // ===========================================================================
@@ -79,8 +79,8 @@ import { raceResults, normalizeAll, entryRange, entryTitle, entryWhen, approxLab
 export const K = RIEGEL_K;
 /** Exponente máximo cuando el volumen se queda corto (media y maratón). */
 export const K_MAX = 1.1;
-/** Distancia mínima de un esfuerzo válido (km; la misma de los objetivos de carrera). */
-export const MIN_KM = GOAL_MIN_KM.run;
+/** Distancia mínima de un esfuerzo válido (km). Este módulo es su dueño; goals-logic.MIN_KM.run la reexporta. */
+export const MIN_KM = 3;
 /** Ventana de los esfuerzos: 12 semanas. */
 export const WINDOW_WEEKS = 12;
 export const WINDOW_DAYS = WINDOW_WEEKS * 7;
@@ -337,6 +337,23 @@ export const canPredict = (ctx) => ctx.valid.length >= MIN_VALID || (ctx.valid.l
 export function analyzeRuns(data, opts = {}) {
   const d = data && typeof data === 'object' ? data : {};
   const today = todayOf(d, opts);
+  // Memo por objeto `data` y «hoy» (la tendencia de un objetivo pide ~12 fechas): como stats.getIndex, se invalida si
+  // cambian las listas de sesiones o de contexto (otra lista o distinta longitud). El ctx devuelto es de solo lectura.
+  if (d !== data) return buildRuns(d, today);
+  let m = RUNS_MEMO.get(d);
+  if (!m || m.sessions !== d.sessions || m.sessionsLen !== lenOf(d.sessions) || m.context !== d.context || m.contextLen !== lenOf(d.context)) {
+    m = { sessions: d.sessions, sessionsLen: lenOf(d.sessions), context: d.context, contextLen: lenOf(d.context), byDay: new Map() };
+    RUNS_MEMO.set(d, m);
+  }
+  let ctx = m.byDay.get(today);
+  if (!ctx) { ctx = buildRuns(d, today); m.byDay.set(today, ctx); }
+  return ctx;
+}
+
+const RUNS_MEMO = new WeakMap();
+const lenOf = (x) => (Array.isArray(x) ? x.length : x instanceof Map ? x.size : x && typeof x === 'object' ? Object.keys(x).length : 0);
+
+function buildRuns(d, today) {
   const from = addDays(today, -(WINDOW_DAYS - 1));
   const volumeFrom = addDays(today, -(VOLUME_DAYS - 1));
   const runs = runPaceSeries(d).filter((a) => a.x <= today && a.km > 0 && a.sec > 0);
@@ -721,7 +738,8 @@ export const REPORT_HISTORY_MAX = 3;
  * récords): las carreras recientes de la base y las referencias históricas más recientes (como mucho
  * REPORT_HISTORY_MAX), de lo más reciente a lo más antiguo, y el tiempo previsto hoy en cada distancia.
  * @returns {{ refs:[{ source:'run'|'context', sessionId, entryId, km, sec, when, whenLong, age, ageText, old,
- *   interrupted, effort, surface, elevationM }], predictions:[{ id, label, mid, status, confidence }], duplicates,
+ *   interrupted, effort, surface, elevationM }], predictions:[{ id, label, km, mid, midExact, low, high, status, usable,
+ *   confidence, confidenceCodes, method }], duplicates,
  *   historyTotal }}
  */
 export function runningSummary(data, opts = {}) {
@@ -737,7 +755,12 @@ export function runningSummary(data, opts = {}) {
   const predictions = canPredict(ctx)
     ? RACES.map((r) => {
       const p = predictDistance(ctx, r.km, r);
-      return { id: r.id, label: r.label, mid: p.usable ? p.mid : null, status: p.status, confidence: p.confidence };
+      // El mismo trío (previsto, rango, confianza) que enseñan las pantallas
+      return {
+        id: r.id, label: r.label, km: r.km, mid: p.usable ? p.mid : null, midExact: p.usable ? p.midExact : null,
+        low: p.usable ? p.low : null, high: p.usable ? p.high : null, status: p.status, usable: p.usable,
+        confidence: p.confidence, confidenceCodes: p.confidenceCodes, method: METHOD,
+      };
     })
     : [];
   return { refs, predictions, duplicates: ctx.duplicates, historyTotal: ctx.history.length };
@@ -790,12 +813,9 @@ export function checkTarget(data, distanceKm, targetSec, opts = {}) {
   }
   const race = raceFor(D);
   const distanceLabel = race ? race.label : kmTxt(D);
-  const ctx = analyzeRuns(data, opts);
-  if (!canPredict(ctx)) {
-    const ins = insufficient(ctx);
-    return { ...base, verdict: 'insuficiente', reason: INSUFFICIENT, label: VERDICT_LABEL.insuficiente, distanceLabel, text: ins.message, why: ins.why };
-  }
-  const p = predictDistance(ctx, D, race);
+  const r = predictFor(data, D, opts);
+  if (!r.ok) return { ...base, verdict: 'insuficiente', reason: INSUFFICIENT, label: VERDICT_LABEL.insuficiente, distanceLabel, text: r.message, why: r.why };
+  const p = r.prediction;
   if (!p.usable) {
     // Sin predicción útil (esfuerzos que se contradicen): no se compara con números que no significan nada.
     return {
@@ -839,4 +859,83 @@ export function checkTarget(data, distanceKm, targetSec, opts = {}) {
     ...base, verdict, label: VERDICT_LABEL[verdict], distanceLabel, text, prediction: p, gapSec: gap, gapPerKmSec: perKm,
     rangeGapSec: rangeGap, why: { rule, data: whyData },
   };
+}
+
+// ===========================================================================
+// Entradas únicas para el resto de la app (ronda 8, B1: un solo motor de predicción de carrera)
+// ===========================================================================
+// Tiempos previstos, Objetivos (carrera con tiempo), Eventos, Análisis y el informe consumen ESTAS funciones: nadie
+// más calcula un tiempo de carrera con calc.riegel. Son envoltorios finos: no hay matemáticas nuevas.
+
+/** Identifica el método en cada resultado base (baseOf) y en las pruebas cruzadas. */
+export const METHOD = 'riegel-ponderado';
+
+/**
+ * Predicción de UNA distancia «a fecha de hoy» (o de opts.today).
+ * @returns {{ ok:true, today, prediction:Prediction } | { ok:false, reason:'datos insuficientes', message, notCounted,
+ *   why, … }}  prediction = predictDistance(...) (puede no ser útil: status incoherent/invalid → mira `.usable`);
+ *   ok:false = insufficient(ctx), lo mismo que predictRaces sin datos.
+ */
+export function predictFor(data, km, opts = {}) {
+  const ctx = analyzeRuns(data, opts);
+  if (!canPredict(ctx)) return insufficient(ctx);
+  const D = Number(km);
+  return { ok: true, today: ctx.today, prediction: predictDistance(ctx, D, raceFor(D)) };
+}
+
+/**
+ * Resultado base canónico de una predicción: lo que toda pantalla enseña (previsto, rango, confianza, referencias,
+ * método) y lo que comparan las pruebas cruzadas. null sin predicción.
+ */
+export function baseOf(p) {
+  if (!p) return null;
+  return {
+    method: METHOD, id: p.id, km: p.km, mid: p.mid, low: p.low, high: p.high, pace: p.pace, paceLow: p.paceLow, paceHigh: p.paceHigh,
+    midExact: p.midExact, k: p.k, confidence: p.confidence, confidenceLabel: p.confidenceLabel, confidenceCodes: [...p.confidenceCodes],
+    status: p.status, usable: p.usable,
+    refs: p.efforts.map((e) => ({
+      source: e.source, sessionId: e.sessionId ?? null, entryId: e.entryId ?? null, date: e.date, km: e.km, sec: e.sec, share: e.share,
+      old: !!e.old, interrupted: !!e.interrupted,
+    })),
+    note: p.advice?.note ?? null,
+  };
+}
+
+/**
+ * Atributos data-* de una predicción para las vistas (y las pruebas E2E que comparan pantallas): { mid, low, high,
+ * confidence } en texto, solo si es útil; {} si no. Acepta una Prediction o su baseOf.
+ */
+export function predictionDataset(p) {
+  if (!p || !p.usable) return {};
+  return { mid: String(p.mid), low: String(p.low), high: String(p.high), confidence: p.confidence };
+}
+
+/**
+ * Fotos del MISMO motor en fechas pasadas (tendencia y punto de partida de un objetivo): analyzeRuns con
+ * { today: fecha } (memorizado) para cada una.
+ * @returns {{date, ok, mid, midExact, low, high, confidence, status, usable}[]}  ok:false → mid null.
+ */
+export function predictionSeries(data, km, dates) {
+  return (dates || []).map((date) => {
+    const r = predictFor(data, km, { today: date });
+    if (!r.ok) return { date, ok: false, mid: null, midExact: null, low: null, high: null, confidence: null, status: null, usable: false };
+    const p = r.prediction;
+    return { date, ok: true, mid: p.mid, midExact: p.midExact, low: p.low, high: p.high, confidence: p.confidence, status: p.status, usable: p.usable };
+  });
+}
+
+/**
+ * Predicción solo con las carreras REGISTRADAS de [from, to] (sin resultados de tu contexto ni referencias
+ * históricas): la forma de un bloque en Análisis. No es la estimación de hoy (esa es predictFor).
+ * @returns {Prediction & {runs}|null} runs = carreras válidas de la ventana. null con menos de MIN_VALID o si no es útil.
+ */
+export function predictWindow(data, km, { from, to } = {}) {
+  const ctx = analyzeRuns(data, { today: to });
+  const valid = ctx.valid.filter((e) => e.source === 'run' && e.date >= from);
+  if (valid.length < MIN_VALID) return null;
+  const D = Number(km);
+  const p = predictDistance({ ...ctx, valid, basis: valid.slice(0, TOP_N), history: [], duplicates: [] }, D, raceFor(D));
+  if (!p.usable) return null;
+  p.runs = valid.length; // carreras válidas de la ventana (la base usa las TOP_N mejores)
+  return p;
 }

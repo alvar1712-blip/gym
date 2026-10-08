@@ -115,6 +115,11 @@
 .ses-next .icon { flex: none; color: var(--muted); }
 .ses-next[data-kind="up"] { color: var(--text); font-weight: 650; }
 .ses-next[data-kind="up"] .icon { color: var(--ok); }
+/* Ronda 8 (B4): «Estancado · revisar»: neutro (no es una alerta) y toda la línea es el enlace al progreso del
+   ejercicio. Objetivo táctil de 44 px sin sumar altura: relleno vertical compensado con margen negativo */
+.ses-next-btn { appearance: none; background: none; border: 0; padding: 14px 0; margin: -14px 0; font-family: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ses-next-btn > span { min-width: 0; }
+.ses-next-act { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
 .ses-warm { color: var(--muted); font-weight: 500; }
 
 /* ---------- Filas de series ---------- */

@@ -338,7 +338,7 @@ test('informe: «RÉCORDS DE RUNNING» (la mejor de siempre) separado de «REFER
   assert.match(lines[2], /^- 10 km — 1:00:00 — mayo 2026 \(hace 5 meses; marca histórica, pesa menos por antigua\) · después hubo «Parón o entrenamiento irregular» \(jun 2026 – ago 2026\)$/);
   assert.equal(lines.filter((l) => /marca histórica, pesa menos/.test(l)).length, REPORT_HISTORY_MAX);
   assert.ok(lines.includes('- (3 marcas históricas más antiguas sin listar)'));
-  assert.match(lines.at(-1), /^- Tiempo previsto hoy: 5 km ≈ \d+:\d\d \(confianza \w+\) · 10 km ≈ /);
+  assert.match(lines.at(-1), /^- Tiempo previsto hoy: 5 km ≈ \d+:\d\d \(\d+:\d\d–\d+:\d\d, (orientativo, )?confianza \w+\) · 10 km ≈ /);
   assert.ok(!/Carrera de mi barrio|nota privada/.test(txt), 'sin nombres ni notas');
   // Orden: RUNNING (si hay) → RÉCORDS → PREDICCIÓN ACTUAL
   const heads = blocks.map((b) => b.split('\n')[0]);

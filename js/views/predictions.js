@@ -13,7 +13,7 @@ import { fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange } from '../util.j
 import { dataFromStore } from '../progress-ui.js';
 import { racesLink } from './races.js';
 import {
-  predictRaces, checkTarget, analyzeRuns, predictDistance, raceFor, rangeText, paceRangeText, fmtGap, fmtGapPerKm,
+  predictRaces, checkTarget, predictFor, predictionDataset, raceFor, rangeText, paceRangeText, fmtGap, fmtGapPerKm,
   RACES, MIN_KM, MIN_VALID, WINDOW_WEEKS, VOLUME_WEEKS, TOP_N, VOLUME, MAX_PACE, MIN_PACE,
 } from '../race-predict.js';
 
@@ -175,7 +175,7 @@ function volumeFacts(p) {
 }
 
 function raceCard(p) {
-  const el = h('article.card.prd-race', { dataset: { race: p.id, confidence: p.confidence, status: p.status } },
+  const el = h('article.card.prd-race', { dataset: { race: p.id, confidence: p.confidence, status: p.status, ...predictionDataset(p) } },
     h('div.prd-race-head',
       h('h3.prd-race-name', p.label),
       confBadge(p)));
@@ -243,13 +243,13 @@ function whyContent(why) {
 // ===========================================================================
 
 function checker(data, r) {
-  const ctx = analyzeRuns(data);
   const customCache = new Map();
   const predictionFor = (km) => {
     const race = raceFor(km);
     if (race && r.predictions[race.id]) return r.predictions[race.id];
     const key = km.toFixed(3);
-    if (!customCache.has(key)) customCache.set(key, predictDistance(ctx, km, null));
+    // La misma entrada única que Objetivos y Eventos (race-predict.predictFor)
+    if (!customCache.has(key)) customCache.set(key, predictFor(data, km).prediction);
     return customCache.get(key);
   };
 
@@ -329,7 +329,7 @@ function verdictView(res) {
     else gap = { label: 'Margen', value: `≈${NB}${fmtGap(g)}`, sub: `≈ ${per} sobre tu tiempo previsto` };
   }
   const p = res.prediction;
-  return h(`div.prd-verdict.prd-v-${v}`, { dataset: { verdict: v } },
+  return h(`div.prd-verdict.prd-v-${v}`, { dataset: { verdict: v, ...predictionDataset(p) } },
     h('div.prd-v-head',
       h('span.prd-v-icon', { 'aria-hidden': 'true' }, icon(VERDICT_ICON[v] || 'info', 20)),
       h('div.prd-v-titles',

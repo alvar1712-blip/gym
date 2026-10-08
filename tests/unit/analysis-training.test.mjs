@@ -8,7 +8,7 @@ import {
   cyclePhase, experienceOf, isMainExercise, rateText, SOURCES, THRESHOLDS, TAU_WEEKS,
 } from '../../js/analysis-training.js';
 import { getProfile } from '../../js/profile.js';
-import { defaultSettings, SEED_EXERCISES } from '../../js/seed.js';
+import { defaultSettings, exampleWeekPatterns, SEED_EXERCISES } from '../../js/seed.js';
 import { addDays, tsFromDate, fmtDate, weekStart } from '../../js/util.js';
 
 const TODAY = '2026-09-24';
@@ -313,8 +313,8 @@ test('fuerza: estancado con músculo por debajo de su rango y fatiga → descarg
   assert.ok(shorts.includes('Morton et al., 2018'));
   assert.ok(shorts.includes('Knowles et al., 2018'));
   assert.ok(st.why.data.some((d) => /Series\/sem de pecho/.test(d.label)));
-  // Ronda 6 (fase D): con la semana tipo por defecto (5 días) y una sesión cada 4 días, la constancia va antes que más series
-  const planned = mk({ ...data, settings: defaultSettings() });
+  // Ronda 6 (fase D): con la semana tipo de ejemplo (5 días) y una sesión cada 4 días, la constancia va antes que más series
+  const planned = mk({ ...data, settings: { ...defaultSettings(), weekPatterns: exampleWeekPatterns() } });
   const st2 = byId(analyzeStrength(planned, { today: TODAY, profile: prof({ experience: 'intermediate' }) }).insights, 'strength-stalled-press_banca');
   assert.match(st2.text, /antes que más series, constancia: en 4 semanas hiciste el \d+ % de lo planificado/);
   assert.doesNotMatch(st2.text, /\+1–2 series/);

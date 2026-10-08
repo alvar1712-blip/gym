@@ -7,7 +7,7 @@ import {
   undoRemove, duplicateItem, groupLabels, sectionsOf, searchExercises, parseAliases, validateExerciseName,
   assignMuscles, exerciseUsage, summarizeSets, setTexts, exerciseHistory,
 } from '../../js/library-logic.js';
-import { SEED_TEMPLATES, SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
+import { SEED_TEMPLATES, SEED_EXERCISES, defaultSettings, exampleWeekPatterns } from '../../js/seed.js';
 import { formatSet } from '../../js/session-logic.js';
 
 const seq = (p) => { let n = 0; return () => `${p}${++n}`; };
@@ -147,7 +147,7 @@ test('resumen y uso en el calendario', () => {
   assert.equal(templatePreviewText(tpl, (id) => names[id], 3), 'Press banca · Dominadas · Remo …');
   assert.equal(templatePreviewText({ items: [] }, () => null), 'Sin ejercicios todavía');
 
-  const settings = defaultSettings();
+  const settings = { ...defaultSettings(), weekPatterns: exampleWeekPatterns() };
   assert.equal(patternDaysFor(settings.weekPatterns, '2026-09-23')[0].templateId, 'tpl_d1');
   settings.weekPatterns.push({ from: '2026-10-05', days: [{ kind: 'rest' }, { kind: 'rest' }, { kind: 'rest' }, { kind: 'rest' }, { kind: 'rest' }, { kind: 'rest' }, { kind: 'template', templateId: 'tpl_d1' }] });
   const use = templateCalendarUse('tpl_d1', {

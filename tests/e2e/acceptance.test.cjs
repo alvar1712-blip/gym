@@ -20,7 +20,7 @@ const { pathToFileURL } = require('url');
 // Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
 const playwright = require('playwright');
 const { devices } = playwright;
-const { waitReady, go, reload, storeAll, idbAll, shot, BROWSER, chromiumOnly } = require('./helpers.cjs');
+const { waitReady, go, reload, storeAll, idbAll, shot, BROWSER, chromiumOnly, useExampleWeek } = require('./helpers.cjs');
 
 const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle', 'context', 'pastRecords', 'races'];
 const PREV_MON = '2026-09-14';
@@ -93,6 +93,16 @@ async function launch({ time, serviceWorkers = 'block', hash = '', init = null, 
     return p;
   };
   const page = await newPage();
+  // Las pruebas de aceptación son las de un usuario con su semana tipo (la de ejemplo): desde la ronda 8 (B2) un perfil
+  // nuevo empieza sin ella, así que se siembra explícitamente. Con service worker NO se recarga aquí: la prueba de la
+  // instalación (criterio 5) comprueba que la primera visita no se recarga, y una recarga del arnés con el SW ya
+  // activo (WebKit lo activa antes) la cargaría controlada. La semana queda en memoria y en disco igualmente.
+  if (serviceWorkers === 'allow') {
+    await page.evaluate(async () => {
+      const { exampleWeekPatterns } = await import('./js/seed.js');
+      await window.__app.store.saveSettings({ weekPatterns: exampleWeekPatterns() });
+    });
+  } else await useExampleWeek(page);
   return {
     browser, context, page, server, url: server.url, errors, newPage,
     close: async () => { await browser.close(); await server.close(); },
@@ -130,10 +140,13 @@ async function freshView(page, action) {
   }, null, { timeout: 5000 });
 }
 
-/** Todas las stores tal como están en IndexedDB (disco). */
+/**
+ * Todas las stores tal como están en IndexedDB (disco). Sin los registros reservados de 'meta' (el punto de
+ * restauración del dispositivo, ronda 8 B3: no son datos de la app ni viajan en las copias).
+ */
 async function idbSnapshot(page) {
   const out = {};
-  for (const s of STORES) out[s] = byId(await idbAll(page, s));
+  for (const s of STORES) out[s] = byId((await idbAll(page, s)).filter((o) => !String(o.id).startsWith('~')));
   return out;
 }
 
@@ -522,6 +535,9 @@ test('CRITERIO 2: exporto una copia, borro los datos, importo la copia y todo qu
     await sheetBtn(page, 'Borrar todo').click();
     await page.waitForFunction(() => location.hash === '#/today' && window.__app.store.count('sessions') === 0, null, { timeout: 5000 });
     const wiped = await idbSnapshot(page);
+    // Antes de borrar se guardó en el dispositivo el punto de restauración: lo de antes, entero (ronda 8, B3).
+    const rp = (await idbAll(page, 'meta')).find((o) => o.id === '~restorePoint:data');
+    for (const s of STORES) assert.deepStrictEqual(byId(rp.backup.data[s]), before[s], `punto de restauración: «${s}»`);
     for (const s of ['sessions', 'plan', 'bodyweight', 'checkins', 'goals']) assert.strictEqual(wiped[s].length, 0, `«${s}» borrada en disco`);
     assert.ok(!wiped.exercises.some((e) => e.id === 'ex_custom'));
     assert.strictEqual(wiped.meta.find((m) => m.id === 'settings').lastBackupAt, null);
@@ -893,7 +909,7 @@ const WHY_PLAN = {
     ['press_banca', [3, 4, 6], (i) => [75 + 2.5 * i, i === 4 ? [6, 6, 6] : [6, 5, 5], i === 4 ? [2, 1, 1] : [1, 1, 1]]],
     ['sentadilla', [3, 6, 8], (i) => [90 + 2.5 * i, i === 4 ? [8, 8, 8] : [8, 7, 7], [2, 2, 2]]],
     ['curl_barra', [3, 10, 12], (i) => [26 + i, i === 4 ? [12, 12, 12] : [12, 11, 10], [1, 1, 1]]],
-    ['remo_pecho_apoyado', [3, 8, 10], () => [60, [10, 9, 8], [1, 1, 1]]], // no llega al tope → estancado
+    ['remo_pecho_apoyado', [3, 8, 10], () => [60, [10, 9, 8], [1, 1, 1]]], // no llega al tope → estancado (ronda 8, B4: no «mantén»)
   ],
   B: [
     ['dominadas', [3, 6, 8], (i) => [1.25 * i, i === 4 ? [8, 8, 8] : [8, 7, 7], [1, 1, 1]]], // lastre
@@ -1089,9 +1105,8 @@ test('CRITERIO 6: cada sugerencia del panel semanal abre su «¿Por qué?» con 
       ['press_banca', 'Press banca: sube 2,5 kg', 'de 85 a 87,5 kg', '3×4–6 (tope 6 reps)', '85 kg × 6 @1', 'compuesto de tren superior: 2,5 kg', 'lun 14 sep · Torso A'],
       ['sentadilla', 'Sentadilla: sube 5 kg', 'de 100 a 105 kg', '3×6–8 (tope 8 reps)', '100 kg × 8 @2', 'compuesto de tren inferior: 5 kg', 'lun 14 sep · Torso A'],
     ];
-    const prev = await checkAll(PREV_MON, [...DP_UP.map(([id]) => `dp-up-${id}`), 'dp-hold', 'load-warn', 'runkm-warn', 'deload']);
+    const prev = await checkAll(PREV_MON, [...DP_UP.map(([id]) => `dp-up-${id}`), 'load-warn', 'runkm-warn', 'deload']);
     await shotWhy(page, 'dp-up-press_banca', 'acceptance-6-why-dp-up');
-    await shotWhy(page, 'dp-hold', 'acceptance-6-why-dp-hold');
     await shotWhy(page, 'load-warn', 'acceptance-6-why-load');
 
     // Doble progresión «sube»: las series efectivas concretas (sin el calentamiento), el objetivo y el incremento.
@@ -1111,20 +1126,15 @@ test('CRITERIO 6: cada sugerencia del panel semanal abre su «¿Por qué?» con 
     }
     assert.deepStrictEqual(setRows(prev['dp-up-press_banca']), ['85 kg × 6 @2 · ✓ tope y RIR', '85 kg × 6 @1 · ✓ tope y RIR', '85 kg × 6 @1 · ✓ tope y RIR']);
 
-    // «Mantén el peso» agrupado: cada ejercicio con su rango, el motivo y las series que lo explican.
-    const hold = prev['dp-hold'];
-    assert.strictEqual(hold.title, 'Mantén el peso');
-    assert.match(hold.text, /intenta sumar repeticiones hasta el tope: Remo con pecho apoyado; busca completar el tope con RIR ≥ 1: Jalón al pecho; completa todas las series del objetivo en el tope: Peso muerto rumano\.$/);
-    assert.deepStrictEqual(hold.rows.filter((r) => !r.sub), [
-      { label: 'Jalón al pecho · 3×10–12', value: '17 sep · todas en el tope, pero las 3 con RIR por debajo de 1 o sin registrar', sub: false },
-      { label: 'Peso muerto rumano · 3×8–10', value: '17 sep · 2 de 3 series del objetivo registradas (todas en el tope)', sub: false },
-      { label: 'Remo con pecho apoyado · 3×8–10', value: '14 sep · 1 de 3 series en el tope (10 reps)', sub: false },
-    ]);
-    const holdSets = hold.rows.filter((r) => r.sub).map((r) => r.value);
-    for (const v of ['55 kg × 12 @0 · RIR 0 < 1', '90 kg × 10 @2 · ✓ tope y RIR', '60 kg × 10 @1 · ✓ tope y RIR', '60 kg × 9 @1 · falta 1 rep', '60 kg × 8 @1 · faltan 2 reps']) {
-      assert.ok(holdSets.includes(v), `serie «${v}» en el porqué de «Mantén»: ${holdSets}`);
+    // Ronda 8 (B4): remo con pecho apoyado, jalón al pecho y peso muerto rumano no llegan a subir y llevan 5 semanas sin
+    // mejorar su 1RM estimado: estancados (cuentan para la descarga). Antes salían A LA VEZ en «Mantén el peso»; ahora
+    // no (una sola decisión, la de la sesión): su siguiente paso va en «Ejercicios estancados», con lo que falta.
+    assert.strictEqual(prev['dp-hold'], undefined, 'estancados: no en «Mantén el peso»');
+    const stalled = await tapWhy(page, '.wk-msg', 'ex-stalled');
+    for (const name of ['Remo con pecho apoyado', 'Jalón al pecho', 'Peso muerto rumano']) {
+      assert.strictEqual(row(stalled, `${name} · siguiente paso`), 'Llevas 3 sesiones sin progresar · revisar');
     }
-    assert.strictEqual(holdSets.length, 3 + 2 + 3);
+    await shotWhy(page, 'ex-stalled', 'acceptance-6-why-stalled');
 
     // Aviso de carga: la semana, la media de las 4 previas con cada semana, la variación y los umbrales.
     const lw = prev['load-warn'];
@@ -1196,7 +1206,7 @@ test('CRITERIO 6: cada sugerencia del panel semanal abre su «¿Por qué?» con 
       increments: { upperCompound: 5, lowerCompound: 10, isolation: 1 }, loadWarn: { low: 20, high: 70 },
     }));
     await freshView(page, () => go(page, `#/weekly?week=${PREV_MON}`));
-    const changed = await checkAll(PREV_MON, [...DP_UP.map(([id]) => `dp-up-${id}`), 'dp-hold', 'load-warn', 'runkm-warn', 'deload']);
+    const changed = await checkAll(PREV_MON, [...DP_UP.map(([id]) => `dp-up-${id}`), 'load-warn', 'runkm-warn', 'deload']);
     assert.strictEqual(changed['dp-up-press_banca'].title, 'Press banca: sube 5 kg');
     assert.strictEqual(row(changed['dp-up-press_banca'], 'Incremento'), 'compuesto de tren superior: 5 kg');
     assert.match(changed['dp-up-press_banca'].rule, /5 kg en compuestos de tren superior, 10 kg en compuestos de tren inferior/);

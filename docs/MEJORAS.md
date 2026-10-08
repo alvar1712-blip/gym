@@ -66,6 +66,24 @@ de calentamiento pendientes al principio). No cambia el registro de 1 toque ni o
   `history`, `duplicates`, `canPredict`; `status:'tentative'` también con menos de 2 carreras recientes.
 - `checkTarget(data, distanceKm, targetSec)` → `{ verdict:'probable'|'ajustado'|'hoy_no'|'insuficiente', prediction,
   gapSec, why }`: objetivo ≥ `high` → probable; dentro del rango → ajustado; < `low` → hoy no (con cuánto falta).
+- **Motor único (ronda 8, B1).** `race-predict.js` es la única fuente de cualquier tiempo o ritmo de carrera a pie
+  estimado; nadie más llama a `calc.riegel` para carrera. Entradas finas (sin matemáticas nuevas):
+  `predictFor(data, km, { today }?)` → `{ ok:true, prediction }` | `insufficient(ctx)`; `baseOf(p)` → DTO canónico
+  `{ method:'riegel-ponderado', id, km, mid, low, high, pace…, midExact, k, confidence, confidenceLabel,
+  confidenceCodes, status, usable, refs, note }` (lo que comparan las pruebas cruzadas); `predictionSeries(data, km,
+  fechas)` (fotos del mismo motor en fechas pasadas: tendencia e inicio de un objetivo); `predictWindow(data, km,
+  { from, to })` (solo carreras registradas de la ventana: forma por bloques de Análisis); `predictionDataset(p)`
+  (atributos `data-mid/low/high/confidence` de las vistas); `METHOD`. `analyzeRuns` se memoriza por (`data`, hoy) y
+  se invalida como `stats.getIndex` (otra lista o distinta longitud de `sessions`/`context`). `checkTarget` pasa por
+  `predictFor`; `runningSummary().predictions[i]` añade `low`, `high`, `midExact`, `usable`, `confidenceCodes`, `method`.
+  Consumidores: Tiempos previstos (tabla y distancia propia), **Objetivos** de carrera con tiempo (`goals-logic`:
+  «Actual» = `predictFor().mid`, veredicto = `checkTarget`, «Al alcance» ⇔ `probable`, «Ajustado» u «Orientativo»
+  sin fecha, tendencia = regresión de las fotos semanales del motor, `prediction` = `baseOf`; conseguido exige además
+  un ritmo creíble), Eventos (`racePrediction().base`), Análisis (tile «5 km previsto» = el de hoy; la serie por
+  bloques se llama «Forma en 5 km por bloques»; la previsión a 4 semanas parte del 5 km de hoy) y el informe
+  (previsto, rango y confianza). Bici, natación y senderismo con tiempo siguen con su Riegel en `goals-logic` (ninguna
+  otra pantalla los predice). Pruebas cruzadas: `tests/unit/prediction-coherence.test.mjs`,
+  `tests/e2e/prediction-coherence.test.cjs`.
 - Vista: tabla de las 4 distancias (rango, ritmo, confianza, «¿Por qué?»), comprobador (distancia: 5k/10k/media/
   maratón/otra en km + tiempo con `ui.durationInput`) con veredicto y «¿Por qué?». Tono prudente: estimación, no promesa.
 

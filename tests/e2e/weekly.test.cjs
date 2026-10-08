@@ -350,12 +350,16 @@ test('#/weekly (semana en curso): Información y después Sugerencias; cada mens
     assert.strictEqual(list.filter((c) => c.title === 'Mantén el peso y busca más repeticiones').length, 1);
     assert.ok(await page.locator('.wk-msg[data-id="dp-hold"] .wk-item').count() > 3);
     const whyHold = await openWhy(page, 'dp-hold');
-    assert.ok(whyHold.rows.some((r) => /^Remo con pecho apoyado · 3×8–10/.test(r.label)), 'ejercicio con su rango');
-    assert.ok(whyHold.rows.some((r) => r.value.startsWith('60 kg × 9 @1 · falta 1 rep')), 'serie concreta con lo que falta');
+    assert.ok(whyHold.rows.some((r) => !r.sub && / · 3×8–10$/.test(r.label)), 'ejercicio con su rango');
+    assert.ok(whyHold.rows.some((r) => r.sub && /^[\d,]+ kg × \d+ @\d · faltan? \d+ reps?$/.test(r.value)), 'serie concreta con lo que falta');
+    // Ronda 8 (B4): el remo con pecho apoyado está estancado → no sale en «Mantén el peso» (antes decía las dos cosas)
+    assert.ok(!whyHold.rows.some((r) => /^Remo con pecho apoyado/.test(r.label)), 'estancado: no en «mantener»');
 
     // Estancados (remo con pecho apoyado, jalón y sentadilla): cifras de 1RM por sesión
     const whyStall = await openWhy(page, 'ex-stalled');
     for (const name of ['Remo con pecho apoyado', 'Jalón al pecho', 'Sentadilla']) assert.ok(whyStall.rows.some((r) => r.label === name && !r.sub), `${name} estancado`);
+    // …y su siguiente paso, el mismo que dice la sesión
+    assert.ok(whyStall.rows.some((r) => r.label === 'Remo con pecho apoyado · siguiente paso' && /^Llevas \d+ sesiones sin progresar · revisar/.test(r.value)), JSON.stringify(whyStall.rows.filter((r) => /siguiente paso/.test(r.label))));
     assert.ok(whyStall.rows.some((r) => r.sub && /^82 kg · 60 kg × 10 @1$/.test(r.value)), '1RM estimado por sesión del remo');
 
     // Descarga: 3 estancados + RPE medio alto + check-ins bajos (2 de 3)

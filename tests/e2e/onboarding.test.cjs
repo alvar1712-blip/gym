@@ -1,4 +1,5 @@
-// E2E de la bienvenida y del perfil ampliado (ronda 6, docs/MEJORAS6.md): perfil nuevo → 3 pasos saltables que guardan
+// E2E de la bienvenida y del perfil ampliado (ronda 6, docs/MEJORAS6.md): perfil nuevo → 3 pasos saltables (4 con «Tu
+// semana», ronda 8 B2, que prueba week-setup.test) que guardan
 // al momento (sexo, fecha de nacimiento, objetivo, experiencia, deportes, días, otros objetivos, fase actual y
 // molestias); saltarlo todo no obliga a nada; usuarios existentes nunca la ven (invitación discreta en Análisis); campos
 // nuevos en #/settings/profile.
@@ -61,8 +62,12 @@ test('bienvenida completa: guarda el perfil al momento y crea la fase actual', a
     await shot(page, 'welcome-2');
     await page.locator('.wel-next').click();
 
-    // Paso 3: fase actual y molestias → Listo
-    await waitView(page, '[data-step="3"]');
+    // Paso 3 (ronda 8, B2): «Tu semana», solo para un perfil sin semana tipo; aquí se salta (week-setup.test lo prueba)
+    await waitView(page, '[data-step="3"][data-id="week"]');
+    await page.locator('.wel-skip').click();
+
+    // Paso 4: fase actual y molestias → Listo
+    await waitView(page, '[data-step="4"]');
     await chip(page, 'phase', 'Vuelta tras vacaciones o parón').click();
     await page.locator('[data-block="limitations"] textarea').fill('Molestia en la rodilla izquierda al correr cuesta abajo');
     await shot(page, 'welcome-3');
@@ -107,6 +112,9 @@ test('bienvenida saltada: nada obligatorio y no se vuelve a ofrecer como perfil 
     await page.locator('.wel-skip').click();
     await page.locator('.wel-skip').click();
     await waitView(page, '[data-step="3"]');
+    assert.match(await page.locator('.wel-skip').innerText(), /^Saltar$/, '«Tu semana» (ronda 8, B2) también se salta');
+    await page.locator('.wel-skip').click();
+    await waitView(page, '[data-step="4"]');
     assert.match(await page.locator('.wel-skip').innerText(), /Saltar y terminar/);
     await page.locator('.wel-skip').click();
     await waitView(page, '.today-plan');
