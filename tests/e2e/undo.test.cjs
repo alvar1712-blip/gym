@@ -146,13 +146,14 @@ async function slowDiskThenLeave(page) {
   await go(page, '#/context');
   await go(page, '#/context/ctx_u');
   await page.locator('.ctx-delete').click();
-  // Una transacción de escritura abierta en 'context' retiene el borrado de la app ~1,2 s (el disco lento de un iPhone)
+  // Una transacción de escritura abierta en 'context' retiene el borrado de la app (el disco lento de un iPhone)
+  // hasta que la prueba la suelta: así el borrado termina SIEMPRE después de tocar Hoy, con o sin carga.
   await page.evaluate(() => new Promise((ready) => {
+    window.__holdDisk = true;
     const r = indexedDB.open('entreno');
     r.onsuccess = () => {
       const tx = r.result.transaction('context', 'readwrite');
-      const end = performance.now() + 1200;
-      const spin = () => { if (performance.now() < end) tx.objectStore('context').get('nada').onsuccess = spin; };
+      const spin = () => { if (window.__holdDisk) tx.objectStore('context').get('nada').onsuccess = spin; };
       spin();
       tx.oncomplete = () => r.result.close();
       ready();
@@ -160,9 +161,10 @@ async function slowDiskThenLeave(page) {
   }));
   await page.locator('.sheet-panel .btn-danger').click();
   await page.evaluate(() => window.__app.navigate('#/today'));
+  await page.waitForFunction(() => location.hash === '#/today');
+  await page.evaluate(() => { window.__holdDisk = false; });
   await page.waitForFunction(() => !window.__app.store.get('context', 'ctx_u') && document.querySelector('.toast-undo'));
-  await page.waitForTimeout(600); // un «atrás» tardío llegaría aquí
-  await settle(page);
+  await settle(page); // un «atrás» tardío ya habría llegado (settle espera también a los «atrás» en camino)
   assert.strictEqual(await page.evaluate(() => location.hash), '#/today', 'sigue en Hoy');
   await undo(page);
   await page.waitForFunction(() => !!window.__app.store.get('context', 'ctx_u'));
