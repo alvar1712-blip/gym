@@ -198,13 +198,13 @@ test('CRITERIO 1: cierro la app de golpe a mitad de sesión, vuelvo y se reabre 
     const bc = card(page, bench.id);
     await bc.locator('.ses-register').click();
     await guard(page);
-    await bc.locator('.ses-editor button[aria-label="Sumar 2,5"]').click();
+    await bc.locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').click();
     await bc.locator('.ses-register').click();
     await guard(page);
     // Dominadas: serie 1 EDITADA con los steppers (+2,5 kg de lastre, −1 rep) y RIR 0, SIN confirmar.
     const pc = card(page, pull.id);
-    await pc.locator('.ses-editor button[aria-label="Sumar 2,5"]').click();
-    await pc.locator('.ses-editor button[aria-label="Restar 1"]').click();
+    await pc.locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').click();
+    await pc.locator('.ses-editor button[aria-label^="Restar 1 a "]').click();
     await pc.locator('.ses-rir .chip', { hasText: /^0$/ }).click();
     assert.strictEqual(await pc.locator('.ses-editor input[aria-label="Lastre"]').inputValue(), '12,5');
     assert.strictEqual(await pc.locator('.ses-editor input[aria-label="Repeticiones"]').inputValue(), '7');
@@ -295,7 +295,7 @@ test('CRITERIO 1: al volver, confirmar la serie editada antes de cerrar da el mi
     await reload(page);
     const id = await startTodayFromHoy(page);
     const pullId = (await getSession(page, id)).exercises[1].id;
-    await card(page, pullId).locator('.ses-editor button[aria-label="Sumar 2,5"]').click();
+    await card(page, pullId).locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').click();
     const expected = await getSession(page, id);
     assert.deepStrictEqual(expected.exercises[1].sets.map((x) => x.weight), [12.5, 10, 10]);
 
@@ -332,8 +332,8 @@ test('CRITERIO 1: pasar a segundo plano guarda al instante lo pendiente; si iOS 
     // Congelar los temporizadores: el guardado diferido (250 ms) no puede dispararse por sí solo.
     const now = await page.evaluate(() => Date.now());
     await app.context.clock.pauseAt(new Date(now + 50));
-    await bc.locator('.ses-editor button[aria-label="Sumar 2,5"]').click();
-    await bc.locator('.ses-editor button[aria-label="Sumar 1"]').click();
+    await bc.locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').click();
+    await bc.locator('.ses-editor button[aria-label^="Sumar 1 a "]').click();
     await page.locator('textarea.ses-notes').fill('Nota escrita justo antes de salir');
     const expected = await getSession(page, id);
     assert.deepStrictEqual([expected.exercises[0].sets[1].weight, expected.exercises[0].sets[1].reps], [82.5, 6]);
@@ -638,7 +638,7 @@ test('CRITERIO 3: con una sesión anterior (hecha por la interfaz), registrar la
     assert.deepStrictEqual([disk.exercises[0].sets[1].weight, disk.exercises[0].sets[1].reps, disk.exercises[0].sets[1].rir], [80, 5, 1]);
     // Serie 3 ajustando el peso: 2 toques (+2,5 y registrar).
     await guard(page);
-    await b.locator('.ses-editor button[aria-label="Sumar 2,5"]').click();
+    await b.locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').click();
     await b.locator('.ses-register').click();
     disk = await waitDiskSession(page, id, (d) => d.exercises[0].sets[2].done === true, 1000);
     assert.strictEqual(await taps(), 2);

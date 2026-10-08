@@ -100,7 +100,12 @@ function tabFor(route) {
 
 function onRouteChange(route) {
   activeTab = tabFor(route);
-  for (const [id, b] of Object.entries(tabButtons)) b.classList.toggle('active', id === activeTab);
+  for (const [id, b] of Object.entries(tabButtons)) {
+    const on = id === activeTab;
+    b.classList.toggle('active', on);
+    // VoiceOver: «página actual» en la pestaña activa (el color solo no se oye).
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
   moveTabPill(TABS.findIndex((t) => t.id === activeTab));
   document.body.dataset.route = route.route.pattern;
   // Hojas y avisos con acción de la pantalla anterior no se quedan abiertos sobre la nueva.
@@ -131,6 +136,37 @@ function moveTabPill(i) {
 function updateBadges() {
   const dot = tabButtons.settings?.querySelector('.tab-dot');
   if (dot) dot.hidden = !store.backupOverdue();
+}
+
+// ---------------------------------------------------------------------------
+// Tamaño de texto (Dynamic Type de iOS)
+// ---------------------------------------------------------------------------
+
+/**
+ * --ts en <html>: factor por el que se multiplican los font-size del CSS (calc(Npx * var(--ts))). En Safari
+ * se mide el tamaño del texto del sistema (font: -apple-system-body, 17px por defecto) y se escala entre
+ * 1 y 1,5. localStorage 'entreno.textScale' lo fuerza (pruebas; sin interfaz). Si no, se queda en 1.
+ */
+function applyTextScale() {
+  const root = document.documentElement;
+  let scale = null;
+  try {
+    const forced = parseFloat(localStorage.getItem('entreno.textScale'));
+    if (Number.isFinite(forced) && forced > 0) scale = forced;
+  } catch { /* almacenamiento bloqueado */ }
+  if (scale == null && typeof CSS !== 'undefined' && CSS.supports && CSS.supports('font', '-apple-system-body')) {
+    const probe = document.createElement('span');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;font:-apple-system-body';
+    probe.textContent = 'A';
+    document.body.appendChild(probe);
+    const px = parseFloat(getComputedStyle(probe).fontSize);
+    probe.remove();
+    if (px > 0) scale = Math.round(Math.min(1.5, Math.max(1, px / 17)) * 100) / 100;
+  }
+  if (scale != null) root.style.setProperty('--ts', String(scale));
+  // Con el texto grande, las filas que a 100 % se cortan con «…» pasan a ocupar más líneas (css/app.css)
+  root.classList.toggle('text-large', (scale ?? 1) > 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +241,9 @@ function registerSW() {
 // ---------------------------------------------------------------------------
 async function boot() {
   const viewEl = document.getElementById('view');
+  applyTextScale();
+  // El usuario puede cambiar el tamaño de texto en Ajustes con la app en segundo plano.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') applyTextScale(); });
   registerSW();
   try {
     await store.init();

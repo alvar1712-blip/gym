@@ -3,7 +3,7 @@
 // Los cambios de un día (cambiar, mover, marcar) van al store 'plan' y NUNCA a la semana tipo.
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, header, screen, segmented, sheet, actionSheet, undoToast, emptyState } from '../ui.js';
+import { h, icon, header, screen, segmented, sheet, actionSheet, undoToast, emptyState, scrollBehavior } from '../ui.js';
 import {
   todayStr, fmtDate, fmtWeekRange, weekStart, addDays, addMonths, parseDate, isDateStr, weekDates, diffDays, dow,
   DAY_SHORT, DAY_LONG, DAY_LETTER, MONTH_LONG, MONTH_SHORT,
@@ -152,6 +152,7 @@ function dayRow(d, i, today, opts, cyc = null) {
   return h('button.cal-row', {
     type: 'button',
     class: `${d.date === today ? 'is-today' : ''} ${d.date < today ? 'is-past' : ''}`,
+    'aria-current': d.date === today ? 'date' : null,
     dataset: cyc?.period || cyc?.predicted ? { date: d.date, status: d.status, cycle: cyc.period ? 'period' : 'predicted' } : { date: d.date, status: d.status },
     onClick: () => navigate(`#/day/${d.date}`),
   },
@@ -202,14 +203,16 @@ function renderMonth(content, first, ctx, today) {
         const cyc = marks?.get(day.date);
         if (!out && cyc?.period) anyPeriod = true;
         if (!out && cyc?.predicted) anyPredicted = true;
-        return h('button.cal-month-cell', {
+        // El rol de celda va en un envoltorio: en el propio <button> taparía el botón (VoiceOver).
+        return h('span.cal-month-wrap', { role: 'gridcell', style: { display: 'flex', minWidth: '0' } }, h('button.cal-month-cell', {
           type: 'button',
-          role: 'gridcell',
           class: `${out ? 'is-out' : ''} ${day.date === today ? 'is-today' : ''}`,
+          'aria-current': day.date === today ? 'date' : null,
           dataset: cyc?.period || cyc?.predicted ? { date: day.date, status: day.status, cycle: cyc.period ? 'period' : 'predicted' } : { date: day.date, status: day.status },
           'aria-label': `${fmtDate(day.date, 'long')}: ${day.plan.label}, ${STATUS_LABEL[day.status]}${cycleAria(cyc)}`,
+          style: { flex: '1 1 0', minWidth: '0' },
           onClick: openWeek,
-        }, cycleMark(cyc), h('span.cal-month-num.tnum', String(parseDate(day.date).getDate())), h(`span.cal-dot.st-${day.status}`));
+        }, cycleMark(cyc), h('span.cal-month-num.tnum', String(parseDate(day.date).getDate())), h(`span.cal-dot.st-${day.status}`)));
       })));
     const a = adherence(ws, ctx);
     summary.appendChild(h('button.list-item.cal-month-week', { type: 'button', dataset: { week: ws }, onClick: openWeek },
@@ -260,6 +263,8 @@ export function mountDay(root, params = {}) {
   function render() {
     const ctx = ctxFromStore(today);
     const st = dayStatus(date, ctx);
+    // Si el foco estaba dentro (p. ej. «Deshacer», una sesión, el check-in), el control desaparece al repintar.
+    const had = content.contains(document.activeElement);
     content.replaceChildren(
       planSection(date, st, ctx),
       statusSection(st),
@@ -267,6 +272,7 @@ export function mountDay(root, params = {}) {
       checkinSection(date, st, today),
       actionsSection(date, st, today),
       planningSection(date, st, ctx));
+    if (had || planFocusPending) focusPlan(content);
   }
   render();
 
@@ -400,7 +406,21 @@ function planningSection(date, st, ctx) {
  * acción principal («Registrar ruta en bici») quedarían si no ocultos bajo la cabecera.
  */
 function showTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: scrollBehavior() });
+  // El botón pulsado (o el que abrió la hoja) ya no existe tras repintar: el foco va al plan nuevo
+  // (VoiceOver lo lee). El repintado va en una microtarea; esto, después.
+  planFocusPending = true;
+  setTimeout(() => focusPlan(document.querySelector('.cal-dayview')), 0);
+}
+
+let planFocusPending = false;
+/** Foco (sin desplazar) en la tarjeta del plan del día; sin anillo, no es un control. */
+function focusPlan(content) {
+  planFocusPending = false;
+  const p = content && content.querySelector('.cal-plan');
+  if (!p || !p.isConnected) return;
+  if (!p.hasAttribute('tabindex')) { p.tabIndex = -1; p.style.outline = 'none'; }
+  try { p.focus({ preventScroll: true }); } catch { /* sin foco */ }
 }
 
 async function changeDay(date) {

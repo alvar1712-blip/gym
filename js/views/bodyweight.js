@@ -10,6 +10,8 @@ import { lineChart, periodSelector, getPeriod } from '../charts.js';
 import { getProfile, cycleEnabled, isHormonal } from '../profile.js';
 import { periodsFromDays } from '../cycle-logic.js';
 import { checkBodyweight } from '../sanity.js';
+import { levelSummary } from '../chart-summary.js';
+import { bodyweightSeries } from '../stats.js';
 
 const KG_MIN = 20;
 const KG_MAX = 300;
@@ -316,7 +318,7 @@ export function mountBodyweight(root) {
 // ---------------------------------------------------------------------------
 // Gráfica de peso con los días de regla (modo mujer con seguimiento del ciclo)
 // ---------------------------------------------------------------------------
-const PERIOD_COLOR = '#d9506f'; // --cyc-menstrual (css/cycle.css)
+const PERIOD_COLOR = '#c94564'; // --cyc-menstrual (css/cycle.css)
 const RETENTION_NOTE = 'Días de regla: es normal pesar algo más (retención de líquidos).';
 const BLEED_NOTE = 'Días de sangrado.';
 
@@ -343,9 +345,11 @@ function weightChartCard() {
   const key = 'bodyweight';
   let period = getPeriod(key);
   const slot = h('div.prg-chart');
+  const summary = h('p.chart-summary', { hidden: true, 'aria-live': 'polite' });
   const sel = periodSelector({ key, value: period, ariaLabel: 'Periodo de la gráfica de peso', onChange: (id) => { period = id; paint(); } });
   const el = h('section.card.prg-card.prg-bw-chart', { dataset: { chart: 'bodyweight', cycle: '1' } },
     cardHead('Evolución', 'kg · pesajes diarios y media móvil de 7 días'),
+    summary,
     sel,
     slot,
     h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Las franjas rosas son tus días de regla: es normal que el peso suba un poco antes y al empezar la regla por retención de líquidos. Toca o arrastra para ver el valor exacto.'));
@@ -353,7 +357,13 @@ function weightChartCard() {
   function paint() {
     const data = { bodyweight: store.bodyweightList(), settings: store.settings(), sessions: [], today: todayStr() };
     const bands = periodBands() || [];
-    const o = { ...bodyweightChartOpts(data, period), bands, bandsLegend: bands.length ? { label: bands.label, color: PERIOD_COLOR } : null };
+    const series = bodyweightSeries(data);
+    const o = { ...bodyweightChartOpts(data, period, { series }), bands, bandsLegend: bands.length ? { label: bands.label, color: PERIOD_COLOR } : null };
+    // La misma frase que bodyweightChartCard, sobre la media de 7 días
+    const res = levelSummary(series.ma, { from: o.xDomain[0], today: data.today, unit: 'kg', stable: 0.3 });
+    summary.textContent = res?.text || '';
+    summary.hidden = !res;
+    summary.dataset.dir = res?.dir || '';
     if (chart) chart.update(o);
     else chart = lineChart(slot, o);
   }

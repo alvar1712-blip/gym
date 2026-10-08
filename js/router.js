@@ -277,7 +277,7 @@ export function start(el, onChange) {
     e.preventDefault();
     navigate(a.getAttribute('href'));
   });
-  return render('none');
+  return render('none', { nav: true });
 }
 
 function onHashChange(e) {
@@ -307,7 +307,7 @@ function onHashChange(e) {
   // Las hojas que siguieran abiertas eran de la pantalla anterior. (Una llegada a la entrada de una hoja que
   // ya no existe la salta onPopState, que va siempre antes.)
   dropOverlays((o) => o.committed, { ua, nav: true });
-  render(ua ? 'none' : kind, { ua });
+  render(ua ? 'none' : kind, { ua, nav: true });
   commitOverlays();
 }
 
@@ -661,7 +661,8 @@ async function render(kind = 'none', opts = {}) {
   }
 }
 
-async function renderRoute(kind, { ua = false } = {}) {
+// `nav`: navegación de verdad (no refresh()): al terminar se lleva el foco al título de la pantalla nueva.
+async function renderRoute(kind, { ua = false, nav = false } = {}) {
   const token = ++mountToken;
   // Otra navegación animada (o la vuelta del gesto): la transición en curso se salta. Un montaje sin
   // animación (refresh(), una redirección con replace) la deja seguir: la imagen nueva es la vista en vivo.
@@ -686,14 +687,14 @@ async function renderRoute(kind, { ua = false } = {}) {
     mod = await route.load();
   } catch (err) {
     if (token !== mountToken) return;
-    showError(err);
+    showError(err, nav);
     return;
   }
   if (token !== mountToken) return;
 
   const mode = transitionMode(kind);
   lastNav = { kind, mode, path, transition: null, ua };
-  const ctx = { kind, mode, ua, y, path };
+  const ctx = { kind, mode, ua, y, path, nav };
   if (mode === 'vt') return mountWithViewTransition(token, mod, route, ctx);
   return mountView(token, mod, route, mode === 'css' ? kind : null, ctx);
 }
@@ -770,7 +771,7 @@ async function mountView(token, mod, route, enterKind, ctx) {
     cleanup = typeof out === 'function' ? out : null;
   } catch (err) {
     if (token !== mountToken) return;
-    showError(err);
+    showError(err, ctx.nav);
   }
   if (token !== mountToken) return;
   if (y > 0) {
@@ -781,6 +782,22 @@ async function mountView(token, mod, route, enterKind, ctx) {
     requestAnimationFrame(() => { if (token === mountToken && !restoring) window.scrollTo(0, 0); });
   }
   runHooks();
+  if (ctx.nav && token === mountToken) focusScreen();
+}
+
+/**
+ * VoiceOver/teclado: tras navegar, el foco pasa al título de la pantalla nueva (el nodo que lo tenía ya no
+ * existe) y se anuncia; document.title sigue a la pantalla. Sin anillo visible (css: .topbar h1:focus).
+ */
+function focusScreen() {
+  const h1 = viewEl && viewEl.querySelector('.topbar h1');
+  document.title = h1 && h1.textContent.trim() ? `${h1.textContent.trim()} · Entreno` : 'Entreno';
+  if (!h1) return;
+  // Un montaje lento no quita el foco a lo que el usuario (o la vista) ya ha enfocado en la pantalla nueva o en una hoja.
+  const a = document.activeElement;
+  if (a && a !== document.body && (viewEl.contains(a) || a.closest('.sheet-overlay'))) return;
+  h1.tabIndex = -1;
+  try { h1.focus({ preventScroll: true }); } catch { /* sin soporte */ }
 }
 
 /** Aparición suave y escalonada de los primeros bloques de la pantalla nueva (css: .view-stagger). */
@@ -807,7 +824,7 @@ function endEnter() {
   entering = null;
 }
 
-function showError(err) {
+function showError(err, focus = false) {
   console.error('[router]', err);
   const box = document.createElement('div');
   box.className = 'content content-safe'; // sin cabecera: deja sitio a la barra de estado (black-translucent)
@@ -821,4 +838,9 @@ function showError(err) {
   box.querySelector('pre').textContent = String(err && (err.stack || err.message || err));
   box.querySelector('button').addEventListener('click', () => navigate('#/today', { replace: true }));
   viewEl.replaceChildren(box);
+  if (focus) {
+    const h2 = box.querySelector('h2');
+    h2.tabIndex = -1;
+    try { h2.focus({ preventScroll: true }); } catch { /* sin soporte */ }
+  }
 }

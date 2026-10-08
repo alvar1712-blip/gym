@@ -1,7 +1,7 @@
 /* library.css — Rutinas (plantillas) y biblioteca de ejercicios (.lib-…). */
 
 .lib-seg { margin-bottom: 2px; }
-.lib-seg .seg-btn { min-height: 44px; font-size: 16px; }
+.lib-seg .seg-btn { min-height: 44px; font-size: calc(16px * var(--ts)); }
 .lib-body { display: flex; flex-direction: column; gap: 12px; }
 .lib-add {
   background: transparent;
@@ -32,10 +32,10 @@
   text-align: left;
 }
 .lib-tpl-main.is-pressed { background: var(--surface-2); }
-.lib-tpl-name { font-size: 17px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
-.lib-tpl-meta { font-size: 13px; font-weight: 650; color: var(--accent); }
+.lib-tpl-name { font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+.lib-tpl-meta { font-size: calc(13px * var(--ts)); font-weight: 650; color: var(--accent); }
 .lib-tpl-ex {
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   color: var(--text-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -49,7 +49,7 @@
 .lib-search::-webkit-search-decoration { -webkit-appearance: none; }
 .lib-filter { display: flex; flex-direction: column; gap: 6px; }
 .lib-filter-label {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -63,18 +63,18 @@
   align-items: center;
   gap: 10px;
   min-height: 48px;
-  font-size: 15px;
+  font-size: calc(15px * var(--ts));
   font-weight: 600;
   color: var(--text-2);
 }
 .lib-ex-row { align-items: center; min-height: 64px; }
 .lib-ex-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 700; line-height: 1.25; }
-.lib-ex-muscles { font-size: 14px; color: var(--text-2); }
-.lib-ex-meta { font-size: 13px; color: var(--muted); }
+.lib-ex-muscles { font-size: calc(14px * var(--ts)); color: var(--text-2); }
+.lib-ex-meta { font-size: calc(13px * var(--ts)); color: var(--muted); }
 
 /* ---------- Ficha ---------- */
 .lib-badges { gap: 6px; }
-.lib-badges .badge { font-size: 13px; padding: 3px 10px; }
+.lib-badges .badge { font-size: calc(13px * var(--ts)); padding: 3px 10px; }
 .lib-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .lib-tag {
   display: inline-flex;
@@ -84,12 +84,12 @@
   border-radius: 999px;
   background: var(--surface-3);
   color: var(--text-2);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 650;
 }
 .lib-tag-primary { background: var(--accent-soft); color: var(--accent); }
 .lib-kv-block { display: flex; flex-direction: column; gap: 6px; }
-.lib-k { font-size: 13px; font-weight: 700; color: var(--muted); }
+.lib-k { font-size: calc(13px * var(--ts)); font-weight: 700; color: var(--muted); }
 .lib-kv {
   display: flex;
   justify-content: space-between;
@@ -108,11 +108,11 @@
 .lib-link > .icon:first-child { color: var(--accent); flex: none; }
 .lib-hist-head { margin-top: 4px; }
 .lib-hist-row { align-items: center; }
-.lib-hist-sets { font-size: 14px; color: var(--text); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+.lib-hist-sets { font-size: calc(14px * var(--ts)); color: var(--text); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
 /* Cada serie salta de línea entera («−15 kg asist. × 8 @1»); solo se parte si no cabe sola. */
 .lib-hist-set { display: inline-block; }
 .lib-e1rm { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-.lib-e1rm-v { font-weight: 800; font-size: 16px; color: var(--accent); white-space: nowrap; }
+.lib-e1rm-v { font-weight: 800; font-size: calc(16px * var(--ts)); color: var(--accent); white-space: nowrap; }
 .lib-e1rm-l { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .lib-e1rm-note { padding: 0 2px; line-height: 1.45; }
 .lib-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -145,7 +145,7 @@
   border-radius: 2px;
 }
 .lib-group[data-type="circuit"] { border-left-color: var(--act-other); }
-.lib-group-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 650; }
+.lib-group-head { display: flex; align-items: center; gap: 8px; font-size: calc(13px * var(--ts)); color: var(--muted); font-weight: 650; }
 .lib-group-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .lib-group-kind { color: var(--info); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 .lib-group-sub { overflow-wrap: anywhere; }
@@ -158,7 +158,7 @@
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 700;
   white-space: nowrap;
 }
@@ -189,21 +189,21 @@
 .lib-item-label {
   flex: none;
   min-width: 36px;
-  height: 30px;
+  min-height: 30px;
   display: grid;
   place-items: center;
   border-radius: 8px;
   background: var(--info-soft);
   color: var(--info);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 800;
 }
 .lib-group[data-type="circuit"] .lib-item-label { background: rgba(232, 121, 249, 0.16); color: var(--act-other); }
 .lib-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.lib-item-name { font-size: 17px; font-weight: 720; line-height: 1.25; overflow-wrap: anywhere; }
-.lib-item-alt { font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
-.lib-item-note { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lib-item-target { flex: none; max-width: 38%; text-align: right; font-size: 16px; font-weight: 800; color: var(--accent); }
+.lib-item-name { font-size: calc(17px * var(--ts)); font-weight: 720; line-height: 1.25; overflow-wrap: anywhere; }
+.lib-item-alt { font-size: calc(14px * var(--ts)); color: var(--text-2); overflow-wrap: anywhere; }
+.lib-item-note { font-size: calc(13px * var(--ts)); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-item-target { flex: none; max-width: 38%; text-align: right; font-size: calc(16px * var(--ts)); font-weight: 800; color: var(--accent); }
 .lib-item-chev { flex: none; color: var(--muted); }
 
 .lib-item-body {
@@ -227,9 +227,9 @@
 }
 .lib-ex-btn.is-pressed { background: var(--surface-3); }
 .lib-ex-btn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.lib-ex-btn-k { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.lib-ex-btn-k { font-size: calc(12px * var(--ts)); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .lib-ex-btn-v { font-weight: 700; overflow-wrap: anywhere; }
-.lib-ex-btn-hint { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 700; font-size: 15px; }
+.lib-ex-btn-hint { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 700; font-size: calc(15px * var(--ts)); }
 .lib-target { display: flex; flex-direction: column; gap: 10px; }
 .lib-pair { gap: 8px; align-items: end; }
 .lib-pair .stepper-label { text-align: left; padding-left: 2px; }
@@ -254,7 +254,7 @@
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   font-weight: 700;
 }
 .lib-act.is-pressed { background: var(--surface-3); }

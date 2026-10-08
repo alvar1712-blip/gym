@@ -283,7 +283,7 @@ function mountForm(root, ctx) {
     // Esfuerzo percibido
     const rpe = h('div.card.act-card',
       h('div.field-label', 'Esfuerzo percibido (1–10)'),
-      rpePicker({ value: form.rpe, onChange: (v) => change({ rpe: v }, true) }));
+      rpePicker({ ariaLabel: 'Esfuerzo percibido de 1 a 10', value: form.rpe, onChange: (v) => change({ rpe: v }, true) }));
 
     const parts = [essentials, live, rpe];
 
@@ -291,7 +291,7 @@ function mountForm(root, ctx) {
     if (k === 'run' || k === 'bike') {
       parts.push(h('div.card.act-card',
         h('div.field-label', 'Tipo de sesión'),
-        chips({ options: L.SUBTYPE_OPTIONS[k].map((o) => ({ value: o.id, label: o.label })), value: form.subtype, allowNone: true, onChange: (v) => change({ subtype: v }, true) })));
+        chips({ ariaLabel: 'Tipo de sesión', options: L.SUBTYPE_OPTIONS[k].map((o) => ({ value: o.id, label: o.label })), value: form.subtype, allowNone: true, onChange: (v) => change({ subtype: v }, true) })));
     } else if (k === 'swim') {
       parts.push(swimCard());
     } else if (k === 'other') {
@@ -346,7 +346,7 @@ function mountForm(root, ctx) {
   function swimCard() {
     const lenWrap = h('div.field', { hidden: form.poolType !== 'pool' },
       h('span.field-label', 'Longitud de piscina'),
-      chips({ options: L.POOL_LENGTHS.map((m) => ({ value: m, label: `${m} m` })), value: form.poolLengthM, allowNone: true, onChange: (v) => change({ poolLengthM: v }, true) }));
+      chips({ ariaLabel: 'Longitud de piscina', options: L.POOL_LENGTHS.map((m) => ({ value: m, label: `${m} m` })), value: form.poolLengthM, allowNone: true, onChange: (v) => change({ poolLengthM: v }, true) }));
     return h('div.card.act-card',
       h('div.field',
         h('span.field-label', 'Dónde'),
@@ -359,7 +359,7 @@ function mountForm(root, ctx) {
       lenWrap,
       h('div.field',
         h('span.field-label', 'Estilo principal'),
-        chips({ options: SWIM_STROKES.map((s) => ({ value: s.id, label: s.label })), value: form.stroke, allowNone: true, onChange: (v) => change({ stroke: v }, true) })));
+        chips({ ariaLabel: 'Estilo principal', options: SWIM_STROKES.map((s) => ({ value: s.id, label: s.label })), value: form.stroke, allowNone: true, onChange: (v) => change({ stroke: v }, true) })));
   }
 
   function otherTypeCard() {
@@ -544,23 +544,29 @@ function mountForm(root, ctx) {
     }
   }
 
+  /**
+   * Escribe el estado solo si cambia: es una región viva (role=status) y reescribirla en cada tecla haría
+   * que VoiceOver repitiera «Borrador: falta la duración» tras cada dígito.
+   */
+  function setStatus(cls, ic, txt) {
+    if (statusEl.className === cls && statusEl.textContent === txt) return;
+    statusEl.replaceChildren(...(ic ? [icon(ic, 18)] : []), h('span', txt));
+    statusEl.className = cls;
+  }
+
   function updateStatus() {
-    statusEl.classList.remove('act-status-error');
     if (sanity().impossible.length) {
-      statusEl.replaceChildren(icon('alert', 18), h('span', unsaved || !record ? 'Sin guardar: revisa los datos' : 'Guardado: revisa los datos'));
-      statusEl.className = 'act-status act-status-error';
+      setStatus('act-status act-status-error', 'alert', unsaved || !record ? 'Sin guardar: revisa los datos' : 'Guardado: revisa los datos');
       return;
     }
     if (record) {
-      statusEl.replaceChildren(icon('check', 18), h('span', 'Guardado'));
-      statusEl.className = 'act-status act-status-ok';
+      setStatus('act-status act-status-ok', 'check', 'Guardado');
       discardBtn.hidden = true;
       return;
     }
     const errs = L.validate(form);
-    statusEl.className = 'act-status act-status-draft';
     const typed = userContent();
-    statusEl.replaceChildren(h('span', typed ? `Borrador: ${L.missingText(errs).toLowerCase()}` : 'Se guarda al poner la duración'));
+    setStatus('act-status act-status-draft', null, typed ? `Borrador: ${L.missingText(errs).toLowerCase()}` : 'Se guarda al poner la duración');
     discardBtn.hidden = !typed;
   }
 
@@ -572,8 +578,9 @@ function mountForm(root, ctx) {
     if (!alive || removed) return;
     if (!record) {
       if (!userContent()) { back(backFallback); return; }
-      statusEl.replaceChildren(h('span', `${L.missingText(L.validate(form))} para guardar`));
-      statusEl.className = 'act-status act-status-error';
+      // Se vacía antes para que el aviso se anuncie aunque el texto sea el mismo que ya había.
+      statusEl.replaceChildren();
+      setStatus('act-status act-status-error', null, `${L.missingText(L.validate(form))} para guardar`);
       const first = refs.dur?.querySelector('input[aria-label$=": min"]');
       if (first) first.focus();
       return;

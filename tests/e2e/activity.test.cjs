@@ -513,7 +513,7 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     assert.match(await page.locator('.bw-hint').innerText(), /Ya hay un pesaje hoy/);
 
     // Mismo día otra vez: el último manda (con deshacer).
-    await page.locator('.bw-entry [aria-label="Sumar 0,1"]').click();
+    await page.locator('.bw-entry [aria-label^="Sumar 0,1 a "]').click();
     await page.locator('.bw-entry .btn-primary').click();
     await settle(page, 200);
     assert.strictEqual((await storeAll(page, 'bodyweight'))[0].kg, 75.5);
@@ -552,7 +552,7 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     await second.click();
     await page.waitForTimeout(250);
     await shot(page, 'bodyweight-edit');
-    await page.locator('.sheet-panel [aria-label="Sumar 0,1"]').click();
+    await page.locator('.sheet-panel [aria-label^="Sumar 0,1 a "]').click();
     await settle(page, 200);
     const after = (await idbAll(page, 'bodyweight')).find((b) => b.id === secondId).kg;
     assert.strictEqual(after, Math.round((before + 0.1) * 10) / 10);

@@ -4,7 +4,7 @@
 import * as store from '../store.js';
 import {
   h, icon, header, sheet, confirmDialog, promptDialog, actionSheet, toast, undoToast,
-  rpePicker, field, textInput, numInput, emptyState,
+  rpePicker, field, textInput, numInput, emptyState, scrollBehavior,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn } from '../calc.js';
@@ -103,9 +103,12 @@ export function mountSession(root, params = {}) {
     saveSoon: () => store.saveSoon('sessions', session),
     rerenderCard(se) {
       const old = listEl.querySelector(`[data-se="${CSS.escape(se.id)}"]`);
+      // Si el foco estaba en la tarjeta (VoiceOver, teclado), sigue en ella: si no, caería al principio de la página.
+      const had = !!old && old.contains(document.activeElement);
       if (old) old.replaceWith(renderCard(ctx, se));
       else renderList();
       updateFinishHint();
+      if (had) focusInCard(se);
     },
     rerenderList: () => renderList(),
     exerciseMenu: (se) => exerciseMenu(se),
@@ -120,8 +123,12 @@ export function mountSession(root, params = {}) {
       const next = session.exercises[session.exercises.indexOf(se) + 1];
       const el = next && cardEl(next);
       if (!el) return;
+      // El foco solo se mueve si seguía en la tarjeta recién terminada (o se había perdido).
+      const prev = cardEl(se);
       setTimeout(() => {
         if (unmounted || !el.isConnected) return;
+        const a = document.activeElement;
+        const moveFocus = !a || a === document.body || !!prev?.contains(a);
         // La tarjeta siguiente arriba; si así su «Registrar» quedara bajo las pestañas, un poco más.
         let top = el.getBoundingClientRect().top + window.scrollY - headerBottom() - 8;
         const btn = el.querySelector('.ses-editor .ses-register');
@@ -129,7 +136,8 @@ export function mountSession(root, params = {}) {
           const over = btn.getBoundingClientRect().bottom + window.scrollY - top - visibleBottom();
           if (over > 0) top += over;
         }
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        window.scrollTo({ top: Math.max(0, top), behavior: scrollBehavior() });
+        if (moveFocus) focusInCard(next);
       }, 350);
     },
     /**
@@ -224,7 +232,7 @@ export function mountSession(root, params = {}) {
     let d = 0;
     if (r.bottom > limit) d = Math.min(r.bottom - limit, r.top - top); // sin esconderlo bajo la cabecera
     else if (r.top < top) d = r.top - top;
-    if (d) window.scrollBy({ top: d, behavior: 'smooth' });
+    if (d) window.scrollBy({ top: d, behavior: scrollBehavior() });
   }
 
   // --- cabecera con cronómetro ---
@@ -300,9 +308,17 @@ export function mountSession(root, params = {}) {
   }
 
   const cardEl = (se) => listEl.querySelector(`[data-se="${CSS.escape(se.id)}"]`);
+  /** Foco en la tarjeta: «Registrar» del editor, si no la primera serie, «+ Serie» o la propia tarjeta. */
+  function focusInCard(se) {
+    const card = cardEl(se);
+    if (!card) return;
+    const target = card.querySelector('.ses-editor .ses-register') || card.querySelector('.ses-row[data-set]')
+      || card.querySelector('.ses-add-set, .ses-cardio-btn') || card;
+    try { target.focus({ preventScroll: true }); } catch { /* sin foco: no pasa nada */ }
+  }
   function scrollToEl(el, smooth) {
     const top = el.getBoundingClientRect().top + window.scrollY - (headerEl?.offsetHeight || 0) - 8;
-    window.scrollTo({ top: Math.max(0, top), behavior: smooth ? 'smooth' : 'auto' });
+    window.scrollTo({ top: Math.max(0, top), behavior: smooth ? scrollBehavior() : 'auto' });
   }
 
   // --- pie: añadir ejercicio, nota general, terminar ---

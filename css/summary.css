@@ -29,7 +29,7 @@
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--accent);
-  font-size: 16px;
+  font-size: calc(16px * var(--ts));
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -41,7 +41,7 @@
   align-items: flex-start;
   gap: 8px;
   padding: 0 2px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   line-height: 1.45;
   color: var(--muted);
 }
@@ -62,11 +62,11 @@
   color: var(--info);
 }
 .sum-card-titles { flex: 1; min-width: 0; }
-.sum-card-title { font-size: 18px; font-weight: 750; }
-.sum-card-sub { margin-top: 2px; font-size: 13px; line-height: 1.35; color: var(--muted); }
-.sum-sub-title { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.sum-card-title { font-size: calc(18px * var(--ts)); font-weight: 750; }
+.sum-card-sub { margin-top: 2px; font-size: calc(13px * var(--ts)); line-height: 1.35; color: var(--muted); }
+.sum-sub-title { font-size: calc(13px * var(--ts)); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .sum-note { font-size: var(--fs-sm); line-height: 1.45; color: var(--muted); }
-.sum-none { font-size: 14px; line-height: 1.45; color: var(--muted); }
+.sum-none { font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--muted); }
 
 /* Diferencia con el periodo anterior: flecha + texto (+3, %), con color de apoyo. Sin juicio: subir no es «bien». */
 .sum-delta {
@@ -106,8 +106,8 @@
   background: var(--surface-2);
 }
 .sum-kpi-label { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); }
-.sum-kpi-value { font-size: 20px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.sum-kpi-sub { font-size: 12px; line-height: 1.3; color: var(--muted); }
+.sum-kpi-value { font-size: calc(20px * var(--ts)); font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sum-kpi-sub { font-size: calc(12px * var(--ts)); line-height: 1.3; color: var(--muted); }
 .sum-kpi .sum-delta { margin-top: 3px; }
 
 /* Por deporte */
@@ -126,16 +126,16 @@
   background: var(--surface);
 }
 .sum-sport-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.sum-sport-emoji { flex: none; font-size: 18px; line-height: 1; }
-.sum-sport-name { min-width: 0; font-size: 15px; font-weight: 750; overflow-wrap: anywhere; }
-.sum-sport-main { font-size: 22px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.sum-sport-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.sum-sport-emoji { flex: none; font-size: calc(18px * var(--ts)); line-height: 1; }
+.sum-sport-name { min-width: 0; font-size: calc(15px * var(--ts)); font-weight: 750; overflow-wrap: anywhere; }
+.sum-sport-main { font-size: calc(22px * var(--ts)); font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sum-sport-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; font-size: calc(13px * var(--ts)); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .sum-sport .sum-delta { margin-top: 3px; }
 
 /* Calendario del mes (días entrenados) */
 .sum-cal { display: flex; flex-direction: column; gap: 4px; }
 .sum-cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.sum-cal-head { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
+.sum-cal-head { font-size: calc(12px * var(--ts)); font-weight: 700; color: var(--muted); text-align: center; }
 .sum-cal-cell {
   display: flex;
   flex-direction: column;
@@ -149,7 +149,7 @@
   border: 1px solid transparent;
   background: none;
   color: var(--muted);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-variant-numeric: tabular-nums;
 }
 .sum-cal-pad { visibility: hidden; }
@@ -161,7 +161,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-cal-dots { display: flex; gap: 3px; height: 6px; }
 .sum-cal-dot { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--kc); }
 .sum-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; }
-.sum-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+.sum-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: calc(13px * var(--ts)); color: var(--text-2); }
 .sum-legend-item .sum-cal-dot { width: 8px; height: 8px; }
 
 /* Año: días entrenados por mes (barras verticales; cada una abre su mes) */
@@ -181,7 +181,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 }
 .sum-mbar.is-pressed { background: var(--surface-2); }
 .sum-mbar:disabled { opacity: 0.35; }
-.sum-mbar-val { min-height: 16px; font-size: 12px; font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums; }
+.sum-mbar-val { min-height: 16px; font-size: calc(12px * var(--ts)); font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums; }
 .sum-mbar-track { position: relative; display: flex; align-items: flex-end; width: 100%; max-width: 20px; height: 96px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
 .sum-mbar-fill { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--accent); }
 .sum-mbar-label { font-size: var(--fs-xs); font-weight: 650; color: var(--muted); }
@@ -195,7 +195,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-mrow-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
 .sum-mrow-name { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); font-weight: 650; overflow-wrap: anywhere; }
 .sum-mrow-val { flex: none; margin-left: auto; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.sum-mrow-val b { font-size: 15px; font-weight: 800; color: var(--text); }
+.sum-mrow-val b { font-size: calc(15px * var(--ts)); font-weight: 800; color: var(--text); }
 .sum-mbar-h { display: block; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .sum-mbar-h-fill { display: block; height: 100%; border-radius: 4px; background: var(--kc); }
 
@@ -234,16 +234,16 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
   background: var(--surface-3);
   box-shadow: inset 3px 0 0 var(--kc);
   color: var(--pr);
-  font-size: 17px;
+  font-size: calc(17px * var(--ts));
 }
 .sum-rec-main,
 .sum-prog-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .sum-rec-label,
-.sum-prog-name { font-size: 15px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.sum-prog-name { font-size: calc(15px * var(--ts)); font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
 .sum-rec-count { margin-left: 6px; vertical-align: 1px; }
-.sum-rec-detail { font-size: 13px; line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
-.sum-rec-date { flex: none; font-size: 13px; color: var(--muted); white-space: nowrap; }
-.sum-prog-vals { font-size: 14px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+.sum-rec-detail { font-size: calc(13px * var(--ts)); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
+.sum-rec-date { flex: none; font-size: calc(13px * var(--ts)); color: var(--muted); white-space: nowrap; }
+.sum-prog-vals { font-size: calc(14px * var(--ts)); font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
 .sum-prog-basis { font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
 .sum-prog-btn .sum-delta { flex: none; align-self: center; max-width: 44%; }
 /* Solo subidas: en «más progresan» el chip va en verde (sí es una mejora de la marca). */
@@ -258,7 +258,7 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
   border-top: 1px solid var(--border);
   background: none;
   color: var(--accent);
-  font-size: 15px;
+  font-size: calc(15px * var(--ts));
   font-weight: 700;
 }
 .sum-more .icon { transition: transform 0.15s ease; }
@@ -270,16 +270,16 @@ button.sum-cal-on.is-pressed { background: var(--border-strong); }
 .sum-cmp-row:last-child { border-bottom: 0; }
 .sum-cmp-row[style] { padding-left: 10px; box-shadow: inset 3px 0 0 var(--kc); }
 .sum-cmp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.sum-cmp-label { font-size: 15px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.sum-cmp-label { font-size: calc(15px * var(--ts)); font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
 .sum-cmp-prev { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sum-cmp-right { flex: none; max-width: 58%; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.sum-cmp-cur { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+.sum-cmp-cur { font-size: calc(16px * var(--ts)); font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
 .sum-cmp-right .sum-delta { align-self: flex-end; }
 
 /* Pantallas muy estrechas (320 px) */
 @media (max-width: 359px) {
   .sum-kpi-value,
-  .sum-sport-main { font-size: 19px; }
+  .sum-sport-main { font-size: calc(19px * var(--ts)); }
   .sum-sport { padding: 10px; }
-  .sum-cal-cell { font-size: 13px; }
+  .sum-cal-cell { font-size: calc(13px * var(--ts)); }
 }

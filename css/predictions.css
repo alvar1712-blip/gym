@@ -5,7 +5,7 @@
   align-items: flex-start;
   gap: 8px;
   margin: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   line-height: 1.45;
   color: var(--muted);
 }
@@ -19,13 +19,13 @@
    ¿Por qué?. Si la predicción todavía no es útil, una frase y lo que falta; la cifra, a un toque (atenuada). */
 .prd-race { gap: 8px; }
 .prd-race-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.prd-race-name { font-size: 17px; font-weight: 750; min-width: 0; }
+.prd-race-name { font-size: calc(17px * var(--ts)); font-weight: 750; min-width: 0; }
 .prd-race-head .badge { flex: none; }
 .prd-est { display: flex; flex-direction: column; gap: 8px; }
 .prd-est[hidden] { display: none; }
 .prd-race-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
 .prd-race-time {
-  font-size: 34px;
+  font-size: calc(34px * var(--ts));
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.01em;
@@ -33,33 +33,33 @@
   white-space: nowrap;
   color: var(--text);
 }
-.prd-race-caption { font-size: 13px; color: var(--muted); }
+.prd-race-caption { font-size: calc(13px * var(--ts)); color: var(--muted); }
 .prd-race-facts { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 0; }
 .prd-fact { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.prd-fact dt { font-size: 12px; font-weight: 650; color: var(--muted); }
+.prd-fact dt { font-size: calc(12px * var(--ts)); font-weight: 650; color: var(--muted); }
 .prd-fact dd {
   margin: 0;
-  font-size: 16px;
+  font-size: calc(16px * var(--ts));
   font-weight: 650;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.prd-race-history { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.prd-race-history { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: calc(13px * var(--ts)); line-height: 1.4; color: var(--text-2); }
 .prd-race-note {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   line-height: 1.4;
   color: var(--text-2);
 }
 .prd-race-note .icon { flex: none; margin-top: 2px; color: var(--warn); }
-.prd-race-state { margin: 2px 0 0; font-size: 17px; font-weight: 750; line-height: 1.25; color: var(--text); }
-.prd-race-explain { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
-.prd-vol { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
-.prd-vol thead th { padding: 0 0 2px 12px; font-size: 12px; font-weight: 650; color: var(--muted); text-align: right; }
+.prd-race-state { margin: 2px 0 0; font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.25; color: var(--text); }
+.prd-race-explain { margin: 0; font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); }
+.prd-vol { width: 100%; border-collapse: collapse; font-size: calc(14px * var(--ts)); font-variant-numeric: tabular-nums; }
+.prd-vol thead th { padding: 0 0 2px 12px; font-size: calc(12px * var(--ts)); font-weight: 650; color: var(--muted); text-align: right; }
 .prd-vol tbody th { padding: 5px 0; font-weight: 400; color: var(--muted); text-align: left; }
 .prd-vol td { padding: 5px 0 5px 12px; text-align: right; white-space: nowrap; }
 .prd-vol tbody tr + tr > * { border-top: 1px solid var(--border); }
@@ -76,21 +76,21 @@
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 700;
 }
 .prd-reveal .icon { transition: transform 0.18s ease; }
 .prd-reveal[aria-expanded="true"] .icon { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .prd-reveal .icon { transition: none; } }
 .prd-est-tentative { padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 12px; }
-.prd-est-tentative .prd-race-time { font-size: 28px; color: var(--text-2); }
+.prd-est-tentative .prd-race-time { font-size: calc(28px * var(--ts)); color: var(--text-2); }
 .prd-race .why { margin-top: 2px; }
 
 /* ---------- Carreras que no cuentan por su ritmo ---------- */
 .prd-suspect { gap: 8px; }
-.prd-suspect-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 750; }
+.prd-suspect-title { display: flex; align-items: center; gap: 8px; font-size: calc(16px * var(--ts)); font-weight: 750; }
 .prd-suspect-title .icon { flex: none; color: var(--warn); }
-.prd-suspect-text { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.prd-suspect-text { margin: 0; font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); }
 .prd-suspect-list { background: var(--surface-2); }
 .prd-suspect-item { min-height: 52px; }
 .prd-suspect-item .list-item-title { font-variant-numeric: tabular-nums; }
@@ -103,7 +103,7 @@
 .prd-why-rule p { margin: 0; }
 .prd-why-head {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -128,12 +128,12 @@
 /* ---------- ¿Puedo hacerlo? ---------- */
 .prd-check { gap: 12px; }
 .prd-check-head { display: flex; flex-direction: column; gap: 2px; }
-.prd-check-title { font-size: 20px; font-weight: 800; }
-.prd-check-sub { margin: 0; font-size: 14px; color: var(--muted); }
+.prd-check-title { font-size: calc(20px * var(--ts)); font-weight: 800; }
+.prd-check-sub { margin: 0; font-size: calc(14px * var(--ts)); color: var(--muted); }
 .prd-seg { gap: 2px; }
-.prd-seg .seg-btn { flex: 1 1 auto; font-size: 14px; padding: 0 6px; }
+.prd-seg .seg-btn { flex: 1 1 auto; font-size: calc(14px * var(--ts)); padding: 0 6px; }
 .prd-check-custom[hidden] { display: none; }
-.prd-check-hint { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.prd-check-hint { font-size: calc(13px * var(--ts)); color: var(--muted); font-variant-numeric: tabular-nums; }
 .prd-check-hint:empty { display: none; }
 
 .prd-verdict-empty {
@@ -141,7 +141,7 @@
   padding: 12px;
   border: 1px dashed var(--border-strong);
   border-radius: 12px;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   color: var(--muted);
   text-align: center;
 }
@@ -176,8 +176,8 @@
   color: var(--bg);
 }
 .prd-v-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.prd-v-label { font-size: 19px; font-weight: 800; color: var(--v); line-height: 1.2; }
-.prd-v-sub { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.prd-v-label { font-size: calc(19px * var(--ts)); font-weight: 800; color: var(--v); line-height: 1.2; }
+.prd-v-sub { font-size: calc(13px * var(--ts)); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .prd-v-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 8px; }
 .prd-v-line .badge { flex: none; }
 
@@ -190,18 +190,18 @@
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.22);
 }
-.prd-v-gap-label { font-size: 13px; font-weight: 700; color: var(--text-2); }
-.prd-v-gap-value { font-size: 20px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
-.prd-v-gap-sub { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
-.prd-v-text { margin: 0; font-size: 15px; line-height: 1.45; color: var(--text); }
+.prd-v-gap-label { font-size: calc(13px * var(--ts)); font-weight: 700; color: var(--text-2); }
+.prd-v-gap-value { font-size: calc(20px * var(--ts)); font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.prd-v-gap-sub { grid-column: 1 / -1; font-size: calc(13px * var(--ts)); color: var(--muted); }
+.prd-v-text { margin: 0; font-size: calc(15px * var(--ts)); line-height: 1.45; color: var(--text); }
 .prd-verdict .why-body { background: rgba(0, 0, 0, 0.3); }
 
 /* ---------- Base del cálculo ---------- */
-.prd-basis-title { font-size: 17px; font-weight: 750; }
-.prd-kpis .kpi-value { font-size: 18px; }
+.prd-basis-title { font-size: calc(17px * var(--ts)); font-weight: 750; }
+.prd-kpis .kpi-value { font-size: calc(18px * var(--ts)); }
 .prd-basis-sub {
   margin: 4px 2px -2px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -210,8 +210,8 @@
 .prd-efforts { background: var(--surface-2); }
 .prd-effort { min-height: 52px; }
 .prd-effort .list-item-title { font-variant-numeric: tabular-nums; }
-.prd-effort-emoji { flex: none; font-size: 20px; }
-.prd-note { margin: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.prd-effort-emoji { flex: none; font-size: calc(20px * var(--ts)); }
+.prd-note { margin: 0; font-size: calc(13px * var(--ts)); line-height: 1.45; color: var(--muted); }
 
 /* ---------- Estado vacío ---------- */
 .prd-empty { gap: 12px; }
@@ -221,7 +221,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   font-weight: 650;
   color: var(--text-2);
 }
@@ -233,13 +233,13 @@
 }
 .prd-dot.on { background: var(--act-run); border-color: var(--act-run); }
 .prd-dot:last-of-type { margin-right: 4px; }
-.prd-empty-msg { margin: 0; font-size: 14px; color: var(--text-2); text-align: center; }
+.prd-empty-msg { margin: 0; font-size: calc(14px * var(--ts)); color: var(--text-2); text-align: center; }
 
 @media (max-width: 380px) {
-  .prd-seg .seg-btn { font-size: 13px; padding: 0 4px; }
+  .prd-seg .seg-btn { font-size: calc(13px * var(--ts)); padding: 0 4px; }
 }
 @media (max-width: 350px) {
-  .prd-race-time { font-size: 30px; }
+  .prd-race-time { font-size: calc(30px * var(--ts)); }
   .prd-seg .seg-btn { padding: 0 2px; }
 }
 

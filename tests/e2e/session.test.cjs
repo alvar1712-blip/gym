@@ -92,7 +92,7 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
 
     // Récord de peso: +2,5 kg y registrar
     await settle(page);
-    await bc.locator('.ses-editor button[aria-label="Sumar 2,5"]').first().click();
+    await bc.locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').first().click();
     assert.strictEqual(await bc.locator('.ses-editor input[aria-label="Peso"]').inputValue(), '82,5');
     await bc.locator('.ses-register').click();
     const prToast = page.locator('.toast.toast-pr');
@@ -111,7 +111,7 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     // también si la app se cierra entre el cambio y la confirmación (el peso prellenado va en la serie).
     let pc = card(page, pull.id);
     assert.strictEqual(await pc.locator('.ses-editor input[aria-label="Lastre"]').inputValue(), '10');
-    await pc.locator('.ses-editor button[aria-label="Sumar 2,5"]').first().click();
+    await pc.locator('.ses-editor button[aria-label^="Sumar 2,5 a "]').first().click();
     disk = (await idbAll(page, 'sessions')).find((x) => x.id === id);
     assert.deepStrictEqual([disk.exercises[1].sets[0].weight, disk.exercises[1].sets[0].origWeight], [12.5, 10], 'un toque se guarda al instante');
     await reload(page);
@@ -629,7 +629,7 @@ test('una mano en iPhone SE: «Registrar serie» siempre a la vista (sin desplaz
       const st = await state();
       if (!st) break;
       if (!st.ok) misses.push(`${st.label} ${st.top}-${st.bottom}`);
-      if (taps === 1) await page.locator('.ses-editor[data-state="editing"] button[aria-label="Sumar 2,5"]').first().click();
+      if (taps === 1) await page.locator('.ses-editor[data-state="editing"] button[aria-label^="Sumar 2,5 a "]').first().click();
       await page.locator('.ses-editor[data-state="editing"] .ses-register').first().click();
       taps++;
       if (taps === 2) {

@@ -3,13 +3,13 @@
    la identidad nunca va solo en el color: cada fase lleva su nombre y la premenstrual, además, rayado. */
 
 :root {
-  --cyc-menstrual: #d9506f;
+  --cyc-menstrual: #c94564;
   --cyc-follicular: #3987e5;
   --cyc-ovulation: #c98500;
   --cyc-luteal: #9085e9;
   --cyc-luteal-dark: #4a4380;
   --cyc-late: #4b5260;
-  --cyc-menstrual-soft: rgba(217, 80, 111, 0.16);
+  --cyc-menstrual-soft: rgba(201, 69, 100, 0.16);
   --cyc-ovulation-soft: rgba(201, 133, 0, 0.16);
 }
 
@@ -59,38 +59,38 @@
   gap: 1px;
   pointer-events: none;
 }
-.cyc-ring-kicker { font-size: 12px; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.cyc-ring-big { font-size: 56px; font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+.cyc-ring-kicker { font-size: calc(12px * var(--ts)); font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.cyc-ring-big { font-size: calc(56px * var(--ts)); font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
 .cyc-ring-na { color: var(--muted); }
-.cyc-ring-phase { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.2; }
-.cyc-ring-est { font-size: 12px; color: var(--muted); }
+.cyc-ring-phase { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: calc(15px * var(--ts)); font-weight: 700; color: var(--text); line-height: 1.2; }
+.cyc-ring-est { font-size: calc(12px * var(--ts)); color: var(--muted); }
 
 .cyc-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; padding: 0 4px; }
-.cyc-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.cyc-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: calc(13px * var(--ts)); color: var(--text-2); white-space: nowrap; }
 
 /* ---------- Cabecera (estado actual) ---------- */
 .cyc { gap: 12px; }
 .cyc-hero { gap: 12px; padding: 16px 14px 14px; background: radial-gradient(120% 70% at 50% 0%, rgba(144, 133, 233, 0.08), transparent 70%), var(--surface); }
-.cyc-hero[data-phase="menstrual"] { background: radial-gradient(120% 70% at 50% 0%, rgba(217, 80, 111, 0.1), transparent 70%), var(--surface); }
+.cyc-hero[data-phase="menstrual"] { background: radial-gradient(120% 70% at 50% 0%, rgba(201, 69, 100, 0.1), transparent 70%), var(--surface); }
 .cyc-hero[data-phase="follicular"] { background: radial-gradient(120% 70% at 50% 0%, rgba(57, 135, 229, 0.09), transparent 70%), var(--surface); }
 .cyc-hero[data-phase="ovulation"] { background: radial-gradient(120% 70% at 50% 0%, rgba(201, 133, 0, 0.09), transparent 70%), var(--surface); }
-.cyc-hormonal-note { font-size: 14px; line-height: 1.45; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
-.cyc-empty-text { font-size: 15px; color: var(--text-2); text-align: center; line-height: 1.45; }
+.cyc-hormonal-note { font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.cyc-empty-text { font-size: calc(15px * var(--ts)); color: var(--text-2); text-align: center; line-height: 1.45; }
 
 .cyc-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .cyc-kpi { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; min-width: 0; }
 .cyc-kpi.is-warn { border-color: rgba(251, 191, 36, 0.45); background: var(--warn-soft); }
 .cyc-kpi-label { font-size: var(--fs-xs); font-weight: 700; line-height: 1.25; color: var(--muted); }
-.cyc-kpi-value { font-size: 19px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cyc-kpi-value.is-long { font-size: 15px; line-height: 1.25; white-space: normal; overflow: visible; }
-.cyc-kpi-sub { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cyc-kpi-value { font-size: calc(19px * var(--ts)); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cyc-kpi-value.is-long { font-size: calc(15px * var(--ts)); line-height: 1.25; white-space: normal; overflow: visible; }
+.cyc-kpi-sub { font-size: calc(12px * var(--ts)); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .cyc-actions { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 8px; }
-.cyc-actions .btn { min-width: 0; padding: 0 10px; min-height: 54px; font-size: 16px; white-space: nowrap; gap: 6px; }
-.cyc-hero-tip { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 1.45; color: var(--text-2); padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.cyc-actions .btn { min-width: 0; padding: 0 10px; min-height: 54px; font-size: calc(16px * var(--ts)); white-space: nowrap; gap: 6px; }
+.cyc-hero-tip { display: flex; align-items: baseline; gap: 8px; font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
 .cyc-hero-tip .cyc-key { transform: translateY(1px); }
 .cyc-main-btn[data-act="start"] { background: var(--cyc-menstrual); border-color: var(--cyc-menstrual); color: #fff; }
-.cyc-basis { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.4; }
+.cyc-basis { font-size: calc(13px * var(--ts)); color: var(--muted); text-align: center; line-height: 1.4; }
 
 /* ---------- Avisos e insights ---------- */
 .cyc-ins { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); border-left: 4px solid var(--info); background: var(--surface); }
@@ -103,8 +103,8 @@ section.cyc-ins { gap: 8px; }
 .cyc-ins-warn .cyc-ins-icon { color: var(--warn); }
 .cyc-ins-good .cyc-ins-icon { color: var(--ok); }
 .cyc-ins-neutral .cyc-ins-icon { color: var(--muted); }
-.cyc-ins-title { font-size: 16px; font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; }
-.cyc-ins-text { font-size: 15px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.cyc-ins-title { font-size: calc(16px * var(--ts)); font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; }
+.cyc-ins-text { font-size: calc(15px * var(--ts)); line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
 .cyc-ins-foot { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
 .cyc-ins-foot .why { flex: 1 1 100%; }
 .cyc-ins-action { min-height: 44px; }
@@ -114,14 +114,14 @@ section.cyc-ins { gap: 8px; }
 .cyc-why { display: flex; flex-direction: column; gap: 8px; }
 .cyc-why-rule { color: var(--text-2); }
 .cyc-why-rule b { color: var(--text); }
-.cyc-why-head { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.cyc-why-head { font-size: calc(12px * var(--ts)); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .why-body ul.cyc-why-data { list-style: none; margin: 0; padding: 0; }
 .cyc-why-data li { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-top: 1px solid var(--border); }
 .why-body .cyc-why-data li + li { margin-top: 0; }
 .cyc-why-label { font-weight: 650; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
 .cyc-why-value { color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .cyc-sources ul { margin: 4px 0 0; padding-left: 16px; }
-.cyc-sources li { color: var(--text-2); font-size: 13px; }
+.cyc-sources li { color: var(--text-2); font-size: calc(13px * var(--ts)); }
 .cyc-sources b { color: var(--text); font-weight: 700; }
 
 /* ---------- Consejo de hoy ---------- */
@@ -130,19 +130,19 @@ section.cyc-ins { gap: 8px; }
 .cyc-tip[data-phase="follicular"] { border-left-color: var(--cyc-follicular); }
 .cyc-tip[data-phase="ovulation"] { border-left-color: var(--cyc-ovulation); }
 .cyc-tip[data-phase="luteal"], .cyc-tip[data-phase="premenstrual"] { border-left-color: var(--cyc-luteal); }
-.cyc-tip-kicker { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.cyc-tip-title { font-size: 16px; font-weight: 750; line-height: 1.3; }
-.cyc-tip-text { font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.cyc-tip-kicker { display: flex; align-items: center; gap: 6px; font-size: calc(12px * var(--ts)); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.cyc-tip-title { font-size: calc(16px * var(--ts)); font-weight: 750; line-height: 1.3; }
+.cyc-tip-text { font-size: calc(15px * var(--ts)); line-height: 1.45; color: var(--text-2); }
 
 /* ---------- Calendario del ciclo ---------- */
 .cyc-cal { gap: 10px; padding: 10px 8px 12px; }
 .cyc-cal-nav { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
 .cyc-cal-btn { color: var(--accent); flex: none; }
-.cyc-cal-title { flex: 1; min-width: 0; text-align: center; font-size: 18px; font-weight: 800; }
+.cyc-cal-title { flex: 1; min-width: 0; text-align: center; font-size: calc(18px * var(--ts)); font-weight: 800; }
 .cyc-cal-today { flex: none; margin-left: 2px; }
 .cyc-cal-grid { display: flex; flex-direction: column; gap: 2px; }
 .cyc-cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; }
-.cyc-cal-dow { text-align: center; font-size: 12px; font-weight: 750; color: var(--muted); padding: 2px 0 4px; }
+.cyc-cal-dow { text-align: center; font-size: calc(12px * var(--ts)); font-weight: 750; color: var(--muted); padding: 2px 0 4px; }
 .cyc-cal-day {
   position: relative;
   display: flex;
@@ -164,71 +164,74 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
   height: 36px;
   border-radius: 50%;
   border: 2px solid transparent;
-  font-size: 16px;
+  font-size: calc(16px * var(--ts));
   font-weight: 700;
   line-height: 1;
 }
-.cyc-cal-day.is-out { opacity: 0.35; }
 .cyc-cal-day.is-future .cyc-cal-num { color: var(--text-2); font-weight: 600; }
+/* Días de otro mes: número en gris legible (sin opacity, que lo dejaba en ~3:1); los marcadores, atenuados. Va después de
+   .is-future y antes de .m-predicted/.m-period para que esos colores sigan ganando. */
+.cyc-cal-day.is-out .cyc-cal-num { color: var(--muted); font-weight: 600; }
+.cyc-cal-day.is-out .cyc-cal-dot { opacity: 0.5; }
 .cyc-cal-day.m-ov { background: var(--cyc-ovulation-soft); border-radius: 0; }
 .cyc-cal-row > .cyc-cal-day.m-ov:first-child, .cyc-cal-day:not(.m-ov) + .cyc-cal-day.m-ov { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
 .cyc-cal-day.m-ov:has(+ .cyc-cal-day:not(.m-ov)), .cyc-cal-row > .cyc-cal-day.m-ov:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
 .cyc-cal-day.m-ovday .cyc-cal-num { border-color: rgba(201, 133, 0, 0.7); }
 .cyc-cal-day.m-predicted .cyc-cal-num { border: 2px dashed var(--cyc-menstrual); color: var(--text); }
 .cyc-cal-day.m-period .cyc-cal-num { background: var(--cyc-menstrual); border-color: var(--cyc-menstrual); color: #fff; }
-.cyc-cal-day.m-period.m-heavy .cyc-cal-num { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px rgba(217, 80, 111, 0.55); }
+.cyc-cal-day.m-period.m-heavy .cyc-cal-num { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px rgba(201, 69, 100, 0.55); }
 .cyc-cal-day.is-today .cyc-cal-num { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cyc-cal-dot { position: absolute; bottom: 1px; width: 5px; height: 5px; border-radius: 50%; background: transparent; }
 .cyc-cal-day.m-sym .cyc-cal-dot { background: var(--text-2); }
 .cyc-cal-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 6px; }
-.cyc-cal-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+.cyc-cal-leg { display: inline-flex; align-items: center; gap: 6px; font-size: calc(13px * var(--ts)); color: var(--text-2); }
 .cyc-leg-period, .cyc-leg-predicted, .cyc-leg-ov, .cyc-leg-sym { display: inline-block; flex: none; }
 .cyc-leg-period { width: 14px; height: 14px; border-radius: 50%; background: var(--cyc-menstrual); }
 .cyc-leg-predicted { width: 14px; height: 14px; border-radius: 50%; border: 2px dashed var(--cyc-menstrual); }
 .cyc-leg-ov { width: 18px; height: 12px; border-radius: 4px; background: rgba(201, 133, 0, 0.3); }
 .cyc-leg-sym { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); margin: 0 4px; }
-.cyc-cal-note { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px; font-size: 13px; line-height: 1.4; color: var(--text-2); }
+.cyc-cal-note { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px; font-size: calc(13px * var(--ts)); line-height: 1.4; color: var(--text-2); }
 .cyc-cal-note .icon { flex: none; margin-top: 1px; color: var(--cyc-ovulation); }
-.cyc-cal-hint { margin: 0 6px; font-size: 13px; color: var(--muted); }
+.cyc-cal-hint { margin: 0 6px; font-size: calc(13px * var(--ts)); color: var(--muted); }
 
 /* ---------- Tus ciclos ---------- */
-.cyc-h2 { font-size: 18px; font-weight: 800; }
-.cyc-hist-empty { font-size: 15px; }
+.cyc-h2 { font-size: calc(18px * var(--ts)); font-weight: 800; }
+.cyc-hist-empty { font-size: calc(15px * var(--ts)); }
 .cyc-hist-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .cyc-hist-kpis .cyc-kpi { padding: 9px 9px; }
 .cyc-hist-kpis .cyc-kpi-label { font-size: var(--fs-xs); letter-spacing: -0.01em; }
 .cyc-hist-chart { margin: 2px -4px 0; }
-.cyc-chart-note { font-size: 13px; color: var(--muted); line-height: 1.4; }
+.cyc-chart-note { font-size: calc(13px * var(--ts)); color: var(--muted); line-height: 1.4; }
 .cyc-cycles { background: var(--surface-2); }
 .cyc-cycle-row { position: relative; min-height: 58px; }
 .cyc-cycle-row .list-item-title { font-variant-numeric: tabular-nums; }
-.cyc-cycle-len { flex: none; font-weight: 800; font-size: 16px; }
+.cyc-cycle-len { flex: none; font-weight: 800; font-size: calc(16px * var(--ts)); }
 .cyc-cycle-len.is-out { color: var(--warn); }
 .cyc-cycle-row.is-current .list-item-title { color: var(--text); }
 .cyc-cycle-bar { position: absolute; left: 0; bottom: 0; height: 3px; width: var(--w, 0%); background: linear-gradient(90deg, var(--cyc-menstrual), var(--cyc-luteal)); border-radius: 0 3px 3px 0; opacity: 0.8; }
 
 /* ---------- Cómo te afecta ---------- */
 .cyc-effect, .cyc-tips { gap: 12px; }
-.cyc-effect-intro { font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.cyc-effect-intro { font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); }
 .cyc-effect-wait { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
 .cyc-effect-progress { display: flex; gap: 4px; flex: none; }
 .cyc-effect-progress span { width: 22px; height: 22px; border-radius: 50%; border: 2px dashed var(--border-strong); }
 .cyc-effect-progress span.is-done { border: 0; background: var(--cyc-menstrual); }
-.cyc-effect-reason { font-size: 15px; font-weight: 650; line-height: 1.35; }
-.cyc-effect-nodata { font-size: 14px; line-height: 1.45; color: var(--text-2); padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px dashed var(--border-strong); }
+.cyc-effect-reason { font-size: calc(15px * var(--ts)); font-weight: 650; line-height: 1.35; }
+.cyc-effect-nodata { font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px dashed var(--border-strong); }
 .cyc-eff { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
 .cyc-eff-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 0 8px; }
 .cyc-eff-head { padding-top: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .cyc-eff-th { font-size: var(--fs-xs); font-weight: 750; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cyc-eff-phase { padding: 7px 0 8px; border-bottom: 1px solid var(--border); }
 .cyc-eff-phase:last-of-type { border-bottom: 0; }
-.cyc-eff-name { display: flex; align-items: center; gap: 6px; padding: 0 10px 3px; font-size: 13px; font-weight: 750; color: var(--text); }
-.cyc-eff-val { text-align: center; font-size: 15px; font-weight: 750; white-space: nowrap; }
+.cyc-eff-name { display: flex; align-items: center; gap: 6px; padding: 0 10px 3px; font-size: calc(13px * var(--ts)); font-weight: 750; color: var(--text); }
+.cyc-eff-val { text-align: center; font-size: calc(14px * var(--ts)); font-weight: 750; white-space: nowrap; letter-spacing: -0.01em; }
 .cyc-eff-val.is-na { color: var(--muted); font-weight: 500; }
-.cyc-eff-foot { padding: 8px 10px; font-size: 12px; line-height: 1.4; color: var(--muted); border-top: 1px solid var(--border); }
-.cyc-sub-head { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.cyc-eff-foot { padding: 8px 10px; font-size: calc(12px * var(--ts)); line-height: 1.4; color: var(--muted); border-top: 1px solid var(--border); }
+.cyc-sub-head { font-size: calc(12px * var(--ts)); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
 .cyc-sym-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.cyc-sym-list li { display: flex; align-items: baseline; gap: 6px; font-size: 14px; color: var(--text-2); line-height: 1.4; }
+.cyc-sym-list li { display: flex; align-items: baseline; gap: 6px; font-size: calc(14px * var(--ts)); color: var(--text-2); line-height: 1.4; }
 .cyc-sym-list li .cyc-key { transform: translateY(1px); }
 .cyc-sym-list b { color: var(--text); font-weight: 700; white-space: nowrap; }
 
@@ -242,7 +245,7 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
   gap: 8px;
   min-height: 50px;
   padding: 0 12px;
-  font-size: 15px;
+  font-size: calc(15px * var(--ts));
   font-weight: 750;
   color: var(--text);
   list-style: none;
@@ -255,7 +258,7 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 .cyc-tip-item { display: flex; flex-direction: column; gap: 4px; padding: 0 12px 12px 30px; }
 .cyc-tip-item + .cyc-tip-item { padding-top: 6px; border-top: 1px dashed var(--border); }
 
-.cyc-privacy { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.4; padding: 2px 8px 6px; }
+.cyc-privacy { font-size: calc(13px * var(--ts)); color: var(--muted); text-align: center; line-height: 1.4; padding: 2px 8px 6px; }
 .cyc-disabled { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; }
 
 /* ---------- Hoja del día y fin de regla ---------- */
@@ -266,13 +269,13 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 .cyc-flow .chip.active.cyc-flow-spotting { background: var(--cyc-menstrual-soft); border-color: var(--cyc-menstrual); color: var(--text); }
 .cyc-flow .chip.active.cyc-flow-none { background: var(--surface-3); border-color: var(--text-2); color: var(--text); }
 .cyc-sym { gap: 6px; }
-.cyc-sym .chip { padding: 0 12px; font-size: 14px; }
+.cyc-sym .chip { padding: 0 12px; font-size: calc(14px * var(--ts)); }
 .cyc-sym .chip.active { background: var(--cyc-luteal); border-color: var(--cyc-luteal); color: #0b0d10; }
 .cyc-notes { resize: none; }
 .cyc-auto-note { color: var(--info); }
 .cyc-end-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
 .cyc-end-opts .btn { flex-direction: column; gap: 2px; min-height: 62px; }
-.cyc-end-sub { font-size: 13px; font-weight: 600; color: var(--muted); }
+.cyc-end-sub { font-size: calc(13px * var(--ts)); font-weight: 600; color: var(--muted); }
 .cyc-end-row { display: flex; gap: 8px; }
 .cyc-end-row .input { flex: 1; min-width: 0; }
 
@@ -282,16 +285,16 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 .cyc-today-main .chev { color: var(--muted); flex: none; }
 .cyc-today-ring { position: relative; flex: none; width: 60px; height: 60px; }
 .cyc-today-ring .cyc-ring-svg { width: 60px; height: 60px; }
-.cyc-today-day { position: absolute; inset: 0; display: grid; place-items: center; font-size: 19px; font-weight: 800; }
+.cyc-today-day { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(19px * var(--ts)); font-weight: 800; }
 .cyc-today-texts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.cyc-today-kicker { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.cyc-today-title { font-size: 17px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
-.cyc-today-sub { font-size: 14px; color: var(--text-2); line-height: 1.3; }
+.cyc-today-kicker { font-size: calc(12px * var(--ts)); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.cyc-today-title { font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+.cyc-today-sub { font-size: calc(14px * var(--ts)); color: var(--text-2); line-height: 1.3; }
 .cyc-today-sub:empty { display: none; }
-.cyc-today-tip { font-size: 14px; line-height: 1.4; color: var(--text-2); padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.cyc-today-tip { font-size: calc(14px * var(--ts)); line-height: 1.4; color: var(--text-2); padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
 .cyc-today-actions { display: flex; align-items: center; gap: 10px; }
 .cyc-today-quick { flex: 1; min-width: 0; min-height: 46px; padding: 0 12px; gap: 6px; white-space: nowrap; }
-.cyc-today-quick[data-act="start"] { background: var(--cyc-menstrual-soft); border-color: rgba(217, 80, 111, 0.55); color: var(--text); }
+.cyc-today-quick[data-act="start"] { background: var(--cyc-menstrual-soft); border-color: rgba(201, 69, 100, 0.55); color: var(--text); }
 .cyc-today-link { flex: none; }
 
 /* ---------- Marcas del ciclo fuera de #/cycle (calendario de la app) ---------- */
@@ -308,9 +311,9 @@ button.cyc-cal-day.is-pressed { background: var(--surface-2); }
 @media (max-width: 350px) {
   .cyc-ring { width: 208px; height: 208px; }
   .cyc-ring-center { inset: 34px; }
-  .cyc-ring-big { font-size: 48px; }
-  .cyc-actions .btn { font-size: 15px; padding: 0 6px; }
-  .cyc-hist-kpis .cyc-kpi-value { font-size: 17px; }
+  .cyc-ring-big { font-size: calc(48px * var(--ts)); }
+  .cyc-actions .btn { font-size: calc(15px * var(--ts)); padding: 0 6px; }
+  .cyc-hist-kpis .cyc-kpi-value { font-size: calc(17px * var(--ts)); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .cyc-seg { transition: opacity 0.3s ease; }

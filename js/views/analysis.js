@@ -12,7 +12,7 @@
 //   mountAnalysis(root) → pantalla completa (back '#/progress').
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, emptyState, toast, sheet, stateTag, kpiValue } from '../ui.js';
+import { h, icon, screen, emptyState, toast, sheet, stateTag, kpiValue, scrollBehavior } from '../ui.js';
 import { todayStr, addDays, fmtNum, fmtDuration, clamp } from '../util.js';
 import { dataFromStore, chartHeight } from '../progress-ui.js';
 import { lineChart, COLORS } from '../charts.js';
@@ -34,7 +34,7 @@ const KIND_SUB = (x) => (x.kind === 'recovery' && x.recovery ? `al ${x.recovery.
 const EX_VISIBLE = 6;
 /** Semanas de la minigráfica del peso. */
 const CHART_WEEKS = 8;
-const PERIOD_COLOR = '#d9506f'; // --cyc-menstrual (css/cycle.css), como las marcas de la gráfica de Peso
+const PERIOD_COLOR = '#c94564'; // --cyc-menstrual (css/cycle.css), como las marcas de la gráfica de Peso
 const NB = ' ';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -191,7 +191,7 @@ export function analysisSummaryCard({ data = null, today = null, max = 3, compac
     h('ul.an-sum-list', pts.map((i) => h('li.an-sum-item', { dataset: { insight: i.id, level: i.level, area: i.area } },
       h('span.an-sum-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area]), confBadge(i.confidence, true)),
       h('span.an-sum-mtitle', i.title),
-      h('p.an-sum-mtext', i.text)))),
+      h('p.an-sum-mtext', { dataset: { preview: '' } }, i.text)))),
     h('button.btn.btn-secondary.btn-block.an-sum-btn', { type: 'button', onClick: () => navigate('#/analysis') },
       'Ver análisis', icon('chevron-right', 18)));
 }
@@ -289,7 +289,7 @@ function summaryCard(a, content) {
   const go = (id) => {
     const el = [...content.querySelectorAll('.an-card:not(.an-card-summary) [data-insight]')].find((x) => x.dataset.insight === id);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
     el.classList.remove('an-flash');
     void el.offsetWidth; // reinicia la animación
     el.classList.add('an-flash');
@@ -307,7 +307,7 @@ function summaryCard(a, content) {
         h('button.an-key-btn', { type: 'button', 'aria-label': `${i.title}. Qué hacer: ${stepLabel}. Ver el detalle en ${AREA_LABEL[i.area]}`, onClick: () => go(i.id) },
           h('span.an-key-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area]), confBadge(i.confidence, true)),
           h('span.an-key-title', i.title),
-          h('span.an-key-text', text),
+          h('span.an-key-text', { dataset: { preview: '' } }, text),
           h('span.an-key-step', h('b', 'Qué hacer: '), stepLabel),
           h('span.an-key-more', 'Ver detalle', icon('chevron-down', 16))))))
       : pts.length ? null : note('Aún no hay nada destacado: con unas semanas de registros, aquí verás lo más importante y qué hacer.'));

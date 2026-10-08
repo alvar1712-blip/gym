@@ -20,7 +20,7 @@
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
 }
-.chart-svg text { font-size: 12px; fill: var(--muted); }
+.chart-svg text { font-size: calc(12px * var(--ts)); fill: var(--muted); }
 .chart-grid { stroke: #252a32; stroke-width: 1; shape-rendering: crispEdges; }
 .chart-zero { stroke: var(--border-strong); }
 .chart-tick { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
@@ -62,17 +62,17 @@
   border: 1px solid var(--border-strong);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   line-height: 1.25;
 }
-.chart-tip-title { font-size: 12px; font-weight: 650; color: var(--text-2); margin-bottom: 3px; }
+.chart-tip-title { font-size: calc(12px * var(--ts)); font-weight: 650; color: var(--text-2); margin-bottom: 3px; }
 .chart-tip-row { display: flex; align-items: flex-start; gap: 7px; min-height: 21px; }
-.chart-tip-key { flex: none; display: flex; align-items: center; height: 21px; } /* centrada en la 1.ª línea */
+.chart-tip-key { flex: none; display: flex; align-items: center; height: calc(21px * var(--ts)); } /* centrada en la 1.ª línea */
 .chart-tip-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 7px; padding-top: 1px; }
-.chart-tip-val { min-width: 0; font-size: 15px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.chart-tip-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
-.chart-tip-total .chart-tip-val { font-size: 16px; }
-.chart-tip-note { margin-top: 3px; font-size: 12px; color: var(--muted); white-space: normal; }
+.chart-tip-val { min-width: 0; font-size: calc(15px * var(--ts)); font-weight: 750; font-variant-numeric: tabular-nums; }
+.chart-tip-name { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(12px * var(--ts)); color: var(--muted); }
+.chart-tip-total .chart-tip-val { font-size: calc(16px * var(--ts)); }
+.chart-tip-note { margin-top: 3px; font-size: calc(12px * var(--ts)); color: var(--muted); white-space: normal; }
 
 /* Marcas de color de leyenda y globo (el texto nunca va en el color de la serie) */
 .chart-key { flex: none; display: inline-block; width: 14px; height: 3px; border-radius: 2px; background: currentColor; }
@@ -82,7 +82,7 @@
 .chart-key-band { position: relative; width: 12px; height: 10px; border-radius: 1px; background: none; border-top: 1px solid; border-bottom: 1px solid; }
 .chart-key-band::before { content: ''; position: absolute; inset: 0; background: currentColor; opacity: 0.3; }
 
-.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; line-height: 1.2; color: var(--text-2); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: calc(13px * var(--ts)); line-height: 1.2; color: var(--text-2); }
 .chart-legend-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 
 .chart-empty {
@@ -90,7 +90,7 @@
   place-items: center;
   padding: 0 16px;
   text-align: center;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   color: var(--muted);
   border: 1px dashed var(--border);
   border-radius: 12px;
@@ -129,10 +129,10 @@
   color: var(--text);
 }
 .prg-link.is-pressed { background: var(--surface-2); transform: scale(0.98); }
-.prg-link-emoji { flex: none; font-size: 20px; line-height: 1; }
-.prg-link-label { max-width: 100%; font-size: 14px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-link-emoji { flex: none; font-size: calc(20px * var(--ts)); line-height: 1; }
+.prg-link-label { max-width: 100%; font-size: calc(14px * var(--ts)); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prg-link-wide { grid-column: span 3; flex-direction: row; gap: 6px; min-height: 52px; padding: 6px 4px; }
-.prg-link-wide .prg-link-label { min-width: 0; font-size: 15px; white-space: normal; overflow-wrap: anywhere; text-align: center; } /* «Tiempos previstos» en dos líneas antes que «…» */
+.prg-link-wide .prg-link-label { min-width: 0; font-size: calc(15px * var(--ts)); white-space: normal; overflow-wrap: anywhere; text-align: center; } /* «Tiempos previstos» en dos líneas antes que «…» */
 /* «Análisis» (ronda 5): a lo ancho, arriba, con subtítulo y flecha */
 .prg-link-full {
   grid-column: 1 / -1;
@@ -145,15 +145,15 @@
   background: linear-gradient(90deg, rgba(184, 243, 74, 0.08), transparent 70%), var(--surface);
   text-align: left;
 }
-.prg-link-full .prg-link-emoji { font-size: 24px; }
+.prg-link-full .prg-link-emoji { font-size: calc(24px * var(--ts)); }
 .prg-link-texts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.prg-link-full .prg-link-label { font-size: 16px; }
+.prg-link-full .prg-link-label { font-size: calc(16px * var(--ts)); }
 .prg-link-sub { max-width: 100%; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
 .prg-link-chev { flex: none; color: var(--muted); }
 /* 320 px: como las demás (emoji encima), para que «Panel semanal» quepa entero */
 @media (max-width: 359px) {
   .prg-link-wide { flex-direction: column; gap: 5px; min-height: 62px; }
-  .prg-link-wide .prg-link-label { font-size: 14px; }
+  .prg-link-wide .prg-link-label { font-size: calc(14px * var(--ts)); }
 }
 
 /* Gráficas que dependen del periodo, con su selector: el selector solo se pega mientras se ven (sticky dentro
@@ -184,8 +184,8 @@
 .prg-charts > .prg-card { scroll-margin-top: calc(var(--topbar-h, calc(52px + var(--sat))) + 68px); }
 .prg-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .prg-card-titles { min-width: 0; }
-.prg-card-title { font-size: 18px; font-weight: 750; line-height: 1.2; }
-.prg-card-sub { margin-top: 3px; font-size: 14px; line-height: 1.35; color: var(--muted); }
+.prg-card-title { font-size: calc(18px * var(--ts)); font-weight: 750; line-height: 1.2; }
+.prg-card-sub { margin-top: 3px; font-size: calc(14px * var(--ts)); line-height: 1.35; color: var(--muted); }
 .prg-head-link {
   flex: none;
   display: inline-flex;
@@ -198,14 +198,14 @@
   border-radius: 10px;
   background: none;
   color: var(--accent);
-  font-size: 15px;
+  font-size: calc(15px * var(--ts));
   font-weight: 700;
   white-space: nowrap;
 }
 .prg-head-link.is-pressed { background: var(--surface-2); }
 .prg-chart { min-width: 0; }
-.prg-howto { font-size: 13px; line-height: 1.45; color: var(--muted); }
-.prg-caption { font-size: 14px; line-height: 1.35; color: var(--text-2); }
+.prg-howto { font-size: calc(13px * var(--ts)); line-height: 1.45; color: var(--muted); }
+.prg-caption { font-size: calc(14px * var(--ts)); line-height: 1.35; color: var(--text-2); }
 .prg-caption b { color: var(--text); font-weight: 750; }
 .prg-note {
   display: flex;
@@ -215,13 +215,13 @@
   border-radius: 10px;
   border: 1px solid rgba(96, 165, 250, 0.35);
   background: var(--info-soft);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts));
   line-height: 1.4;
   color: var(--text-2);
 }
 .prg-note .icon { flex: none; margin-top: 2px; color: var(--info); }
 .prg-card .chips-scroll { margin: 0 -14px; padding: 0 14px 2px; }
-.prg-seg .seg-btn { min-width: 0; padding: 0 2px; font-size: 14px; letter-spacing: -0.01em; }
+.prg-seg .seg-btn { min-width: 0; padding: 0 2px; font-size: calc(14px * var(--ts)); letter-spacing: -0.01em; }
 
 /* Datos breves sobre la gráfica: columnas iguales; la etiqueta parte línea si no cabe (nunca «…») y, con
    subgrid, los valores de todas las columnas quedan a la misma altura aunque una etiqueta ocupe dos líneas. */
@@ -234,15 +234,15 @@
   column-gap: 12px;
 }
 .prg-stat { grid-row: span 3; display: grid; grid-template-rows: subgrid; align-content: start; min-width: 0; }
-.prg-stat-label { align-self: end; font-size: 12px; font-weight: 700; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
-.prg-stat-value { font-size: 19px; font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prg-stat-sub { font-size: 12px; line-height: 1.3; color: var(--muted); }
+.prg-stat-label { align-self: end; font-size: calc(12px * var(--ts)); font-weight: 700; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
+.prg-stat-value { font-size: calc(19px * var(--ts)); font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prg-stat-sub { font-size: calc(12px * var(--ts)); line-height: 1.3; color: var(--muted); }
 /* Sin datos en la gráfica, la explicación de cómo leerla sobra */
 .prg-card:has(.chart-is-empty) .prg-howto { display: none; }
-.prg-stat-na .prg-stat-value { padding-top: 3px; font-size: 16px; font-weight: 750; color: var(--text-2); }
+.prg-stat-na .prg-stat-value { padding-top: 3px; font-size: calc(16px * var(--ts)); font-weight: 750; color: var(--text-2); }
 
 /* Tabla «esta semana» por músculo */
-.prg-mlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--text-2); }
+.prg-mlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: calc(13px * var(--ts)); color: var(--text-2); }
 .prg-mlegend-item { display: inline-flex; align-items: center; gap: 6px; }
 .prg-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .prg-dot-below { background: var(--warn); }
@@ -265,15 +265,15 @@
 }
 .prg-mrow.is-pressed { background: var(--surface-2); }
 .prg-mrow-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.prg-mrow-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
-.prg-mrow-val { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.prg-mrow-val b { font-size: 16px; font-weight: 800; color: var(--text); }
+.prg-mrow-name { flex: 1; min-width: 0; font-size: calc(15px * var(--ts)); font-weight: 650; overflow-wrap: anywhere; }
+.prg-mrow-val { flex: none; font-size: calc(13px * var(--ts)); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prg-mrow-val b { font-size: calc(16px * var(--ts)); font-weight: 800; color: var(--text); }
 .prg-status {
   flex: none;
   width: 90px;
   padding: 2px 6px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts));
   font-weight: 750;
   text-align: center;
   white-space: nowrap;
@@ -307,19 +307,19 @@
 .prg-ex-none { padding: 6px 2px; }
 .prg-badge-inline { margin-left: 8px; vertical-align: 2px; }
 .prg-best { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-.prg-best-v { font-size: 16px; font-weight: 800; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prg-best-v { font-size: calc(16px * var(--ts)); font-weight: 800; color: var(--accent); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .prg-best-l { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 
 /* Progreso de un ejercicio */
 .prg-kpis .kpi { display: flex; flex-direction: column; gap: 1px; }
-.prg-kpis .kpi-value { font-size: 20px; }
+.prg-kpis .kpi-value { font-size: calc(20px * var(--ts)); }
 .prg-kpis .kpi-sub { line-height: 1.3; overflow-wrap: anywhere; }
 .prg-hist-head { align-items: baseline; margin-top: 10px; }
 .prg-hist-head .section-title { margin: 0 2px; }
-.prg-hist-note { padding: 0 2px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.prg-hist-note { padding: 0 2px; font-size: calc(13px * var(--ts)); line-height: 1.45; color: var(--muted); }
 .prg-hrow { align-items: center; }
 .prg-hrow-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-weight: 700; }
-.prg-hrow-sets { font-size: 14px; font-weight: 600; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.prg-hrow-sets { font-size: calc(14px * var(--ts)); font-weight: 600; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
 .prg-set { display: inline-block; font-variant-numeric: tabular-nums; }
 .prg-set-pr { color: var(--pr); }
 .prg-sep { color: var(--muted); }
@@ -349,9 +349,9 @@
 .prg-rec-head.is-pressed { background: var(--surface-3); }
 .prg-rec-khead { justify-content: space-between; padding-right: 14px; }
 .prg-rec-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.prg-rec-name { font-size: 17px; font-weight: 750; line-height: 1.25; }
-.prg-rec-meta { font-size: 13px; color: var(--muted); }
-.prg-rec-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.prg-rec-name { font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.25; }
+.prg-rec-meta { font-size: calc(13px * var(--ts)); color: var(--muted); }
+.prg-rec-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: calc(14px * var(--ts)); font-weight: 700; color: var(--accent); }
 .prg-rec-rows { display: flex; flex-direction: column; }
 .prg-rec-row {
   display: flex;
@@ -371,13 +371,13 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .prg-rec-row .chev { flex: none; color: var(--muted); }
 .prg-rec-static { padding-right: 14px; }
 .prg-rec-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.prg-rec-label { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 15px; font-weight: 700; line-height: 1.3; }
+.prg-rec-label { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: calc(15px * var(--ts)); font-weight: 700; line-height: 1.3; }
 .prg-rec-label .prg-badge-inline { margin-left: 0; vertical-align: 0; }
-.prg-rec-sub { font-size: 13px; line-height: 1.35; color: var(--muted); }
+.prg-rec-sub { font-size: calc(13px * var(--ts)); line-height: 1.35; color: var(--muted); }
 /* Origen del récord (registrado, importado o marca histórica): secundario, sin partirse */
 .prg-rec-origin { white-space: nowrap; }
-.prg-rec-value { flex: none; font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.prg-rec-na { font-size: 14px; font-weight: 650; color: var(--muted); }
+.prg-rec-value { flex: none; font-size: calc(18px * var(--ts)); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prg-rec-na { font-size: calc(14px * var(--ts)); font-weight: 650; color: var(--muted); }
 .prg-rec-toggle {
   display: flex;
   align-items: center;
@@ -389,7 +389,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
   border-top: 1px solid var(--border);
   background: none;
   color: var(--accent);
-  font-size: 15px;
+  font-size: calc(15px * var(--ts));
   font-weight: 700;
   text-align: left;
 }
@@ -403,20 +403,20 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts));
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .prg-rec-reps { border-top: 1px solid var(--border); background: rgba(0, 0, 0, 0.14); }
 .prg-rec-reps .prg-rec-row { min-height: 52px; }
-.prg-rec-reps .prg-rec-value { font-size: 16px; }
+.prg-rec-reps .prg-rec-value { font-size: calc(16px * var(--ts)); }
 .prg-rec-reps .prg-rec-value.prg-rec-na { font-weight: 700; }
 .prg-rec > .prg-hist-note { padding: 10px 14px 12px; border-top: 1px solid var(--border); }
 
 /* Pantallas muy estrechas (320 px): nada cortado con «…» */
 @media (max-width: 359px) {
   .prg-stats { column-gap: 8px; }
-  .prg-stat-value { font-size: 15px; white-space: normal; overflow-wrap: anywhere; }
+  .prg-stat-value { font-size: calc(15px * var(--ts)); white-space: normal; overflow-wrap: anywhere; }
   .prg-kpis .kpi-label { white-space: normal; }
   .prg-seg .seg-btn { padding: 0; font-size: var(--fs-xs); }
   /* Tabla por músculo: el nombre en su línea; debajo, las series y el estado */
@@ -428,7 +428,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 
 /* ---------- Marcas históricas (ronda 6, js/views/past-records.js) ---------- */
 .pr { display: flex; flex-direction: column; gap: 12px; }
-.pr-intro { margin: 0 0 4px; color: var(--text-2); font-size: 15px; line-height: 1.4; }
+.pr-intro { margin: 0 0 4px; color: var(--text-2); font-size: calc(15px * var(--ts)); line-height: 1.4; }
 .pr-group { padding: 0; gap: 0; overflow: hidden; }
 .pr-group-head {
   display: flex;
@@ -444,8 +444,8 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
   text-align: left;
 }
 .pr-group-head.is-pressed { background: var(--surface-3); }
-.pr-group-name { flex: 1; min-width: 0; font-size: 17px; font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
-.pr-group-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.pr-group-name { flex: 1; min-width: 0; font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
+.pr-group-go { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: calc(14px * var(--ts)); font-weight: 700; color: var(--accent); }
 .pr-group > .pr-recovery { padding: 12px 14px 4px; }
 .pr-group > .pr-list { border-radius: 0; }
 .pr-group > .pr-add-more { align-self: flex-start; min-height: 44px; margin: 4px 8px 8px; }
@@ -453,11 +453,11 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .pr-row .list-item-title { white-space: normal; overflow-wrap: anywhere; }
 .pr-row-meta { line-height: 1.35; white-space: normal; }
 .pr-recovery { display: flex; flex-direction: column; gap: 4px; }
-.pr-recovery-line { margin: 0; font-size: 16px; font-weight: 700; line-height: 1.35; color: var(--text); }
+.pr-recovery-line { margin: 0; font-size: calc(16px * var(--ts)); font-weight: 700; line-height: 1.35; color: var(--text); }
 .pr-recovery[data-status="no_current"] .pr-recovery-line,
-.pr-recovery[data-status="not_comparable"] .pr-recovery-line { font-size: 15px; font-weight: 600; color: var(--text-2); }
-.pr-why-sub { display: block; font-size: 13px; color: var(--muted); }
-.pr-why-notes { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.45; color: var(--text-2); }
+.pr-recovery[data-status="not_comparable"] .pr-recovery-line { font-size: calc(15px * var(--ts)); font-weight: 600; color: var(--text-2); }
+.pr-why-sub { display: block; font-size: calc(13px * var(--ts)); color: var(--muted); }
+.pr-why-notes { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: calc(13px * var(--ts)); line-height: 1.45; color: var(--text-2); }
 .pr-card { display: flex; flex-direction: column; gap: 8px; }
 .pr-card-head { align-items: center; }
 .pr-card-head .card-title { margin: 0; }
@@ -472,15 +472,15 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .pr-grid { align-items: start; }
 .pr-stack { display: flex; flex-direction: column; gap: 12px; }
 .pr-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.pr-field .seg-btn { min-height: 44px; font-size: 15px; }
+.pr-field .seg-btn { min-height: 44px; font-size: calc(15px * var(--ts)); }
 .pr-rir { gap: 6px; }
 .pr-rir .chip { flex: 1 0 calc(16.66% - 6px); min-width: 0; padding: 0; }
-.pr-preview { margin: 0; font-size: 14px; color: var(--text-2); }
+.pr-preview { margin: 0; font-size: calc(14px * var(--ts)); color: var(--text-2); }
 .pr-preview:empty { display: none; }
 .pr-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
 
 /* ---------- Ronda 6 (fase E): eventos deportivos (#/races) ---------- */
-.rc-intro { margin: 0 0 4px; color: var(--text-2); font-size: 15px; line-height: 1.4; }
+.rc-intro { margin: 0 0 4px; color: var(--text-2); font-size: calc(15px * var(--ts)); line-height: 1.4; }
 .rc-group { display: flex; flex-direction: column; gap: 8px; }
 .rc-group .card-title { margin: 0; }
 .rc-list { border-radius: var(--radius-sm); }
@@ -492,7 +492,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .rc-row-meta, .rc-row-pred { line-height: 1.35; white-space: normal; }
 .rc-prio {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%;
-  font-size: 14px; font-weight: 800; background: var(--surface-3); color: var(--text-2);
+  font-size: calc(14px * var(--ts)); font-weight: 800; background: var(--surface-3); color: var(--text-2);
 }
 .rc-row[data-priority="A"] .rc-prio { background: var(--accent); color: var(--accent-ink); }
 .rc-row[data-priority="B"] .rc-prio { background: var(--surface-3); color: var(--text); }
@@ -506,17 +506,17 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .rc-block { display: flex; flex-direction: column; gap: 10px; }
 .rc-block .card-title { margin: 0; }
 .rc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.rc-field .seg-btn { min-height: 44px; font-size: 15px; }
+.rc-field .seg-btn { min-height: 44px; font-size: calc(15px * var(--ts)); }
 .rc-types { gap: 6px; }
 .rc-types .chip { min-height: 44px; }
 .rc-goals .chip { min-height: 44px; max-width: 100%; white-space: normal; text-align: left; }
 .rc-fixed-km { margin: 0; color: var(--text-2); }
 .rc-no-goals { margin: 0; }
 .rc-how-pred, .rc-how-goal { display: flex; flex-direction: column; gap: 4px; }
-.rc-how-line { margin: 0; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
-.rc-how-text { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text-2); }
+.rc-how-line { margin: 0; font-size: calc(16px * var(--ts)); line-height: 1.35; overflow-wrap: anywhere; }
+.rc-how-text { margin: 0; font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); }
 .rc-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
-.rc-link > .rc-link-emoji { flex: none; font-size: 22px; line-height: 1; }
+.rc-link > .rc-link-emoji { flex: none; font-size: calc(22px * var(--ts)); line-height: 1; }
 .goal-races, .prd-races-link { margin-top: 12px; }
 /* Hoy: una sola línea (como «Ahora: …») */
 .today-race { max-width: 100%; text-align: left; line-height: 1.3; }
@@ -527,7 +527,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
    y el estado. Toda la fila lleva a su detalle. */
 .prg-ov { gap: 2px; padding-bottom: 4px; }
 .prg-ov-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
-.prg-ov-title { font-size: 18px; font-weight: 750; }
+.prg-ov-title { font-size: calc(18px * var(--ts)); font-weight: 750; }
 .prg-ov-sub { font-size: var(--fs-sm); color: var(--muted); }
 .prg-ov-list { list-style: none; margin: 0 -14px; padding: 0; }
 .prg-ov-item + .prg-ov-item { border-top: 1px solid var(--border); }
@@ -546,7 +546,7 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .prg-ov-row.is-pressed { background: var(--surface-2); }
 .prg-ov-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .prg-ov-label { font-size: var(--fs-xs); font-weight: 750; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-.prg-ov-value { font-size: 19px; font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.prg-ov-value { font-size: calc(19px * var(--ts)); font-weight: 800; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .prg-ov-change { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .prg-ov-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .prg-ov-row .chev { flex: none; color: var(--muted); }

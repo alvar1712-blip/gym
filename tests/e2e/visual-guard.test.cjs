@@ -1,10 +1,11 @@
 // Guardas visuales estables (docs/PULIDO.md): recorre TODAS las pantallas con datos realistas (6 meses de fuerza,
 // carrera, bici, peso, ciclo, objetivos, contexto, un evento y una sesión a medias) a 375 y 430 px, y también con la
-// app vacía, y comprueba invariantes de maquetación que no dependen de píxeles:
+// app vacía, y con el texto del sistema al 125 % y al 150 %, y comprueba invariantes de maquetación que no dependen de píxeles:
 //   · ningún texto roto («null», «undefined», NaN, Infinity, «[object …]», «:-5», ritmos «h:mm:ss /km»);
 //   · sin scroll horizontal ni nada que se salga por los lados (salvo dentro de un carrusel);
 //   · la cabecera no tapa el principio del contenido y lo último queda por encima de la barra de pestañas;
-//   · ningún texto por debajo de 12 px, ninguno cortado con «…» y ningún botón por debajo de 44 px de alto;
+//   · ningún texto por debajo de 12 px, ninguno cortado con «…» o a N líneas, ninguno que se salga de su caja (un
+//     botón, una ficha) y ningún botón por debajo de 44 px de alto;
 //   · ningún error en la consola.
 // Deja una captura de cada pantalla en test-results/visual/ (para mirarlas, no se comparan píxel a píxel).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/visual-guard.test.cjs  (E2E_BROWSER=webkit para WebKit)
@@ -63,6 +64,11 @@ function inspectTop() {
     const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
     // Recortado con «…» (una etiqueta, una cifra, un nombre): con los datos de prueba, nada debe cortarse
     if (cs.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1 && el.textContent.trim()) issues.push(`texto cortado con «…»: ${desc(el)}`);
+    // Recortado a N líneas (-webkit-line-clamp) con más texto del que cabe. Excepto los avances marcados con
+    // data-preview (el resumen del analista: el texto entero está a un toque, en «Ver análisis» / su tarjeta)
+    if (cs.webkitLineClamp && cs.webkitLineClamp !== 'none' && el.scrollHeight > el.clientHeight + 1 && !el.closest('[data-preview]')) issues.push(`texto cortado a ${cs.webkitLineClamp} líneas: ${desc(el)}`);
+    // Texto que se sale de su propia caja (un botón, una ficha) y pisa lo de al lado
+    if ((own.trim() || el.matches('button, [role=button]')) && !el.closest('svg') && cs.overflowX === 'visible' && cs.display !== 'inline' && el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) issues.push(`texto que se sale de su caja (${el.scrollWidth} > ${el.clientWidth} px): ${desc(el)}`);
     if (own.trim()) {
       if (parseFloat(cs.fontSize) < 11.9) issues.push(`texto de ${cs.fontSize}: ${desc(el)}`);
       if (/\bnull\b|\bundefined\b|NaN|Infinity|\[object |:-\d|\d+:\d{2}:\d{2}\s?\/km/.test(own)) issues.push(`texto roto: ${desc(el)}`);
@@ -144,8 +150,17 @@ async function sweep(app, { tag, widths, ids }) {
   return problems;
 }
 
-async function withData(browser, tag) {
-  const app = await openApp({ browser, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(TODAY) }); } });
+/**
+ * Tamaño del texto del sistema (iOS: Ajustes › Pantalla y brillo › Tamaño del texto). En iPhone la app lo lee de
+ * `-apple-system-body` (app.js); en las pruebas se fuerza con la misma clave que usa app.js para depurar.
+ */
+const beforeLoad = (scale) => async (page) => {
+  await page.context().clock.install({ time: madrid(TODAY) });
+  if (scale !== 1) await page.addInitScript((s) => { try { localStorage.setItem('entreno.textScale', String(s)); } catch { /* */ } }, scale);
+};
+
+async function withData(browser, tag, { scale = 1, widths = [375, 430] } = {}) {
+  const app = await openApp({ browser, beforeLoad: beforeLoad(scale) });
   try {
     const { activeId } = await seedRealistic(app.page, { months: 6, female: true, activeSession: true });
     const ids = await app.page.evaluate(() => {
@@ -154,7 +169,10 @@ async function withData(browser, tag) {
       const run = ss.filter((s) => s.kind === 'run').sort((a, b) => (a.date < b.date ? 1 : -1))[0];
       return { done: done.id, doneDate: done.date, run: run.id };
     });
-    const problems = await sweep(app, { tag, widths: [375, 430], ids: { ...ids, activeId, female: true } });
+    if (scale !== 1) {
+      assert.strictEqual(await app.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ts').trim()), String(scale), 'el texto se agranda');
+    }
+    const problems = await sweep(app, { tag, widths, ids: { ...ids, activeId, female: true } });
     assert.deepStrictEqual(problems, [], problems.join('\n'));
     assert.deepStrictEqual(app.errors, []);
   } finally {
@@ -177,3 +195,7 @@ test('guardas visuales con datos realistas: todas las pantallas a 375 y 430 px',
 test('guardas visuales con la app vacía (estados vacíos) a 375 px', () => empty('chromium', 'chromium-vacia'));
 test('WebKit: guardas visuales con datos realistas a 375 y 430 px', { skip: skipWebkit }, () => withData('webkit', 'webkit'));
 test('WebKit: guardas visuales con la app vacía a 375 px', { skip: skipWebkit }, () => empty('webkit', 'webkit-vacia'));
+// Texto grande (125 % y 150 %): nada cortado, nada que se salga, botones a 44 px, la cabecera sin tapar nada
+test('texto al 125 %: guardas visuales con datos realistas a 375 px', () => withData('chromium', 'chromium-125', { scale: 1.25, widths: [375] }));
+test('texto al 150 %: guardas visuales con datos realistas a 375 y 430 px', () => withData('chromium', 'chromium-150', { scale: 1.5 }));
+test('WebKit: texto al 150 % con datos realistas a 375 px', { skip: skipWebkit }, () => withData('webkit', 'webkit-150', { scale: 1.5, widths: [375] }));

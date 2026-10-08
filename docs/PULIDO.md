@@ -204,3 +204,31 @@ Reglas que cumplen todas:
 
 Pruebas: tests/e2e/undo.test.cjs (Chromium y WebKit; incluye el disco lento), tests/unit/library.test.mjs (marcas en
 exerciseUsage).
+
+## 17. Accesibilidad
+
+Auditoría (31 problemas confirmados por verificación independiente, 1 descartado) y arreglos:
+
+- **VoiceOver**: al abrir una hoja el foco entra en su título y lo de detrás queda inerte; al cerrarla vuelve a lo
+  que la abrió. Al cambiar de pantalla el foco va al título y `document.title` es «<título> · Entreno». Registrar o
+  editar una serie ya no tira el foco al principio de la página. Los avisos se anuncian desde dos regiones vivas
+  fijas (cortés y, para errores, inmediata); el de «Deshacer» no se cierra mientras tiene el foco. Grupos de fichas
+  (RIR, RPE, tipo de sesión…) con nombre; botones −/+ que dicen a qué campo afectan («Sumar 2,5 a Peso»); filas
+  de serie con tipo, récord y nota; gráficas con su descripción y el último valor; hoy marcado con
+  `aria-current="date"`; pestaña activa con `aria-current="page"`; ningún `<button>` con rol de celda o de lista.
+- **Texto del sistema (Dynamic Type)**: los tamaños son `calc(Npx * var(--ts))`; app.js lee `-apple-system-body`
+  (iOS: Ajustes › Pantalla y brillo › Tamaño del texto) y fija `--ts` entre 1 y 1,5. Con el texto grande
+  (`html.text-large`) lo que a 100 % se recorta ocupa más líneas, los botones pueden ir en dos líneas, las
+  etiquetas van encima de su control y las tablas de cifras crecen menos. La etiqueta de la barra de pestañas no
+  crece (como en iOS). A 100 % nada cambia.
+- **Contraste**: rosa de la regla #c94564 (texto blanco ≥ 4,5:1), gris de «Descanso» #858d9b, placeholders en
+  `--muted`, días de otro mes con el número en `--muted` (sin opacidad). Con «Aumentar contraste» (prefers-contrast)
+  bordes y textos secundarios más marcados.
+- **Movimiento y transparencia**: todo el desplazamiento por código usa `scrollBehavior()` (instantáneo con
+  «Reducir movimiento»); con «Reducir transparencia» la cabecera compacta, el pie de importar, la barra del
+  periodo y el pie de la actividad son opacos.
+- **Foco visible** con teclado: anillo verde (dentro de las filas de lista, para que no lo recorte la lista).
+
+Guardas: tests/e2e/visual-guard.test.cjs recorre todas las pantallas también con el texto al 125 % y al 150 % y,
+además de lo anterior, falla si un texto se sale de su caja (un botón, una ficha) o se corta a N líneas (salvo los
+avances marcados con `data-preview`, cuyo texto entero está a un toque).

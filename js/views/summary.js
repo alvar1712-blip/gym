@@ -211,6 +211,10 @@ function sportsSection(sum) {
     })));
 }
 
+// Envoltorio con el rol (celda / elemento de lista) y el botón dentro ocupándolo entero: mismo aspecto que antes.
+const WRAP_STYLE = { display: 'flex', minWidth: '0' };
+const FILL_STYLE = { flex: '1 1 0', minWidth: '0' };
+
 function calendarCard(sum, today) {
   const weeks = monthGrid(sum.start, sum.trainedDates, today);
   const kindsHere = sum.kinds;
@@ -229,8 +233,11 @@ function calendarCard(sum, today) {
           h('span.sum-cal-dots', { 'aria-hidden': 'true' }, cell.kinds.slice(0, 3).map((k) => h('span.sum-cal-dot', { style: kindColorStyle(k) }))),
         ];
         const cls = `${trained ? '.sum-cal-on' : ''}${cell.future ? '.sum-cal-future' : ''}${cell.today ? '.sum-cal-today' : ''}`;
-        if (!trained) return h(`span.sum-cal-cell${cls}`, { role: 'gridcell', 'aria-label': label, dataset: { date: cell.date } }, inner);
-        return h(`button.sum-cal-cell${cls}`, { type: 'button', role: 'gridcell', 'aria-label': label, dataset: { date: cell.date }, onClick: () => navigate(`#/day/${cell.date}`) }, inner);
+        const current = cell.today ? 'date' : null;
+        if (!trained) return h(`span.sum-cal-cell${cls}`, { role: 'gridcell', 'aria-label': label, 'aria-current': current, dataset: { date: cell.date } }, inner);
+        // El rol de celda va en un envoltorio: en el propio <button> taparía el botón (VoiceOver).
+        return h('span.sum-cal-wrap', { role: 'gridcell', style: WRAP_STYLE },
+          h(`button.sum-cal-cell${cls}`, { type: 'button', 'aria-label': label, 'aria-current': current, dataset: { date: cell.date }, style: FILL_STYLE, onClick: () => navigate(`#/day/${cell.date}`) }, inner));
       })))),
     kindsHere.length ? h('ul.sum-legend', { 'aria-label': 'Leyenda' }, kindsHere.map((k) => h('li.sum-legend-item', { style: kindColorStyle(k) },
       h('span.sum-cal-dot', { 'aria-hidden': 'true' }), `${kindInfo(k).emoji} ${kindInfo(k).label}`))) : null);
@@ -243,13 +250,13 @@ function monthsCard(sum, onMonth) {
     h('div.sum-mbars', { role: 'list', 'aria-label': 'Días entrenados por mes' }, sum.months.map((m) => {
       const pct = `${((m.days / max) * 100).toFixed(1)}%`;
       const label = `${m.title}: ${m.future ? 'aún no ha llegado' : `${daysTxt(m.days)}, ${sessionsTxt(m.sessions)}`}`;
-      return h('button.sum-mbar', {
-        type: 'button', role: 'listitem', disabled: m.future, 'aria-label': label, dataset: { month: m.start, days: String(m.days) },
-        class: m.inProgress ? 'sum-mbar-cur' : null, onClick: () => onMonth(m.start),
+      return h('div.sum-mbar-item', { role: 'listitem', style: WRAP_STYLE }, h('button.sum-mbar', {
+        type: 'button', disabled: m.future, 'aria-label': label, dataset: { month: m.start, days: String(m.days) },
+        class: m.inProgress ? 'sum-mbar-cur' : null, style: FILL_STYLE, onClick: () => onMonth(m.start),
       },
       h('span.sum-mbar-val', m.future ? '' : String(m.days)),
       h('span.sum-mbar-track', { 'aria-hidden': 'true' }, h('span.sum-mbar-fill', { style: { height: m.days > 0 ? pct : '0' } })),
-      h('span.sum-mbar-label', m.label.charAt(0).toUpperCase() + m.label.slice(1, 3)));
+      h('span.sum-mbar-label', m.label.charAt(0).toUpperCase() + m.label.slice(1, 3))));
     })));
 }
 

@@ -5,7 +5,7 @@
 //   openDaySheet(date)             → hoja «Registrar día» (sangrado, síntomas, notas; guardado inmediato)
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, sheet, chips, toast, undoToast, whyBox, emptyState, confirmDialog, field } from '../ui.js';
+import { h, icon, screen, sheet, chips, toast, undoToast, whyBox, emptyState, confirmDialog, field, scrollBehavior } from '../ui.js';
 import { todayStr, addDays, diffDays, parseDate, fmtDate, fmtNum, weekStart, isDateStr, MONTH_LONG, DAY_LETTER, DAY_LONG, MONTH_SHORT } from '../util.js';
 import { getProfile, cycleEnabled, isFemale, CONTRACEPTION, label as profileLabel } from '../profile.js';
 import { barChart } from '../charts.js';
@@ -467,6 +467,11 @@ export function mountCycle(root) {
     const cells = [];
     for (let x = from; x <= to; x = addDays(x, 1)) {
       const m = marks.get(x);
+      // Esquinas de los tramos de ovulación (antes con selectores de hermanos en css/cycle.css, que el envoltorio rompe).
+      const col = diffDays(from, x) % 7;
+      const ovL = m?.ovulation && (col === 0 || !marks.get(addDays(x, -1))?.ovulation);
+      const ovR = m?.ovulation && (col === 6 || !marks.get(addDays(x, 1))?.ovulation);
+      const ovStyle = m?.ovulation ? { borderRadius: `${ovL ? 12 : 0}px ${ovR ? 12 : 0}px ${ovR ? 12 : 0}px ${ovL ? 12 : 0}px` } : null;
       const cls = [
         x.slice(0, 7) !== first.slice(0, 7) ? 'is-out' : '',
         x === today ? 'is-today' : '',
@@ -481,9 +486,14 @@ export function mountCycle(root) {
       const bits = [m?.period ? 'regla' : '', m?.predicted ? 'regla prevista' : '', m?.ovulation ? 'ovulación aproximada' : '', m?.symptoms ? 'síntomas' : ''].filter(Boolean);
       const aria = `${fmtDate(x, 'long')}${bits.length ? `: ${bits.join(', ')}` : ''}`;
       const inner = [h('span.cyc-cal-num.tnum', String(parseDate(x).getDate())), h('span.cyc-cal-dot', { 'aria-hidden': 'true' })];
+      // El rol de celda del botón va en un envoltorio: en el propio <button> taparía el botón (VoiceOver).
       cells.push(x > today
-        ? h('div.cyc-cal-day', { role: 'gridcell', class: cls, dataset: { date: x }, 'aria-label': aria }, inner)
-        : h('button.cyc-cal-day', { type: 'button', role: 'gridcell', class: cls, dataset: { date: x }, 'aria-label': aria, onClick: () => openDaySheet(x) }, inner));
+        ? h('div.cyc-cal-day', { role: 'gridcell', class: cls, dataset: { date: x }, 'aria-label': aria, style: ovStyle }, inner)
+        : h('span.cyc-cal-wrap', { role: 'gridcell', style: { display: 'flex', minWidth: '0' } },
+          h('button.cyc-cal-day', {
+            type: 'button', class: cls, dataset: { date: x }, 'aria-label': aria, 'aria-current': x === today ? 'date' : null,
+            style: { flex: '1 1 0', minWidth: '0', ...ovStyle }, onClick: () => openDaySheet(x),
+          }, inner)));
     }
     const rows = [];
     for (let i = 0; i < cells.length; i += 7) rows.push(h('div.cyc-cal-row', { role: 'row' }, cells.slice(i, i + 7)));
@@ -525,7 +535,7 @@ export function mountCycle(root) {
       const slot = h('div.cyc-hist-chart');
       card.append(slot);
       const ch = barChart(slot, {
-        bars: info.cycles.slice(-12).map((cy) => ({ x: cy.start, label: `Ciclo del ${fmtDate(cy.start, 'day')}`, segments: [{ key: 'len', value: cy.lengthDays, color: '#d9506f', label: `${cy.lengthDays} días`, name: `regla ${daysTxt(cy.periodDays)}` }] })),
+        bars: info.cycles.slice(-12).map((cy) => ({ x: cy.start, label: `Ciclo del ${fmtDate(cy.start, 'day')}`, segments: [{ key: 'len', value: cy.lengthDays, color: '#c94564', label: `${cy.lengthDays} días`, name: `regla ${daysTxt(cy.periodDays)}` }] })),
         height: 170,
         band: info.hormonal ? null : { min: LIMITS.normalMin, max: LIMITS.normalMax, label: 'Habitual 24–38', color: '#8b94a5' },
         yFormat: (v) => `${fmtNum(v, 0)} días`,
@@ -566,7 +576,7 @@ export function mountCycle(root) {
     if (old) {
       const fresh = calendarCard(currentInfo().info);
       old.replaceWith(fresh);
-      fresh.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      fresh.scrollIntoView({ block: 'start', behavior: scrollBehavior() });
     }
   }
 
@@ -617,18 +627,25 @@ export function mountCycle(root) {
     const cell = (col, p) => {
       const [v, n] = col.get(p);
       const ok = v != null && n >= MIN;
-      return h('span.cyc-eff-val.tnum', { class: ok ? '' : 'is-na', dataset: { col: col.key } }, ok ? col.fmt(v) : '—');
+      return h('span.cyc-eff-val.tnum', { role: 'cell', class: ok ? '' : 'is-na', dataset: { col: col.key } }, ok ? col.fmt(v) : '—');
     };
     const notes = [];
     if (COLS.some((x) => x.key === 'energy' || x.key === 'sleep')) notes.push('Energía y sueño: media de tus check-ins (1 bajo · 3 alto).');
     if (COLS.some((x) => x.key === 'rpe')) notes.push('RPE: esfuerzo medio de tus sesiones (1–10).');
     if (COLS.some((x) => x.key === 'strength')) notes.push('Fuerza: frente a tu nivel de esas semanas.');
     if (COLS.some((x) => x.key === 'weight')) notes.push('Peso: frente a tu tendencia.');
-    return h('div.cyc-eff', { role: 'table', 'aria-label': 'Medias por fase' },
-      h('div.cyc-eff-row.cyc-eff-head', { role: 'row', style: cols }, COLS.map((col) => h('span.cyc-eff-th', { role: 'columnheader' }, col.th))),
-      stats.phases.map((p) => h('div.cyc-eff-phase', { role: 'rowgroup', dataset: { phase: p.id } },
-        h('div.cyc-eff-name', { role: 'rowheader' }, phaseKey(p.id), p.name),
-        h('div.cyc-eff-row', { role: 'row', style: cols }, COLS.map((col) => cell(col, p))))),
+    // Tabla ARIA válida: la fase es la cabecera de su fila (oculta a la vista; el nombre visible va aparte,
+    // oculto al lector) y las notas quedan fuera de la tabla. Las .sr-only no ocupan columna (absolutas).
+    return h('div.cyc-eff',
+      h('div', { role: 'table', 'aria-label': 'Medias por fase' },
+        h('div.cyc-eff-row.cyc-eff-head', { role: 'row', style: cols },
+          h('span.sr-only', { role: 'columnheader' }, 'Fase'),
+          COLS.map((col) => h('span.cyc-eff-th', { role: 'columnheader' }, col.th))),
+        stats.phases.map((p) => h('div.cyc-eff-phase', { dataset: { phase: p.id } },
+          h('div.cyc-eff-name', { 'aria-hidden': 'true' }, phaseKey(p.id), p.name),
+          h('div.cyc-eff-row', { role: 'row', style: cols },
+            h('span.sr-only', { role: 'rowheader' }, p.name),
+            COLS.map((col) => cell(col, p)))))),
       h('p.cyc-eff-foot', notes.join(' ')));
   }
 

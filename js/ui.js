@@ -433,6 +433,43 @@ if (typeof window !== 'undefined' && window.visualViewport) {
 // ---------------------------------------------------------------------------
 const openSheets = [];
 const closingSheets = new Set(); // hojas que se están cerrando (animación de salida)
+let sheetSeq = 0;
+
+/** 'auto' con «reducir movimiento»; si no, 'smooth' (para scrollTo / scrollIntoView). */
+export function scrollBehavior() {
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; } catch { return 'smooth'; }
+}
+const reducedMotion = () => scrollBehavior() === 'auto';
+
+/**
+ * Último control pulsado: iOS no da el foco a un <button> al tocarlo, así que document.activeElement suele ser
+ * <body>. Con esto la hoja sabe a qué botón devolver el foco al cerrarse (VoiceOver).
+ */
+let lastPressed = null;
+if (typeof document !== 'undefined') {
+  const track = (e) => {
+    const t = e.target instanceof Element ? e.target.closest('button, [role="button"], a, [tabindex], input, select, textarea') : null;
+    if (t) lastPressed = t;
+  };
+  document.addEventListener('pointerdown', track, true);
+  document.addEventListener('click', track, true);
+}
+
+/** Con una hoja abierta, la pantalla de detrás y la barra de pestañas quedan fuera del foco y de VoiceOver. */
+function setBackgroundInert(on) {
+  for (const id of ['view', 'tabbar']) {
+    const el = document.getElementById(id);
+    if (el) el.inert = on;
+  }
+}
+
+/** Lleva el foco al título de la pantalla visible (tabindex=-1), p. ej. cuando desaparece el control enfocado. */
+function focusMain() {
+  const t = document.querySelector('#view .topbar h1') || document.querySelector('.topbar h1');
+  if (!t) return;
+  if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1');
+  try { t.focus({ preventScroll: true }); } catch { /* sin foco */ }
+}
 /** Duración de abrir/cerrar hojas (igual que --dur-sheet en css/app.css). */
 const SHEET_MS = 350;
 
@@ -476,18 +513,23 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
   let closed = false;
   const bodyEl = h('div.sheet-body');
   const footer = actions.length ? h('div.sheet-actions') : null;
-  const panel = h(`div.sheet-panel${tall ? '.sheet-tall' : ''}`, { role: 'dialog', 'aria-modal': 'true', 'aria-label': title || 'Diálogo', class: className },
+  const tid = title ? `sheet-title-${++sheetSeq}` : null;
+  const panel = h(`div.sheet-panel${tall ? '.sheet-tall' : ''}`, {
+    role: 'dialog', 'aria-modal': 'true', tabindex: '-1', class: className,
+    'aria-labelledby': tid, 'aria-label': tid ? null : 'Diálogo',
+  },
     h('div.sheet-grabber'),
     title || dismissible
       ? h('div.sheet-head',
-          h('h2.sheet-title', title),
+          h('h2.sheet-title', { id: tid, tabindex: tid ? '-1' : null }, title),
           dismissible ? h('button.icon-btn', { type: 'button', 'aria-label': 'Cerrar', onClick: () => close() }, icon('x', 22)) : null)
       : null,
     bodyEl,
     footer,
   );
   const overlay = h('div.sheet-overlay', { onClick: (e) => { if (e.target === overlay && dismissible) close(); } }, panel);
-  const opener = typeof document !== 'undefined' ? document.activeElement : null;
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
+  const opener = active && active !== document.body ? active : (lastPressed && lastPressed.isConnected ? lastPressed : null);
   let releaseEntry = null; // quita la entrada de historial de la hoja (router.pushOverlay)
 
   /**
@@ -510,6 +552,7 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
     overlay.inert = true;
     const i = openSheets.indexOf(api);
     if (i >= 0) openSheets.splice(i, 1);
+    if (!openSheets.length) setBackgroundInert(false);
     unlockScroll();
     if (releaseEntry && !fromHistory) releaseEntry();
     releaseEntry = null;
@@ -523,7 +566,10 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
     }
     // El foco vuelve al botón que abrió la hoja (teclado y lectores de pantalla); a un campo de texto no,
     // para no volver a abrir el teclado.
-    if (focusInside && opener && opener.isConnected && opener !== document.body && !isTextField(opener)) {
+    // (También si el foco se había perdido en <body>: nunca se quita de otro sitio.)
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if ((focusInside || lost) && opener && opener.isConnected && opener !== document.body && !isTextField(opener)
+      && !opener.closest('[inert]')) {
       try { opener.focus({ preventScroll: true }); } catch { /* sin foco */ }
     }
     if (onClose) onClose(result);
@@ -544,12 +590,21 @@ export function sheet({ title = '', body = null, actions = [], onClose = null, d
   document.body.appendChild(overlay);
   lockScroll();
   openSheets.push(api);
+  setBackgroundInert(true);
   cardEffect(true, false);
   dragToDismiss(panel, overlay, bodyEl, () => dismissible, (v) => close(undefined, { velocity: v }));
   // «Atrás» (gesto del borde o botón) con la hoja abierta la cierra sin cambiar de pantalla.
   // (También las no descartables: el «atrás» del sistema no se puede impedir y la pantalla ya ha cambiado.)
   releaseEntry = pushOverlay(({ ua } = {}) => close(undefined, { fromHistory: true, instant: !!ua }));
-  requestAnimationFrame(() => { if (!closed) overlay.classList.add('open'); });
+  requestAnimationFrame(() => {
+    if (closed) return;
+    overlay.classList.add('open');
+    // El foco entra en la hoja (el título; si no hay, el panel) para que VoiceOver la anuncie. Un campo que
+    // se enfoca después (promptDialog) lo sustituye.
+    if (!panel.contains(document.activeElement)) {
+      try { (panel.querySelector('.sheet-title[tabindex]') || panel).focus({ preventScroll: true }); } catch { /* sin foco */ }
+    }
+  });
   return api;
 }
 
@@ -629,9 +684,12 @@ function dragToDismiss(panel, overlay, bodyEl, canClose, doClose) {
     const off = s.off || 0;
     if (canClose() && !overlay.classList.contains('closing') && (off > s.h * DRAG_CLOSE_FRACTION || (!cancelled && v > DRAG_CLOSE_VELOCITY && off > 12))) {
       // Sigue bajando desde donde está, más rápido cuanto más rápido iba el dedo.
-      const ms = Math.round(Math.max(160, Math.min(SHEET_MS, (s.h - off) / Math.max(v, 0.9))));
-      panel.style.transition = `transform ${ms}ms cubic-bezier(0.2, 0.75, 0.3, 1)`;
-      panel.style.transform = '';
+      // Con «reducir movimiento» se queda donde la soltó y solo se desvanece (sin volver arriba de golpe).
+      if (!reducedMotion()) {
+        const ms = Math.round(Math.max(160, Math.min(SHEET_MS, (s.h - off) / Math.max(v, 0.9))));
+        panel.style.transition = `transform ${ms}ms cubic-bezier(0.2, 0.75, 0.3, 1)`;
+        panel.style.transform = '';
+      }
       root.style.removeProperty('--sheet-drag');
       doClose(v);
       return;
@@ -767,6 +825,24 @@ let toastEl = null;
 let toastTimer = null;
 const TOAST_OUT_MS = 200; // salida del aviso (css/app.css .toast)
 let toastCur = null; // { close, closeOnNavigate, epoch }
+const TOAST_REFOCUS_MS = 3000; // al salir el foco del aviso, se cierra a los pocos segundos
+
+/**
+ * Regiones vivas fijas (ocultas a la vista, .sr-only) para anunciar los avisos: VoiceOver no suele leer una
+ * región viva que se inserta ya con texto. status (cortés) y alert (urgente, para errores); se crean una vez.
+ */
+const liveRegions = {};
+function announce(text, urgent = false) {
+  const key = urgent ? 'alert' : 'status';
+  let r = liveRegions[key];
+  if (!r || !r.isConnected) {
+    r = liveRegions[key] = h('div.sr-only', { role: key, 'aria-live': urgent ? 'assertive' : 'polite', 'aria-atomic': 'true' });
+    document.body.appendChild(r);
+  }
+  r.textContent = '';
+  clearTimeout(r._t);
+  r._t = setTimeout(() => { r.textContent = text; }, 50); // un rAF a veces es poco para VoiceOver
+}
 
 /**
  * closeOnNavigate (por defecto: sí si lleva acción): el aviso se cierra al cambiar de pantalla, para que
@@ -774,10 +850,14 @@ let toastCur = null; // { close, closeOnNavigate, epoch }
  * después de navigate()/back() pertenece a la pantalla de destino y sigue visible allí.
  */
 export function toast(message, { actionLabel = null, onAction = null, duration = 3500, kind = 'info', closeOnNavigate = !!actionLabel } = {}) {
-  if (toastEl) { toastEl.remove(); toastEl = null; }
+  if (toastEl) {
+    if (toastEl.contains(document.activeElement)) focusMain(); // el foco no cae a <body> con el aviso viejo
+    toastEl.remove(); toastEl = null;
+  }
   for (const old of document.querySelectorAll('.toast')) old.remove(); // uno que se estaba ocultando
   clearTimeout(toastTimer);
-  const el = h(`div.toast.toast-${kind}`, { role: 'status', 'aria-live': 'polite' },
+  // El aviso visible ya no es región viva (se anunciaría dos veces): lo anuncian las regiones fijas.
+  const el = h(`div.toast.toast-${kind}`,
     h('span.toast-msg', message),
     actionLabel ? h('button.toast-action', {
       type: 'button',
@@ -785,6 +865,8 @@ export function toast(message, { actionLabel = null, onAction = null, duration =
     }, actionLabel) : null);
   function close() {
     if (toastEl === el) clearTimeout(toastTimer);
+    // Si el foco estaba en el aviso (p. ej. en «Deshacer»), pasa al título de la pantalla: nunca cae a <body>.
+    if (el.contains(document.activeElement)) focusMain();
     el.classList.remove('show');
     el.setAttribute('aria-hidden', 'true');
     afterTransition(el, TOAST_OUT_MS, () => el.remove());
@@ -795,6 +877,14 @@ export function toast(message, { actionLabel = null, onAction = null, duration =
   toastCur = { close, closeOnNavigate, epoch: routeEpoch() };
   requestAnimationFrame(() => el.classList.add('show'));
   toastTimer = setTimeout(close, duration);
+  // Con el foco dentro (VoiceOver o teclado en «Deshacer») no se cierra solo; al salir, se cierra en un rato.
+  el.addEventListener('focusin', () => { if (toastEl === el) clearTimeout(toastTimer); });
+  el.addEventListener('focusout', (e) => {
+    if (toastEl !== el || el.contains(e.relatedTarget)) return;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(close, TOAST_REFOCUS_MS);
+  });
+  announce(String(message) + (actionLabel ? `, ${actionLabel} disponible` : ''), kind === 'error');
   return { close };
 }
 
@@ -850,7 +940,7 @@ export function closeStaleToasts() {
 /**
  * Campo numérico con botones −/+ grandes.
  * stepper({ value, step, min, max, decimals, inputmode, suffix, label, placeholder, showStep, onChange(v, {final}) })
- * Devuelve el elemento con .getValue() y .setValue(v).
+ * Devuelve el elemento con .getValue(), .setValue(v) y .setAriaLabel(nombre).
  */
 export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', onChange = () => {}, ariaLabel = '' } = {}) {
   let cur = value;
@@ -860,8 +950,11 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
     'aria-label': ariaLabel || label || 'valor',
   });
   const stepTxt = numToInput(step, 2);
+  // «Sumar 2,5 a Peso»: con varios steppers juntos (Reps izq. / Reps der.) se sabe cuál cambia cada botón.
+  const btnName = (dir, name) => `${dir > 0 ? 'Sumar' : 'Restar'} ${stepTxt}${name ? ` a ${name}` : ''}`;
+  const fieldName = ariaLabel || label;
   const mkBtn = (dir) => {
-    const b = h('button.stepper-btn', { type: 'button', 'aria-label': `${dir > 0 ? 'Sumar' : 'Restar'} ${stepTxt}` },
+    const b = h('button.stepper-btn', { type: 'button', 'aria-label': btnName(dir, fieldName) },
       showStep ? h('span.stepper-step', `${dir > 0 ? '+' : '−'}${stepTxt}`) : icon(dir > 0 ? 'plus' : 'minus', 22));
     let holdTimer = null;
     let repeatTimer = null;
@@ -908,13 +1001,21 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
     onChange(cur, { final: true });
   });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+  const minusBtn = mkBtn(-1);
+  const plusBtn = mkBtn(+1);
   const el = h(`div.stepper.stepper-${size}`,
     label ? h('span.stepper-label', label) : null,
     h('div.stepper-row',
-      mkBtn(-1),
+      minusBtn,
       h('div.stepper-field', input, suffix ? h('span.stepper-suffix', suffix) : null),
-      mkBtn(+1)));
+      plusBtn));
   el.getValue = () => cur;
+  /** Cambia el nombre del campo (y de sus botones −/+), p. ej. Lastre ↔ Asistencia. */
+  el.setAriaLabel = (name) => {
+    input.setAttribute('aria-label', name);
+    minusBtn.setAttribute('aria-label', btnName(-1, name));
+    plusBtn.setAttribute('aria-label', btnName(1, name));
+  };
   el.setValue = (v) => set(v);
   el.input = input;
   return el;
@@ -947,7 +1048,7 @@ export function segmented({ options, value, onChange = () => {}, size = '', aria
  * Chips seleccionables. multi=true → value es array.
  * allowNone=true permite deseleccionar (value null).
  */
-export function chips({ options, value = null, multi = false, allowNone = false, onChange = () => {}, className = '' }) {
+export function chips({ options, value = null, multi = false, allowNone = false, onChange = () => {}, className = '', ariaLabel = '', describedBy = '' }) {
   let cur = multi ? [...(value || [])] : value;
   const btns = options.map((o) => h('button.chip', {
     type: 'button',
@@ -970,7 +1071,13 @@ export function chips({ options, value = null, multi = false, allowNone = false,
     });
   }
   paint();
-  const el = h('div.chips', { class: className }, btns);
+  // Con nombre, VoiceOver dice de qué es cada chip («RIR… grupo»); sin él, el contenedor queda como antes.
+  const el = h('div.chips', {
+    class: className,
+    role: ariaLabel ? 'group' : null,
+    'aria-label': ariaLabel || null,
+    'aria-describedby': describedBy || null,
+  }, btns);
   el.getValue = () => cur;
   el.setValue = (v) => { cur = multi ? [...(v || [])] : v; paint(); };
   return el;
@@ -982,13 +1089,17 @@ export const RPE_HINTS = {
 };
 
 /** Selector de esfuerzo percibido 1–10. */
-export function rpePicker({ value = null, onChange = () => {} } = {}) {
-  const hint = h('div.rpe-hint.muted', value ? `${value} · ${RPE_HINTS[value]}` : 'Toca un valor (1 = muy suave, 10 = máximo)');
+let rpeSeq = 0;
+export function rpePicker({ value = null, onChange = () => {}, ariaLabel = 'Esfuerzo percibido de 1 a 10' } = {}) {
+  const hid = `rpe-hint-${++rpeSeq}`;
+  const hint = h('div.rpe-hint.muted', { id: hid, 'aria-live': 'polite' }, value ? `${value} · ${RPE_HINTS[value]}` : 'Toca un valor (1 = muy suave, 10 = máximo)');
   const c = chips({
     options: Array.from({ length: 10 }, (_, i) => ({ value: i + 1, label: String(i + 1), className: 'chip-num' })),
     value,
     allowNone: true,
     className: 'rpe-chips',
+    ariaLabel,
+    describedBy: hid,
     onChange: (v) => {
       hint.textContent = v ? `${v} · ${RPE_HINTS[v]}` : 'Sin valor';
       onChange(v);

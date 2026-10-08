@@ -43,7 +43,7 @@ export function renderCard(ctx, se) {
   card.appendChild(h('div.ses-card-head',
     label ? h('span.ses-label', label) : null,
     h('h3.ses-name', name),
-    allDone ? h('span.ses-done-mark', { 'aria-label': 'Completado' }, icon('check', 18)) : null,
+    allDone ? h('span.ses-done-mark', { role: 'img', 'aria-label': 'Completado' }, icon('check', 18)) : null,
     h('button.icon-btn.ses-more', { type: 'button', 'aria-label': `Opciones de ${name}`, onClick: () => ctx.exerciseMenu(se) }, icon('more', 22))));
 
   // Alternativas: «⇄ Prensa · Hack»
@@ -53,6 +53,7 @@ export function renderCard(ctx, se) {
     const altChips = chips({
       options: opts.map((id) => ({ value: id, label: ctx.exercise(id).name })),
       value: se.exerciseId,
+      ariaLabel: 'Alternativas del ejercicio',
       className: 'ses-alt-chips',
       onChange: (v) => chooseAlternative(ctx, se, v, altChips),
     });
@@ -209,9 +210,8 @@ function addWarmupPlan(ctx, se, plan, logType) {
   ctx.editing.set(se.id, sets[0].id);
   ctx.touch(se);
   ctx.save();
+  // La línea ya no está (hay calentamientos): rerenderCard lleva el foco a «Registrar calentamiento».
   ctx.rerenderCard(se);
-  // La línea ya no está (hay calentamientos): el foco pasa a «Registrar calentamiento».
-  ctx.cardEl?.(se)?.querySelector('.ses-editor .ses-register')?.focus({ preventScroll: true });
   ctx.revealEditor?.(se);
   const ids = new Set(sets.map((x) => x.id));
   undoToast(plural(sets.length, 'serie de calentamiento añadida', 'series de calentamiento añadidas'), () => {
@@ -239,7 +239,14 @@ function renderRow(ctx, se, set, logType, num, prs) {
   return h(`button.ses-row${pending ? '.ses-row-pending' : ''}${set.type === 'warmup' ? '.ses-row-warm' : ''}`, {
     type: 'button',
     dataset: { set: set.id, state: pending ? 'pending' : 'done' },
-    'aria-label': `${pending ? 'Serie pendiente' : 'Serie'} ${num}: ${formatSet(set, logType, { kg: true })}. Tocar para editar`,
+    // La etiqueta sustituye a todo el contenido: incluye tipo, récord y nota (lo que se ve en la fila).
+    'aria-label': [
+      `${pending ? 'Serie pendiente' : 'Serie'} ${num}: ${formatSet(set, logType, { kg: true })}`,
+      set.type === 'failure' ? 'Al fallo' : set.type === 'drop' ? 'Drop set' : null,
+      prs ? 'Récord' : null,
+      set.note ? `Nota: ${set.note}` : null,
+      'Tocar para editar',
+    ].filter(Boolean).join('. '),
     onClick: () => { ctx.editing.set(se.id, set.id); ctx.touch(se); ctx.rerenderCard(se); },
   },
   h('span.ses-row-num', num),
@@ -300,14 +307,14 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
           sign = v;
           const abs = st.getValue();
           if (abs != null && abs !== 0) setWeight(sign * Math.abs(abs));
-          st.input.setAttribute('aria-label', sign < 0 ? 'Asistencia' : 'Lastre');
+          st.setAriaLabel(sign < 0 ? 'Asistencia' : 'Lastre'); // campo y botones −/+
           st.input.placeholder = sign < 0 ? 'kg' : 'sin lastre';
           paintLbl();
           changed();
         },
       });
       signSeg.classList.add('ses-sign');
-      if (sign < 0) { st.input.setAttribute('aria-label', 'Asistencia'); st.input.placeholder = 'kg'; }
+      if (sign < 0) { st.setAriaLabel('Asistencia'); st.input.placeholder = 'kg'; }
       paintLbl();
       fields.push(h('div.ses-field', lblEl, h('div.ses-field-ctl', st, signSeg)));
       fields.push(field('Reps', repsStep('reps', 'Repeticiones')));
@@ -340,7 +347,7 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
   let rirChips = null;
   let rirBlock = null;
   if (LOAD_REP_TYPES.includes(logType)) {
-    rirChips = chips({ options: RIR_OPTS, value: set.rir ?? null, allowNone: true, className: 'ses-rir', onChange: (v) => { set.rir = v; changed(); } });
+    rirChips = chips({ ariaLabel: 'RIR, repeticiones en reserva', options: RIR_OPTS, value: set.rir ?? null, allowNone: true, className: 'ses-rir', onChange: (v) => { set.rir = v; changed(); } });
     rirBlock = h('div.ses-sub', { hidden: set.type === 'warmup' }, h('span.ses-sub-label', 'RIR · repeticiones en reserva'), rirChips);
     fields.push(rirBlock);
   }

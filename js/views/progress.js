@@ -6,7 +6,7 @@
 // al salir de la pantalla se destruyen todas (listeners y observers).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, screen, chips, segmented, emptyState, stateTag, kpiValue } from '../ui.js';
+import { h, icon, screen, chips, segmented, emptyState, stateTag, kpiValue, scrollBehavior } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, weekStart, relDay, plural } from '../util.js';
 import { lineChart, barChart, periodSelector, getPeriod, sparkline, COLORS } from '../charts.js';
 import * as S from '../stats.js';
@@ -296,7 +296,7 @@ function linksRow(ctx, exSection) {
     wide('⏱️', 'Tiempos previstos', 'Tiempos previstos de 5 km a maratón', () => goChild('#/predictions'), 'predictions'),
     tile('🏆', 'Récords', 'Récords de fuerza y resistencia', () => goChild('#/records'), 'records'),
     tile('⚖️', 'Peso', 'Peso corporal', () => goChild('#/bodyweight'), 'bodyweight'),
-    tile('🏋️', 'Ejercicios', 'Ir a la lista de ejercicios', () => exSection.el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 'exercises'));
+    tile('🏋️', 'Ejercicios', 'Ir a la lista de ejercicios', () => exSection.el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }), 'exercises'));
 }
 
 /**
@@ -458,7 +458,7 @@ function muscleCard(ctx) {
       paint();
       const chip = chipsEl.querySelector('.chip.active');
       if (chip && chip.scrollIntoView) chip.scrollIntoView({ block: 'nearest', inline: 'center' });
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
     },
   };
 }
@@ -479,9 +479,9 @@ function muscleTableCard(ctx, muscle) {
     const st = r.status === 'below' ? 'short' : r.status;
     const chip = st === 'short' ? `Faltan ${fmtNum(r.min - r.sets, 1)}` : STATUS_TXT[st];
     const long = st === 'short' ? shortTxt(r.sets, r.min) : STATUS_LONG[st].toLowerCase();
-    return h('button.prg-mrow', {
+    // El rol de elemento de lista va en un envoltorio: en el propio <button> taparía el botón (VoiceOver).
+    return h('div.prg-mrow-item', { role: 'listitem' }, h('button.prg-mrow', {
       type: 'button',
-      role: 'listitem',
       dataset: { muscle: r.muscleId, status: st },
       'aria-label': `${r.name}: ${r.setsLabel}${r.target ? `, rango ${range}` : ''}, ${long}`,
       onClick: () => muscle.select(r.muscleId),
@@ -492,7 +492,7 @@ function muscleTableCard(ctx, muscle) {
       h(`span.prg-status.prg-status-${st}`, chip)),
     h('span.prg-mbar', { 'aria-hidden': 'true' },
       r.target ? h('span.prg-mbar-band', { style: { left: pct(r.min), width: `calc(${pct(r.max)} - ${pct(r.min)})` } }) : null,
-      h('span.prg-mbar-fill', { style: { width: r.sets > 0 ? pct(r.sets) : '0' } })));
+      h('span.prg-mbar-fill', { style: { width: r.sets > 0 ? pct(r.sets) : '0' } }))));
   }));
   const el = h('section.card.prg-card', { dataset: { chart: 'muscle-table' } },
     cardHead('Esta semana por músculo', `${fmtWeekRange(ws)} (en curso) · series efectivas frente a tu rango`,

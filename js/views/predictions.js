@@ -372,7 +372,7 @@ function basisView(r) {
   return h('section.card.prd-basis', { 'aria-labelledby': 'prd-basis-title' },
     h('h2.prd-basis-title', { id: 'prd-basis-title' }, 'Con qué se calcula'),
     h('div.kpis.prd-kpis',
-      kpi('Km/semana', km1(r.weeklyKm), `media ${VOLUME_WEEKS} sem.`),
+      kpi('Km por semana', km1(r.weeklyKm), `media ${VOLUME_WEEKS} sem.`),
       kpi('Tirada larga', longest ? km1(longest.km) : '—', longest ? dayTxt(longest.date) : `${VOLUME_WEEKS} sem.`),
       kpi('Carreras', String(r.valid), `≥${NB}${MIN_KM}${NB}km · ${WINDOW_WEEKS}${NB}sem.`)),
     r.basis.length ? h('h3.prd-basis-sub', r.basis.length === 1 ? 'Esfuerzo usado' : `Los ${r.basis.length} esfuerzos usados`) : null,

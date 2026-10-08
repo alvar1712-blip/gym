@@ -535,7 +535,8 @@ function createChart(container, initialOpts, spec) {
     emptyEl.hidden = !empty;
     emptyEl.style.height = `${H}px`;
     emptyEl.textContent = opts.empty || 'Sin datos en este periodo';
-    svg.setAttribute('aria-label', opts.ariaLabel || (model ? model.aria : '') || 'Gráfica');
+    // Título de la vista + descripción calculada (periodo, nº de valores, último valor): VoiceOver no puede arrastrar
+    svg.setAttribute('aria-label', [opts.ariaLabel, model ? model.aria : opts.empty].filter(Boolean).join('. ') || 'Gráfica');
     if (legendEl) legendEl.hidden = empty;
     root.classList.toggle('chart-is-empty', empty);
     if (model) {
@@ -1021,8 +1022,12 @@ function drawLine(svg, o, W, H) {
   };
   const total = vis.reduce((t, P) => t + P.inside.length, 0);
   const names = vis.map((P) => P.s.label).filter(Boolean).join(', ');
+  // Último valor de la serie destacada (o de la primera visible), para el lector de pantalla
+  const LP = vis.find((P) => P.s.emphasis) || vis[0];
+  const lq = LP.inside[LP.inside.length - 1];
+  const lastTxt = `, último ${lq.p.label ?? fmtY(lq.y)}`;
   return {
-    aria: `Gráfica de líneas${names ? ` (${names})` : ''}: ${total} valores del ${fmtDate(dayStr(d0), 'full')} al ${fmtDate(dayStr(d1), 'full')}`,
+    aria: `Gráfica de líneas${names ? ` (${names})` : ''}: ${total} valores del ${fmtDate(dayStr(d0), 'full')} al ${fmtDate(dayStr(d1), 'full')}${lastTxt}`,
     hit(px) {
       const d = d0 + ((px - x0) / (x1 - x0)) * (d1 - d0);
       return selAt(keys[nearestIndex(keys, d)]);
@@ -1371,8 +1376,12 @@ function drawBars(svg, o, W, H) {
   svg.insertBefore(hoverUnder, gB);
   const first = dateTitle(bars[0].x, weekly);
   const last = dateTitle(bars[n - 1].x, weekly);
+  // Total de la última barra (o su único valor), para el lector de pantalla
+  const lastSegs = segsOf(bars[n - 1]);
+  const lastTxt = lastSegs.length === 1 ? `, última ${lastSegs[0].label ?? fmtY(lastSegs[0].value)}`
+    : stacked && lastSegs.length ? `, última ${fmtY(lastSegs.reduce((t, s) => t + s.value, 0))}` : '';
   return {
-    aria: `Gráfica de barras: ${n} ${n === 1 ? 'barra' : 'barras'}${n > 1 ? `, de ${first} a ${last}` : `, ${first}`}`,
+    aria: `Gráfica de barras: ${n} ${n === 1 ? 'barra' : 'barras'}${n > 1 ? `, de ${first} a ${last}` : `, ${first}`}${lastTxt}`,
     hit(px) { return selAt(Math.min(n - 1, Math.max(0, Math.floor((px - f.L) / slot)))); },
     select(i) { return Number.isInteger(i) && i >= 0 && i < n ? selAt(i) : null; },
     hoverUnder,

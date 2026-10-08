@@ -2,7 +2,7 @@
 // PROPIETARIO: módulo de biblioteca. La lógica pura (grupos, orden, objetivo…) está en library-logic.js.
 import * as store from '../store.js';
 import { navigate, back, replaceUrl } from '../router.js';
-import { h, icon, screen, stepper, sheet, actionSheet, confirmDialog, undoToast, toast, emptyState, field, textInput } from '../ui.js';
+import { h, icon, screen, stepper, sheet, actionSheet, confirmDialog, undoToast, toast, emptyState, field, textInput, scrollBehavior } from '../ui.js';
 import { pickExercise } from '../pickers.js';
 import { createStrengthSession } from '../session-logic.js';
 import { uid, todayStr, deepClone, DAY_LONG, DAY_SHORT, plural } from '../util.js';
@@ -267,7 +267,7 @@ export function mountTemplateEdit(root, params = {}) {
       // Con la cabecera tapando su principio, se alinea arriba (bajo la cabecera, con su scroll-margin); si no, lo
       // mínimo («nearest» no mueve un ítem desplegado más alto que la pantalla aunque su cabecera quede tapada)
       const hidden = el.getBoundingClientRect().top < (parseFloat(getComputedStyle(el).scrollMarginTop) || 0);
-      el.scrollIntoView({ block: hidden ? 'start' : 'nearest', behavior: 'smooth' });
+      el.scrollIntoView({ block: hidden ? 'start' : 'nearest', behavior: scrollBehavior() });
     });
   }
 
