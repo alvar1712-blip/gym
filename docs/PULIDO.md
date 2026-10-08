@@ -198,5 +198,9 @@ Reglas que cumplen todas:
   check-in, vaciar un borrador recuperado o la lista de importación ahora tienen «Deshacer».
 - Un ejercicio con marcas históricas no se borra (se archiva), como uno con sesiones, rutinas u objetivos.
 - Borrar una sesión abierta desde su resumen vuelve a la pantalla de origen (no a «Esta sesión no existe»).
+- Guardar o borrar espera al disco y luego sale de la ficha: si entretanto el usuario ya se fue a otra pantalla, ese
+  «atrás» tardío no se hace (router.js `screenToken` / `backFrom` / `navigateFrom`). Antes, con el disco lento,
+  borrar una marca y tocar Hoy enseguida devolvía a la ficha borrada.
 
-Pruebas: tests/e2e/undo.test.cjs (Chromium y WebKit), tests/unit/library.test.mjs (marcas en exerciseUsage).
+Pruebas: tests/e2e/undo.test.cjs (Chromium y WebKit; incluye el disco lento), tests/unit/library.test.mjs (marcas en
+exerciseUsage).

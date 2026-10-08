@@ -49,6 +49,7 @@ let entering = null; // { el, timer } animación de entrada sin View Transitions
 let staggerTimer = null;
 let rendering = 0; // montajes en curso (para settled())
 let started = false;
+let navReq = 0; // navegaciones pedidas (navigate/back), para screenToken()
 let lastNav = { kind: 'none', mode: 'none', path: null, transition: null, ua: false };
 const mountHooks = [];
 
@@ -160,6 +161,7 @@ export function currentRoute() {
  * Con hojas abiertas, primero se quitan sus entradas del historial (y se cierran) y luego se navega.
  */
 export function navigate(hash, { replace = false, transition = null } = {}) {
+  navReq++;
   if (!hash.startsWith('#')) hash = '#' + hash;
   if (deferForOverlays(() => navigate(hash, { replace, transition }))) return;
   // Un «atrás» de back() aún en camino (history.back() es asíncrono): si se navegara ya, ese paso atrás llegaría
@@ -192,8 +194,31 @@ export function replaceUrl(hash) {
   onRouteChange(current);
 }
 
+/**
+ * Marca de «esta pantalla, ahora». Un borrado o un guardado que espera al disco y luego sale de la pantalla
+ * (backFrom/navigateFrom) no debe sacar al usuario de donde ya se fue entretanto: si tocó otra pestaña mientras
+ * IndexedDB escribía, ese «atrás» tardío lo devolvería a la ficha que acababa de borrar.
+ */
+export function screenToken() {
+  return { seq, req: navReq };
+}
+const tokenFresh = (tok) => !tok || (tok.seq === seq && tok.req === navReq);
+/** back(fallback) solo si desde `tok` no se ha ido (ni pedido ir) a otra pantalla. → true si navega. */
+export function backFrom(tok, fallback) {
+  if (!tokenFresh(tok)) return false;
+  back(fallback);
+  return true;
+}
+/** navigate(hash, opts) solo si desde `tok` no se ha ido (ni pedido ir) a otra pantalla. → true si navega. */
+export function navigateFrom(tok, hash, opts) {
+  if (!tokenFresh(tok)) return false;
+  navigate(hash, opts);
+  return true;
+}
+
 /** Vuelve atrás dentro de la app; si no hay historial interno, va a `fallback` (animado como «atrás»). */
 export function back(fallback = '#/today') {
+  navReq++;
   if (deferForOverlays(() => back(fallback))) return;
   if (depth > 0) {
     depth--;

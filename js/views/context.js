@@ -5,7 +5,7 @@
 //   #/context/:id    editar / borrar (con deshacer)
 // La lógica (tipos, fechas aproximadas, validación) está en ../context-logic.js.
 import * as store from '../store.js';
-import { navigate, back } from '../router.js';
+import { navigate, screenToken, backFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState } from '../ui.js';
 import { uid, todayStr, fmtNum, parseNum } from '../util.js';
 import * as C from '../context-logic.js';
@@ -272,15 +272,17 @@ export function mountContextEdit(root, params = {}) {
       return;
     }
     const rec = C.entryRecord(draft, { id: editing?.id || uid('ctx_') });
+    const tok = screenToken();
     await store.save('context', rec);
-    back('#/context');
+    backFrom(tok, '#/context');
   }
 
   async function onDelete() {
     const ok = await confirmDialog({ title: '¿Borrar de tu contexto?', message: `«${C.entryLine(editing)}» (${C.entryWhen(editing)}).`, confirmText: 'Borrar', danger: true });
     if (!ok) return;
+    const tok = screenToken();
     const removed = await store.remove('context', editing.id);
-    back('#/context');
+    backFrom(tok, '#/context');
     undoToast('Borrado de tu contexto', () => { if (removed) store.restore('context', removed); });
   }
 

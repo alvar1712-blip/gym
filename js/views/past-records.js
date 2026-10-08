@@ -6,7 +6,7 @@
 // pastRecoveryCard(exercise, ctx) → la tarjeta de la ficha de progreso (#/progress/exercise/:id).
 // La lógica (validación, 1RM estimado, porcentaje) está en ../past-records-logic.js.
 import * as store from '../store.js';
-import { navigate, back } from '../router.js';
+import { navigate, screenToken, backFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, textInput, numInput, confirmDialog, undoToast, emptyState, whyBox } from '../ui.js';
 import { uid, todayStr, fmtNum, plural } from '../util.js';
 import { approxInput } from '../approx-input.js';
@@ -320,8 +320,9 @@ export function mountPastRecordEdit(root, params = {}) {
       return;
     }
     const rec = P.pastRecordFrom(draft, ex, { id: editing?.id || uid('pr_'), createdAt: editing?.createdAt ?? null });
+    const tok = screenToken();
     await store.save('pastRecords', rec);
-    back(LIST);
+    backFrom(tok, LIST);
   }
 
   async function onDelete() {
@@ -330,8 +331,9 @@ export function mountPastRecordEdit(root, params = {}) {
       title: '¿Borrar esta marca?', message: `${ex?.name || 'Ejercicio'}: ${P.markLabel(editing, ex?.logType)} (${P.markWhen(editing)}).`, confirmText: 'Borrar', danger: true,
     });
     if (!ok) return;
+    const tok = screenToken();
     const removed = await store.remove('pastRecords', editing.id);
-    back(LIST);
+    backFrom(tok, LIST);
     undoToast('Marca borrada', () => { if (removed) store.restore('pastRecords', removed); });
   }
 

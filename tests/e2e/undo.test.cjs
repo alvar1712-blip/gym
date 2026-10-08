@@ -8,7 +8,7 @@
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/undo.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, idbAll, engineAvailable } = require('./helpers.cjs');
+const { openApp, go, idbAll, settle, engineAvailable } = require('./helpers.cjs');
 
 const skipWebkit = engineAvailable('webkit') ? false : 'WebKit no instalado: ejecuta scripts/setup-webkit.sh';
 const card = (page, seId) => page.locator(`[data-se="${seId}"]`);
@@ -137,6 +137,37 @@ async function checkinZone(page) {
   assert.deepStrictEqual({ ...after, updatedAt: 0 }, { ...before, updatedAt: 0 }, 'vuelve igual (la zona con su id)');
 }
 
+/** Borrar una marca de «Tu contexto» con el disco lento y tocar Hoy enseguida: el «atrás» tardío no te devuelve. */
+async function slowDiskThenLeave(page) {
+  await page.evaluate(async () => {
+    const C = await import('./js/context-logic.js');
+    await window.__app.store.save('context', C.entryRecord({ kind: 'event', type: 'creatine_start', date: '2026-09-15' }, { id: 'ctx_u' }));
+  });
+  await go(page, '#/context');
+  await go(page, '#/context/ctx_u');
+  await page.locator('.ctx-delete').click();
+  // Una transacción de escritura abierta en 'context' retiene el borrado de la app ~1,2 s (el disco lento de un iPhone)
+  await page.evaluate(() => new Promise((ready) => {
+    const r = indexedDB.open('entreno');
+    r.onsuccess = () => {
+      const tx = r.result.transaction('context', 'readwrite');
+      const end = performance.now() + 1200;
+      const spin = () => { if (performance.now() < end) tx.objectStore('context').get('nada').onsuccess = spin; };
+      spin();
+      tx.oncomplete = () => r.result.close();
+      ready();
+    };
+  }));
+  await page.locator('.sheet-panel .btn-danger').click();
+  await page.evaluate(() => window.__app.navigate('#/today'));
+  await page.waitForFunction(() => !window.__app.store.get('context', 'ctx_u') && document.querySelector('.toast-undo'));
+  await page.waitForTimeout(600); // un «atrás» tardío llegaría aquí
+  await settle(page);
+  assert.strictEqual(await page.evaluate(() => location.hash), '#/today', 'sigue en Hoy');
+  await undo(page);
+  await page.waitForFunction(() => !!window.__app.store.get('context', 'ctx_u'));
+}
+
 for (const browser of ['chromium', 'webkit']) {
   test(`${browser === 'webkit' ? 'WebKit: ' : ''}«Deshacer» repinta y restaura: evento desde Hoy, alternativa, cardio, borrar desde el resumen y zona del check-in`,
     { skip: browser === 'webkit' ? skipWebkit : false }, async () => {
@@ -148,6 +179,7 @@ for (const browser of ['chromium', 'webkit']) {
         await alternativeUndo(app.page);
         await cardioRemove(app.page);
         await deleteFromSummary(app.page);
+        await slowDiskThenLeave(app.page);
         assert.deepStrictEqual(app.errors, []);
       } finally {
         await app.close();

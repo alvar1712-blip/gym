@@ -6,7 +6,7 @@
 // ../races-progress.js. Sin planificador:
 // apuntar un evento no cambia tu semana tipo.
 import * as store from '../store.js';
-import { navigate, back } from '../router.js';
+import { navigate, screenToken, backFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState, whyBox } from '../ui.js';
 import { uid, todayStr, fmtDate, addDays } from '../util.js';
 import * as R from '../races-logic.js';
@@ -224,8 +224,9 @@ export function mountRaceEdit(root, params = {}) {
       return;
     }
     const rec = R.raceRecord(draft, { id: editing?.id || uid('race_'), createdAt: editing?.createdAt ?? null });
+    const tok = screenToken();
     await store.save('races', rec);
-    back(LIST);
+    backFrom(tok, LIST);
   }
 
   async function onDelete() {
@@ -233,8 +234,9 @@ export function mountRaceEdit(root, params = {}) {
       title: '¿Borrar este evento?', message: `${R.raceTitle(editing)} · ${fmtDate(editing.date, 'long')}.`, confirmText: 'Borrar', danger: true,
     });
     if (!ok) return;
+    const tok = screenToken();
     const removed = await store.remove('races', editing.id);
-    back(LIST);
+    backFrom(tok, LIST);
     undoToast('Evento borrado', () => { if (removed) store.restore('races', removed); });
   }
 

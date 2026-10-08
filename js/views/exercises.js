@@ -1,7 +1,7 @@
 // exercises.js — pestaña Ejercicios (segmentado Rutinas | Biblioteca), ficha y editor de ejercicio.
 // PROPIETARIO: módulo de biblioteca. La lógica pura (búsqueda, uso, historial…) está en library-logic.js.
 import * as store from '../store.js';
-import { navigate, replaceUrl } from '../router.js';
+import { navigate, replaceUrl, screenToken, navigateFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, textInput, field, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, sheet } from '../ui.js';
 import { fmtDate, fmtNum, uid, plural } from '../util.js';
 import { MUSCLES, MUSCLE_LABEL, PATTERNS, PATTERN_LABEL, LOG_TYPES, LOG_TYPE_LABEL } from '../seed.js';
@@ -294,9 +294,10 @@ export function mountExerciseDetail(root, params = {}) {
       confirmText: 'Borrar ejercicio', danger: true,
     });
     if (!ok) return;
+    const tok = screenToken();
     const removed = await store.remove('exercises', ex.id);
     // A la biblioteca (la entrada anterior del historial podría ser el editor de este ejercicio).
-    navigate(LIB_HREF, { replace: true });
+    navigateFrom(tok, LIB_HREF, { replace: true });
     undoToast(`«${ex.name}» borrado`, () => { if (removed) store.restore('exercises', removed); });
   }
   content.appendChild(h('div.lib-actions',

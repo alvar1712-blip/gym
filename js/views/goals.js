@@ -2,7 +2,7 @@
 // (crear, editar, archivar y borrar con deshacer) y goalsSummaryCard() para Hoy y Progreso.
 // PROPIETARIO: módulo de objetivos. Los cálculos salen de js/goals-logic.js (puro); aquí solo DOM y store.
 import * as store from '../store.js';
-import { navigate, back } from '../router.js';
+import { navigate, screenToken, backFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, stepper, durationInput, textInput, numInput, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, whyBox } from '../ui.js';
 import { pickExercise } from '../pickers.js';
 import { dataFromStore } from '../progress-ui.js';
@@ -422,8 +422,9 @@ export function mountGoalEdit(root, params = {}) {
         confirmText: 'Borrar objetivo', danger: true,
       });
       if (!ok) return;
+      const tok = screenToken();
       const removed = await store.remove('goals', saved.id);
-      back('#/goals');
+      backFrom(tok, '#/goals');
       undoToast(`Objetivo «${title}» borrado`, () => { if (removed) store.restore('goals', removed); });
     }
   }
@@ -471,9 +472,10 @@ export function mountGoalEdit(root, params = {}) {
     const rec = G.goalRecord(form, ex, { id: uid('goal_'), now: Date.now() });
     const p = G.goalProgress(dataFromStore(todayStr()), rec);
     rec.achievedAt = p.invalid ? null : p.achievedOn || null;
+    const tok = screenToken();
     await store.save('goals', rec);
     clearDraft();
-    back('#/goals');
+    backFrom(tok, '#/goals');
     toast(rec.achievedAt ? `Objetivo «${rec.title}» creado: ya lo tienes conseguido (${G.fmtDay(rec.achievedAt)}).` : `Objetivo «${rec.title}» creado`, { kind: 'success', duration: 4500 });
   }
 

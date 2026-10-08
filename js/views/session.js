@@ -8,7 +8,7 @@ import {
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn } from '../calc.js';
-import { navigate, back, refresh } from '../router.js';
+import { navigate, back, refresh, screenToken, backFrom, navigateFrom } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import {
   lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, finishSession,
@@ -597,6 +597,7 @@ export function mountSession(root, params = {}) {
     });
     if (!ok) return;
     const removed = [];
+    const tok = screenToken();
     try {
       for (const a of acts) removed.push(await store.remove('sessions', a.id));
       removed.unshift(await store.remove('sessions', session.id));
@@ -604,8 +605,8 @@ export function mountSession(root, params = {}) {
       return; // app.js ya avisa del error de guardado
     }
     const wasActive = session.status === 'active';
-    if (wasActive) navigate('#/today', { replace: true });
-    else back('#/today');
+    if (wasActive) navigateFrom(tok, '#/today', { replace: true });
+    else backFrom(tok, '#/today');
     undoToast('Sesión borrada', async () => {
       for (const o of removed) if (o) await store.restore('sessions', o);
       refresh();

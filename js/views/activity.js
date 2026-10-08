@@ -2,7 +2,7 @@
 // Obligatorios: tipo, fecha y duración. La actividad se crea en cuanto es válida y desde ahí
 // cada cambio se guarda al instante; antes se conserva un borrador en localStorage.
 import * as store from '../store.js';
-import { back, navigate, refresh, replaceUrl } from '../router.js';
+import { back, navigate, refresh, replaceUrl, screenToken, backFrom } from '../router.js';
 import {
   h, icon, header, segmented, chips, rpePicker, durationInput, field, textInput, numInput,
   confirmDialog, undoToast, emptyState, toast, confirmRare,
@@ -601,6 +601,7 @@ function mountForm(root, ctx) {
     });
     if (!ok) return;
     removed = true;
+    const tok = screenToken();
     const obj = await store.remove('sessions', record.id);
     // La duración automática de la sesión de fuerza se recalcula sin esta actividad; «Deshacer» la deja como estaba
     // (recalcular no basta: con la actividad de vuelta puede no haber propuesta y quedaría la de sin ella).
@@ -608,7 +609,7 @@ function mountForm(root, ctx) {
     const parentBefore = parent ? { durationMin: parent.durationMin, durationAuto: parent.durationAuto } : null;
     const changed = parent ? syncLinkedDuration(obj.parentId) : null;
     const parentAfter = parent ? parent.durationMin : null;
-    back(backFallback);
+    backFrom(tok, backFallback);
     undoToast('Actividad borrada', async () => {
       if (!obj) return;
       await store.restore('sessions', obj);
