@@ -26,7 +26,7 @@
 //    (1–26 sep frente a 1–26 ago): comparar medio mes con un mes entero daría bajadas engañosas.
 import { weekStart, addDays, addMonths, diffDays, dow, isDateStr, todayStr, fmtDate, fmtWeekRange, fmtDuration, fmtPace, fmtMinutes, round, MONTH_LONG, MONTH_SHORT, DAY_LONG } from './util.js';
 import { isWorkSet, sessionLoad, sessionDurationMin, sessionVolume, sessionMuscleSets, makeBodyweightFn, orderKeyOf, emptyBests, addToBests, detectPRs } from './calc.js';
-import { DISTANCE_KINDS, RACE_DISTANCES, ESTIMATE_FACTOR, exercisesWithHistory, exerciseHistory, distanceLabel, weightLabel, fmtNumFast, muscleTarget, historicalRunMarks } from './stats.js';
+import { DISTANCE_KINDS, RACE_DISTANCES, runMarkFor, scaledRunMark, exercisesWithHistory, exerciseHistory, distanceLabel, weightLabel, fmtNumFast, muscleTarget, historicalRunMarks } from './stats.js';
 import { ACTIVITY_KINDS, MUSCLES, MUSCLE_LABEL } from './seed.js';
 import { formatSet, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
 
@@ -362,7 +362,7 @@ export function strengthPrDetail(entry) {
 
 /**
  * Récords de resistencia en orden: mayor distancia por deporte, mejores tiempos de carrera (5 km, 10 km, media,
- * maratón; tiempo al ritmo medio de una carrera igual o más larga, como stats.enduranceRecords) y mayor
+ * maratón; con la misma regla que stats.enduranceRecords: stats.runMarkFor, completa, mejor tramo o ritmo medio) y mayor
  * desnivel en senderismo. Solo cuenta como récord si ya había una marca anterior de ese tipo. Tus marcas históricas
  * de «Tu contexto» (stats.historicalRunMarks) cuentan como marcas anteriores desde el principio de su periodo (como en
  * Récords): una carrera que no mejora tu marca histórica no es récord. Ellas no salen como récord de un periodo.
@@ -377,8 +377,8 @@ function endurancePRs(ctx) {
     const st = state.run || (state.run = { longest: null, race: {}, elev: null });
     if (st.longest == null || m.km > st.longest) st.longest = m.km;
     for (const r of RACE_DISTANCES) {
-      if (m.km + EPS < r.km) continue;
-      const t = (m.sec * r.km) / m.km;
+      const t = scaledRunMark(m.km, m.sec, r.km)?.timeSec;
+      if (t == null) continue;
       if (st.race[r.id] == null || t < st.race[r.id]) st.race[r.id] = t;
     }
   };
@@ -396,11 +396,13 @@ function endurancePRs(ctx) {
       if (st.longest == null || km > st.longest) st.longest = km;
       if (k === 'run' && sec > 0) {
         for (const r of RACE_DISTANCES) {
-          if (km + EPS < r.km) continue;
-          const t = (sec * r.km) / km;
+          // La misma regla que Récords (stats.runMarkFor): completa, mejor tramo de una importada o a ritmo medio
+          const mk = runMarkFor(a, r.km);
+          if (!mk) continue;
+          const t = mk.timeSec;
           const prev = st.race[r.id];
           if (prev != null && t < prev - EPS) {
-            out.push({ ...base, metric: r.id, value: t, prev, raceLabel: r.label, raceKm: r.km, paceSec: sec / km, estimated: km > r.km * ESTIMATE_FACTOR });
+            out.push({ ...base, metric: r.id, value: t, prev, raceLabel: r.label, raceKm: r.km, paceSec: mk.paceSec, how: mk.how, partial: mk.partial, estimated: mk.how === 'estimated' });
           }
           if (prev == null || t < prev) st.race[r.id] = t;
         }
@@ -424,7 +426,8 @@ function enduranceLabel(r) {
 function enduranceDetail(r) {
   if (r.metric === 'longest') return `${distanceLabel(r.kind, r.value)}${r.sec > 0 ? ` en ${fmtDuration(r.sec)}` : ''}`;
   if (r.metric === 'elevation') return `+${num(r.value, 0)} m${r.km ? ` · ${distanceLabel(r.kind, r.km)}` : ''}`;
-  return `${fmtDuration(r.value)} · ${fmtPace(r.paceSec)}${r.estimated ? ` · de ${distanceLabel('run', r.km)}, a ritmo medio` : ''}`;
+  const how = r.how === 'partial' ? ` · parcial dentro de ${distanceLabel('run', r.km)}` : r.estimated ? ` · de ${distanceLabel('run', r.km)}, a ritmo medio` : '';
+  return `${fmtDuration(r.value)} · ${fmtPace(r.paceSec)}${how}`;
 }
 
 const METRIC_ORDER = ['longest', ...RACE_DISTANCES.map((r) => r.id), 'elevation'];

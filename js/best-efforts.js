@@ -55,8 +55,12 @@ export const MATCH_TOL_M = 20;
 export const MATCH_TOL_SHARE = 0.01;
 /** Pausa (solo informativa): tramo a menos de 0,5 m/s (import-parse.MOVING_MIN_SPEED). */
 export const PAUSE_SPEED = 0.5;
-/** Huella del registro: distancia (km) y tiempo en movimiento (s) deben seguir siendo los del cálculo. */
-export const BASIS_TOL_KM = 0.0005;
+/**
+ * Huella del registro: distancia (km) y tiempo en movimiento (s) deben seguir siendo los del cálculo. Distancia: medio
+ * centésimo de km, la precisión con que la muestra el formulario (2 decimales): volver a escribir lo que se ve no es
+ * cambiarla. Tiempo: segundos enteros (h:mm:ss).
+ */
+export const BASIS_TOL_KM = 0.005;
 export const BASIS_TOL_SEC = 0.5;
 
 const fin = Number.isFinite;
@@ -378,11 +382,13 @@ export function bestEffortsFromSeries(series) {
 // ---------------------------------------------------------------------------
 /**
  * Vueltas leídas (import-parse: { startT (ms), elapsedSec, timerSec, distanceM }) → forma guardada
- * [{ at, sec, timerSec, m }] con `at` en segundos desde t0 (ms). Sin distancia → fuera. null si quedan < 2.
+ * [{ at, sec, timerSec, m }] con `at` en segundos desde t0 (ms). Una vuelta sin distancia pero con tiempo (el
+ * descanso parado de unas series) se queda con m: 0: quitarla haría que un tramo que la cruza fuese más rápido. Sin
+ * distancia ni tiempo → fuera. null si quedan < 2.
  */
 export function lapsForRecord(laps, t0 = null) {
   if (!Array.isArray(laps)) return null;
-  const ok = laps.filter((l) => l && l.distanceM > 0);
+  const ok = laps.filter((l) => l && (l.distanceM > 0 || l.elapsedSec > 0 || l.timerSec > 0));
   if (ok.length < 2) return null;
   const base = fin(t0) ? t0 : ok.find((l) => fin(l.startT))?.startT ?? null;
   const pos = (v) => (fin(v) && v > 0 ? Math.round(v * 10) / 10 : null);
@@ -390,7 +396,7 @@ export function lapsForRecord(laps, t0 = null) {
     at: fin(l.startT) && base != null ? Math.round((l.startT - base) / 1000) : null,
     sec: pos(l.elapsedSec),
     timerSec: pos(l.timerSec),
-    m: Math.round(l.distanceM),
+    m: l.distanceM > 0 ? Math.round(l.distanceM) : 0,
   }));
 }
 
@@ -421,11 +427,19 @@ export function bestEffortsFromLaps(laps) {
       if (sum > hi) continue;
       for (let k = a; k <= b; k++) {
         const l = laps[k];
-        if (!(l.sec > 0) || !(l.m > 0)) { ok = false; break; }
+        if (!(l.sec > 0) || !(l.m >= 0)) { ok = false; break; }
         sec += l.sec;
         if (l.timerSec > 0 && l.sec > l.timerSec) paused += l.sec - l.timerSec;
+        if (!(l.m > 0)) paused += l.sec; // vuelta de descanso (0 m)
       }
       if (!ok) continue;
+      // Hueco entre vueltas que ninguna cubre: por sus inicios (`at`), cuenta también (tiempo transcurrido)
+      const A = laps[a];
+      const Z = laps[b];
+      if (fin(A.at) && fin(Z.at)) {
+        const span = Z.at + Z.sec - A.at;
+        if (span > sec + 1) { paused += span - sec; sec = span; }
+      }
       const scaled = (sec * X) / sum;
       if (scaled < (RUN_PACE_MIN * X) / 1000) continue;
       if (!best || scaled < best.sec) best = { sec: scaled, atKm: round2(pre[a] / 1000), pausedSec: Math.round(paused) };
@@ -527,15 +541,23 @@ export function splitsOf(rec, km = 1) {
   const out = [];
   let cumM = 0;
   let cumSec = 0;
-  for (const l of laps) {
-    cumM += l.m;
+  let rest = 0; // descansos de 0 m: se suman al parcial siguiente (los del final, al último)
+  const lastRun = laps.reduce((k, l, i) => (l.m > 0 ? i : k), -1);
+  for (let i = 0; i < laps.length; i++) {
+    const l = laps[i];
     cumSec += l.sec;
+    if (!(l.m > 0)) {
+      if (i > lastRun && out.length) { const p = out[out.length - 1]; p.sec += Math.round(l.sec); p.cumSec = Math.round(cumSec); } else rest += l.sec;
+      continue;
+    }
+    cumM += l.m;
     const k = Math.round(cumM / step);
-    const isLast = l === laps[laps.length - 1];
+    const isLast = i === lastRun;
     if (!isLast && Math.abs(cumM - k * step) > LAP_TOL * step + LAP_TOL_M) return null;
-    out.push({ km: round2((isLast ? cumM : k * step) / 1000), sec: Math.round(l.sec), cumSec: Math.round(cumSec) });
+    out.push({ km: round2((isLast ? cumM : k * step) / 1000), sec: Math.round(l.sec + rest), cumSec: Math.round(cumSec) });
+    rest = 0;
   }
-  return out;
+  return out.length ? out : null;
 }
 
 /** Sin bestEfforts (carrera de menos de 1 km) no hay huella: los parciales valen si la serie acaba en su distancia. */

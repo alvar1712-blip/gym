@@ -1012,7 +1012,7 @@ export function mountExerciseProgress(root, params = {}) {
 // #/records
 // ===========================================================================
 
-function recRow({ label, value, sub, sessionId = null, entryId = null, source = null, href = null, badge = null, key = '', muted = false, origin = null, extra = null }) {
+function recRow({ label, value, sub, sessionId = null, entryId = null, source = null, href = null, badge = null, key = '', muted = false, origin = null, extra = null, how = null }) {
   const inner = [
     h('span.prg-rec-main',
       h('span.prg-rec-label', label, badge ? h('span.badge.badge-info.prg-badge-inline', badge) : null),
@@ -1023,6 +1023,7 @@ function recRow({ label, value, sub, sessionId = null, entryId = null, source = 
   if (sessionId) dataset.session = sessionId;
   if (entryId) dataset.entry = entryId;
   if (source) dataset.source = source;
+  if (how) dataset.how = how;
   if (!sessionId && !href) return h('div.prg-rec-row.prg-rec-static', { dataset }, ...inner);
   return h('button.prg-rec-row', { type: 'button', dataset, onClick: () => navigate(href || `#/session/${sessionId}`) },
     ...inner, icon('chevron-right', 18, 'chev'));
@@ -1206,12 +1207,12 @@ function enduranceRecordsView(data, today) {
       runRows.push(recRow({ key: r.id, label: r.label, value: '—', sub: 'Sin marca todavía', muted: true }));
       continue;
     }
-    // Distancia → tiempo → fecha (con la precisión apuntada) · origen; si se estimó desde una carrera más larga
-    // (distintivo «estimado»), de cuál
+    // Distancia → tiempo → fecha (con la precisión apuntada) · origen; si es el mejor tramo de una carrera importada
+    // más larga, discreto «Parcial dentro de 12,4 km»; si se estimó a ritmo medio (distintivo «estimado»), de cuál
     runRows.push(recRow({
       key: r.id, label: r.label, value: b.timeLabel, sub: [b.name || null, b.when].filter(Boolean).join(' · '), origin: b.origin,
-      extra: b.estimated ? `de una carrera de ${km(b.fromKm)} km` : null,
-      sessionId: b.sessionId, entryId: b.entryId, source: b.source, href: recHref(b), badge: b.estimated ? 'estimado' : null,
+      extra: b.how === 'partial' ? `Parcial dentro de ${km(b.fromKm)} km` : b.estimated ? `de una carrera de ${km(b.fromKm)} km` : null,
+      sessionId: b.sessionId, entryId: b.entryId, source: b.source, href: recHref(b), badge: b.estimated ? 'estimado' : null, how: b.how,
     }));
   }
   const runMeta = [e.run.count ? plural(e.run.count, 'carrera', 'carreras') : null, e.run.historyCount ? plural(e.run.historyCount, 'marca histórica', 'marcas históricas') : null].filter(Boolean).join(' · ');
@@ -1221,7 +1222,7 @@ function enduranceRecordsView(data, today) {
         h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, '🏃 '), 'Carrera'),
         h('span.prg-rec-meta', runMeta || 'sin registros')),
       h('div.prg-rec-rows', runRows),
-      h('p.prg-hist-note', 'Tu mejor marca de siempre en cada distancia, de tus carreras (registradas o importadas) y de tus marcas históricas de «Tu contexto»; un récord no caduca (la antigüedad solo cuenta en los tiempos previstos). Si la carrera fue más larga, el tiempo se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),
+      h('p.prg-hist-note', 'Tu mejor marca de siempre en cada distancia, de tus carreras (registradas o importadas) y de tus marcas históricas de «Tu contexto»; un récord no caduca (la antigüedad solo cuenta en los tiempos previstos). Si la carrera fue más larga, cuenta tu mejor tramo continuo cuando la importaste de un archivo; si no, se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),
       h('button.list-item.prg-link-row', { type: 'button', dataset: { link: 'add-result' }, onClick: () => navigate('#/context/new?kind=event&type=race_result') },
         h('span.prg-link-emoji', { 'aria-hidden': 'true' }, '🏁'),
         h('span.list-item-main', h('span.list-item-title', 'Apuntar una marca'), h('span.list-item-sub.wrap', 'Una carrera de antes de usar Entreno')),

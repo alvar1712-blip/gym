@@ -376,6 +376,9 @@ button.prg-rec-row.is-pressed { background: var(--surface-2); }
 .prg-rec-sub { font-size: calc(13px * var(--ts)); line-height: 1.35; color: var(--muted); }
 /* Origen del récord (registrado, importado o marca histórica): secundario, sin partirse */
 .prg-rec-origin { white-space: nowrap; }
+/* Texto grande: la columna de texto es estrecha y «Actividad importada» sin partir se montaba sobre el tiempo */
+html.text-large .prg-rec-origin { white-space: normal; }
+html.text-large .prg-rec-sub { overflow-wrap: anywhere; }
 .prg-rec-value { flex: none; font-size: calc(18px * var(--ts)); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .prg-rec-na { font-size: calc(14px * var(--ts)); font-weight: 650; color: var(--muted); }
 .prg-rec-toggle {

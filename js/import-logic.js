@@ -9,7 +9,7 @@
 import { emptyForm, buildRecord, cleanField, isActivityKind, primaryMetric, activityTitle } from './activity-logic.js';
 import { dateFromTs, isDateStr, normalize, fmtNum, fmtDuration } from './util.js';
 import {
-  encodeTrack, lapsForRecord, computeBestEfforts, seriesProblem, MATCH_TOL_M, MATCH_TOL_SHARE,
+  encodeTrack, lapsForRecord, computeBestEfforts, seriesProblem, MATCH_TOL_M, MATCH_TOL_SHARE, BASIS_TOL_KM, BASIS_TOL_SEC,
 } from './best-efforts.js';
 
 /** Subtipo (texto libre de «otra actividad») de las caminatas importadas. */
@@ -123,6 +123,7 @@ export function itemFromEntry(entry, { key = '', today = null } = {}) {
     movingSec: null,
     elapsedSec: intOrNull(s.elapsedSec),
     distanceKm: posOrNull(s.distanceM) != null ? s.distanceM / 1000 : null,
+    fileKm: posOrNull(s.distanceM) != null ? s.distanceM / 1000 : null, // la del archivo (para saber si se ha cambiado)
     elevationM: mOrNull(s.ascentM),
     elevationLossM: mOrNull(s.descentM),
     altMaxM: mOrNull(s.altMaxM),
@@ -243,7 +244,7 @@ export function itemForm(item) {
  * vueltas) acaba en la distancia del registro; si no, {} (y la tarjeta dice por qué: splitsNote).
  */
 export function importedSplits(item, rec) {
-  if (item.kind !== 'run' || item.edited.distanceKm || item.edited.movingSec) return {};
+  if (item.kind !== 'run' || splitsEdited(item)) return {};
   const basis = { km: rec.distanceKm, sec: rec.movingSec };
   if (!(basis.km > 0) || !(basis.sec > 0)) return {};
   const { series, laps } = splitSources(item, basis.km);
@@ -254,6 +255,17 @@ export function importedSplits(item, rec) {
   const be = computeBestEfforts({ series, laps, basis });
   if (be) out.bestEfforts = be;
   return out;
+}
+
+/**
+ * ¿Ha cambiado de verdad el usuario la distancia o el tiempo en la revisión? Volver a escribir lo que se ve (la
+ * distancia con 2 decimales, el tiempo en segundos) no es cambiarlo (misma tolerancia que best-efforts.basisMatches).
+ */
+function splitsEdited(item) {
+  const e = item.edited;
+  if (e.distanceKm && !(item.fileKm > 0 && Math.abs(item.distanceKm - item.fileKm) <= BASIS_TOL_KM)) return true;
+  const fileSec = durationFor(item.kind, item.src);
+  return !!e.movingSec && !(fileSec > 0 && Math.abs(item.movingSec - fileSec) <= BASIS_TOL_SEC);
 }
 
 /** Serie y vueltas (forma guardada) que cuadran con `km`; null las que no. */
@@ -270,7 +282,7 @@ function splitSources(item, km) {
  */
 export function splitsNote(item) {
   if (item.kind !== 'run' || (!item.series && !lapsForRecord(item.laps))) return null;
-  if (item.edited.distanceKm || item.edited.movingSec) return 'Sin parciales: has cambiado la distancia o el tiempo.';
+  if (splitsEdited(item)) return 'Sin parciales: has cambiado la distancia o el tiempo.';
   const { series, laps } = splitSources(item, item.distanceKm > 0 ? Math.round(item.distanceKm * 1000) / 1000 : null);
   return series || laps ? 'Se guardan los parciales (tiempo y distancia, sin el recorrido).' : 'Sin parciales: el archivo no los trae completos.';
 }

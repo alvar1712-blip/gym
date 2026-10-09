@@ -30,6 +30,7 @@ import {
   detectPRs, RUN_PACE_MIN, RUN_PACE_MAX,
 } from './calc.js';
 import { raceResults, matchesRun, approxLabel } from './context-logic.js';
+import { effortsOf, EFFORT_DISTANCES } from './best-efforts.js';
 import { bwPoints, bwTrend } from './activity-logic.js';
 import { makeCtx, adherence, adherenceText, trackingSince, weekPlan } from './plan.js';
 import { formatSet, fmtLastre, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
@@ -798,6 +799,68 @@ export function historicalRunMarks(data) {
   return { marks, duplicates };
 }
 
+/**
+ * Marca a ritmo medio (la regla de siempre) de una carrera (o marca histórica) de `km` y `sec` en la distancia X:
+ * null si es más corta; tiempo = sec × X / km; estimada si es más larga que X × 1,02.
+ */
+export function scaledRunMark(km, sec, X) {
+  if (!(X > 0) || !(km > 0) || !(sec > 0) || km + EPS < X) return null;
+  const how = km > X * ESTIMATE_FACTOR ? 'estimated' : 'full';
+  return { timeSec: (sec * X) / km, paceSec: sec / km, how, partial: null };
+}
+
+/**
+ * LA regla de las marcas de carrera (Récords, récords del resumen y «conseguido» de los objetivos): la marca de una
+ * carrera registrada `a` en la distancia X (km).
+ *  - km < X → null.
+ *  - X ≤ km ≤ X × 1,02 → 'full': la actividad completa (tiempo en movimiento × X / km).
+ *  - más larga y con un mejor esfuerzo VÁLIDO en X (best-efforts.effortsOf: carrera importada cuya distancia y tiempo
+ *    no se han editado; ni aproximado ni con un ritmo imposible) → 'partial': su mejor tramo continuo (tiempo
+ *    transcurrido, pausas incluidas), ritmo = el del tramo.
+ *  - si no → 'estimated': a su ritmo medio, como siempre (y así se etiqueta).
+ * Solo las distancias de EFFORT_DISTANCES tienen parciales; cualquier otra X cae en la estimación.
+ * @returns {{ timeSec, paceSec, how:'full'|'partial'|'estimated', partial:{ id, ofKm, atKm, src }|null } | null}
+ */
+export function runMarkFor(a, X) {
+  const km = a && a.distanceKm > 0 ? a.distanceKm : null;
+  const base = scaledRunMark(km, a ? actSec(a) : null, X);
+  if (!base || base.how === 'full') return base;
+  const p = partialFor(a, X);
+  if (!p) return base;
+  return { timeSec: p.sec, paceSec: p.sec / X, how: 'partial', partial: { id: p.id, ofKm: km, atKm: p.atKm, src: a.bestEfforts.src } };
+}
+
+/** Mejor esfuerzo válido de la carrera `a` en X km (no aproximado y con ritmo creíble), o null. */
+function partialFor(a, X) {
+  const e = EFFORT_DISTANCES.find((r) => Math.abs(r.km - X) < 1e-9);
+  if (!e) return null;
+  const it = effortsOf(a)?.[e.id];
+  if (!it || it.approx || !(it.sec > 0) || !Number.isFinite(it.sec)) return null;
+  const pace = it.sec / X;
+  return pace >= RUN_PACE_MIN && pace <= RUN_PACE_MAX ? { id: e.id, sec: it.sec, atKm: it.atKm } : null;
+}
+
+/**
+ * Mejores tramos VÁLIDOS de cada carrera registrada (los mismos que usa Récords: runMarkFor con how 'partial'), para
+ * los tiempos previstos (race-predict): Map(sessionId → [{ id, km, sec, atKm, ofKm, src }]) con los de `minKm` km o
+ * más. Solo carreras importadas con parciales cuya distancia y tiempo no se han editado; las demás no aparecen.
+ * Sin caché propia: solo lee bestEfforts ya calculados (effortsOf memoriza lo que haya que recalcular).
+ */
+export function runPartialsBySession(data, minKm = 0) {
+  const out = new Map();
+  for (const a of getIndex(data).activities.run) {
+    if (!a.bestEfforts) continue;
+    const list = [];
+    for (const e of EFFORT_DISTANCES) {
+      if (e.km + EPS < minKm) continue;
+      const m = runMarkFor(a, e.km);
+      if (m && m.how === 'partial') list.push({ id: e.id, km: e.km, sec: m.timeSec, atKm: m.partial.atKm, ofKm: m.partial.ofKm, src: m.partial.src });
+    }
+    if (list.length) out.set(a.id, list);
+  }
+  return out;
+}
+
 /** Origen de una carrera registrada: importada de un archivo o apuntada en Entreno. */
 const runOrigin = (a) => (a && a.source && typeof a.source === 'object' ? 'import' : 'app');
 
@@ -809,11 +872,14 @@ const runOrigin = (a) => (a && a.source && typeof a.source === 'object' ? 'impor
  *   run:  { count, historyCount, longest:{distanceKm, movingSec, date, when, sessionId, entryId, source, label}|null,
  *           best:{ '1k'|'5k'|'10k'|'half'|'marathon': {id, label, distanceKm, timeSec, timeLabel, paceLabel, date, when,
  *                  precision, sessionId, entryId, source:'app'|'import'|'context', origin, name, alsoContext,
- *                  fromKm, fromSec, estimated}|null } },
+ *                  fromKm, fromSec, how:'full'|'partial'|'estimated', partial:{id, ofKm, atKm, src}|null,
+ *                  estimated (= how 'estimated')}|null } },
  *   bike: { count, longest }, swim: { count, longest },
  *   hike: { count, longest:{…, elevationM|null}|null, maxGain:{elevationM, distanceKm, movingSec, date, sessionId, label}|null } }}
- *  best.X sale de carreras (o marcas) de distancia ≥ X: tiempo = tiempo × X / distancia (ritmo medio);
- *  estimated = distancia > X × 1,02 («estimado a ritmo medio»). Orden cronológico y empates: cuenta la primera vez (una
+ *  best.X sale de carreras (o marcas) de distancia ≥ X con runMarkFor: la carrera completa (hasta X × 1,02), su mejor
+ *  tramo continuo si es una importada con parciales válidos (partial; paceLabel = ritmo del tramo; en esa carrera el
+ *  parcial sustituye a la estimación, nunca conviven) o, en último recurso, a su ritmo medio (how 'estimated',
+ *  «estimado»). Las marcas históricas usan la regla del ritmo medio (scaledRunMark). Orden cronológico y empates: cuenta la primera vez (una
  *  marca con fecha aproximada, desde el principio de su periodo). alsoContext = id del resultado de tu contexto que es la
  *  misma carrera que la registrada (se cuenta una sola vez). hike.maxGain = mayor desnivel positivo (elevationM > 0; con
  *  o sin distancia).
@@ -861,14 +927,16 @@ function computeEnduranceRecords(data, idx) {
       }
       if (kind !== 'run' || !(sec > 0)) continue;
       for (const r of RECORD_DISTANCES) {
-        if (km + EPS < r.km) continue;
-        const t = (sec * r.km) / km;
+        // Una sola regla (runMarkFor): completa, mejor tramo de una importada o, en último recurso, a ritmo medio
+        const m = isMark ? scaledRunMark(km, sec, r.km) : runMarkFor(a, r.km);
+        if (!m) continue;
+        const t = m.timeSec;
         const cur = bucket.best[r.id];
         if (cur && !(t < cur.timeSec - EPS)) continue;
         bucket.best[r.id] = {
-          id: r.id, label: r.label, distanceKm: r.km, timeSec: t, timeLabel: fmtDuration(t), paceLabel: fmtPace(sec / km),
+          id: r.id, label: r.label, distanceKm: r.km, timeSec: t, timeLabel: fmtDuration(t), paceLabel: fmtPace(m.paceSec),
           date: a.date, ...src, origin: RECORD_ORIGIN[src.source], alsoContext: isMark ? null : duplicates.get(a.id) ?? null,
-          fromKm: km, fromSec: sec, estimated: km > r.km * ESTIMATE_FACTOR,
+          fromKm: km, fromSec: sec, how: m.how, partial: m.partial, estimated: m.how === 'estimated',
         };
       }
     }

@@ -47,12 +47,28 @@ elevationLossM (desnivel −), altMaxM, hrAvg, hrMax, rpe, packKg, notes, templa
   sobre la interpolación lineal (dos pasadas O(n)), con tiempo TRANSCURRIDO (las pausas cuentan; quedarse quieto antes
   de empezar no), sin ritmos < 2:30 /km, midiendo sin los metros de saltos del GPS (> 10 m/s) y descartando ventanas con
   más del 1 % de ellos; `approx` si la separación de muestras en los bordes supera máx(5 s, 1 %). Solo vueltas: rachas
-  que suman X…X·1,005 + 5 m, todas con tiempo total. `effortsOf(rec)` devuelve los parciales VÁLIDOS (huella
-  `basis` = distancia y tiempo actuales; si se editan dejan de contar y vuelven al deshacer) y recalcula desde `track`
-  solo si sube `BEST_EFFORTS_VERSION` (memorizado por registro); `splitsOf(rec)` da los parciales por km. Tamaño
-  medido (perf, serie de 1 Hz con ritmo variable): ~1,6 KB por carrera de una hora (5 años: 522 carreras, 859 KB) y sin
-  cambio medible en el arranque. Las copias JSON los conservan en ida y vuelta (el formato no cambia; el CSV tampoco).
+  que suman X…X·1,005 + 5 m, todas con tiempo total; las vueltas de descanso de 0 m se guardan (`m: 0`) y su tiempo
+  cuenta dentro del tramo, igual que un hueco entre vueltas (por `at`): un descanso nunca hace un tramo más rápido.
+  `effortsOf(rec)` devuelve los parciales VÁLIDOS (huella `basis` = distancia y tiempo actuales, ± 0,005 km —la
+  precisión con que el formulario muestra la distancia— y ± 0,5 s; si se editan dejan de contar y vuelven al deshacer,
+  también escribiendo de nuevo la distancia que se ve; en la revisión de la importación, volver a escribir el mismo
+  valor tampoco cuenta como cambio) y recalcula desde `track` solo si sube `BEST_EFFORTS_VERSION` (memorizado por
+  registro); `splitsOf(rec)` da los parciales por km. Tamaño medido (perf, serie de 1 Hz con ritmo variable): ~1,6 KB
+  por carrera de una hora (5 años: 522 carreras, 859 KB) y sin cambio medible en el arranque. Con GPS de móvil (GPX
+  sin distancia del reloj, ruido correlacionado de 2–5 m) el filtro conserva más puntos: ~3,5–6 KB por hora. Las copias JSON los conservan en ida y vuelta (el formato no cambia; el CSV tampoco).
   Pruebas: tests/unit/best-efforts.test.mjs, tests/e2e/import-splits.test.cjs.
+- **Récords con mejores esfuerzos (ronda 8, C3).** Una sola regla derivada, `stats.runMarkFor(a, X)`, para
+  Progreso › Récords (`enduranceRecords`), los récords del resumen (`summary-logic`), el «conseguido» de los objetivos
+  de tiempo (`goals-logic`), el informe para IA y el récord que enseña «¿Por qué?» de Tiempos previstos: carrera de X a
+  X·1,02 → `'full'` (tiempo en movimiento × X / km, como siempre); más larga con un mejor esfuerzo válido
+  (`effortsOf`, no `approx`, ritmo 2:30–20:00 /km) → `'partial'` (su tramo continuo, ritmo del tramo); si no →
+  `'estimated'` (ritmo medio, distintivo «estimado»). Las marcas históricas usan `scaledRunMark` (ritmo medio). Cada
+  récord lleva `how` y `partial:{id, ofKm, atKm, src}`; `estimated` sigue y vale `how === 'estimated'`. En una misma
+  carrera el parcial sustituye a la estimación aunque sea más lento (una pausa dentro cuenta); las estimaciones de otras
+  carreras siguen compitiendo, etiquetadas. Editar la distancia o el tiempo oculta el parcial sin tocar datos.
+  En Récords: «Parcial dentro de 12,4 km» (sin distintivo). Solo hay parciales en 1/5/10/21,0975/42,195 km: un
+  objetivo de otra distancia usa la estimación. Pruebas: tests/unit/records-partials.test.mjs,
+  tests/e2e/records-partials.test.cjs.
 - Explicación breve en la pantalla de cómo exportar: Strava (web: «⋯ → Exportar GPX»; la app de Strava no exporta),
   Garmin Connect (web: «⚙ → Exportar original / GPX / TCX»), Apple (Salud no exporta entrenamientos sueltos: vía
   Strava si el reloj sincroniza, o apps como HealthFit/RunGap).
@@ -102,6 +118,22 @@ de calentamiento pendientes al principio). No cambia el registro de 1 toque ni o
   (previsto, rango y confianza). Bici, natación y senderismo con tiempo siguen con su Riegel en `goals-logic` (ninguna
   otra pantalla los predice). Pruebas cruzadas: `tests/unit/prediction-coherence.test.mjs`,
   `tests/e2e/prediction-coherence.test.cjs`.
+- **Mejores tramos en el motor (ronda 8, C4; regla 1c de race-predict.js).** De cada carrera importada con parciales
+  válidos (`stats.runPartialsBySession(data, MIN_KM)`: la misma `runMarkFor` de Récords, solo `how:'partial'`; el de
+  1 km nunca, < 3 km) el esfuerzo es el candidato con menor `T / D^1,06` entre la carrera entera y sus tramos de 5 km,
+  10 km, media o maratón (empate → la entera): UNO por carrera, nunca la carrera y su tramo. La carrera entera tiene
+  que pasar antes ventana, ≥ 3 km y ritmo creíble (sospechosa → sus tramos tampoco). El esfuerzo añade
+  `partial:{id, ofKm, atKm}|null`, `wholeKm`, `wholeSec`; volumen y tirada más larga usan la carrera entera, y un
+  resultado de tu contexto se compara con la carrera ENTERA (`matchesRun` con `wholeKm/wholeSec`: si no, un 12,4 km
+  apuntado dejaría de ser «la misma» en cuanto contara su 5 km y se contaría dos veces). Sin matemáticas nuevas: el
+  tramo pesa por su propia distancia (también para la confianza: «ningún esfuerzo cercano» mira 5 km). A ritmo
+  uniforme gana la carrera entera; solo cambia algo cuando el tramo es de verdad más rápido que su equivalente.
+  Explicación: etiqueta «5 km en 24:50 (4:58/km) · mejor tramo de una carrera de 12,4 km», frase y fila «Mejores
+  tramos» en «¿Por qué?», nota en la fila de confianza; `baseOf().refs[]` y `runningSummary().refs[]` llevan
+  `partial`; el informe dice «mejor tramo de 5 km dentro de una carrera de 12,4 km»; «Con qué se calcula» lo marca
+  (`data-partial`). Objetivos, Eventos, Análisis e informe pasan por `predictFor`/`baseOf` y siguen coherentes.
+  Pruebas: `tests/unit/prediction-coherence.test.mjs` (fixture F7 en la prueba cruzada + 6 pruebas C4),
+  `tests/e2e/prediction-coherence.test.cjs` (Chromium y WebKit, 375 px, 100 % y 150 %).
 - Vista: tabla de las 4 distancias (rango, ritmo, confianza, «¿Por qué?»), comprobador (distancia: 5k/10k/media/
   maratón/otra en km + tiempo con `ui.durationInput`) con veredicto y «¿Por qué?». Tono prudente: estimación, no promesa.
 

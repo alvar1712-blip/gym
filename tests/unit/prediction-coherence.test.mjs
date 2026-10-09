@@ -16,6 +16,8 @@ import { reportText } from '../../js/analysis-report.js';
 import { analyzeEndurance } from '../../js/analysis-training.js';
 import { addDays, tsFromDate, fmtRaceTime, weekStart } from '../../js/util.js';
 import { defaultSettings } from '../../js/seed.js';
+import { buildSeries, computeBestEfforts, encodeTrack } from '../../js/best-efforts.js';
+import { enduranceRecords, runPartialsBySession } from '../../js/stats.js';
 
 const T = '2026-09-24';
 const ago = (n) => addDays(T, -n);
@@ -47,7 +49,39 @@ const F4 = () => ({ sessions: [run(ago(5), 5, 1200), run(ago(12), 10, 4800)] });
 const F5 = () => ({ sessions: [run(ago(6), 8, 2720)] });
 /** F6: F1 + un 10 km en 18:20 (1:50 /km, un error de datos) el 20 sep. */
 const F6 = () => { const f = F1(); f.sessions.push(run('2026-09-20', 10, 1100)); return f; };
-const FIXTURES = { F1, F2, F3, F4, F5, F6 };
+/**
+ * Carrera importada como la guarda import-logic (C1): tramos [{ km, pace } | { stop: s }] a 1 Hz pasados por el mismo
+ * cálculo que la importación (buildSeries + computeBestEfforts + encodeTrack); movingSec = sin las paradas.
+ */
+function imported(date, parts) {
+  const t = [0];
+  const d = [0];
+  let ts = 0;
+  let dm = 0;
+  let moving = 0;
+  for (const p of parts) {
+    if (p.stop) {
+      for (let i = 1; i <= p.stop; i++) { t.push(ts + i); d.push(dm); }
+      ts += p.stop;
+      continue;
+    }
+    const n = Math.round(p.km * p.pace);
+    for (let i = 1; i <= n; i++) { t.push(ts + i); d.push(dm + (p.km * 1000 * i) / n); }
+    ts += n; dm += p.km * 1000; moving += n;
+  }
+  const t0 = tsFromDate(date, 8) / 1000;
+  const series = buildSeries({ t: t.map((x) => t0 + x), d, src: 'device' });
+  const km = Math.round(dm) / 1000;
+  const bestEfforts = computeBestEfforts({ series, basis: { km, sec: moving } });
+  return { ...run(date, km, moving), source: { type: 'fit', fileName: 'carrera.fit' }, track: encodeTrack(series), bestEfforts };
+}
+/** 12,4 km: 3,12 km a 5:30, 5 km a 4:58 (24:50) y 4,28 km a 5:30 (ritmo medio ≈ 5:17; 5 km «a ritmo medio» ≈ 26:25). */
+const twelve = (date = ago(5)) => imported(date, [{ km: 3.12, pace: 330 }, { km: 5, pace: 298 }, { km: 4.28, pace: 330 }]);
+/** La misma carrera sin parciales (como una antigua o apuntada a mano): cuenta entera. */
+const plain = (a) => { const { track, bestEfforts, source, ...rest } = a; return rest; };
+/** F7: F1 + una carrera importada de 12,4 km con un 5 km rápido dentro (C4). */
+const F7 = () => { const f = F1(); f.sessions.push(twelve()); return f; };
+const FIXTURES = { F1, F2, F3, F4, F5, F6, F7 };
 const DISTANCES = [5, 10, 21.0975, 42.195, 15];
 const TYPE = { 5: '5k', 10: '10k', 21.0975: 'half', 42.195: 'marathon' };
 
@@ -308,4 +342,131 @@ test('bici, natación y senderismo con tiempo no usan el motor de carrera (sin p
   assert.equal(g.prediction, undefined);
   assert.equal(g.verdict, undefined);
   assert.match(g.warning, /pensada para carrera/);
+});
+
+// --- C4: mejores tramos de carreras importadas en el motor -----------------------------------------------------------
+const effortOf = (d, id) => analyzeRuns(d).valid.filter((e) => e.sessionId === id);
+
+test('C4: el mejor 5 km real dentro de una carrera de 12,4 km es el esfuerzo y adelanta el 5 km previsto frente al ritmo medio', () => {
+  const f = F7();
+  const a = f.sessions.at(-1);
+  const d = data(f);
+  const [e] = effortOf(d, a.id);
+  assert.deepEqual(e.partial, { id: '5k', ofKm: 12.4, atKm: 3.12 });
+  assert.deepEqual([e.km, e.sec, e.wholeKm, e.wholeSec], [5, 1490, 12.4, a.movingSec]);
+  assert.equal(e.label, '5 km en 24:50 (4:58/km) · mejor tramo de una carrera de 12,4 km');
+  // La misma carrera sin parciales (ritmo medio): cuenta entera y el 5 km previsto sale más lento
+  const g = F1();
+  g.sessions.push(plain(a));
+  const dPlain = data(g);
+  assert.equal(effortOf(dPlain, a.id)[0].partial, null);
+  assert.equal(effortOf(dPlain, a.id)[0].km, 12.4);
+  const withPartial = predictFor(d, 5).prediction;
+  const average = predictFor(dPlain, 5).prediction;
+  assert.ok(withPartial.midExact < average.midExact - 1, `${withPartial.midExact} < ${average.midExact}`);
+  assert.ok(withPartial.mid <= average.mid);
+  // El volumen y la tirada más larga siguen siendo los de la carrera entera
+  const ctx = analyzeRuns(d);
+  assert.equal(ctx.volumeKm, analyzeRuns(dPlain).volumeKm);
+  assert.equal(ctx.longest.km, 12.4);
+  // Explicación y confianza lo dicen; el DTO base y el informe llevan el tramo
+  const p = predictFor(d, 5).prediction;
+  assert.ok(p.efforts.some((x) => x.partial?.id === '5k'));
+  assert.match(p.why.rule, /mejor tramo continuo si es mejor referencia que la carrera entera \(una sola vez por carrera\)/);
+  assert.ok(p.why.data.some((r) => r.label === 'Mejores tramos'));
+  assert.match(p.why.data.find((r) => r.label === 'Confianza').value, /mejor tramo de una carrera importada/);
+  assert.deepEqual(baseOf(p).refs.find((r) => r.sessionId === a.id).partial, { id: '5k', ofKm: 12.4, atKm: 3.12 });
+  const rs = runningSummary(d).refs.find((r) => r.sessionId === a.id);
+  assert.deepEqual(rs.partial, { id: '5k', ofKm: 12.4, atKm: 3.12 });
+  assert.match(reportText(buildAnalysis(d, T)), /- 5 km — 24:50 — .*mejor tramo de 5 km dentro de una carrera de 12,4 km\)/);
+  // Sin parciales en los datos, ninguna referencia ni explicación los menciona (nada cambia en las antiguas)
+  const p1 = predictFor(dPlain, 5).prediction;
+  assert.ok(p1.efforts.every((x) => x.partial === null && x.km === x.wholeKm && x.sec === x.wholeSec));
+  assert.ok(!p1.why.data.some((r) => r.label === 'Mejores tramos'));
+  assert.doesNotMatch(p1.why.rule, /mejor tramo/);
+});
+
+test('C4: una sola vez por carrera (la carrera o su tramo, nunca los dos); a ritmo uniforme cuenta la carrera entera', () => {
+  const f = F7();
+  const even = imported(ago(8), [{ km: 12, pace: 310 }]);
+  f.sessions.push(even);
+  const d = data(f);
+  const ctx = analyzeRuns(d);
+  const ids = ctx.valid.filter((e) => e.source === 'run').map((e) => e.sessionId);
+  assert.equal(new Set(ids).size, ids.length, 'un esfuerzo por sesión');
+  assert.equal(ctx.valid.filter((e) => e.source === 'run').length, f.sessions.length);
+  // Ritmo uniforme: sus tramos existen (Récords los usa) pero T / D^1,06 favorece a la carrera entera
+  assert.ok(runPartialsBySession(d, 3).get(even.id).some((x) => x.id === '5k'));
+  const [e] = effortOf(d, even.id);
+  assert.equal(e.partial, null);
+  assert.equal(e.km, 12);
+});
+
+test('C4 regresión: un resultado de tu contexto que es la carrera entera sigue siendo la misma aunque cuente su mejor tramo', () => {
+  const f = F7();
+  const a = f.sessions.at(-1);
+  // El 10 km… aquí la misma carrera de 12,4 km apuntada en tu contexto (mismo día, misma distancia y tiempo)
+  f.context = [result(a.date, 'day', 12.4, a.movingSec)];
+  const d = data(f);
+  const ctx = analyzeRuns(d);
+  assert.equal(effortOf(d, a.id)[0].partial?.id, '5k', 'cuenta su mejor 5 km');
+  assert.equal(ctx.duplicates.length, 1, 'antes del arreglo se comparaba con el tramo (5 km) y se contaba dos veces');
+  assert.equal(ctx.duplicates[0].sessionId, a.id);
+  assert.equal(ctx.valid.filter((e) => e.source === 'context').length, 0);
+  assert.equal(ctx.volumeKm, analyzeRuns(data(F7())).volumeKm, 'tampoco suma dos veces al volumen');
+});
+
+test('C4: el tramo de 1 km nunca cuenta; con la carrera entera sospechosa, sus tramos tampoco', () => {
+  // 4 km con un km muy rápido: solo tiene tramo de 1 km
+  const four = imported(ago(6), [{ km: 1.5, pace: 380 }, { km: 1, pace: 200 }, { km: 1.5, pace: 380 }]);
+  assert.ok(four.bestEfforts.items['1k']);
+  const f = F1();
+  f.sessions.push(four);
+  const d = data(f);
+  assert.equal(runPartialsBySession(d, 3).has(four.id), false);
+  assert.equal(effortOf(d, four.id)[0].partial, null);
+  assert.ok(analyzeRuns(d).valid.every((e) => e.partial?.id !== '1k'));
+  // Carrera entera con un ritmo imposible (más lenta de 20:00 /km con su tiempo guardado): fuera, con sus tramos
+  const slow = twelve(ago(4));
+  slow.movingSec = 12.4 * 1300;
+  slow.bestEfforts = { ...slow.bestEfforts, basis: { km: 12.4, sec: slow.movingSec } };
+  const g = F1();
+  g.sessions.push(slow);
+  const ds = data(g);
+  assert.ok(runPartialsBySession(ds, 3).get(slow.id).some((x) => x.id === '5k'), 'el tramo es válido por sí solo');
+  assert.equal(effortOf(ds, slow.id).length, 0);
+  assert.ok(analyzeRuns(ds).suspect.some((x) => x.sessionId === slow.id && x.why === 'slow'));
+});
+
+test('C4: editar la distancia o el tiempo de la importada la devuelve a la carrera entera; deshacerlo recupera el tramo', () => {
+  const f = F7();
+  const a = f.sessions.at(-1);
+  a.distanceKm = 12.5;
+  assert.equal(effortOf(data(f), a.id)[0].partial, null);
+  assert.equal(effortOf(data(f), a.id)[0].km, 12.5);
+  a.distanceKm = 12.4;
+  assert.equal(effortOf(data(f), a.id)[0].partial?.id, '5k');
+});
+
+test('C4: Objetivos, Tiempos previstos, Eventos, récords y el informe dicen lo mismo con un tramo en la base', () => {
+  // Sin el 5 km rápido de F1 (4:50 /km): así el récord de 5 km también es el tramo
+  const f = F7();
+  f.sessions = f.sessions.filter((x) => x.distanceKm !== 5);
+  const d = data({ ...f, races: [raceOf('5k', 25 * 60)] });
+  const p = predictFor(d, 5).prediction;
+  assert.ok(p.efforts.some((e) => e.partial));
+  const base = baseOf(p);
+  assert.deepEqual(baseOf(predictRaces(d).predictions['5k']), base);
+  const goal = runGoal(5, 24 * 60);
+  assert.deepEqual(goalProgress(d, goal).prediction, base);
+  assert.deepEqual(racePrediction(d, raceOf('5k', 25 * 60)).base, base);
+  assert.deepEqual(checkTarget(d, 5, 24 * 60).prediction && baseOf(checkTarget(d, 5, 24 * 60).prediction), base);
+  const a = buildAnalysis(d, T);
+  assert.equal(a.running.predictions.find((x) => x.id === '5k').mid, p.mid);
+  assert.deepEqual(a.events[0].prediction.base, base);
+  // El récord de 5 km es el mismo tramo (una sola regla) y la predicción lo cita como tal
+  const rec = enduranceRecords(d).run.best['5k'];
+  assert.equal(rec.how, 'partial');
+  assert.equal(rec.timeSec, 1490);
+  assert.match(p.why.data.find((r) => /^Tu récord/.test(r.label)).value, /mejor tramo de una carrera de 12,4 km/);
 });

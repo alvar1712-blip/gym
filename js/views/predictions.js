@@ -355,9 +355,14 @@ const MAX_HISTORY_SHOWN = 5;
 /** Un esfuerzo de la base o una referencia histórica: abre la carrera registrada o el resultado de tu contexto. */
 function effortItem(e) {
   const ctx = e.source === 'context';
-  const tags = [e.old ? 'referencia histórica' : ctx ? 'de tu contexto' : null, e.interrupted ? 'antes de un parón' : null].filter(Boolean);
+  const tags = [
+    e.old ? 'referencia histórica' : ctx ? 'de tu contexto' : null,
+    // Regla 1c: el mejor tramo de una carrera importada (km y tiempo son los del tramo)
+    e.partial ? `mejor tramo de una carrera de ${fmtNum(e.partial.ofKm, 2)} km` : null,
+    e.interrupted ? 'antes de un parón' : null,
+  ].filter(Boolean);
   return h('button.list-item.prd-effort', {
-    type: 'button', dataset: { session: e.sessionId ?? '', entry: e.entryId ?? '', source: e.source }, onClick: () => navigate(effortHref(e)),
+    type: 'button', dataset: { session: e.sessionId ?? '', entry: e.entryId ?? '', source: e.source, ...(e.partial ? { partial: e.partial.id } : {}) }, onClick: () => navigate(effortHref(e)),
   },
     h('span.prd-effort-emoji', { 'aria-hidden': 'true' }, ctx ? '🏁' : '🏃'),
     h('span.list-item-main',
@@ -380,7 +385,7 @@ function basisView(r) {
     r.history.length ? h('h3.prd-basis-sub', 'Referencias históricas') : null,
     r.history.length ? h('div.list.prd-efforts.prd-history', r.history.slice(0, MAX_HISTORY_SHOWN).map((e) => effortItem(e))) : null,
     r.duplicates.length ? h('p.prd-note.prd-dup', keep(`No se cuenta dos veces: ${r.duplicates.map((x) => `${x.label} (${x.when}) de tu contexto es la misma carrera que la registrada el ${x.runWhen}`).join('; ')}.`)) : null,
-    h('p.prd-note', `Se usan tus ${TOP_N} mejores carreras de ${MIN_KM} km o más de las últimas ${WINDOW_WEEKS} semanas, con su tiempo en movimiento; las más recientes y de distancia más parecida pesan más. Solo cuenta la carrera: el senderismo y otros deportes no.`),
+    h('p.prd-note', `Se usan tus ${TOP_N} mejores carreras de ${MIN_KM} km o más de las últimas ${WINDOW_WEEKS} semanas, con su tiempo en movimiento (de una carrera importada, su mejor tramo continuo si es mejor referencia; una sola vez por carrera); las más recientes y de distancia más parecida pesan más. Solo cuenta la carrera: el senderismo y otros deportes no.`),
     h('p.prd-note', 'Los resultados de carrera de tu contexto también cuentan: los recientes, como una carrera más; los anteriores, como referencia histórica con menos peso cuanto más antiguos y la mitad si después hubo un parón. Tu historial importa, pero tu estado reciente importa más.'),
     h('p.prd-note', `Media y maratón dependen también del volumen: con menos de ${VOLUME.half.weeklyKm} km/sem o una tirada de menos de ${VOLUME.half.longKm} km (media), o de ${VOLUME.marathon.weeklyKm} km/sem y ${VOLUME.marathon.longKm} km (maratón), la estimación sale más lenta y con menos confianza.`));
 }

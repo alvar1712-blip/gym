@@ -18,6 +18,13 @@
 //     casi siempre un tiempo mal apuntado, p. ej. 31 min escritos en la casilla de las horas = 31 h). Las que no
 //     cuentan por el ritmo salen en `suspect` para poder revisarlas. El esfuerzo de una carrera es su tiempo
 //     en movimiento en su distancia. Menos de 2 válidos → ok:false, reason 'datos insuficientes'.
+//  1c. Mejores tramos (ronda 8, C4): de una carrera importada con parciales válidos (stats.runPartialsBySession, la
+//     misma regla que Récords: mejor tramo continuo de 5 km, 10 km, media o maratón dentro de una carrera más larga,
+//     con su tiempo transcurrido; el de 1 km nunca, por debajo de MIN_KM) cuenta como esfuerzo el candidato con menor
+//     T / D^1,06 entre la carrera entera y sus tramos (empate → la carrera entera). UNO por carrera: nunca la carrera
+//     y su tramo a la vez. La carrera entera tiene que pasar antes los filtros de la regla 1 (si su ritmo es
+//     imposible, sus tramos tampoco cuentan). El volumen y la tirada más larga usan siempre la carrera entera, y un
+//     resultado de tu contexto es «la misma carrera» si coincide con la carrera ENTERA (wholeKm, wholeSec).
 //  2. Base: los 3 mejores esfuerzos por rendimiento equivalente de Riegel (T / D^1,06, menor = mejor; empate → el más
 //     reciente). La misma base para todas las distancias.
 //  3. Para una distancia D: cada esfuerzo predice tᵢ = Tᵢ × (D / Dᵢ)^k y pesa
@@ -68,7 +75,7 @@ import {
   addDays, diffDays, todayStr, isDateStr, fmtDate, fmtNum, fmtRaceTime, fmtPaceKm, fmtRaceRange, fmtPaceRange, fmtTimeWords,
 } from './util.js';
 import { riegel, pace, RUN_PACE_MIN, RUN_PACE_MAX, RIEGEL_K } from './calc.js';
-import { runPaceSeries, enduranceRecords, RACE_DISTANCES } from './stats.js';
+import { runPaceSeries, runPartialsBySession, enduranceRecords, RACE_DISTANCES } from './stats.js';
 import { raceResults, normalizeAll, entryRange, entryTitle, entryWhen, approxLabel, matchesRun, RESULT_DUP_TOL } from './context-logic.js';
 
 // ===========================================================================
@@ -328,7 +335,8 @@ export const canPredict = (ctx) => ctx.valid.length >= MIN_VALID || (ctx.valid.l
  *   short, implausible, slow}, contextExcluded:{short}, contextUsed, suspect:Suspect[], breaks, weeklyKm, volumeKm,
  *   volumeRuns, longest:{km, sec, date, sessionId, entryId}|null, longestRecentKm, records }}
  *  Effort = { source:'run'|'context', sessionId|null, entryId|null, date, when, km, sec, pace (s/km), age (días),
- *    score (T / D^1,06), old (referencia histórica), interrupted (breakAfter)|null, label «10 km en 44:30 (4:27/km)» }
+ *    score (T / D^1,06), old (referencia histórica), interrupted (breakAfter)|null, label «10 km en 44:30 (4:27/km)»,
+ *    partial: { id, ofKm, atKm }|null (regla 1c: km y sec son los del tramo), wholeKm, wholeSec (la carrera entera) }
  *  valid: carreras registradas y resultados de tu contexto de las últimas 12 semanas; history: resultados anteriores.
  *  excluded (carreras registradas): implausible = más rápidas de 2:30 /km; slow = más lentas de 20:00 /km.
  *  Suspect = { source, sessionId|null, entryId|null, date, km, sec, pace, why:'fast'|'slow', label } (para revisarlas).
@@ -339,21 +347,23 @@ export function analyzeRuns(data, opts = {}) {
   const today = todayOf(d, opts);
   // Memo por objeto `data` y «hoy» (la tendencia de un objetivo pide ~12 fechas): como stats.getIndex, se invalida si
   // cambian las listas de sesiones o de contexto (otra lista o distinta longitud). El ctx devuelto es de solo lectura.
-  if (d !== data) return buildRuns(d, today);
+  if (d !== data) return buildRuns(d, today, runPartialsBySession(d, MIN_KM));
   let m = RUNS_MEMO.get(d);
   if (!m || m.sessions !== d.sessions || m.sessionsLen !== lenOf(d.sessions) || m.context !== d.context || m.contextLen !== lenOf(d.context)) {
     m = { sessions: d.sessions, sessionsLen: lenOf(d.sessions), context: d.context, contextLen: lenOf(d.context), byDay: new Map() };
     RUNS_MEMO.set(d, m);
   }
   let ctx = m.byDay.get(today);
-  if (!ctx) { ctx = buildRuns(d, today); m.byDay.set(today, ctx); }
+  // Los mejores tramos no dependen de «hoy»: una vez por `data` (las fotos de la tendencia los reutilizan)
+  if (!m.partials) m.partials = runPartialsBySession(d, MIN_KM);
+  if (!ctx) { ctx = buildRuns(d, today, m.partials); m.byDay.set(today, ctx); }
   return ctx;
 }
 
 const RUNS_MEMO = new WeakMap();
 const lenOf = (x) => (Array.isArray(x) ? x.length : x instanceof Map ? x.size : x && typeof x === 'object' ? Object.keys(x).length : 0);
 
-function buildRuns(d, today) {
+function buildRuns(d, today, partials) {
   const from = addDays(today, -(WINDOW_DAYS - 1));
   const volumeFrom = addDays(today, -(VOLUME_DAYS - 1));
   const runs = runPaceSeries(d).filter((a) => a.x <= today && a.km > 0 && a.sec > 0);
@@ -388,9 +398,19 @@ function buildRuns(d, today) {
       suspect.push({ source: 'run', sessionId: a.sessionId, entryId: null, date: a.x, km: a.km, sec: a.sec, pace: p, why, label: `${kmTxt(a.km)} en ${timeTxt(a.sec)}` });
       continue;
     }
+    // Regla 1c: de una carrera importada cuenta su mejor tramo continuo (≥ MIN_KM) si es mejor referencia que la
+    // carrera entera (menor T / D^k; empate → la carrera entera). Uno solo por carrera: nunca la carrera y su tramo.
+    let best = { km: a.km, sec: a.sec, score: a.sec / a.km ** K, partial: null };
+    for (const x of partials.get(a.sessionId) || []) {
+      const score = x.sec / x.km ** K;
+      if (plausibleRunPace(x.sec / x.km) && score < best.score - EPS) best = { km: x.km, sec: x.sec, score, partial: { id: x.id, ofKm: x.ofKm, atKm: x.atKm } };
+    }
+    const bp = pace(best.sec, best.km);
     valid.push({
-      source: 'run', sessionId: a.sessionId, entryId: null, date: a.x, when: dayTxt(a.x), km: a.km, sec: a.sec, pace: p,
-      age: diffDays(a.x, today), score: a.sec / a.km ** K, old: false, interrupted: breakAfter(a.x, { breaks, today }), label: label(a.km, a.sec, p),
+      source: 'run', sessionId: a.sessionId, entryId: null, date: a.x, when: dayTxt(a.x), km: best.km, sec: best.sec, pace: bp,
+      age: diffDays(a.x, today), score: best.score, old: false, interrupted: breakAfter(a.x, { breaks, today }),
+      partial: best.partial, wholeKm: a.km, wholeSec: a.sec,
+      label: best.partial ? `${label(best.km, best.sec, bp)} · mejor tramo de una carrera de ${kmTxt(a.km)}` : label(a.km, a.sec, p),
     });
   }
 
@@ -401,7 +421,9 @@ function buildRuns(d, today) {
       suspect.push({ source: 'context', sessionId: null, entryId: r.id, date: r.date, km: r.km, sec: r.sec, pace: p, why: p < MIN_PACE ? 'fast' : 'slow', label: `${kmTxt(r.km)} en ${timeTxt(r.sec)}` });
       continue;
     }
-    const same = valid.find((e) => e.source === 'run' && matchesRun(r, e));
+    // Contra la carrera ENTERA (no contra su mejor tramo): un 10 km apuntado sigue siendo la misma carrera que los
+    // 10,3 km importados aunque de ellos cuente su mejor 5 km
+    const same = valid.find((e) => e.source === 'run' && matchesRun(r, { date: e.date, km: e.wholeKm, sec: e.wholeSec }));
     if (same) {
       duplicates.push({ entryId: r.id, sessionId: same.sessionId, label: `${kmTxt(r.km)} en ${timeTxt(r.sec)}`, when: r.precision === 'day' ? dayTxt(r.date) : r.when, runWhen: same.when });
       continue;
@@ -519,7 +541,7 @@ export function predictDistance(ctx, km, race = raceFor(km)) {
   const status = !finite ? 'invalid' : !coherent ? 'incoherent' : tentative ? 'tentative' : 'ok';
 
   const rec = race ? ctx.records?.best?.[race.id] ?? null : null;
-  const record = rec ? { timeSec: rec.timeSec, date: rec.date, when: rec.when, origin: rec.origin, source: rec.source, estimated: !!rec.estimated, fromKm: rec.fromKm, sessionId: rec.sessionId, entryId: rec.entryId } : null;
+  const record = rec ? { timeSec: rec.timeSec, date: rec.date, when: rec.when, origin: rec.origin, source: rec.source, estimated: !!rec.estimated, how: rec.how ?? null, fromKm: rec.fromKm, sessionId: rec.sessionId, entryId: rec.entryId } : null;
   const p = {
     id: race ? race.id : 'custom', km: D, label: race ? race.label : kmTxt(D), phrase: race ? race.phrase : `en ${kmTxt(D)}`,
     noun, profile, k, adjusted: !!volume && volume.short > EPS, volume, efforts, midExact,
@@ -534,6 +556,8 @@ export function predictDistance(ctx, km, race = raceFor(km)) {
 }
 
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+/** Regla 1c en palabras (explicación de la predicción). */
+export const PARTIAL_RULE = 'De una carrera importada cuenta su mejor tramo continuo si es mejor referencia que la carrera entera (una sola vez por carrera).';
 const runWord = (n) => (n === 1 ? 'carrera válida reciente' : 'carreras válidas recientes');
 
 /** «10 km en 1:00:00 (may 2026)» de una referencia. */
@@ -629,6 +653,8 @@ function predictionWhy(ctx, p) {
     `Estimación actual (el número grande): la media ponderada de lo que predice cada esfuerzo. Rango probable: ± la dispersión de esas predicciones (desviación típica ponderada, aquí ±${pctTxt(p.spread)}), con un mínimo de ±${fmtNum(MIN_MARGIN * 100, 0)} %, redondeado a ${p.step} s; de la mejor estimación a la más prudente.`,
     `Si la dispersión pasa de ±${fmtNum(MAX_SPREAD * 100, 0)} %, tus carreras se contradicen y no se da una predicción.`,
   ];
+  const nPartial = p.efforts.filter((e) => e.partial).length;
+  if (nPartial) parts.push(`${PARTIAL_RULE} Ese tramo cuenta con su propia distancia, también para la confianza.`);
   const anyContext = (ctx.contextUsed || 0) > 0 || (ctx.duplicates || []).length > 0;
   if (anyContext) {
     parts.push(`Tus resultados de carrera de «Tu contexto» también cuentan: los de las últimas ${WINDOW_WEEKS} semanas, como una carrera más; los anteriores, como referencia histórica (como mucho ${HISTORY_TOP} por distancia), con un peso que sigue bajando con la antigüedad (a las ${WINDOW_WEEKS} semanas pesa la mitad que hoy y luego se reduce a la mitad cada 8 semanas, sin llegar a 0). Si un resultado es la misma carrera que una registrada, cuenta solo una vez. Tu historial importa, pero tu estado reciente importa más.`);
@@ -658,6 +684,7 @@ function predictionWhy(ctx, p) {
   for (const e of p.efforts.filter((x) => x.old || x.interrupted)) {
     data.push({ label: `Por qué pesa menos (${kmTxt(e.km)}, ${e.when})`, value: `${cap(lessWeight(e))}.` });
   }
+  if (nPartial) data.push({ label: 'Mejores tramos', value: PARTIAL_RULE });
   for (const x of p.duplicates) {
     data.push({ label: 'No se cuenta dos veces', value: `${x.label} (${x.when}, de tu contexto) es la misma carrera que la registrada el ${x.runWhen}: cuenta la registrada.` });
   }
@@ -677,7 +704,7 @@ function predictionWhy(ctx, p) {
   data.push({ label: 'k usado', value: kTxt(p.k) });
   data.push({
     label: 'Confianza',
-    value: `${p.confidenceLabel} — ${p.confidenceReasons.length ? p.confidenceReasons.join('; ') : `${n} esfuerzos de distancia parecida y coherentes entre sí${p.volume ? ', con volumen suficiente' : ''}`}`,
+    value: `${p.confidenceLabel} — ${p.confidenceReasons.length ? p.confidenceReasons.join('; ') : `${n} esfuerzos de distancia parecida y coherentes entre sí${p.volume ? ', con volumen suficiente' : ''}`}${nPartial ? ` (${nPartial === 1 ? 'uno es el mejor tramo' : `${nPartial} son el mejor tramo`} de una carrera importada, con su distancia)` : ''}`,
   });
   if (p.advice.improve) data.push({ label: 'Para mejorarla', value: p.advice.improve });
   if (p.record) {
@@ -685,7 +712,7 @@ function predictionWhy(ctx, p) {
     data.push({
       // Récord personal (la mejor de siempre, su antigüedad no le quita valor) ≠ estimación de hoy
       label: `Tu récord en ${p.noun.replace(/^(los|la|el) /, '')} (la mejor de siempre)`,
-      value: `${timeTxt(r.timeSec)} · ${r.when || fmtDate(r.date, 'full')}${r.origin ? ` · ${r.origin.toLowerCase()}` : ''}${r.estimated ? ` (a ritmo medio de una carrera de ${kmTxt(r.fromKm)})` : ''}`,
+      value: `${timeTxt(r.timeSec)} · ${r.when || fmtDate(r.date, 'full')}${r.origin ? ` · ${r.origin.toLowerCase()}` : ''}${r.how === 'partial' ? ` (mejor tramo de una carrera de ${kmTxt(r.fromKm)})` : r.estimated ? ` (a ritmo medio de una carrera de ${kmTxt(r.fromKm)})` : ''}`,
     });
   }
   return { rule: parts.join(' '), data };
@@ -738,7 +765,7 @@ export const REPORT_HISTORY_MAX = 3;
  * récords): las carreras recientes de la base y las referencias históricas más recientes (como mucho
  * REPORT_HISTORY_MAX), de lo más reciente a lo más antiguo, y el tiempo previsto hoy en cada distancia.
  * @returns {{ refs:[{ source:'run'|'context', sessionId, entryId, km, sec, when, whenLong, age, ageText, old,
- *   interrupted, effort, surface, elevationM }], predictions:[{ id, label, km, mid, midExact, low, high, status, usable,
+ *   interrupted, effort, surface, elevationM, partial:{id, ofKm, atKm}|null }], predictions:[{ id, label, km, mid, midExact, low, high, status, usable,
  *   confidence, confidenceCodes, method }], duplicates,
  *   historyTotal }}
  */
@@ -750,7 +777,7 @@ export function runningSummary(data, opts = {}) {
       source: e.source, sessionId: e.sessionId, entryId: e.entryId, km: e.km, sec: e.sec, when: e.when,
       whenLong: e.whenLong || fmtDate(e.date, 'full'), age: e.age, ageText: ageTxt(e.age), old: e.old,
       interrupted: e.interrupted ? e.interrupted.label : null, effort: e.effort ?? null, surface: e.surface ?? null,
-      elevationM: e.elevationM ?? null,
+      elevationM: e.elevationM ?? null, partial: e.partial ? { ...e.partial } : null,
     }));
   const predictions = canPredict(ctx)
     ? RACES.map((r) => {
@@ -895,7 +922,7 @@ export function baseOf(p) {
     status: p.status, usable: p.usable,
     refs: p.efforts.map((e) => ({
       source: e.source, sessionId: e.sessionId ?? null, entryId: e.entryId ?? null, date: e.date, km: e.km, sec: e.sec, share: e.share,
-      old: !!e.old, interrupted: !!e.interrupted,
+      old: !!e.old, interrupted: !!e.interrupted, partial: e.partial ? { ...e.partial } : null,
     })),
     note: p.advice?.note ?? null,
   };

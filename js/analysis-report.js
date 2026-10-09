@@ -215,7 +215,7 @@ function runRecordsSection(a) {
   const lines = RECORD_LABELS.map(([id, label]) => {
     const b = best[id];
     if (!b) return `- ${label} — sin marca`;
-    return `- ${label} — ${fmtDuration(b.timeSec)} — ${b.when} — ${ORIGIN_TXT[b.source] || ''}${b.estimated ? ` (estimado a ritmo medio desde una carrera de ${fmtNum(b.fromKm, 2)} km)` : ''}`;
+    return `- ${label} — ${fmtDuration(b.timeSec)} — ${b.when} — ${ORIGIN_TXT[b.source] || ''}${b.how === 'partial' ? ` (mejor tramo dentro de una carrera de ${fmtNum(b.fromKm, 2)} km)` : b.estimated ? ` (estimado a ritmo medio desde una carrera de ${fmtNum(b.fromKm, 2)} km)` : ''}`;
   });
   return section('RÉCORDS DE RUNNING (mi mejor marca de siempre en cada distancia; su antigüedad no le quita valor)', lines);
 }
@@ -229,7 +229,8 @@ function runPredictionSection(a) {
   if (!r || (!r.refs?.length && !r.predictions?.length)) return [];
   const lines = r.refs.map((x) => {
     const dist = Math.abs(x.km - 21.0975) < 0.001 ? 'Media maratón' : Math.abs(x.km - 42.195) < 0.001 ? 'Maratón' : `${fmtNum(x.km, 2)} km`;
-    const what = x.source === 'context' ? (x.old ? 'marca histórica, pesa menos por antigua' : 'resultado apuntado') : 'carrera registrada';
+    const what = x.source === 'context' ? (x.old ? 'marca histórica, pesa menos por antigua' : 'resultado apuntado')
+      : x.partial ? `mejor tramo de ${dist.replace(/^M/, 'm')} dentro de una carrera de ${fmtNum(x.partial.ofKm, 2)} km` : 'carrera registrada';
     return `- ${dist} — ${fmtDuration(x.sec)} — ${x.whenLong} (${x.ageText}; ${what})${x.interrupted ? ` · después hubo ${x.interrupted}${x.old ? '' : ' (pesa la mitad)'}` : ''}`;
   });
   if (r.historyTotal > REPORT_HISTORY_MAX) lines.push(`- (${r.historyTotal - REPORT_HISTORY_MAX} marcas históricas más antiguas sin listar)`);

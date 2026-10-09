@@ -46,7 +46,7 @@
 //    creó (p. ej. 1RM estimado de 90 × 3 frente a un objetivo de 80 × 5). status 'estimate', eta null.
 import { addDays, diffDays, weekStart, dateFromTs, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtRaceTime, fmtPace, fmtWeekRange, fmtSigned, round, plural, MONTH_SHORT, parseDate, fmtTimeWords } from './util.js';
 import { e1rm, setMetrics, riegel, linearRegression, dayIndex, movingAverage, makeBodyweightFn, RIEGEL_K } from './calc.js';
-import { exerciseHistory, runPaceSeries, bikeSpeedSeries, swimPaceSeries, hikePaceSeries } from './stats.js';
+import { exerciseHistory, runPaceSeries, bikeSpeedSeries, swimPaceSeries, hikePaceSeries, runMarkFor } from './stats.js';
 import { bwPoints, bwTrend, BW_TREND } from './activity-logic.js';
 import { formatSet, fmtLastre } from './session-logic.js';
 import { defaultSettings } from './seed.js';
@@ -529,7 +529,8 @@ const weekSnapDate = (date, today) => { const sun = addDays(weekStart(date), 6);
  * Análisis y el informe. «Actual» = predictFor(hoy).mid; veredicto = checkTarget (probable · ajustado · hoy no);
  * tendencia = regresión de las fotos del motor al final de cada semana con carreras válidas (≥ 3 km, ritmo creíble);
  * inicio = la foto el día en que se creó (o la primera semana con previsión después). Conseguido: una carrera de la
- * distancia o más, desde que se creó, por debajo del tiempo a ritmo medio y con un ritmo creíble.
+ * distancia o más, desde que se creó, con un ritmo creíble y cuya marca en la distancia (stats.runMarkFor, la regla de
+ * Récords: completa, mejor tramo de una importada o a ritmo medio) baja del objetivo.
  */
 function runTimeModel(data, goal, today, { D, T, acts, Dtxt, createdDate }) {
   const opts = { today };
@@ -542,14 +543,22 @@ function runTimeModel(data, goal, today, { D, T, acts, Dtxt, createdDate }) {
   const valid = acts.filter((a) => a.km + EPS >= RUN_MIN_KM && plausibleRunPace(a.sec / a.km));
   const records = valid.map((a) => ({ date: a.x, value: null, label: runTxt(a), sessionId: a.sessionId }));
 
+  // Conseguido: la misma regla que Récords (stats.runMarkFor): la carrera completa, su mejor tramo si es una importada
+  // con parciales (solo en las distancias de los récords) o, si no, a su ritmo medio
   let achieved = null;
+  let byId = null;
   for (const a of acts) {
     if (createdDate && a.x < createdDate) continue;
     if (a.km + EPS < D || !plausibleRunPace(a.sec / a.km)) continue;
-    const scaled = Math.round((a.sec * D) / a.km);
-    if (scaled < T) {
-      const est = a.km > D * 1.02;
-      achieved = { date: a.x, label: est ? `${runTxt(a)}: ${Dtxt} a ritmo medio en ${fmtDuration(scaled)}` : runTxt(a) };
+    if (!byId) byId = new Map((Array.isArray(data?.sessions) ? data.sessions : []).map((s) => [s?.id, s]));
+    const rec = byId.get(a.sessionId) || { kind: 'run', distanceKm: a.km, movingSec: a.sec };
+    const mk = runMarkFor(rec, D);
+    if (!mk) continue;
+    const t = Math.round(mk.timeSec);
+    if (t < T) {
+      const label = mk.how === 'partial' ? `${runTxt(a)}: mejor tramo de ${Dtxt} en ${fmtDuration(t)}`
+        : mk.how === 'estimated' ? `${runTxt(a)}: ${Dtxt} a ritmo medio en ${fmtDuration(t)}` : runTxt(a);
+      achieved = { date: a.x, label };
       break;
     }
   }

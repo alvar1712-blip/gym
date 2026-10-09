@@ -12,7 +12,7 @@ import {
   recomputeCount, isApprox,
 } from '../../js/best-efforts.js';
 import { readActivityFile, pointMetrics } from '../../js/import-parse.js';
-import { itemFromEntry, itemRecord, setItemField, setItemKind } from '../../js/import-logic.js';
+import { itemFromEntry, itemRecord, setItemField, setItemKind, splitsNote } from '../../js/import-logic.js';
 import { RECORD_DISTANCES } from '../../js/stats.js';
 import { buildFitActivity, gpxFromPoints, tcxFromPoints, makeTrack, noise } from '../fixtures/import/builders.mjs';
 
@@ -265,6 +265,37 @@ test('10. solo vueltas: autovueltas de 1 km dan 5 y 10 km; vuelta sin tiempo tot
   assert.equal(recT.bestEfforts.items['10k'], undefined, 'la última vuelta no tiene tiempo total');
 });
 
+test('10b. solo vueltas con descansos de 0 m (series): el descanso cuenta; nunca más rápido por la pausa (FIT y TCX)', async () => {
+  // 6 × (1 km en 4:00 + 3 min parado, vuelta de 0 m). Un 5 km continuo cruza 4 descansos: 5·240 + 4·180 = 1920 s.
+  const laps = [];
+  let at = T0;
+  for (let k = 0; k < 6; k++) {
+    laps.push({ start: at, elapsedSec: 240, timerSec: 240, distanceM: 1000 }); at += 240000;
+    laps.push({ start: at, elapsedSec: 180, timerSec: 180, distanceM: 0 }); at += 180000;
+  }
+  const it = await itemFrom('series.fit', buildFitActivity({ points: [], records: false, laps, sport: 1 }));
+  const rec = itemRecord(it, { id: 'a_s', now: 1 });
+  assert.equal(rec.bestEfforts.src, 'laps');
+  assert.equal(rec.bestEfforts.items['1k'].sec, 240);
+  assert.equal(rec.bestEfforts.items['5k'].sec, 1920, 'los descansos de 0 m están dentro del tramo');
+  assert.equal(rec.laps.length, 12, 'las vueltas de descanso se guardan (m: 0)');
+  assert.deepEqual(rec.laps[1], { at: 240, sec: 180, timerSec: 180, m: 0 });
+  // TCX: el tiempo de cada vuelta llega hasta el inicio de la siguiente (la de descanso)
+  const tcx = `<TrainingCenterDatabase><Activities><Activity Sport="Running"><Id>2026-09-06T06:00:00Z</Id>${
+    laps.map((l) => `<Lap StartTime="${new Date(l.start).toISOString()}"><TotalTimeSeconds>${l.elapsedSec}</TotalTimeSeconds><DistanceMeters>${l.distanceM}</DistanceMeters></Lap>`).join('')
+  }</Activity></Activities></TrainingCenterDatabase>`;
+  const recT = itemRecord(await itemFrom('series.tcx', new TextEncoder().encode(tcx)), { id: 'a_st', now: 1 });
+  assert.equal(recT.bestEfforts.items['5k'].sec, 1920);
+  // Hueco entre vueltas (el reloj no lo cubre con ninguna vuelta): también cuenta, por `at`
+  const gap = [0, 1, 2, 3, 4].map((k) => ({ at: k * 300 + (k >= 2 ? 120 : 0), sec: 300, timerSec: 300, m: 1000 }));
+  assert.equal(bestEffortsFromLaps(gap)['5k'].sec, 1620);
+  assert.equal(bestEffortsFromLaps(gap)['5k'].pausedSec, 120);
+  // Parciales por km: el descanso se suma al km siguiente (el último, al último km)
+  const sp = splitsOf({ kind: 'run', distanceKm: 6, movingSec: rec.movingSec, laps: rec.laps, bestEfforts: rec.bestEfforts });
+  assert.deepEqual(sp.map((x) => [x.km, x.sec]), [[1, 240], [2, 420], [3, 420], [4, 420], [5, 420], [6, 600]]);
+  assert.equal(sp[5].cumSec, 6 * 420);
+});
+
 // ---------------------------------------------------------------------------
 // Track compacto
 // ---------------------------------------------------------------------------
@@ -453,6 +484,29 @@ test('14. distancia o tiempo cambiados en la vista previa, o serie que no cuadra
   // Sin tocar nada: sí
   const d = await mk();
   assert.ok('bestEfforts' in itemRecord(d, { id: 'd', now: 1 }));
+});
+
+test('14b. volver a escribir la distancia que se ve (2 decimales) no es cambiarla: ni en la revisión ni al editar', async () => {
+  // 6,234 km: la casilla muestra «6,23». Tocarla y dejar «6,23» no debe perder los parciales para siempre.
+  const pts = fullPoints(profile([{ km: 2, pace: 330 }, { km: 4.234, pace: 300 }]));
+  const it = await itemFrom('r.fit', buildFitActivity({ points: pts, sport: 1 }));
+  assert.equal(it.distanceKm, 6.234);
+  setItemField(it, 'distanceKm', 6.23);
+  setItemField(it, 'movingSec', it.movingSec); // tocar el tiempo y dejar el mismo
+  const rec = itemRecord(it, { id: 'r', now: 1 });
+  assert.ok(rec.bestEfforts, 'se guardan los parciales');
+  assert.equal(rec.bestEfforts.basis.km, 6.23);
+  assert.equal(splitsNote(it), 'Se guardan los parciales (tiempo y distancia, sin el recorrido).');
+  near(effortsOf(rec)['5k'].sec, 1523, 1, 'parcial válido (4,234 km a 5:00 + 0,766 a 5:30)');
+  // Después, en el formulario: se cambia y se vuelve a escribir lo que se ve → vuelve a contar
+  const saved = itemRecord(await itemFrom('r.fit', buildFitActivity({ points: pts, sport: 1 })), { id: 's', now: 1 });
+  assert.equal(saved.distanceKm, 6.234);
+  saved.distanceKm = 6.5;
+  assert.equal(effortsOf(saved), null, 'cambiada de verdad: no cuenta');
+  saved.distanceKm = 6.23;
+  assert.ok(effortsOf(saved)?.['5k'], 'la distancia que se ve: cuenta');
+  saved.distanceKm = 6.24;
+  assert.equal(effortsOf(saved), null, '6 m más: ya es otra distancia');
 });
 
 test('rendimiento: importar una actividad de 4 h y otra de 12 h a 1 Hz (lectura + registro)', async () => {
