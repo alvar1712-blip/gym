@@ -397,7 +397,12 @@ test('registro importado: misma forma que el formulario de actividad + startedAt
   const now = Date.UTC(2026, 8, 26, 10);
   const rec = itemRecord(it, { id: 'a_test', now });
   const formRec = buildRecord(emptyForm('run', { date: '2026-09-20' }), null, { id: 'a_form', now });
-  assert.deepEqual(Object.keys(rec).sort(), [...Object.keys(formRec), 'source'].sort(), 'mismas claves que el formulario (+ source)');
+  // Mismas claves que el formulario + source y, por ser una carrera con puntos con hora, sus parciales (track y
+  // bestEfforts; laps no, porque un GPX no tiene vueltas): tests/unit/best-efforts.test.mjs.
+  assert.deepEqual(Object.keys(rec).sort(), [...Object.keys(formRec), 'source', 'track', 'bestEfforts'].sort(), 'mismas claves que el formulario (+ source y parciales)');
+  assert.deepEqual(Object.keys(itemRecord(it, { id: 'a_test', now, derived: false })).sort(), [...Object.keys(formRec), 'source'].sort(), 'sin derivados: solo el formulario + source');
+  assert.equal(rec.track.src, 'gps');
+  assert.deepEqual(rec.bestEfforts.basis, { km: rec.distanceKm, sec: rec.movingSec });
   assert.equal(rec.id, 'a_test');
   assert.equal(rec.kind, 'run');
   assert.equal(rec.status, 'done');

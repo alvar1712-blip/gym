@@ -1,5 +1,7 @@
 // Mide el arranque de la app (pantalla Hoy) con historiales realistas de distinta longitud.
-// Uso: npm run perf [-- --sets=3m,1y,2y,5y --runs=5 --cpu=4]
+// Uso: npm run perf [-- --sets=3m,1y,2y,5y --runs=5 --cpu=4 --tracks=1]
+// --tracks=1 (por defecto): las carreras llevan parciales importados (track, laps y bestEfforts de best-efforts.js,
+// serie de 1 Hz con ritmo variable: el peor caso de tamaño); --tracks=0 las deja como antes de la ronda 8 C.
 // Para cada historial: siembra los datos, abre la app `runs`+1 veces (la primera no cuenta) con la CPU frenada `cpu`
 // veces (Chromium) y da la mediana de:
 //   hoy     ms hasta que «Te toca hoy» está en pantalla
@@ -16,11 +18,15 @@ const SETS = (args.sets || '3m,1y,2y,5y').split(',');
 const RUNS = Number(args.runs || 5);
 const CPU = Number(args.cpu || 4);
 const MONTHS = { '3m': 3, '1y': 12, '2y': 24, '5y': 60 };
+const TRACKS = args.tracks !== '0';
 
 /** Siembra `months` meses de historial: fuerza 4 días/semana, carrera, bici, pesajes diarios, check-ins, ciclo. */
 function seed(page, months) {
-  return page.evaluate(async (months) => {
+  return page.evaluate(async ({ months, tracks }) => {
     const db = await import('./js/db.js');
+    const BE = tracks ? await import('./js/best-efforts.js') : null;
+    let s2 = 11; // generador aparte: con o sin parciales, el resto del historial es idéntico
+    const rnd2 = () => { s2 = (s2 * 16807) % 2147483647; return s2 / 2147483647; };
     const util = await import('./js/util.js');
     const { store } = window.__app;
     const templates = store.all('templates');
@@ -62,10 +68,27 @@ function seed(page, months) {
         }
       }
       if (dow === 2 || dow === 6) {
-        const km = dow === 6 ? 12 + rnd() * 6 : 6 + rnd() * 3; const sec = Math.round(km * (300 + rnd() * 40));
-        sessions.push({ id: `perf_a${n++}`, kind: 'run', date: d, planDate: d, templateId: null, templateName: '', status: 'done', startedAt: base, endedAt: base + sec * 1000,
+        let km = dow === 6 ? 12 + rnd() * 6 : 6 + rnd() * 3; let sec = Math.round(km * (300 + rnd() * 40));
+        let splits = {};
+        if (BE) {
+          // Serie de 1 Hz con el ritmo en paseo aleatorio y alguna parada: lo que guarda una carrera importada.
+          const n = sec + 1; const t = new Float64Array(n); const dd = new Float64Array(n);
+          let v = (km * 1000) / sec;
+          for (let k = 1; k < n; k++) {
+            v = Math.min(4.5, Math.max(2.4, v + (rnd2() - 0.5) * 0.3));
+            t[k] = base / 1000 + k; dd[k] = dd[k - 1] + (k % 900 < 20 ? 0 : v);
+          }
+          t[0] = base / 1000;
+          const series = BE.buildSeries({ t, d: dd, src: 'device' });
+          km = Math.round(dd[n - 1]) / 1000; sec = n - 1;
+          const laps = Array.from({ length: Math.floor(km) }, (_, k) => ({ at: k * 300, sec: 300, timerSec: 300, m: 1000 }));
+          const bestEfforts = BE.computeBestEfforts({ series, basis: { km, sec } });
+          splits = { track: BE.encodeTrack(series), laps, bestEfforts, source: { type: 'fit', fileName: `${d}.fit` } };
+        }
+        sessions.push({ ...splits, id: `perf_a${n++}`, kind: 'run', date: d, planDate: d, templateId: null, templateName: '', status: 'done', startedAt: base, endedAt: base + sec * 1000,
           durationMin: sec / 60, rpe: 6, notes: '', parentId: null, templateItemId: null, createdAt: base, updatedAt: base, distanceKm: Math.round(km * 100) / 100,
           movingSec: sec, elapsedSec: sec + 60, elevationM: 80, hrAvg: 150, hrMax: 175, subtype: dow === 6 ? 'long' : 'z2', feel: '' });
+        if (BE) sessions[sessions.length - 1].distanceKm = km; // la del track (la huella de bestEfforts)
       }
       if (dow === 4) {
         const km = 30 + rnd() * 30; const sec = Math.round(km * 120);
@@ -85,8 +108,10 @@ function seed(page, months) {
       { id: 'perf_g3', kind: 'bodyweight', title: 'Peso', titleAuto: true, targetKg: 76, direction: 'down', createdAt: now - 60 * 864e5, updatedAt: now, achievedAt: null, archived: false },
     ];
     await db.putStores({ sessions, bodyweight, checkins, cycle, goals, meta: [settings] });
-    return sessions.length;
-  }, months);
+    const runs = sessions.filter((x) => x.track);
+    const bytes = runs.reduce((a, x) => a + JSON.stringify({ track: x.track, laps: x.laps, bestEfforts: x.bestEfforts }).length, 0);
+    return { count: sessions.length, runs: runs.length, kb: Math.round(bytes / 1024), points: runs.reduce((a, x) => a + x.track.n, 0) };
+  }, { months, tracks: TRACKS });
 }
 
 const OBSERVE = () => {
@@ -118,7 +143,8 @@ const median = (xs) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2
       page.on('pageerror', (e) => console.error('pageerror', e.message));
       await page.goto(server.url);
       await page.waitForFunction(() => document.documentElement.classList.contains('ready'));
-      const count = await seed(page, MONTHS[set] ?? Number(set));
+      const { count, runs: tracked, kb, points } = await seed(page, MONTHS[set] ?? Number(set));
+      if (TRACKS) console.log(`  (${set}: ${tracked} carreras con parciales · ${points} puntos de track · ${kb} KB en JSON)`);
       const cdp = await context.newCDPSession(page);
       await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU });
       const runs = [];

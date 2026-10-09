@@ -409,7 +409,8 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   `import-parse.js` (detección por contenido; GPX/TCX con un parser XML propio para que el mismo código corra en
   Safari y en Node; FIT binario propio: file_id, session, lap, record, sport; métricas: tiempo en movimiento, desnivel
   con histéresis de 3 m, haversine), `import-logic.js` (puro: deporte → kind, registro con
-  `activity-logic.buildRecord` + `startedAt` + `source`, duplicados ±2 min / ±3 %). No se guardan puntos GPS.
+  `activity-logic.buildRecord` + `startedAt` + `source`, duplicados ±2 min / ±3 %). No se guardan puntos GPS;
+  las carreras guardan sus parciales compactos (`best-efforts.js`, docs/MEJORAS.md §2 «Parciales»).
 - **Calentamiento** (`session-logic.js`): `warmupPlan({ workWeight, reps, exercise, settings })` → `[{ pct, weight,
   reps }]`, `suggestedWarmup(se, exercise, settings, last)`, `warmupSetsFromPlan(plan, se, logType)`,
   `warmupIncrement`, `warmupReference`. UI plegada al final de la tarjeta del ejercicio (`session-view-card.js`).

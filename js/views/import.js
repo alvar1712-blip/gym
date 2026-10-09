@@ -267,6 +267,14 @@ export function mountImport(root) {
   function editFields(it, rebuild) {
     const k = it.kind;
     const out = [];
+    // Carreras: si se guardarán los parciales (se actualiza al cambiar la distancia o el tiempo).
+    const splitsEl = h('p.imp-source.imp-splits');
+    const syncSplits = () => {
+      const text = IL.splitsNote(it);
+      splitsEl.textContent = text || '';
+      splitsEl.hidden = !text;
+    };
+    syncSplits();
     const kindSeg = segmented({
       options: ACTIVITY_KINDS.map((x) => ({ value: x, label: KIND_UI[x].seg })),
       value: k,
@@ -296,7 +304,7 @@ export function mountImport(root) {
     out.push(h('div.grid-2.imp-grid', field('Fecha', dateInp), field('Hora de inicio', timeInp)));
     out.push(h('div.field',
       h('span.field-label', KIND_UI[k].durLabel),
-      durationInput({ seconds: it.movingSec, ariaLabel: KIND_UI[k].durLabel, onChange: (sec) => IL.setItemField(it, 'movingSec', sec) })));
+      durationInput({ seconds: it.movingSec, ariaLabel: KIND_UI[k].durLabel, onChange: (sec) => { IL.setItemField(it, 'movingSec', sec); syncSplits(); } })));
     const moveKinds = k === 'run' || k === 'bike' || k === 'hike';
     if (moveKinds) {
       out.push(h('div.field',
@@ -306,7 +314,10 @@ export function mountImport(root) {
     }
     const num = (label, key, unit, { decimals = 0, inputmode = 'numeric', toView = (v) => v, fromView = (v) => v } = {}) => field(label, numInput({
       value: it[key] != null ? toView(it[key]) : null, decimals, inputmode, suffix: unit, ariaLabel: `${label} (${unit})`,
-      onInput: (v) => IL.setItemField(it, key, v != null ? fromView(v) : null),
+      onInput: (v) => {
+        IL.setItemField(it, key, v != null ? fromView(v) : null);
+        if (key === 'distanceKm') syncSplits();
+      },
     }));
     if (k === 'swim') {
       out.push(num('Distancia', 'distanceKm', 'm', { toView: (v) => Math.round(v * 1000), fromView: (v) => (v > 0 ? v / 1000 : null) }));
@@ -329,6 +340,7 @@ export function mountImport(root) {
       rpePicker({ value: it.rpe, onChange: (v) => { it.rpe = v; } })));
     const pts = it.gpsPoints ? ` · ${plural(it.gpsPoints, 'punto GPS', 'puntos GPS')} (no se guardan)` : '';
     out.push(h('p.imp-source', `${FORMAT_LABEL[it.format] || ''} · ${it.label}${pts}`));
+    out.push(splitsEl);
     return out;
   }
 

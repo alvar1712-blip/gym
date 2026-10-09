@@ -2,10 +2,15 @@
 //   sportToKind: deporte del archivo → tipo de la app.
 //   itemFromEntry: resumen leído (import-parse.summarize) → borrador editable de la vista previa («item»).
 //   itemRecord: item → registro de la store 'sessions' con la MISMA forma que crea el formulario de actividad
-//     (activity-logic.buildRecord), más startedAt (ms) y source:{type, fileName}. No se guardan los puntos GPS.
+//     (activity-logic.buildRecord), más startedAt (ms) y source:{type, fileName}. No se guardan los puntos GPS; en
+//     las carreras se añaden la serie compacta distancia–tiempo (track), las vueltas (laps) y los mejores esfuerzos
+//     (bestEfforts) de best-efforts.js, si cuadran con la distancia y el tiempo del registro (importedSplits).
 //   updateDuplicates: marca «ya registrada» (o repetida en la misma importación) y la desmarca por defecto.
 import { emptyForm, buildRecord, cleanField, isActivityKind, primaryMetric, activityTitle } from './activity-logic.js';
 import { dateFromTs, isDateStr, normalize, fmtNum, fmtDuration } from './util.js';
+import {
+  encodeTrack, lapsForRecord, computeBestEfforts, seriesProblem, MATCH_TOL_M, MATCH_TOL_SHARE,
+} from './best-efforts.js';
 
 /** Subtipo (texto libre de «otra actividad») de las caminatas importadas. */
 export const WALK_SUBTYPE = 'Caminata';
@@ -131,6 +136,9 @@ export function itemFromEntry(entry, { key = '', today = null } = {}) {
     points: s.points || 0,
     gpsPoints: s.gpsPoints || 0,
     src: { movingSec: posOrNull(s.movingSec), timerSec: posOrNull(s.timerSec), elapsedSec: posOrNull(s.elapsedSec) },
+    // Serie distancia–tiempo y vueltas del archivo (solo en memoria; itemRecord guarda la versión compacta).
+    series: s.series || null,
+    laps: Array.isArray(s.laps) ? s.laps : [],
     edited: {},
     selected: false,
     valid: false,
@@ -230,11 +238,50 @@ export function itemForm(item) {
 }
 
 /**
+ * Parciales que se guardan con una carrera importada: { track?, laps?, bestEfforts? } (best-efforts.js).
+ * Solo si es carrera, el usuario no ha cambiado la distancia ni el tiempo en la vista previa y la serie (o las
+ * vueltas) acaba en la distancia del registro; si no, {} (y la tarjeta dice por qué: splitsNote).
+ */
+export function importedSplits(item, rec) {
+  if (item.kind !== 'run' || item.edited.distanceKm || item.edited.movingSec) return {};
+  const basis = { km: rec.distanceKm, sec: rec.movingSec };
+  if (!(basis.km > 0) || !(basis.sec > 0)) return {};
+  const { series, laps } = splitSources(item, basis.km);
+  const out = {};
+  const track = series ? encodeTrack(series) : null;
+  if (track) out.track = track;
+  if (laps) out.laps = laps;
+  const be = computeBestEfforts({ series, laps, basis });
+  if (be) out.bestEfforts = be;
+  return out;
+}
+
+/** Serie y vueltas (forma guardada) que cuadran con `km`; null las que no. */
+function splitSources(item, km) {
+  const series = seriesProblem(item.series, km) ? null : item.series;
+  let laps = lapsForRecord(item.laps, series ? series.t0 : null);
+  if (laps && !(km > 0 && Math.abs(laps.reduce((sum, l) => sum + l.m, 0) - km * 1000) <= Math.max(MATCH_TOL_M, MATCH_TOL_SHARE * km * 1000))) laps = null;
+  return { series, laps };
+}
+
+/**
+ * Texto para la revisión de una carrera: si se guardarán sus parciales o por qué no. null si no aplica (otro tipo,
+ * o el archivo no trae ni puntos con hora y distancia ni vueltas).
+ */
+export function splitsNote(item) {
+  if (item.kind !== 'run' || (!item.series && !lapsForRecord(item.laps))) return null;
+  if (item.edited.distanceKm || item.edited.movingSec) return 'Sin parciales: has cambiado la distancia o el tiempo.';
+  const { series, laps } = splitSources(item, item.distanceKm > 0 ? Math.round(item.distanceKm * 1000) / 1000 : null);
+  return series || laps ? 'Se guardan los parciales (tiempo y distancia, sin el recorrido).' : 'Sin parciales: el archivo no los trae completos.';
+}
+
+/**
  * Registro de la store 'sessions' (status 'done'), construido con activity-logic.buildRecord como el formulario,
  * más startedAt (ms), source {type, fileName}. En «otra actividad» (caminata) la distancia va a las notas,
- * porque ese tipo no tiene distancia.
+ * porque ese tipo no tiene distancia. En carreras, además, los parciales (importedSplits) salvo con
+ * `derived: false` (la comprobación de duplicados no los necesita y así no los calcula en cada cambio).
  */
-export function itemRecord(item, { id = null, now = Date.now() } = {}) {
+export function itemRecord(item, { id = null, now = Date.now(), derived = true } = {}) {
   const form = itemForm(item);
   const rec = buildRecord(form, null, { id, now });
   if (EXTRA_KINDS.includes(item.kind)) {
@@ -243,6 +290,7 @@ export function itemRecord(item, { id = null, now = Date.now() } = {}) {
   if (item.kind === 'other' && item.distanceKm > 0) rec.notes = `Distancia: ${fmtNum(item.distanceKm, 2)} km`;
   rec.startedAt = Number.isFinite(item.startedAt) ? item.startedAt : null;
   rec.source = { type: item.format, fileName: item.fileName };
+  if (derived) Object.assign(rec, importedSplits(item, rec));
   return rec;
 }
 
@@ -285,7 +333,7 @@ export function findDuplicate(rec, sessions) {
  * item.dup = null | { type:'saved', id, title, date, startedAt } | { type:'batch', key, label }
  */
 export function updateDuplicates(items, sessions, today = null) {
-  const recs = items.map((it) => (isActivityKind(it.kind) ? itemRecord(it, { id: `tmp_${it.key}`, now: 0 }) : null));
+  const recs = items.map((it) => (isActivityKind(it.kind) ? itemRecord(it, { id: `tmp_${it.key}`, now: 0, derived: false }) : null));
   items.forEach((it, i) => {
     let dup = null;
     if (recs[i]) {

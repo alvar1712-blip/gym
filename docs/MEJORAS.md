@@ -35,6 +35,24 @@ elevationLossM (desnivel −), altMaxM, hrAvg, hrMax, rpe, packKg, notes, templa
   marca «ya registrada» si existe una actividad del mismo tipo con `startedAt` a ±2 min o, si no tiene hora, la misma
   fecha con distancia y duración a ±3 %. Guardar crea registros normales (`status:'done'`) con
   `startedAt` (ms) y `source: { type:'gpx'|'tcx'|'fit', fileName }`. No se guardan los puntos GPS.
+- **Parciales de las carreras (ronda 8, C1+C2; `js/best-efforts.js`, puro).** Sin subir la versión de la BD ni
+  almacén nuevo: campos opcionales del registro, solo en `kind:'run'` (las actividades antiguas no los tienen y no se
+  migran). `track` = serie distancia–tiempo SIN coordenadas (dispositivo o, con GPS, los tramos en movimiento: la misma
+  distancia que el resumen), simplificada con un filtro de abanico (ε = 1 m) y codificada en base 36 (segundos y
+  decímetros; un «-» marca un intervalo original largo, p. ej. una pausa); `laps` (≥ 2 vueltas FIT/TCX:
+  `{at, sec, timerSec, m}`); `bestEfforts = {v, basis:{km, sec}, src:'track'|'laps', items:{1k|5k|10k|half|marathon:
+  {sec, atKm, pausedSec, approx}}}`, calculado una vez al importar con la serie completa. Solo se guardan si el usuario
+  no cambió distancia ni tiempo en la revisión (que lo dice: «Se guardan los parciales…» / «Sin parciales: …») y la
+  serie acaba en la distancia del registro (± máx(20 m, 1 %)) con ≤ 10 % de horas inválidas. Ventana más rápida exacta
+  sobre la interpolación lineal (dos pasadas O(n)), con tiempo TRANSCURRIDO (las pausas cuentan; quedarse quieto antes
+  de empezar no), sin ritmos < 2:30 /km, midiendo sin los metros de saltos del GPS (> 10 m/s) y descartando ventanas con
+  más del 1 % de ellos; `approx` si la separación de muestras en los bordes supera máx(5 s, 1 %). Solo vueltas: rachas
+  que suman X…X·1,005 + 5 m, todas con tiempo total. `effortsOf(rec)` devuelve los parciales VÁLIDOS (huella
+  `basis` = distancia y tiempo actuales; si se editan dejan de contar y vuelven al deshacer) y recalcula desde `track`
+  solo si sube `BEST_EFFORTS_VERSION` (memorizado por registro); `splitsOf(rec)` da los parciales por km. Tamaño
+  medido (perf, serie de 1 Hz con ritmo variable): ~1,6 KB por carrera de una hora (5 años: 522 carreras, 859 KB) y sin
+  cambio medible en el arranque. Las copias JSON los conservan en ida y vuelta (el formato no cambia; el CSV tampoco).
+  Pruebas: tests/unit/best-efforts.test.mjs, tests/e2e/import-splits.test.cjs.
 - Explicación breve en la pantalla de cómo exportar: Strava (web: «⋯ → Exportar GPX»; la app de Strava no exporta),
   Garmin Connect (web: «⚙ → Exportar original / GPX / TCX»), Apple (Salud no exporta entrenamientos sueltos: vía
   Strava si el reloj sincroniza, o apps como HealthFit/RunGap).

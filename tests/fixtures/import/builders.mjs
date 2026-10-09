@@ -235,14 +235,18 @@ function encode(f, value, bigEndian) {
  * FIT de actividad al estilo Garmin: file_id, device_info (desconocido), sport, event, records (con marcas de
  * tiempo comprimidas cuando el salto es < 32 s y campos de desarrollador), lap, session (big endian si se pide)
  * y activity.
+ * laps: [{ start (ms), elapsedSec, timerSec, distanceM }] para escribir varias vueltas (por defecto una sola con
+ * toda la actividad); records: false escribe solo vueltas y sesión (sin puntos). Sin puntos, start/end salen de las
+ * vueltas.
  */
 export function buildFitActivity({
   points, sport = 1, subSport = 0, name = '', session = {}, compressed = true, devFields = true, bigEndianSession = true,
-  enhanced = true, created = null,
+  enhanced = true, created = null, laps = null, records = true,
 }) {
   const w = new FitWriter();
-  const start = points[0].t;
-  const end = points[points.length - 1].t;
+  const lastLap = laps && laps.length ? laps[laps.length - 1] : null;
+  const start = points.length ? points[0].t : laps[0].start;
+  const end = points.length ? points[points.length - 1].t : lastLap.start + (lastLap.elapsedSec ?? lastLap.timerSec) * 1000;
   w.define(0, 0, [[0, T.enum], [1, T.uint16], [2, T.uint16], [3, T.uint32z], [4, T.uint32]]);
   w.data(0, { 0: 4, 1: 1, 2: 3121, 3: 123456789, 4: fitTs(created ?? start) });
   // device_info (23): mensaje que el lector no usa
@@ -260,7 +264,7 @@ export function buildFitActivity({
   w.define(4, 20, [[253, T.uint32], ...recFields], dev); // con marca de tiempo completa
   w.define(1, 20, recFields, dev); // para cabeceras comprimidas (local 0–3); sustituye a device_info
   let last = null;
-  for (const p of points) {
+  for (const p of records ? points : []) {
     const ts = fitTs(p.t);
     const vals = {
       253: ts, 0: p.lat != null ? semis(p.lat) : null, 1: p.lon != null ? semis(p.lon) : null,
@@ -273,11 +277,19 @@ export function buildFitActivity({
     last = ts;
   }
   const s = {
-    elapsedSec: (end - start) / 1000, timerSec: (end - start) / 1000, distanceM: points[points.length - 1].dist ?? null,
+    elapsedSec: (end - start) / 1000, timerSec: (end - start) / 1000,
+    distanceM: points.length ? points[points.length - 1].dist ?? null : laps.reduce((a, l) => a + l.distanceM, 0),
     hrAvg: null, hrMax: null, cadence: null, powerAvg: null, ascent: null, descent: null, maxAltM: null, ...session,
   };
   w.define(5, 19, [[253, T.uint32], [2, T.uint32], [7, T.uint32], [8, T.uint32], [9, T.uint32], [25, T.enum]]);
-  w.data(5, { 253: fitTs(end), 2: fitTs(start), 7: Math.round(s.elapsedSec * 1000), 8: Math.round(s.timerSec * 1000), 9: s.distanceM != null ? Math.round(s.distanceM * 100) : null, 25: sport });
+  const lapList = laps || [{ start, elapsedSec: s.elapsedSec, timerSec: s.timerSec, distanceM: s.distanceM }];
+  for (const l of lapList) {
+    const lapEnd = l.start + (l.elapsedSec ?? l.timerSec ?? 0) * 1000;
+    w.data(5, {
+      253: fitTs(lapEnd), 2: fitTs(l.start), 7: l.elapsedSec != null ? Math.round(l.elapsedSec * 1000) : null,
+      8: l.timerSec != null ? Math.round(l.timerSec * 1000) : null, 9: l.distanceM != null ? Math.round(l.distanceM * 100) : null, 25: sport,
+    });
+  }
   w.define(6, 18, [
     [253, T.uint32], [2, T.uint32], [5, T.enum], [6, T.enum], [7, T.uint32], [8, T.uint32], [9, T.uint32],
     [16, T.uint8], [17, T.uint8], [18, T.uint8], [20, T.uint16], [22, T.uint16], [23, T.uint16], [128, T.uint32], [44, T.uint16],

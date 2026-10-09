@@ -5,11 +5,15 @@
 // Cada parser devuelve una lista de «actividades leídas» (ParsedActivity):
 //   { format:'gpx'|'tcx'|'fit', sport:'texto del archivo', subSport, name, startTime (ms|null),
 //     points:[Point], totals:{ elapsedSec, timerSec, movingSec, distanceM, ascentM, descentM, altMaxM,
-//     hrAvg, hrMax, cadence, powerAvg, powerNp, poolLengthM } (lo que traiga el archivo; puede ir vacío) }
+//     hrAvg, hrMax, cadence, powerAvg, powerNp, poolLengthM } (lo que traiga el archivo; puede ir vacío),
+//     laps:[{ startT (ms|null), elapsedSec (tiempo total|null), timerSec (cronómetro|null), distanceM }] }
+//     (vueltas FIT de la sesión; TCX con elapsedSec = inicio de la siguiente − inicio; GPX sin vueltas)
 //   Point = { t (ms), lat, lon, ele (m), hr, cad, power, dist (m acumulados del dispositivo), speed (m/s) }
 //   (los cortes entre <trkseg>/<Track> no se marcan: los huecos se tratan con la regla de huecos sin avance)
-// summarize(parsed) las convierte en métricas (Summary). readActivityFile(nombre, bytes) hace todo el proceso.
+// summarize(parsed) las convierte en métricas (Summary), con la serie distancia–tiempo (`series`, best-efforts.js) y
+// las vueltas para los parciales de las carreras. readActivityFile(nombre, bytes) hace todo el proceso.
 import { ImportError, toU8, isGzip, isZip, gunzip, zipEntries, zipRead, baseName, isJunkEntry } from './import-zip.js';
+import { buildSeries } from './best-efforts.js';
 
 export { ImportError };
 
@@ -243,7 +247,7 @@ export function parseGPX(xml) {
   const first = pts.find((p) => fin(p.t));
   return [{
     format: 'gpx', sport: trkType, subSport: '', name: trkName || metaName,
-    startTime: first ? first.t : metaTime, points: pts, totals: {},
+    startTime: first ? first.t : metaTime, points: pts, totals: {}, laps: [],
   }];
 }
 
@@ -263,7 +267,7 @@ export function parseTCX(xml) {
       } else if (!act) {
         // fuera de una actividad (cursos, autor…)
       } else if (name === 'lap') {
-        lap = { start: parseTime(getAttr(raw, 'StartTime')), time: null, dist: null, hrAvg: null, hrMax: null };
+        lap = { start: parseTime(getAttr(raw, 'StartTime')), time: null, dist: null, hrAvg: null, hrMax: null, lastT: null };
       } else if (name === 'trackpoint') {
         cur = {};
       }
@@ -275,6 +279,7 @@ export function parseTCX(xml) {
       if (cur) {
         if (name === 'trackpoint') {
           act.points.push(cur);
+          if (lap && fin(cur.t)) lap.lastT = cur.t;
           cur = null;
         } else if (name === 'time') cur.t = parseTime(text);
         else if (name === 'latitudedegrees') cur.lat = num(text);
@@ -310,11 +315,23 @@ export function parseTCX(xml) {
     const hrAvg = hrLaps.length ? hrLaps.reduce((s, l) => s + l.hrAvg * l.time, 0) / hrLaps.reduce((s, l) => s + l.time, 0) : null;
     const hrMaxes = laps.map((l) => l.hrMax).filter((v) => v > 0);
     const firstPt = a.points.find((p) => fin(p.t));
+    // Tiempo total de cada vuelta: hasta el inicio de la siguiente; la última, hasta su último punto (o se desconoce).
+    const lapList = laps.map((l, i) => {
+      const next = laps[i + 1]?.start;
+      const end = next != null ? next : l.lastT;
+      return {
+        startT: l.start,
+        elapsedSec: fin(l.start) && fin(end) && end > l.start ? (end - l.start) / 1000 : null,
+        timerSec: l.time > 0 ? l.time : null,
+        distanceM: l.dist > 0 ? l.dist : null,
+      };
+    });
     out.push({
       format: 'tcx', sport: a.sport, subSport: '', name: a.notes,
       startTime: a.id ?? laps[0]?.start ?? firstPt?.t ?? null,
       points: a.points,
       totals: { timerSec, distanceM, hrAvg, hrMax: hrMaxes.length ? Math.max(...hrMaxes) : null },
+      laps: lapList,
     });
   }
   if (!out.length) throw new ImportError('El TCX no tiene actividades.');
@@ -497,6 +514,12 @@ function fitActivities(msgs) {
   const sportText = (n) => (n == null ? '' : FIT_SPORTS[n] ?? `sport_${n}`);
   const firstT = (pts) => pts.find((p) => p.t != null)?.t ?? null;
   const sessions = msgs.sessions.filter((s) => s[5] !== 3); // sin transiciones de multideporte
+  const lapOf = (l) => ({
+    startT: fitTime(l[2] ?? null),
+    elapsedSec: l[7] != null ? l[7] / 1000 : null,
+    timerSec: l[8] != null ? l[8] / 1000 : null,
+    distanceM: l[9] != null ? l[9] / 100 : null,
+  });
 
   if (!sessions.length) {
     const laps = msgs.laps;
@@ -508,6 +531,7 @@ function fitActivities(msgs) {
       startTime: fitTime(laps[0]?.[2] ?? null) ?? firstT(records) ?? created,
       points: records,
       totals: { elapsedSec: sum(7, 1000), timerSec: sum(8, 1000), distanceM: sum(9, 100) },
+      laps: laps.map(lapOf),
     }];
   }
 
@@ -518,6 +542,9 @@ function fitActivities(msgs) {
     const pts = sessions.length === 1 || start == null || end == null
       ? records
       : records.filter((p) => p.t != null && p.t >= start - 1000 && p.t <= end + 1000);
+    const laps = (sessions.length === 1 || start == null || end == null
+      ? msgs.laps
+      : msgs.laps.filter((l) => { const t = fitTime(l[2] ?? null); return t != null && t >= start - 1000 && t <= end + 1000; })).map(lapOf);
     return {
       format: 'fit',
       sport: sportText(s[5] ?? sportMsg[0]),
@@ -540,6 +567,7 @@ function fitActivities(msgs) {
         altMaxM: fitAlt(s[128] ?? s[50] ?? null),
         poolLengthM: s[44] != null ? s[44] / 100 : null,
       },
+      laps,
     };
   });
 }
@@ -587,7 +615,7 @@ export function elevationStats(elevations, { threshold = ELEV_THRESHOLD_M, smoot
  *   media en el hueco).
  * - Distancia: la acumulada del dispositivo si la trae; si no, haversine de los tramos en movimiento.
  * @returns {{points, gpsPoints, startT, endT, elapsedSec, movingSec, distanceM, distanceSource, ascentM, descentM,
- *   altMaxM, hrAvg, hrMax, cadence, powerAvg}}
+ *   altMaxM, hrAvg, hrMax, cadence, powerAvg, series}}
  */
 export function pointMetrics(points = []) {
   const pts = (points || []).filter((p) => p && typeof p === 'object');
@@ -640,6 +668,7 @@ export function pointMetrics(points = []) {
   let movingDist = 0;
   let allDist = 0;
   let known = 0;
+  const moved = new Uint8Array(n); // tramo que entra en movingDist
   for (let i = 1; i < n; i++) {
     const s = seg[i];
     if (fin(s)) allDist += s;
@@ -652,7 +681,7 @@ export function pointMetrics(points = []) {
     known++;
     if (v >= MOVING_MIN_SPEED) {
       movingSec += dt;
-      if (fin(s)) movingDist += s;
+      if (fin(s)) { movingDist += s; moved[i] = 1; }
     }
   }
 
@@ -663,6 +692,25 @@ export function pointMetrics(points = []) {
   let distanceM = null;
   let distanceSource = null;
   if (useDist) { distanceM = allDist; distanceSource = 'device'; } else if (useGps) { distanceM = known ? movingDist : allDist; distanceSource = 'gps'; }
+
+  // Serie distancia–tiempo para los parciales (best-efforts.js), con la MISMA definición de distancia: la del
+  // dispositivo o, con GPS, solo los tramos en movimiento. Así acaba en distanceM por construcción.
+  let series = null;
+  if (useDist || useGps) {
+    const st = new Float64Array(n);
+    const sd = new Float64Array(n);
+    let k = 0;
+    let acc = 0;
+    for (let i = 0; i < n; i++) {
+      const s = seg[i];
+      if (fin(s) && (useDist || !known || moved[i])) acc += s;
+      if (useDist ? !fin(pts[i].dist) : !hasPos(pts[i])) continue;
+      st[k] = t[i];
+      sd[k] = acc;
+      k++;
+    }
+    series = buildSeries({ t: st.subarray(0, k), d: sd.subarray(0, k), src: distanceSource });
+  }
 
   const elev = elevationStats(pts.map((p) => p.ele));
   const hrs = pts.map((p) => p.hr).filter((v) => fin(v) && v > 0 && v < 255);
@@ -682,6 +730,7 @@ export function pointMetrics(points = []) {
     hrMax: maxOf(hrs),
     cadence: mean(cads),
     powerAvg: pows.some((v) => v > 0) ? mean(pows) : null,
+    series,
   };
 }
 
@@ -692,7 +741,9 @@ const pos = (v) => (fin(v) && v > 0 ? v : null);
  * distancia, tiempo total, desnivel (altímetro del reloj), FC, cadencia y potencia; el tiempo en movimiento
  * sale de los puntos (si no se puede, el tiempo del cronómetro o el total).
  * @returns {{format, sport, subSport, name, startedAt, elapsedSec, timerSec, movingSec, distanceM, ascentM,
- *   descentM, altMaxM, hrAvg, hrMax, cadence, powerAvg, powerNp, poolLengthM, points, gpsPoints, hasTime}}
+ *   descentM, altMaxM, hrAvg, hrMax, cadence, powerAvg, powerNp, poolLengthM, points, gpsPoints, hasTime,
+ *   series (best-efforts.buildSeries | null), laps}}  series y laps solo viven en memoria: se guardan compactados
+ *   (import-logic.itemRecord) y únicamente en carreras.
  */
 export function summarize(parsed) {
   const m = pointMetrics(parsed.points || []);
@@ -726,6 +777,8 @@ export function summarize(parsed) {
     points: m.points,
     gpsPoints: m.gpsPoints,
     hasTime: fin(startedAt),
+    series: m.series,
+    laps: Array.isArray(parsed.laps) ? parsed.laps : [],
   };
 }
 

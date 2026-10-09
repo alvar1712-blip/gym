@@ -13,6 +13,7 @@ import {
 import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT } from '../../js/store.js';
 import { defaultSettings, exampleWeekPatterns, SEED_EXERCISES, SEED_TEMPLATES, TEMPLATE_IDS } from '../../js/seed.js';
 import { deepClone } from '../../js/util.js';
+import { buildSeries, encodeTrack, decodeTrack, computeBestEfforts, effortsOf } from '../../js/best-efforts.js';
 
 const BOM = '\uFEFF';
 
@@ -178,6 +179,31 @@ test('parseBackupText: copia válida (también con BOM y espacios)', () => {
     assert.equal(r.summary.strength, 1);
     assert.equal(r.summary.activities, 2);
   }
+});
+
+test('copia JSON: una carrera importada conserva sus parciales (track, laps, bestEfforts) en ida y vuelta; una copia sin ellos se lee igual', () => {
+  const s = buildSeries({ t: Array.from({ length: 1801 }, (_, i) => 1.7e9 + i), d: Array.from({ length: 1801 }, (_, i) => (i * 10) / 3) });
+  const basis = { km: 6, sec: 1800 };
+  const imported = {
+    ...run, id: 'a_imp', distanceKm: 6, movingSec: 1800, durationMin: 30, source: { type: 'fit', fileName: 'c.fit' },
+    track: encodeTrack(s), laps: [{ at: 0, sec: 900, timerSec: 900, m: 3000 }, { at: 900, sec: 900, timerSec: 900, m: 3000 }],
+    bestEfforts: computeBestEfforts({ series: s, basis }),
+  };
+  const exp = sampleExport();
+  exp.data.sessions.push(imported);
+  const r = parseBackupText(JSON.stringify(buildBackupObject(exp, 1)), validateBackup);
+  assert.equal(r.ok, true, r.error);
+  const back = r.backup.data.sessions.find((x) => x.id === 'a_imp');
+  assert.deepEqual(back, imported);
+  assert.deepEqual(effortsOf(back), imported.bestEfforts.items);
+  assert.equal(effortsOf(back)['5k'].sec, 1500);
+  assert.deepEqual(decodeTrack(back.track).d.at(-1), 6000);
+  // Copia de antes (sin los campos): válida y sin parciales
+  const old = parseBackupText(JSON.stringify(buildBackupObject(sampleExport(), 1)), validateBackup);
+  assert.equal(old.ok, true);
+  assert.ok(old.backup.data.sessions.every((x) => effortsOf(x) === null));
+  // El CSV de cardio no cambia con los parciales
+  assert.equal(cardioCsv([imported]), cardioCsv([{ ...imported, track: undefined, laps: undefined, bestEfforts: undefined }]));
 });
 
 test('parseBackupText: errores amables para archivos que no son una copia válida', () => {
