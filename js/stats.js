@@ -67,8 +67,8 @@ const kindOf = (s) => (KINDS.includes(s.kind) ? s.kind : 'other');
 const zeroKinds = () => Object.fromEntries(KINDS.map((k) => [k, 0]));
 const zeroDist = () => Object.fromEntries(DISTANCE_KINDS.map((k) => [k, 0]));
 const inRange = (date, from, to) => (!from || date >= from) && (!to || date <= to);
-/** Segundos de una actividad: tiempo en movimiento o, en registros antiguos, la duración. */
-const actSec = (a) => (a.movingSec > 0 ? a.movingSec : a.durationMin > 0 ? a.durationMin * 60 : null);
+/** Tiempo de referencia de una actividad (s): el tiempo en movimiento; si no, la duración. El de Récords, predicciones y objetivos. */
+export const actSec = (a) => (a.movingSec > 0 ? a.movingSec : a.durationMin > 0 ? a.durationMin * 60 : null);
 /** Misma clave de peso que calc.js (repsAtWeight): redondeo a 0,25 kg. */
 const weightKey = (w) => String(round(w ?? 0, 0.25));
 

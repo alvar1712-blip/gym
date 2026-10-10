@@ -8,6 +8,7 @@ import * as store from '../store.js';
 import { navigate, screenToken, backFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState } from '../ui.js';
 import { uid, todayStr, fmtNum, parseNum } from '../util.js';
+import { linkedWarning } from '../races-logic.js';
 import * as C from '../context-logic.js';
 import { paceWarning } from '../activity-logic.js';
 import { approxInput } from '../approx-input.js';
@@ -278,7 +279,9 @@ export function mountContextEdit(root, params = {}) {
   }
 
   async function onDelete() {
-    const ok = await confirmDialog({ title: '¿Borrar de tu contexto?', message: `«${C.entryLine(editing)}» (${C.entryWhen(editing)}).`, confirmText: 'Borrar', danger: true });
+    // Ronda 8 (D): si es el resultado de un evento, se dice (el evento se queda sin resultado; con «Deshacer», vuelve)
+    const linked = linkedWarning(store.all('races'), { contextId: editing.id });
+    const ok = await confirmDialog({ title: '¿Borrar de tu contexto?', message: `«${C.entryLine(editing)}» (${C.entryWhen(editing)}).${linked ? ` ${linked}` : ''}`, confirmText: 'Borrar', danger: true });
     if (!ok) return;
     const tok = screenToken();
     const removed = await store.remove('context', editing.id);

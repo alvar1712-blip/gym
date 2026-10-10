@@ -1,19 +1,22 @@
 // races.js — eventos deportivos (ronda 6, fase E; docs/MEJORAS6.md): carreras, marchas, rutas y triatlones apuntados.
 //   #/races          próximos (y pasados, plegados), con el tiempo previsto de las carreras
 //   #/races/new      nuevo
-//   #/races/:id      editar / borrar (con deshacer), con «Cómo vas» (tiempo previsto y objetivo enlazado)
+//   #/races/:id      editar / borrar (con deshacer), con «Cómo vas» (tiempo previsto y objetivo enlazado) si es futuro
+//                    y, si ya pasó (o es hoy), la tarjeta «Resultado» / «¿Cómo te fue?» (ronda 8, D: ./race-result.js)
 // La lógica (tipos, validación, el evento de Hoy, contexto del analista) está en ../races-logic.js y «Cómo vas» en
 // ../races-progress.js. Sin planificador:
 // apuntar un evento no cambia tu semana tipo.
 import * as store from '../store.js';
 import { navigate, screenToken, backFrom } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState, whyBox } from '../ui.js';
+import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState, whyBox, stateTag } from '../ui.js';
 import { uid, todayStr, fmtDate, addDays } from '../util.js';
 import * as R from '../races-logic.js';
 import { racePrediction, linkedGoalProgress } from '../races-progress.js';
 import { predictionDataset } from '../race-predict.js';
 import { dataFromStore } from '../progress-ui.js';
 import { fmtTimeWords } from '../goals-logic.js';
+import { outcomeView } from '../races-result.js';
+import { resultCard } from './race-result.js';
 
 const LIST = '#/races';
 // context: tus resultados de carrera y parones cambian el tiempo previsto
@@ -30,13 +33,18 @@ function predictionLine(p, race) {
 }
 
 function raceRow(race, data, today) {
-  const p = race.date >= today ? racePrediction(data, race, { today }) : null;
+  // Con resultado (o «no participé»): su línea; sin responder y reciente: «¿Cómo te fue?» (ronda 8, D)
+  const ov = race.outcome ? outcomeView(data, race, { prior: false, record: false }) : null;
+  const due = R.outcomeDue(race, today);
+  const p = race.date >= today && !ov ? racePrediction(data, race, { today }) : null;
   return h('button.list-item.rc-row', { type: 'button', dataset: { id: race.id, type: race.type, priority: race.priority }, onClick: () => navigate(`${LIST}/${encodeURIComponent(race.id)}`) },
     h('span.rc-prio', { 'aria-label': `Prioridad ${race.priority}` }, race.priority),
     h('span.list-item-main',
       h('span.list-item-title.rc-row-title', R.raceTitle(race), race.name && R.fixedKm(race.type) != null ? h('span.rc-row-type', ` · ${R.typeInfo(race.type).label}`) : null),
       h('span.list-item-sub.rc-row-meta', R.rowMeta(race, today)),
-      p ? predictionLine(p, race) : (!p && race.targetSec ? h('span.list-item-sub', `Objetivo ${R.targetText(race)}`) : null)),
+      ov?.rowText ? h('span.list-item-sub.rc-row-outcome', { dataset: { state: ov.state, ...(ov.diff ? { kind: ov.diff.kind } : {}) } }, ov.rowText)
+        : p ? predictionLine(p, race) : (race.targetSec ? h('span.list-item-sub', `Objetivo ${R.targetText(race)}`) : null),
+      due ? h('span.rc-row-ask', stateTag('info', '¿Cómo te fue?', { small: true })) : null),
     icon('chevron-right', 20, 'chev'));
 }
 
@@ -80,9 +88,10 @@ export function mountRaces(root) {
       h('h2.card-title', 'Próximos'),
       upcoming.length ? h('div.list.rc-list', upcoming.map((r) => raceRow(r, data, today))) : h('p.muted.rc-none', 'Ninguno por ahora.')));
     if (past.length) {
+      const pending = past.filter((r) => R.outcomeDue(r, today)).length;
       nodes.push(h('section.card.rc-group', { dataset: { group: 'past' } },
         h('button.rc-fold', { type: 'button', 'aria-expanded': String(showPast), onClick: () => { showPast = !showPast; render(); } },
-          h('span.card-title', `Pasados (${past.length})`), icon(showPast ? 'chevron-up' : 'chevron-down', 18)),
+          h('span.card-title', `Pasados (${past.length})`, pending ? h('span.rc-fold-pending', ` · ${pending} sin resultado`) : null), icon(showPast ? 'chevron-up' : 'chevron-down', 18)),
         showPast ? h('div.list.rc-list', past.map((r) => raceRow(r, data, today))) : null));
     }
     nodes.push(h('button.btn.btn-primary.btn-lg.btn-block.rc-new', { type: 'button', onClick: () => navigate(`${LIST}/new`) }, icon('plus', 22), 'Añadir evento'));
@@ -120,6 +129,8 @@ export function mountRaceEdit(root, params = {}) {
   };
   const goals = store.all('goals');
   const data = dataFromStore(today); // los registros no cambian mientras se edita
+  // Evento pasado o de hoy: la tarjeta del resultado (lee el evento del almacén, nunca del borrador)
+  const result = editing && editing.date <= today ? resultCard(editing.id, { today }) : null;
   const c = screen(root, { title: editing ? 'Editar evento' : 'Añadir evento', back: LIST });
   c.classList.add('rc', 'rc-edit');
   const form = h('div.rc-form');
@@ -129,6 +140,8 @@ export function mountRaceEdit(root, params = {}) {
   const how = h('div.rc-how-slot');
 
   function paintHow() {
+    // «Cómo vas» es una previsión: solo para lo que aún no ha pasado (antes salía también en eventos pasados)
+    if (result || !draft.date || draft.date < today) { how.replaceChildren(); return; }
     const race = R.normalizeRace({ ...draft, id: editing?.id || 'draft' });
     const blocks = [];
     const p = race ? racePrediction(data, race, { today }) : null;
@@ -161,6 +174,7 @@ export function mountRaceEdit(root, params = {}) {
       if (g) linkable.push(g);
     }
     const blocks = [];
+    if (result) blocks.push(result.el);
     blocks.push(h('section.card.rc-block', { dataset: { block: 'type' } },
       h('h2.card-title', 'Evento'),
       chips({
@@ -217,7 +231,11 @@ export function mountRaceEdit(root, params = {}) {
   }
 
   async function onSave() {
-    const err = R.validateRace(draft, { goals });
+    // El resultado se toma del almacén en este momento (el borrador es una copia de cuando se abrió la pantalla: si
+    // entretanto se guardó un resultado, guardar el formulario lo machacaría). «Omitido» no impide moverlo al futuro.
+    let outcome = editing ? store.get('races', editing.id)?.outcome ?? null : null;
+    if (outcome?.status === 'skipped' && draft.date > today) outcome = null;
+    const err = R.validateRace({ ...draft, outcome }, { goals, today });
     for (const [k, el] of Object.entries(errEls)) {
       el.hidden = !err[k];
       el.textContent = err[k] || '';
@@ -226,7 +244,7 @@ export function mountRaceEdit(root, params = {}) {
       form.querySelector('.form-error:not([hidden])')?.scrollIntoView({ block: 'center' });
       return;
     }
-    const rec = R.raceRecord(draft, { id: editing?.id || uid('race_'), createdAt: editing?.createdAt ?? null });
+    const rec = R.raceRecord({ ...draft, outcome }, { id: editing?.id || uid('race_'), createdAt: editing?.createdAt ?? null });
     const tok = screenToken();
     await store.save('races', rec);
     backFrom(tok, LIST);
@@ -244,5 +262,12 @@ export function mountRaceEdit(root, params = {}) {
   }
 
   paint();
-  return undefined;
+  if (!result) return undefined;
+  // La tarjeta del resultado sigue al almacén (vincular, deshacer, una actividad borrada…)
+  let queued = false;
+  return store.on('change', (e) => {
+    if (!['races', 'sessions', 'context'].includes(e.store) || queued) return;
+    queued = true;
+    queueMicrotask(() => { queued = false; result.paint({ external: true }); });
+  });
 }

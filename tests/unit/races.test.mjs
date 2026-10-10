@@ -47,7 +47,7 @@ test('validación y registro', () => {
   assert.ok(R.validateRace(race({ goalId: 'g2' }), { goals }).goalId, 'un objetivo de bici no se enlaza a un 10K');
   assert.deepEqual(R.validateRace(race({ goalId: 'g1' }), { goals }), {});
   const rec = R.raceRecord({ ...race({ name: '  San Silvestre  ', type: '10k', distanceKm: 3, targetSec: 2999.6, goalId: 'g1' }) }, { id: 'race_1', now: 5 });
-  assert.deepEqual(rec, { id: 'race_1', name: 'San Silvestre', type: '10k', date: addDays(TODAY, 73), distanceKm: 10, targetSec: 3000, priority: 'A', note: '', goalId: 'g1', createdAt: 5, updatedAt: 5 });
+  assert.deepEqual(rec, { id: 'race_1', name: 'San Silvestre', type: '10k', date: addDays(TODAY, 73), distanceKm: 10, targetSec: 3000, priority: 'A', note: '', goalId: 'g1', createdAt: 5, updatedAt: 5, outcome: null });
   assert.equal(R.raceRecord({ ...rec }, { id: 'race_1', createdAt: 2, now: 9 }).createdAt, 2, 'al editar se conserva createdAt');
 });
 

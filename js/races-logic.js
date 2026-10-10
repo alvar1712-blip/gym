@@ -2,12 +2,17 @@
 //
 // Registro del almacén 'races' (fase A; independiente de 'goals', enlazable con goalId):
 //   { id, name, type, date:'YYYY-MM-DD', distanceKm|null, targetSec|null, priority:'A'|'B'|'C', note, goalId|null,
-//     createdAt, updatedAt }
+//     createdAt, updatedAt, outcome|null }
+// `outcome` (ronda 8, D; aditivo, sin subir la versión de la BD): cómo fue un evento pasado. El evento REFERENCIA su
+// resultado (una actividad de 'sessions' o un resultado de carrera de 'context'); solo guarda el tiempo en
+// `outcome.manual` cuando no hay otro sitio donde vivir (deportes que no son correr). Ver normalizeOutcome y
+// races-result.js (la vista derivada: resultado, comparación, predicción previa y récord).
 // Tipos: 5k · 10k · half · marathon (carrera) · cycling · hiking · triathlon · custom.
 // No hay planificador: el evento se apunta, se ve en Hoy (un hueco) y el analista lo usa como contexto.
 // LIGERO a propósito (solo util.js): lo importan Hoy y el contexto del análisis. «Cómo vas» (tiempo previsto con
 // race-predict y el objetivo enlazado con goalProgress) está en races-progress.js.
-import { todayStr, isDateStr, diffDays, fmtDate, fmtDuration, fmtNum } from './util.js';
+import { todayStr, isDateStr, diffDays, fmtDate, fmtDuration, fmtNum, DAY_LONG, parseDate } from './util.js';
+import { RESULT_KM_MIN, RESULT_KM_MAX, RESULT_SEC_MAX } from './context-logic.js';
 
 export const RACE_TYPES = [
   { value: '5k', label: '5K', long: '5 km', sport: 'run', km: 5 },
@@ -62,6 +67,7 @@ export function normalizeRace(r) {
     goalId: r.goalId ? String(r.goalId) : null,
     createdAt: isNum(r.createdAt) ? r.createdAt : null,
     updatedAt: isNum(r.updatedAt) ? r.updatedAt : null,
+    outcome: normalizeOutcome(r.outcome),
   };
 }
 
@@ -69,12 +75,16 @@ export function normalizeRaces(list) {
   return toArr(list).map(normalizeRace).filter(Boolean).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.createdAt || 0) - (b.createdAt || 0)));
 }
 
-/** Errores de un borrador: { field: mensaje }. Campos: name, type, date, distanceKm, targetSec, priority, goalId. */
-export function validateRace(draft, { goals = [] } = {}) {
+/**
+ * Errores de un borrador: { field: mensaje }. Campos: name, type, date, distanceKm, targetSec, priority, goalId.
+ * Con `today`: un evento con resultado (hecho o «no participé») no se puede mover al futuro.
+ */
+export function validateRace(draft, { goals = [], today = null } = {}) {
   const e = {};
   const d = draft || {};
   if (!TYPE[d.type]) e.type = 'Elige el tipo de evento.';
   if (!isDateStr(d.date)) e.date = 'Indica la fecha del evento.';
+  else if (isDateStr(today) && d.date > today && answered(normalizeOutcome(d.outcome))) e.date = 'Este evento ya tiene resultado; quítalo antes de moverlo a una fecha futura.';
   const type = typeInfo(d.type).value;
   if (type === 'custom' && !String(d.name || '').trim()) e.name = 'Ponle un nombre (p. ej. «Carrera de montaña»).';
   if (String(d.name || '').length > NAME_MAX) e.name = `Como mucho ${NAME_MAX} caracteres.`;
@@ -108,7 +118,119 @@ export function raceRecord(draft, { id, createdAt = null, now = Date.now() } = {
     goalId: draft.goalId || null,
     createdAt: createdAt ?? now,
     updatedAt: now,
+    // Se conserva (antes se perdía al editar): quien guarda el formulario lo toma del almacén, no de una copia vieja
+    outcome: normalizeOutcome(draft.outcome),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Resultado de un evento pasado (ronda 8, D: «¿Cómo te fue?»)
+// ---------------------------------------------------------------------------
+
+/** hecho · no participé · omitir (no volver a preguntar). */
+export const OUTCOME_STATUSES = ['done', 'dns', 'skipped'];
+/** Puesto máximo admitido (entero ≥ 1). */
+export const PLACE_MAX = 99999;
+/** Hoy pregunta «¿Cómo te fue?» por un evento A o B de los últimos 7 días. */
+export const OUTCOME_PROMPT_DAYS = 7;
+/** La lista de eventos marca «¿Cómo te fue?» en los pasados de los últimos 60 días. */
+export const OUTCOME_ASK_DAYS = 60;
+
+const cleanId = (v) => (v == null || v === '' ? null : String(v));
+
+/** Tiempo (y distancia opcional) apuntado a mano para un deporte que no es correr, o null si no vale. */
+function normalizeManual(m) {
+  if (!m || typeof m !== 'object') return null;
+  if (!isNum(m.sec) || Math.round(m.sec) <= 0 || m.sec >= RESULT_SEC_MAX) return null;
+  const km = isNum(m.km) && m.km >= RESULT_KM_MIN && m.km <= RESULT_KM_MAX ? Math.round(m.km * 10000) / 10000 : null;
+  return { sec: Math.round(m.sec), km };
+}
+
+/**
+ * Resultado saneado o null (= sin responder).
+ *   { status:'done'|'dns'|'skipped', activityId|null, contextId|null, manual:{sec, km|null}|null, place|null, note, at|null }
+ * Con 'done' hay exactamente UNA referencia; si llegan varias manda activityId > contextId > manual; sin ninguna
+ * válida, null. Con 'dns' o 'skipped' no hay referencias ni puesto.
+ */
+export function normalizeOutcome(o) {
+  if (!o || typeof o !== 'object' || !OUTCOME_STATUSES.includes(o.status)) return null;
+  const note = String(o.note || '').trim().slice(0, NOTE_MAX);
+  const at = isNum(o.at) ? o.at : null;
+  const base = { status: o.status, activityId: null, contextId: null, manual: null, place: null, note, at };
+  if (o.status !== 'done') return base;
+  const activityId = cleanId(o.activityId);
+  const contextId = activityId ? null : cleanId(o.contextId);
+  const manual = activityId || contextId ? null : normalizeManual(o.manual);
+  if (!activityId && !contextId && !manual) return null;
+  const place = Number.isInteger(o.place) && o.place >= 1 && o.place <= PLACE_MAX ? o.place : null;
+  return { ...base, activityId, contextId, manual, place };
+}
+
+/** ¿Tiene una respuesta que impide moverlo al futuro? (hecho o «no participé»; omitir no cuenta) */
+const answered = (o) => !!o && o.status !== 'skipped';
+
+/**
+ * Errores del formulario «Introducir resultado»: { sec, km, place, note }. `d` = { sec, km, place, note }.
+ * En carrera a pie la distancia es obligatoria (se rellena con la del evento); en otros deportes, opcional.
+ */
+export function validateOutcome(d, race) {
+  const e = {};
+  const x = d || {};
+  if (!isNum(x.sec) || Math.round(x.sec) <= 0) e.sec = 'Indica el tiempo.';
+  else if (x.sec >= RESULT_SEC_MAX) e.sec = 'El tiempo es demasiado largo.';
+  const run = sportOf(race) === 'run';
+  if (x.km == null || x.km === '') {
+    if (run) e.km = 'Indica la distancia.';
+  } else if (!isNum(x.km) || x.km < RESULT_KM_MIN || x.km > RESULT_KM_MAX) e.km = `Entre ${fmtNum(RESULT_KM_MIN, 1)} y ${RESULT_KM_MAX} km.`;
+  if (x.place != null && x.place !== '' && !(Number.isInteger(x.place) && x.place >= 1 && x.place <= PLACE_MAX)) e.place = `El puesto es un número entero entre 1 y ${fmtNum(PLACE_MAX, 0)}.`;
+  if (String(x.note || '').length > NOTE_MAX) e.note = `Como mucho ${NOTE_MAX} caracteres.`;
+  return e;
+}
+
+/**
+ * El registro guardado con su resultado (o sin él: outcome null). Parte del registro TAL CUAL está en el almacén
+ * (no de un borrador) y no toca nada más.
+ */
+export function withOutcome(race, outcome, now = Date.now()) {
+  return { ...race, outcome: outcome ? normalizeOutcome({ ...outcome, at: now }) : null, updatedAt: now };
+}
+
+/** ¿Falta responder? Evento ya pasado (antes de hoy) y sin resultado. */
+export const needsOutcome = (race, today = todayStr()) => !!race && race.date < today && !normalizeOutcome(race.outcome);
+
+/** ¿Lo marca la lista con «¿Cómo te fue?»? Sin responder y de los últimos OUTCOME_ASK_DAYS días. */
+export const outcomeDue = (race, today = todayStr()) => needsOutcome(race, today) && diffDays(race.date, today) <= OUTCOME_ASK_DAYS;
+
+/** El evento A o B más reciente de los últimos OUTCOME_PROMPT_DAYS días sin resultado (el aviso de Hoy), o null. */
+export function pendingOutcome(list, today = todayStr()) {
+  return splitRaces(list, today).past.find((r) => r.priority !== 'C' && needsOutcome(r, today) && diffDays(r.date, today) <= OUTCOME_PROMPT_DAYS) || null;
+}
+
+/**
+ * Búsqueda inversa: el evento cuyo resultado es esta actividad (activityId) o esta marca de tu contexto (contextId),
+ * o null. Para avisar al borrarla.
+ */
+export function raceLinkedTo(list, { activityId = null, contextId = null } = {}) {
+  if (!activityId && !contextId) return null;
+  return normalizeRaces(list).find((r) => r.outcome?.status === 'done'
+    && ((activityId && r.outcome.activityId === String(activityId)) || (contextId && r.outcome.contextId === String(contextId)))) || null;
+}
+
+/** Aviso al borrar algo que es el resultado de un evento: «Es el resultado de “10K”; el evento quedará sin resultado.» */
+export function linkedWarning(list, ref) {
+  const r = raceLinkedTo(list, ref);
+  return r ? `Es el resultado de «${r.name || typeInfo(r.type).label}»; el evento quedará sin resultado.` : null;
+}
+
+const ARTICLE = { '5k': 'el 5K', '10k': 'el 10K', half: 'la media maratón', marathon: 'el maratón', cycling: 'la marcha en bici', hiking: 'la ruta', triathlon: 'el triatlón', custom: 'el evento' };
+
+/** Aviso de Hoy: «¿Cómo te fue en el 10K del domingo?» · «… en San Silvestre de ayer?». */
+export function outcomePrompt(race, today = todayStr()) {
+  const n = diffDays(race.date, today);
+  const what = race.name ? race.name : ARTICLE[typeInfo(race.type).value];
+  const wd = DAY_LONG[(parseDate(race.date).getDay() + 6) % 7];
+  const when = n === 0 ? 'de hoy' : n === 1 ? 'de ayer' : n === 7 ? `del ${wd} pasado` : `del ${wd}`;
+  return `¿Cómo te fue en ${what} ${when}?`;
 }
 
 /** Objetivos que se pueden enlazar: de resistencia, activos (ni archivados ni conseguidos) y del mismo deporte. */

@@ -8,6 +8,7 @@ import {
   confirmDialog, undoToast, emptyState, toast, confirmRare, fitTitle,
 } from '../ui.js';
 import { todayStr, fmtDate, uid, fmtDuration, fmtMinutes, debounce, isDateStr, hhmm, relDay, deepClone, dateFromTs } from '../util.js';
+import { linkedWarning } from '../races-logic.js';
 import { SWIM_STROKES } from '../seed.js';
 import * as L from '../activity-logic.js';
 import { syncLinkedDuration } from '../session-logic.js';
@@ -601,9 +602,11 @@ function mountForm(root, ctx) {
 
   async function removeActivity() {
     if (!record) return;
+    const linked = linkedWarning(store.all('races'), { activityId: record.id });
     const ok = await confirmDialog({
       title: '¿Borrar esta actividad?',
-      message: `${L.activityTitle(record)} · ${fmtDate(record.date, 'full')}.\n\nPodrás deshacerlo justo después.`,
+      // Ronda 8 (D): si es el resultado de un evento, se dice (el evento se queda sin resultado; con «Deshacer», vuelve)
+      message: `${L.activityTitle(record)} · ${fmtDate(record.date, 'full')}.${linked ? `\n\n${linked}` : ''}\n\nPodrás deshacerlo justo después.`,
       confirmText: 'Borrar',
       danger: true,
     });

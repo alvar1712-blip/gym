@@ -49,6 +49,35 @@ async function restorePoint(page) {
   if (protect) await page.locator('.cfg-rp').waitFor();
 }
 
+/** Lista de eventos con «Pasados» desplegado (ronda 8, D: resultado, «¿Cómo te fue?» y «ya no existe»). */
+async function openPast(page) {
+  await page.locator('.rc-fold').click();
+  await settle(page);
+}
+/** «¿Cómo te fue?» con «Introducir resultado» abierto. */
+async function openManual(page) {
+  await page.locator('.rc-result [data-opt="manual"]').click();
+  await settle(page);
+}
+
+/**
+ * Tres eventos pasados (ronda 8, D): uno con la última carrera vinculada, uno sin responder de hace 3 días (sale en Hoy)
+ * y uno cuya actividad ya no existe.
+ */
+async function seedPastRaces(page) {
+  await page.evaluate(async () => {
+    const u = await import('./js/util.js');
+    const st = window.__app.store;
+    const T = u.todayStr();
+    const runs = st.all('sessions').filter((s) => s.kind === 'run' && s.status === 'done' && s.date < T).sort((a, b) => (a.date < b.date ? 1 : -1));
+    const r = runs[0];
+    const base = { name: '', type: '10k', distanceKm: 10, targetSec: 3000, priority: 'A', note: '', goalId: null, createdAt: 1, updatedAt: 1 };
+    await st.save('races', { ...base, id: 'vg_past_done', name: 'Carrera popular de otoño', type: 'custom', distanceKm: r.distanceKm, date: r.date, targetSec: Math.round((r.movingSec || r.durationMin * 60) + 42), outcome: { status: 'done', activityId: r.id, contextId: null, manual: null, place: 128, note: 'Salida rápida, calor al final.', at: 1 } });
+    await st.save('races', { ...base, id: 'vg_past_pending', type: 'half', distanceKm: 21.0975, targetSec: 6300, date: u.addDays(T, -3), priority: 'B' });
+    await st.save('races', { ...base, id: 'vg_past_missing', date: u.addDays(T, -20), priority: 'C', outcome: { status: 'done', activityId: 'vg_gone', contextId: null, manual: null, place: null, note: '', at: 1 } });
+  });
+}
+
 /**
  * Pantallas: [clave, hash, preparar?]; `ids` da las que dependen de los datos (null → se omiten con la app vacía).
  * `preparar(page)` deja la pantalla en el estado que se mide (p. ej. un paso concreto de la bienvenida).
@@ -62,7 +91,11 @@ const routes = (ids) => [
   ['settings', '#/settings'], ['settings-week', '#/settings/week'], ['settings-thresholds', '#/settings/thresholds'], ['settings-data', '#/settings/data'],
   ['settings-data-rp', '#/settings/data', restorePoint], ['profile', '#/settings/profile'],
   ['progress', '#/progress'], ['progress-exercise', '#/progress/exercise/press_banca'], ['records', '#/records'], ['records-past', '#/records/past'], ['records-past-new', '#/records/past/new'],
-  ['races', '#/races'], ['race-new', '#/races/new'], ['weekly', '#/weekly'], ['goals', '#/goals'], ['goal-new', '#/goal/new'],
+  ['races', '#/races', ids.pastRaces ? openPast : null], ['race-new', '#/races/new'],
+  // Ronda 8 (D): la tarjeta del resultado de un evento pasado (con resultado, sin responder con el formulario a mano
+  // abierto, y con la actividad vinculada borrada)
+  ids.pastRaces && ['race-result', '#/races/vg_past_done'], ids.pastRaces && ['race-result-pending', '#/races/vg_past_pending', openManual],
+  ids.pastRaces && ['race-result-missing', '#/races/vg_past_missing'], ['weekly', '#/weekly'], ['goals', '#/goals'], ['goal-new', '#/goal/new'],
   ['import', '#/import'], ['predictions', '#/predictions'], ['summary-period', '#/summary'], ['analysis', '#/analysis'],
   ids.female && ['cycle', '#/cycle'], ['context', '#/context'], ['context-new', '#/context/new?kind=event&type=race_result'],
   ['welcome', '#/welcome'], !ids.done && ['welcome-week', '#/welcome', weekStep],
@@ -311,11 +344,12 @@ async function withData(browser, tag, { scale = 1, widths = [375, 390, 430] } = 
   const app = await openApp({ browser, beforeLoad: beforeLoad(scale) });
   try {
     const { activeId } = await seedRealistic(app.page, { months: 6, female: true, activeSession: true });
+    await seedPastRaces(app.page);
     const ids = await app.page.evaluate(() => {
       const ss = window.__app.store.all('sessions');
       const done = ss.filter((s) => s.status === 'done' && s.kind === 'strength').sort((a, b) => (a.date < b.date ? 1 : -1))[0];
       const run = ss.filter((s) => s.kind === 'run').sort((a, b) => (a.date < b.date ? 1 : -1))[0];
-      return { done: done.id, doneDate: done.date, run: run.id };
+      return { done: done.id, doneDate: done.date, run: run.id, pastRaces: true };
     });
     if (scale !== 1) {
       assert.strictEqual(await app.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ts').trim()), String(scale), 'el texto se agranda');

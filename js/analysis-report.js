@@ -4,7 +4,7 @@
 //   PERFIL · OBJETIVO · CONTEXTO DEL USUARIO · CAMBIOS RECIENTES · PESO · FUERZA · MARCAS HISTÓRICAS · VOLUMEN ·
 //   RUNNING · RÉCORDS DE RUNNING · REFERENCIAS PARA LA PREDICCIÓN ACTUAL · BICI · NATACIÓN · SENDERISMO ·
 //   OTRAS ACTIVIDADES · CARGA · RECUPERACIÓN · SUEÑO · ENERGÍA · ESTRÉS ·
-//   AGUJETAS/MOLESTIAS · (CICLO MENSTRUAL, solo con permiso) · EVENTOS FUTUROS · TENDENCIAS · INSIGHTS ·
+//   AGUJETAS/MOLESTIAS · (CICLO MENSTRUAL, solo con permiso) · EVENTOS RECIENTES · EVENTOS FUTUROS · TENDENCIAS · INSIGHTS ·
 //   CONFIANZA (DATOS CON BAJA CONFIANZA) · PREGUNTA
 // «CONTEXTO DEL USUARIO», «CAMBIOS RECIENTES» y «DATOS CON BAJA CONFIANZA» salen siempre (decir que no hay nada también
 // es información); las demás secciones solo si tienen algo útil. Cada valoración lleva su confianza.
@@ -357,6 +357,11 @@ function eventName(race) {
   return race.name ? `${race.name} (${t})` : t;
 }
 
+/** Ronda 8 (D): eventos pasados con su resultado: «10K · 12 oct · objetivo <50:00 · resultado 49:18 (42 s mejor) · …». */
+function pastEventsSection(a) {
+  return section('EVENTOS RECIENTES (resultado frente al objetivo y a lo que la app preveía la víspera)', (a.pastEvents || []).map((x) => `- ${[eventName(x.race), day(x.date, a.today), ...x.bits].join(' · ')}`));
+}
+
 function eventsSection(a) {
   return section('EVENTOS FUTUROS (apuntados; la app no cambia el plan por ellos)', (a.events || []).map((x) => {
     const r = x.race;
@@ -470,6 +475,7 @@ export function reportText(analysis, { includeCycle = false } = {}) {
     recoverySection(a),
     ...wellbeingSections(a),
     withCycle ? cycleSection(a) : [],
+    pastEventsSection(a),
     eventsSection(a),
     trendsSection(a, withCycle),
     insightsSection(a, withCycle),

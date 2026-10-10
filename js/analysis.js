@@ -34,6 +34,7 @@ import { analysisContext } from './analysis-context.js';
 import { analyzeHybrid, personalInterference } from './analysis-hybrid.js';
 import { checkinsBetween, areasOf, areaName, level as ckLevel } from './checkin-logic.js';
 import { racePrediction } from './races-progress.js';
+import { pastEventsForReport } from './races-result.js';
 import { runningSummary } from './race-predict.js';
 import { enduranceRecords } from './stats.js';
 import { splitGoals } from './goals-logic.js';
@@ -303,6 +304,8 @@ export function buildAnalysis(data = {}, today) {
   // Fase F (informe): check-ins recientes, eventos próximos con su tiempo previsto y objetivos activos
   const wellbeing = attempt(errors, 'wellbeing', () => wellbeingSummary(d.checkins || [], t), null);
   const events = attempt(errors, 'events', () => (context?.events?.upcoming || []).map((x) => ({ ...x, prediction: racePrediction(d, x.race, { today: t }) })), []);
+  // Ronda 8 (D): eventos de los últimos 6 meses con su resultado (o «no participó») frente al objetivo y la previsión previa
+  const pastEvents = attempt(errors, 'pastEvents', () => pastEventsForReport(d, d.races || [], t), []);
   const goals = attempt(errors, 'goals', () => splitGoals(toArr(d.goals)).active.map((x) => ({ id: x.id, kind: x.kind, title: x.title })), []);
   // Running para el informe: récords (la mejor marca de siempre, también tus marcas históricas) y, aparte, lo que usa la
   // predicción actual (donde sí importan la recencia y los parones)
@@ -329,7 +332,7 @@ export function buildAnalysis(data = {}, today) {
 
   return {
     today: t, profile, profileIncomplete: profileIncomplete(profile), female, hasData,
-    weight, strength, endurance, recovery, cycle, forecast, hybrid, wellbeing, events, goals, running,
+    weight, strength, endurance, recovery, cycle, forecast, hybrid, wellbeing, events, pastEvents, goals, running,
     keyPoints: pickKeyPoints(all, 3), all, errors, context,
   };
 }

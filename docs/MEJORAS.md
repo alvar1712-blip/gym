@@ -165,6 +165,75 @@ panel semanal y en Progreso (integración).
   suave; con alternativa opaca si no hay soporte. Mismos colores y tipografía.
 - `@media (prefers-reduced-motion: reduce)` → sin animaciones de desplazamiento. 60 fps: animar solo transform/opacity.
 
+## 8. Eventos: «¿Cómo te fue?» (ronda 8, D1–D4)
+Un evento pasado no se archiva sin más: se cierra con su resultado. **El evento REFERENCIA su resultado; no copia una
+actividad ni un tiempo** (una sola fuente; los récords siguen siendo derivados). Sin subir la versión de la BD (v3) ni
+`BACKUP_FORMAT` (2): `outcome` es un campo opcional más del registro de `races` (las copias lo guardan tal cual en ambas
+direcciones; una copia antigua sin él = «sin responder»; una app antigua lo ignora, pero lo pierde si edita ese evento).
+- **Datos** (`races-logic.js`, ligero: lo importa Hoy). `outcome: null | { status:'done'|'dns'|'skipped', activityId,
+  contextId, manual:{sec, km|null}|null, place (entero 1–99 999)|null, note (≤ 500), at }`. Con `done`, exactamente
+  UNA referencia (si llegan varias: actividad > contexto > a mano; sin ninguna válida → null); con `dns`/`skipped`,
+  ninguna y sin puesto. `normalizeOutcome`, `validateOutcome(d, race)`, `withOutcome(raw, o, now)` (parte del registro
+  del almacén, no de un borrador), `needsOutcome` (antes de hoy y sin responder), `outcomeDue` (≤ 60 días, la etiqueta
+  de la lista), `pendingOutcome(list, today)` (A/B más reciente de los últimos 7 días: el aviso de Hoy),
+  `outcomePrompt` («¿Cómo te fue en el 10K del domingo?»), `raceLinkedTo` / `linkedWarning` (búsqueda inversa al
+  borrar). `validateRace(d, { today })`: un evento con resultado (hecho o «no participé») no se mueve al futuro.
+  - **Corregido**: `normalizeRace` y `raceRecord` reconstruían el evento campo a campo y perdían `outcome`; y el
+    formulario `#/races/:id` guardaba su copia de cuando se abrió (machacaba un resultado guardado entretanto). Ahora
+    los dos lo conservan y «Guardar cambios» toma `outcome` del almacén en ese momento.
+  - **Corregido**: el detalle de un evento pasado enseñaba «Cómo vas» con la predicción de HOY. Ahora «Cómo vas» solo
+    sale en lo que aún no ha pasado; un evento pasado (o de hoy) muestra la tarjeta «Resultado».
+- **Dónde vive el resultado.** Actividad registrada o importada → `activityId` (cualquier tipo salvo fuerza). Carrera a
+  pie a mano → se crea una entrada `race_result` de tu contexto (precisión «día», la del evento, `effort:'race'`) y el
+  evento guarda su id: Récords, Tiempos previstos y el informe la leen sin código nuevo. Otro deporte a mano →
+  `outcome.manual` (única copia: nadie más lo lee; una ruta de 20 km en 5 h no entra en el motor de carrera).
+- **Lógica** (`races-result.js`, puro; usa `race-predict`, `stats`, `context-logic`).
+  - `resultCandidates(data, race, races)`: actividades hechas de D−1 a D+1 del deporte del evento (triatlón y «otro»:
+    cualquiera salvo fuerza), sin lo vinculado a otro evento, del día más cercano y la distancia más parecida
+    (`close` = ±10 %); en carrera a pie, también tus `race_result` de esos días.
+  - `resolveResult(data, race)` → `{ state:'pending'|'done'|'dns'|'skipped'|'missing', source, sec, km, how, partialText,
+    missing, comparable, place, note }`. El tiempo es `stats.actSec` (tiempo en movimiento: el de Récords, predicciones y
+    objetivos). **Corrección del diseño:** si la actividad mide la distancia del evento ±5 % (la tolerancia de
+    `matchesRun`; el GPS suele medir de más) cuenta ENTERA; solo si es claramente más larga (> 5 %) y tiene un mejor
+    tramo válido cuenta ese tramo (`stats.runMarkFor`, «Parcial dentro de 12,4 km»). Nunca se estima a ritmo medio (un
+    resultado es un tiempo medido): sin tramo, el tiempo entero y `comparable:false` (no se compara con el objetivo ni
+    con el rango). Lo vinculado borrado → `missing:'activity'|'context'`; nada se limpia: al deshacer el borrado vuelve.
+  - `compareResult(sec, target)` → «42 s mejor que el objetivo» / «1 min 5 s peor…» / «Igual que el objetivo», exacto
+    al segundo (`fmtTimeWords`), tono neutro (ni verde ni rojo). Sin puntuaciones.
+  - `priorPrediction(data, race)`: el motor único, `predictFor(data, km, { today: D−1 })` + `baseOf`; no se guarda
+    (determinista; «con tus datos hasta el sáb 3 oct»: si luego importas carreras anteriores, cambia). `analyzeRuns`
+    solo usa lo de hasta esa fecha (carreras, resultados de contexto, parones): el propio resultado nunca entra (si el
+    resultado vinculado es del día ANTERIOR al evento —la ventana de vínculo es ±1 día—, «hoy» = la víspera del
+    resultado, `{ resultDate }`; revisión adversarial). Única
+    fuga conocida: `p.record`/`p.why` usan los récords de hoy; esta vista no los enseña. `rangePosition` (los extremos
+    cuentan como dentro).
+  - `resultRecord`: el MISMO `stats.enduranceRecords`: «Tu récord en 10 km» si el resultado es hoy el titular (por
+    `sessionId`, `entryId` o `alsoContext`); si no, «Fue tu récord en 10 km en su momento» con los récords recortados
+    al día del evento (memorizado por `data` y fecha; solo en el detalle). Bici/senderismo: «Tu salida/ruta más
+    larga». Enlaza a `#/records?seg=endurance` (Récords acepta `?seg=`).
+  - `outcomeView(data, race, { prior, record })` (la lista los pide apagados) y `pastEventsForReport` (informe).
+- **Vistas.** Lista: las filas pasadas dicen «Resultado 49:18 · 42 s mejor que el objetivo», «No participaste», «El
+  resultado ya no existe» o, sin responder y de ≤ 60 días, la etiqueta «¿Cómo te fue?»; la cabecera plegada,
+  «Pasados (n) · 1 sin resultado». Detalle (`views/race-result.js`, `data-block="result"`, `data-state`): sin
+  responder, 4 filas de ≥ 44 px (Vincular una actividad con los candidatos en línea —sin candidatos, «Registrar
+  actividad» / «Importar»—, Introducir resultado con su formulario en línea —tiempo, distancia, puesto y nota—, No
+  participé, Omitir); con resultado, Objetivo · Resultado · Diferencia · Predicción previa (`data-inside`), que se
+  apilan con texto grande, el récord (🏆) y Ver actividad / Editar resultado (la MISMA entrada de contexto) / Cambiar /
+  Quitar (quitar no borra la marca: «la marca sigue en tu contexto»). Cada acción ofrece «Deshacer» (vuelve el evento
+  como estaba y quita o restaura la marca de contexto); la marca se escribe antes que el evento. Hoy: con
+  `pendingOutcome`, una línea neutra «🏁 ¿Cómo te fue en el 10K del domingo?» → el evento. Borrar una actividad o una
+  marca vinculada avisa: «Es el resultado de «10K»; el evento quedará sin resultado.».
+- **Informe para IA**: «EVENTOS RECIENTES» (últimos 6 meses, máx. 6; `analysis.pastEvents`, la caché ya depende de
+  races, sessions y context): «10K · 4 oct · objetivo <50:00 · resultado 49:18 (42 s mejor) · puesto 41 · previsión
+  previa 51:35–54:50 (más rápido que el rango)» o «no participó»; omitidos y sin responder no salen; sin notas.
+- **Rendimiento**: `outcomeView` del detalle con 600 carreras ≈ 5–10 ms en Node (predicción de la víspera + dos
+  índices de récords); límite en la prueba, 150 ms.
+- **Pendiente**: no se crea una actividad desde el evento (se registra o importa y se vuelve a vincular). Borrar una
+  sesión de fuerza con actividades enlazadas (`views/session.js`) no avisa si una de ellas es un resultado (sigue
+  siendo recuperable con «Deshacer» y el evento muestra «El resultado ya no existe»).
+- **Pruebas**: `tests/unit/races-result.test.mjs` (16), `tests/unit/races.test.mjs`, `tests/e2e/race-outcome.test.cjs`
+  (Chromium; omitir y vincular también en WebKit), pantalla `race-result` en `tests/e2e/visual-guard.test.cjs`.
+
 ## Propietarios en esta ronda
 | Parte | Archivos |
 |---|---|

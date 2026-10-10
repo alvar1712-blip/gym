@@ -19,7 +19,7 @@ import { bodyweightQuickEntry } from './bodyweight.js';
 import { setProgress } from '../calc.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
 import { currentLabel } from '../context-logic.js';
-import { nextRelevant, todayLine, raceTitle, raceShortLabel, targetText } from '../races-logic.js';
+import { nextRelevant, todayLine, raceTitle, raceShortLabel, targetText, pendingOutcome, outcomePrompt } from '../races-logic.js';
 
 /** Un evento a 14 días o menos pasa de línea a tarjeta, justo debajo de «Te toca hoy». */
 const RACE_NEAR_DAYS = 14;
@@ -67,6 +67,9 @@ export async function mountToday(root) {
   }
   // Ronda 6 (fase E): como mucho una línea con el próximo evento deportivo relevante («🏁 10K · 73 días · objetivo <50:00»).
   if (race && !raceNear) content.appendChild(raceLine(race, today));
+  // Ronda 8 (D): un evento A o B de la última semana sin resultado → una línea neutra «¿Cómo te fue en el 10K del domingo?»
+  const ask = pendingOutcome(store.all('races'), today);
+  if (ask) content.appendChild(outcomeLine(ask, today));
 
   // Fase 3 (check-in, «Lo importante esta semana» y objetivos): se rellena después del montaje.
   const extra = h('div.today-extra');
@@ -234,6 +237,16 @@ function raceLine(race, today) {
     'aria-label': `Próximo evento: ${raceTitle(race)}, ${fmtDate(race.date, 'long')}. ${line}`,
     onClick: () => navigate(`#/races/${encodeURIComponent(race.id)}`),
   }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁 '), line), icon('chevron-right', 18));
+}
+
+/** «¿Cómo te fue?» de un evento reciente → su ficha (donde se responde u omite). Neutra: no es la acción principal. */
+function outcomeLine(race, today) {
+  const text = outcomePrompt(race, today);
+  return h('button.cal-link-btn.today-outcome', {
+    type: 'button',
+    dataset: { race: race.id },
+    onClick: () => navigate(`#/races/${encodeURIComponent(race.id)}`),
+  }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁 '), text), icon('chevron-right', 18));
 }
 
 /** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */

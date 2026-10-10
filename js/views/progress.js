@@ -1032,11 +1032,13 @@ function recRow({ label, value, sub, sessionId = null, entryId = null, source = 
 /** Tiendas de las que salen los récords: al cambiar cualquiera, la pantalla se vuelve a calcular. */
 const RECORD_STORES = new Set(['sessions', 'context', 'exercises', 'bodyweight', 'meta']);
 
-export function mountRecords(root) {
+export function mountRecords(root, params = {}) {
   const c = screen(root, { title: 'Récords', back: '#/progress' });
   c.classList.add('prg', 'prg-records');
   let data = dataFromStore();
   let today = data.today;
+  // ?seg=endurance: se llega desde el récord de un evento (ronda 8, D) directamente a Resistencia
+  if (params.seg === 'strength' || params.seg === 'endurance') ui.recSeg = params.seg;
   if (ui.recSeg !== 'strength' && ui.recSeg !== 'endurance') ui.recSeg = 'strength';
   const body = h('div.prg-rec-body');
   const seg = segmented({

@@ -522,7 +522,7 @@ html.text-large .prg-rec-sub { overflow-wrap: anywhere; }
 .rc-link > .rc-link-emoji { flex: none; font-size: calc(22px * var(--ts)); line-height: 1; }
 .goal-races, .prd-races-link { margin-top: 12px; }
 /* Hoy: una sola línea (como «Ahora: …») */
-.today-race { max-width: 100%; text-align: left; line-height: 1.3; }
+.today-race, .today-outcome { max-width: 100%; text-align: left; line-height: 1.3; }
 .today-race-text { min-width: 0; }
 
 /* ---------- «Cómo vas» (portada de Progreso, docs/PULIDO.md §7) ----------
@@ -559,3 +559,38 @@ html.text-large .prg-rec-sub { overflow-wrap: anywhere; }
 /* La frase de cada gráfica (docs/PULIDO.md §12): lo primero que se lee, sin colores de juicio (subir el peso puede
    ser bueno o malo según tu objetivo); la flecha la da el signo del texto. */
 .chart-summary { margin-top: -4px; font-size: var(--fs-md); font-weight: 700; line-height: 1.35; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* Ronda 8, D: «¿Cómo te fue?» y la tarjeta del resultado de un evento pasado */
+.rc-fold-pending { font-weight: 600; color: var(--text-2); }
+.rc-fold .card-title { overflow-wrap: anywhere; }
+.rc-row-outcome { line-height: 1.35; white-space: normal; color: var(--text); }
+.rc-row-ask { display: flex; margin-top: 4px; }
+.rc-result { gap: 12px; }
+.rc-res-text { margin: 0; font-size: calc(15px * var(--ts)); line-height: 1.45; color: var(--text-2); }
+.rc-res-dns, .rc-res-skipped { color: var(--text); }
+.rc-res-missing { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.rc-opts { border-radius: var(--radius-sm); }
+.rc-opt { min-height: 56px; }
+.rc-opt-emoji { flex: none; font-size: calc(20px * var(--ts)); line-height: 1; }
+.rc-panel { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.rc-cands { border-radius: var(--radius-sm); }
+.rc-cand { min-height: 56px; }
+.rc-cand .list-item-title, .rc-opt .list-item-title { white-space: normal; overflow-wrap: break-word; text-overflow: clip; }
+.rc-no-cands { margin: 0; line-height: 1.4; }
+.rc-cand-links { display: flex; flex-direction: column; }
+.rc-res-actions { display: flex; flex-direction: column; gap: 8px; }
+.rc-res-rows { display: flex; flex-direction: column; }
+.rc-res-row { display: grid; grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr); gap: 4px 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.rc-res-row:last-child { border-bottom: 0; }
+.rc-res-label { font-size: calc(12px * var(--ts)); font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); }
+.rc-res-value { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.rc-res-sub { font-size: calc(14px * var(--ts)); font-weight: 500; color: var(--text-2); line-height: 1.4; }
+.rc-res-row[data-row="prior"][data-reason] .rc-res-value { font-size: calc(15px * var(--ts)); font-weight: 500; color: var(--text-2); }
+.rc-res-pr { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0; background: none; border: 0; color: var(--text); text-align: left; }
+.rc-res-pr .chev { flex: none; color: var(--muted); }
+.rc-res-note { margin: 0; font-size: calc(15px * var(--ts)); line-height: 1.45; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rc-res-links { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.rc-result .cal-link-btn { color: var(--text); }
+.rc-result .cal-link-btn > .icon { color: var(--muted); }
+html.text-large .rc-res-row { grid-template-columns: minmax(0, 1fr); }
+html.text-large .rc-res-links { flex-direction: column; }
