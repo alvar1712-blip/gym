@@ -8,7 +8,7 @@ import { ACTIVITY_EMOJI } from './seed.js';
 import { navigate } from './router.js';
 import {
   LOAD_REP_TYPES, formatSet, targetText, prMessage, inheritWeight, validateSet, missingField,
-  extraSet, warmupSet, switchExercise, suggestedWarmup, warmupSetsFromPlan,
+  extraSet, warmupSet, switchExercise, suggestedWarmup, warmupSetsFromPlan, itemState, foldedSetCount,
 } from './session-logic.js';
 import { progressionHint } from './progression.js';
 import { checkSet, split } from './sanity.js';
@@ -38,13 +38,33 @@ export function renderCard(ctx, se) {
   const logType = ex?.logType || 'weight_reps';
   const label = ctx.labels.get(se.id) || null;
   const name = ex?.name || se.exName || 'Ejercicio';
-  const allDone = se.sets.length > 0 && se.sets.every((s) => s.done);
+  // Ronda 8 (H): el estado sale de session-logic.itemState (la misma regla que el plegado y el salto)
+  const acts = logType === 'cardio' ? ctx.linked(se.id) : null;
+  const state = itemState(se, { cardio: logType === 'cardio', linked: acts?.length || 0 });
+  const allDone = state === 'done';
+  const active = ctx.session.status === 'active';
+  // Un ejercicio suelto hecho, en una sesión en curso, se puede plegar (dentro de un grupo se pliega el grupo entero)
+  const foldable = allDone && active && !label && !!ctx.toggleFold;
+  const key = `se:${se.id}`;
 
-  const card = h(`section.card.ses-card${allDone ? '.ses-card-done' : ''}`, { dataset: { se: se.id } });
+  const card = h(`section.card.ses-card${allDone ? '.ses-card-done' : ''}`, {
+    dataset: label ? { se: se.id, state } : { se: se.id, state, block: key, folded: '0' },
+  });
+  const doneMark = allDone ? h('span.ses-done-mark', { role: 'img', 'aria-label': 'Completado' }, icon('check', 18)) : null;
+  let prog = null;
+  if (state === 'progress') {
+    const n = se.sets.filter((s) => s.done).length;
+    prog = h('span.ses-prog.tnum', h('span', { 'aria-hidden': 'true' }, `${n}/${se.sets.length}`),
+      h('span.sr-only', `${n} de ${se.sets.length} series hechas`));
+  }
   card.appendChild(h('div.ses-card-head',
     label ? h('span.ses-label', label) : null,
-    h('h3.ses-name', name),
-    allDone ? h('span.ses-done-mark', { role: 'img', 'aria-label': 'Completado' }, icon('check', 18)) : null,
+    foldable
+      ? h('h3.ses-name', h('button.ses-fold', { type: 'button', 'aria-expanded': 'true', onClick: () => ctx.toggleFold(key, false) },
+        doneMark, h('span.ses-fold-text', h('span.ses-fold-name', name)), h('span.ses-fold-chev', { 'aria-hidden': 'true' }, icon('chevron-up', 18))))
+      : h('h3.ses-name', name),
+    foldable ? null : doneMark,
+    prog,
     h('button.icon-btn.ses-more', { type: 'button', 'aria-label': `Opciones de ${name}`, onClick: () => ctx.exerciseMenu(se) }, icon('more', 22))));
 
   // Alternativas: «⇄ Prensa · Hack»
@@ -85,7 +105,7 @@ export function renderCard(ctx, se) {
   if (se.note) card.appendChild(h('div.ses-enote', h('span', { 'aria-hidden': 'true' }, '📝 '), se.note));
 
   if (logType === 'cardio') {
-    renderCardio(ctx, se, ex, card);
+    renderCardio(ctx, se, ex, card, acts);
     return card;
   }
 
@@ -139,6 +159,72 @@ export function renderCard(ctx, se) {
 }
 
 // ---------------------------------------------------------------------------
+// Sesiones largas (ronda 8, H): línea plegada de un ejercicio o de un grupo terminados
+// ---------------------------------------------------------------------------
+const GROUP_KIND = { superset: 'Superserie', circuit: 'Circuito' };
+
+/** «3 series» de un ejercicio de fuerza; en cardio, el resumen de su actividad o «N actividades». */
+function foldMeta(ctx, se, ex) {
+  if (ex?.logType === 'cardio') {
+    const acts = ctx.linked(se.id);
+    if (acts.length === 1) return activitySummaryText(acts[0]) || '1 actividad';
+    return plural(acts.length, 'actividad', 'actividades');
+  }
+  return plural(foldedSetCount(se), 'serie', 'series');
+}
+
+/**
+ * Ejercicio suelto terminado, plegado en una línea (sesión en curso): ✓, nombre y «3 series». Al tocarlo se despliega.
+ * Conserva data-se: la vista lo encuentra como a cualquier tarjeta.
+ */
+export function renderFoldedCard(ctx, se) {
+  const ex = ctx.exercise(se.exerciseId);
+  const name = ex?.name || se.exName || 'Ejercicio';
+  const key = `se:${se.id}`;
+  return h('section.card.ses-card.ses-card-done.ses-card-folded', { dataset: { se: se.id, state: 'done', block: key, folded: '1' } },
+    h('h3.ses-name', h('button.ses-fold', { type: 'button', 'aria-expanded': 'false', onClick: () => ctx.toggleFold(key, true) },
+      h('span.ses-done-mark', { role: 'img', 'aria-label': 'Completado' }, icon('check', 18)),
+      h('span.ses-fold-text', h('span.ses-fold-name', name), h('span.ses-fold-meta.tnum', foldMeta(ctx, se, ex))),
+      h('span.ses-fold-chev', { 'aria-hidden': 'true' }, icon('chevron-down', 18)))));
+}
+
+/** Contenido del botón de plegar de un grupo: «SUPERSERIE A · 2 ejercicios · 6 series ✓». */
+function groupFoldParts(block, exercises, expanded) {
+  const sets = exercises.reduce((n, se) => n + foldedSetCount(se), 0);
+  // El texto fluye como una frase (puede partirse en dos líneas con texto grande); el chevron, siempre a la derecha
+  return [
+    h('span.ses-fold-text',
+      h('span.ses-group-kind', GROUP_KIND[block.groupType] || GROUP_KIND.superset),
+      ` ${block.letter} · ${plural(exercises.length, 'ejercicio', 'ejercicios')}`,
+      sets ? ` · ${plural(sets, 'serie', 'series')}` : null,
+      ' ',
+      h('span.ses-done-mark', { role: 'img', 'aria-label': 'Completado' }, icon('check', 16))),
+    h('span.ses-fold-chev', { 'aria-hidden': 'true' }, icon(expanded ? 'chevron-up' : 'chevron-down', 18)),
+  ];
+}
+
+/**
+ * Cabecera de un grupo abierto. Si está terminado y la sesión en curso (`foldable`), la cabecera es el botón de
+ * plegarlo; si no, el texto de siempre («Superserie A · 2 ejercicios seguidos»).
+ */
+export function renderGroupHead(ctx, block, exercises, foldable = false) {
+  if (foldable) {
+    return h('div.ses-group-head',
+      h('button.ses-fold.ses-fold-group', { type: 'button', 'aria-expanded': 'true', onClick: () => ctx.toggleFold(block.key, false) },
+        groupFoldParts(block, exercises, true)));
+  }
+  return h('div.ses-group-head', h('span.ses-group-kind', GROUP_KIND[block.groupType] || GROUP_KIND.superset),
+    ` ${block.letter} · ${exercises.length} ejercicios seguidos`);
+}
+
+/** Superserie o circuito terminados, plegados en una línea (sus tarjetas no se pintan). */
+export function renderFoldedGroup(ctx, block, exercises) {
+  return h('div.ses-group.ses-group-folded', { dataset: { group: block.groupId, block: block.key, folded: '1' } },
+    h('button.ses-fold.ses-fold-group', { type: 'button', 'aria-expanded': 'false', onClick: () => ctx.toggleFold(block.key, true) },
+      groupFoldParts(block, exercises, false)));
+}
+
+// ---------------------------------------------------------------------------
 // Calentamiento sugerido (plegado; al abrirlo, los pasos y «Añadir estas series»)
 // ---------------------------------------------------------------------------
 
@@ -167,9 +253,12 @@ const reducedMotion = () => {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 };
 
-/** Entrada del panel al desplegarlo: solo opacidad y desplazamiento (sin animar la altura). */
-function revealWarm(panel) {
-  if (reducedMotion() || typeof panel.animate !== 'function') return;
+/**
+ * Entrada de algo que se despliega (el calentamiento sugerido, una tarjeta o un grupo plegados): solo opacidad y
+ * −6 px (sin animar la altura); nada con «reducir movimiento».
+ */
+export function reveal(panel) {
+  if (!panel || reducedMotion() || typeof panel.animate !== 'function') return;
   panel.animate(
     [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }],
     { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' },
@@ -205,7 +294,7 @@ function warmupBlock(ctx, se, logType, { plan, ref }) {
     setWarmOpen(sid, se.id, v);
     toggle.setAttribute('aria-expanded', String(v));
     panel.hidden = !v;
-    if (v) revealWarm(panel);
+    if (v) reveal(panel);
   }
   return [toggle, panel];
 }
@@ -564,9 +653,8 @@ export function activityRow(a) {
     h('span.ses-act-main.tnum', activitySummaryText(a) || 'Actividad registrada'),
     h('span.ses-act-edit', 'Editar', icon('chevron-right', 18)));
 }
-function renderCardio(ctx, se, ex, card) {
+function renderCardio(ctx, se, ex, card, acts = ctx.linked(se.id)) {
   const sport = ex?.sport || 'run';
-  const acts = ctx.linked(se.id);
   if (acts.length) card.appendChild(h('div.ses-acts', acts.map(activityRow)));
   const [firstTxt, againTxt] = SPORT_BTN[sport] || ['Registrar actividad', 'Añadir otra actividad'];
   card.appendChild(h(`button.btn.btn-lg.btn-block.ses-cardio-btn${acts.length ? '.btn-secondary' : '.btn-primary'}`, {

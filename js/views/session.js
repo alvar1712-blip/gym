@@ -14,8 +14,11 @@ import { exerciseHistory } from '../stats.js';
 import {
   lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, finishSession,
   pendingCount, doneCount, templateDiff, applyTemplateDiff, autoDuration, syncAutoDuration,
+  listBlocks, itemStates, foldedKeys, nextPendingIndex, jumpTarget,
 } from '../session-logic.js';
-import { renderCard, activityRow, activitySummaryText } from '../session-view-card.js';
+import {
+  renderCard, activityRow, activitySummaryText, renderFoldedCard, renderFoldedGroup, renderGroupHead, reveal,
+} from '../session-view-card.js';
 import { renderSummary } from '../session-view-summary.js';
 import { checkinCard, moveSessionCheckins } from '../checkin.js';
 
@@ -68,6 +71,29 @@ export function mountSession(root, params = {}) {
     session,
     labels: new Map(), // seId → 'A1'…
     editing: new Map(), // seId → setId abierto en el editor (si no, la primera pendiente)
+    // Sesiones largas (ronda 8, H): bloques plegados a mano en esta pantalla (key → 'open' | 'folded'). Solo en
+    // memoria: lo demás sale de los datos (hecho y cursor), así que el plegado sobrevive a una recarga sin guardar nada.
+    override: new Map(),
+    folded: new Set(), // última foldedKeys pintada
+    /** Estado de cada ítem (session-logic.itemStates); las actividades enlazadas, solo si hay algún ítem de cardio. */
+    states() {
+      const lt = (eid) => store.exercise(eid)?.logType || null;
+      const linkedBySe = new Map();
+      if (session.exercises.some((se) => lt(se.exerciseId) === 'cardio')) {
+        for (const a of linkedActivities(session, store.all('sessions'))) linkedBySe.set(a.parentItemId, (linkedBySe.get(a.parentItemId) || 0) + 1);
+      }
+      return itemStates(session, { logTypeOf: lt, linkedBySe });
+    },
+    /** Plegar/desplegar a mano un bloque; el foco vuelve a su botón (el bloque se ha vuelto a pintar). */
+    toggleFold(key, open) {
+      ctx.override.set(key, open ? 'open' : 'folded');
+      applyFolds();
+      const el = listEl.querySelector(`[data-block="${CSS.escape(key)}"]`);
+      if (!el) return;
+      if (open) reveal(el);
+      const btn = el.querySelector('.ses-fold');
+      try { btn?.focus({ preventScroll: true }); } catch { /* sin foco */ }
+    },
     guardUntil: new Map(), // seId → instante hasta el que se ignora «Registrar» (doble toque)
     exercise: (eid) => store.exercise(eid),
     settings: () => store.settings(), // incrementos (redondeo del calentamiento sugerido)
@@ -112,8 +138,11 @@ export function mountSession(root, params = {}) {
       const old = listEl.querySelector(`[data-se="${CSS.escape(se.id)}"]`);
       // Si el foco estaba en la tarjeta (VoiceOver, teclado), sigue en ella: si no, caería al principio de la página.
       const had = !!old && old.contains(document.activeElement);
-      if (old) old.replaceWith(renderCard(ctx, se));
-      else renderList();
+      // Plegada (o dentro de un grupo plegado, sin tarjeta en la página): la lista entera, que recalcula el plegado
+      if (old && old.dataset.folded !== '1') {
+        old.replaceWith(renderCard(ctx, se));
+        refreshGroupHead(se);
+      } else renderList();
       updateFinishHint();
       if (had) focusInCard(se);
     },
@@ -125,26 +154,31 @@ export function mountSession(root, params = {}) {
       const btn = cardEl(se)?.querySelector('.ses-editor .ses-register');
       if (btn) ensureVisible(btn);
     },
+    /**
+     * Al terminar un ejercicio: a los 350 ms (se ve antes el ✓ en la tarjeta abierta), el cursor pasa al siguiente
+     * PENDIENTE (con vuelta al principio; no al índice + 1, que puede estar hecho), se pliega lo terminado y la
+     * tarjeta de destino sube. Si no queda nada pendiente, nada se mueve: «Terminar» está en la barra.
+     */
     scrollToNext(se) {
       if (session.status !== 'active') return;
-      const next = session.exercises[session.exercises.indexOf(se) + 1];
-      const el = next && cardEl(next);
-      if (!el) return;
-      // El foco solo se mueve si seguía en la tarjeta recién terminada (o se había perdido).
-      const prev = cardEl(se);
+      if (nextPendingIndex(ctx.states(), session.exercises.indexOf(se)) < 0) return;
       setTimeout(() => {
-        if (unmounted || !el.isConnected) return;
+        if (unmounted || session.status !== 'active') return;
+        const i = session.exercises.indexOf(se);
+        const states = ctx.states();
+        // Si en estos 350 ms ha vuelto a tocar la tarjeta («+ Serie», corregir una serie hecha), sigue en ella: ni se
+        // pliega ni el cursor se va ni la pantalla salta (nada se mueve bajo el dedo)
+        if (i < 0 || states[i] !== 'done' || ctx.editing.has(se.id)) return;
+        const t = nextPendingIndex(states, i);
+        if (t < 0) return;
+        // El foco solo se mueve si seguía en la tarjeta recién terminada (o se había perdido): se mira ANTES de plegarla.
         const a = document.activeElement;
-        const moveFocus = !a || a === document.body || !!prev?.contains(a);
-        // La tarjeta siguiente arriba; si así su «Registrar» quedara bajo las pestañas, un poco más.
-        let top = el.getBoundingClientRect().top + window.scrollY - headerBottom() - 8;
-        const btn = el.querySelector('.ses-editor .ses-register');
-        if (btn) {
-          const over = btn.getBoundingClientRect().bottom + window.scrollY - top - visibleBottom();
-          if (over > 0) top += over;
-        }
-        window.scrollTo({ top: Math.max(0, top), behavior: scrollBehavior() });
-        if (moveFocus) focusInCard(next);
+        const prev = cardEl(se);
+        const moveFocus = !a || a === document.body || !a.isConnected || !!prev?.contains(a);
+        session.cursor = t;
+        ctx.saveSoon();
+        applyFolds();
+        revealCard(session.exercises[t], { focus: moveFocus });
       }, 350);
     },
     /**
@@ -271,30 +305,21 @@ export function mountSession(root, params = {}) {
   const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
   document.addEventListener('visibilitychange', onVisible);
 
-  // --- lista de ejercicios (secciones y superseries/circuitos) ---
+  // --- lista de ejercicios (secciones y bloques: ejercicios sueltos y superseries/circuitos) ---
   function renderList() {
     const exs = session.exercises;
     const out = [];
+    const blocks = listBlocks(exs);
+    const states = ctx.states();
+    ctx.folded = foldedKeys(session, states, { editing: ctx.editing, override: ctx.override });
     ctx.labels.clear();
-    let letter = 0;
-    let i = 0;
-    while (i < exs.length) {
-      const se = exs[i];
-      if (se.section && se.section !== exs[i - 1]?.section) out.push(h('h2.section-title.ses-section', se.section));
-      let j = i + 1;
-      if (se.groupId) while (j < exs.length && exs[j].groupId === se.groupId) j++;
-      if (se.groupId && j - i >= 2) {
-        const L = String.fromCharCode(65 + (letter++ % 26));
-        const kind = se.groupType === 'circuit' ? 'Circuito' : 'Superserie';
-        for (let k = i; k < j; k++) ctx.labels.set(exs[k].id, `${L}${k - i + 1}`);
-        out.push(h('div.ses-group', { dataset: { group: se.groupId } },
-          h('div.ses-group-head', h('span.ses-group-kind', kind), ` ${L} · ${j - i} ejercicios seguidos`),
-          exs.slice(i, j).map((x) => renderCard(ctx, x))));
-        i = j;
-      } else {
-        out.push(renderCard(ctx, se));
-        i++;
-      }
+    for (const b of blocks) {
+      if (b.groupId) for (let k = b.start; k < b.end; k++) ctx.labels.set(exs[k].id, `${b.letter}${k - b.start + 1}`);
+    }
+    for (const b of blocks) {
+      const se = exs[b.start];
+      if (se.section && se.section !== exs[b.start - 1]?.section) out.push(h('h2.section-title.ses-section', se.section));
+      out.push(renderBlock(b, states));
     }
     if (!exs.length) {
       out.push(emptyState({ emoji: '🏋️', title: 'Sin ejercicios', text: 'Añade el primero con «Añadir ejercicio».' }));
@@ -315,13 +340,99 @@ export function mountSession(root, params = {}) {
     ] : []));
   }
 
+  /**
+   * Un bloque: la tarjeta (o su línea plegada) de un ejercicio suelto, o el grupo (abierto o plegado). Lleva
+   * data-block (su clave) y data-folded, para que applyFolds cambie solo los bloques que se pliegan o despliegan.
+   */
+  function renderBlock(b, states, folded = ctx.folded.has(b.key)) {
+    const exs = session.exercises;
+    if (!b.groupId) return folded ? renderFoldedCard(ctx, exs[b.start]) : renderCard(ctx, exs[b.start]);
+    const members = exs.slice(b.start, b.end);
+    if (folded) return renderFoldedGroup(ctx, b, members);
+    return h('div.ses-group', { dataset: { group: b.groupId, block: b.key, folded: '0' } },
+      renderGroupHead(ctx, b, members, groupFoldable(b, states)),
+      members.map((x) => renderCard(ctx, x)));
+  }
+  /** ¿El grupo abierto lleva el botón de plegar? Sesión en curso y todos sus ejercicios hechos. */
+  function groupFoldable(b, states) {
+    if (session.status !== 'active') return false;
+    for (let k = b.start; k < b.end; k++) if (states[k] !== 'done') return false;
+    return true;
+  }
+  /** Tras volver a pintar una tarjeta de un grupo abierto: su cabecera (lleva el botón de plegar si ya está hecho). */
+  function refreshGroupHead(se) {
+    const groupEl = cardEl(se)?.closest('.ses-group[data-block]');
+    if (!groupEl) return;
+    const b = listBlocks(session.exercises).find((x) => x.key === groupEl.dataset.block);
+    const head = groupEl.querySelector(':scope > .ses-group-head');
+    if (!b || !head) return;
+    head.replaceWith(renderGroupHead(ctx, b, session.exercises.slice(b.start, b.end), groupFoldable(b, ctx.states())));
+  }
+  /**
+   * Recalcula el plegado y cambia SOLO los bloques que pasan de plegado a abierto o al revés (las demás tarjetas no
+   * se vuelven a pintar: cada una consulta su historial).
+   */
+  function applyFolds() {
+    const states = ctx.states();
+    const next = foldedKeys(session, states, { editing: ctx.editing, override: ctx.override });
+    for (const b of listBlocks(session.exercises)) {
+      const now = next.has(b.key);
+      const el = listEl.querySelector(`[data-block="${CSS.escape(b.key)}"]`);
+      if (!el || (el.dataset.folded === '1') === now) continue;
+      el.replaceWith(renderBlock(b, states, now));
+    }
+    ctx.folded = next;
+    updateFinishHint();
+  }
+  /**
+   * Sube la tarjeta del ejercicio bajo la cabecera; si así su «Registrar» quedara bajo la barra de abajo, un poco
+   * más. Con `focus`, el foco pasa a la tarjeta (focusInCard). Sin animación con «reducir movimiento».
+   */
+  function revealCard(se, { focus = false } = {}) {
+    const el = se && cardEl(se);
+    if (!el) return;
+    let top = el.getBoundingClientRect().top + window.scrollY - headerBottom() - 8;
+    const btn = el.querySelector('.ses-editor .ses-register');
+    if (btn) {
+      const over = btn.getBoundingClientRect().bottom + window.scrollY - top - visibleBottom();
+      if (over > 0) top += over;
+    }
+    window.scrollTo({ top: Math.max(0, top), behavior: scrollBehavior() });
+    if (focus) focusInCard(se);
+  }
+  /** ¿Se ve la tarjeta del ejercicio (su «Registrar», o la cabecera si no tiene editor) entre la cabecera y la barra? */
+  function cardOnScreen(se) {
+    const el = se && cardEl(se);
+    if (!el) return false;
+    const r = (el.querySelector('.ses-editor .ses-register') || el.querySelector('.ses-card-head') || el).getBoundingClientRect();
+    return r.height > 0 && r.top >= headerBottom() - 1 && r.bottom <= visibleBottom() + 12;
+  }
+  const cursorIndex = () => {
+    const c = session.cursor;
+    return Number.isInteger(c) && c >= 0 && c < session.exercises.length ? c : 0;
+  };
+  /**
+   * «Siguiente pendiente» (barra de la sesión): la tarjeta del cursor si no está hecha y no se ve; si no, el siguiente
+   * ejercicio sin terminar (con vuelta). El cursor va con él: tocar otra vez lleva al siguiente.
+   */
+  function jumpToPending() {
+    const states = ctx.states();
+    const c = cursorIndex();
+    const t = jumpTarget(states, c, cardOnScreen(session.exercises[c]));
+    if (t < 0) return;
+    session.cursor = t;
+    ctx.saveSoon();
+    applyFolds();
+    revealCard(session.exercises[t], { focus: true });
+  }
+
   const cardEl = (se) => listEl.querySelector(`[data-se="${CSS.escape(se.id)}"]`);
-  /** Foco en la tarjeta: «Registrar» del editor, si no la primera serie, «+ Serie» o la propia tarjeta. */
+  /** Foco en la tarjeta: «Registrar» del editor, si no la primera serie, «+ Serie», el botón de desplegar o la propia tarjeta. */
   function focusInCard(se) {
     const card = cardEl(se);
     if (!card) return;
     const target = card.querySelector('.ses-editor .ses-register') || card.querySelector('.ses-row[data-set]')
-      || card.querySelector('.ses-add-set, .ses-cardio-btn') || card;
+      || card.querySelector('.ses-add-set, .ses-cardio-btn') || card.querySelector('.ses-fold') || card;
     try { target.focus({ preventScroll: true }); } catch { /* sin foco: no pasa nada */ }
   }
   function scrollToEl(el, smooth) {
@@ -348,24 +459,66 @@ export function mountSession(root, params = {}) {
   // Dice que estás en una sesión y cuántas series llevas (la misma cuenta que Hoy), y lleva «Terminar». No
   // encierra: «Hoy» sale sin cerrar nada (la sesión sigue abierta y Hoy la muestra arriba, con «Continuar»);
   // fuera de esta pantalla vuelven las pestañas. Sin cronómetro de descanso (el de la sesión va en la cabecera).
+  // Ronda 8 (H): el centro de la barra es además el salto al «Siguiente pendiente» (⌄ junto a «En sesión»: a 375 px
+  // no cabe junto a «n/N series» sin partirlo; sin sitio nuevo).
   const fbCount = h('span.fb-count.tnum', { 'aria-hidden': 'true' });
+  // Dos ⌄ y se ve uno: junto a «En sesión» (texto normal) o junto a «n/N» con texto grande (ahí «series» se oculta y
+  // queda sitio; «En sesión ⌄» se partiría en dos líneas)
+  const fbChev = h('span.fb-next-chev', { 'aria-hidden': 'true' }, icon('chevron-down', 16));
+  const fbChevL = h('span.fb-next-chev.fb-next-chev-lg', { 'aria-hidden': 'true' }, icon('chevron-down', 16));
   const fbCountSr = h('span.sr-only');
+  const fbNext = h('button.fb-status.fb-next', { type: 'button', onClick: jumpToPending },
+    h('span.fb-line', h('span.fb-kicker', { 'aria-hidden': 'true' }, 'En sesión'), fbChev), h('span.fb-line', fbCount, fbChevL), fbCountSr);
   const focusEl = h('div.focusbar',
     h('button.fb-exit', {
       type: 'button',
       'aria-label': 'Ir a Hoy. La sesión sigue abierta',
       onClick: () => navigate('#/today', { transition: 'pop' }),
     }, icon('chevron-left', 22), h('span.fb-exit-label', 'Hoy')),
-    h('div.fb-status', h('span.fb-kicker', 'En sesión'), fbCount, fbCountSr),
+    fbNext,
     h('button.btn.btn-primary.fb-finish.ses-finish-bar', { type: 'button', 'aria-label': 'Terminar sesión', onClick: openFinish },
       icon('flag', 18), h('span', 'Terminar')));
-  function updateFocusBar() {
+  // ¿Se veía la tarjeta del cursor en la última medida? (la mide el fotograma siguiente; ver updateFocusBar)
+  let fbCursorVisible = false;
+  /**
+   * Cuenta, estado y etiqueta de «Siguiente pendiente». Si `measure` no es true NO mide nada (usa la última
+   * visibilidad conocida) y pide la medida para el fotograma siguiente: se llama al pintar la lista, y medir ahí
+   * (getBoundingClientRect) forzaba un layout síncrono de la lista a medio montar — ~110 ms con la CPU ×4 al abrir
+   * una sesión de 12 ejercicios. La etiqueta solo depende de esa medida en el nombre del destino.
+   */
+  function updateFocusBar(measure = false) {
     const { done, total } = setProgress(session);
     // Con texto grande la palabra «series» cede sitio (css: .fb-count-unit); VoiceOver lee fbCountSr.
     if (total) fbCount.replaceChildren(`${done}/${total}`, h('span.fb-count-unit', ' series'));
     else fbCount.replaceChildren('Sin series');
-    fbCountSr.textContent = total ? `${done} de ${total} series hechas` : 'Sin series';
+    if (session.status !== 'active') return; // sin barra (sesión terminada): no hace falta medir nada
+    const count = total ? `${done} de ${total} series hechas.` : 'Sin series.';
+    const c = cursorIndex();
+    if (measure) fbCursorVisible = cardOnScreen(session.exercises[c]);
+    else scheduleFocusBar();
+    const t = jumpTarget(ctx.states(), c, fbCursorVisible);
+    const target = t >= 0 ? session.exercises[t] : null;
+    fbNext.disabled = !target;
+    fbChev.hidden = !target;
+    fbChevL.hidden = !target;
+    if (target) {
+      const name = store.exercise(target.exerciseId)?.name || target.exName || 'Ejercicio';
+      fbCountSr.textContent = `En sesión. Siguiente pendiente: ${name}. ${count}`;
+      fbNext.title = 'Ir al siguiente pendiente';
+    } else {
+      fbCountSr.textContent = `En sesión. ${count} No queda ningún ejercicio pendiente.`;
+      fbNext.removeAttribute('title');
+    }
   }
+  // El destino puede depender de si se ve la tarjeta del cursor: la etiqueta se actualiza al desplazar y tras cada
+  // cambio (una vez por fotograma como mucho, solo en curso), midiendo cuando el layout del fotograma ya toca.
+  let fbRaf = 0;
+  function scheduleFocusBar() {
+    if (fbRaf || unmounted || session.status !== 'active') return;
+    fbRaf = requestAnimationFrame(() => { fbRaf = 0; if (!unmounted) updateFocusBar(true); });
+  }
+  const onScroll = scheduleFocusBar;
+  window.addEventListener('scroll', onScroll, { passive: true });
 
   function renderFooter() {
     const active = session.status === 'active';
@@ -822,6 +975,8 @@ export function mountSession(root, params = {}) {
     clearInterval(timer);
     focusBar(null);
     document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('scroll', onScroll);
+    if (fbRaf) cancelAnimationFrame(fbRaf);
     // Sesión ya terminada: las series añadidas y no confirmadas no se quedan como pendientes.
     if (session.status === 'done' && pendingCount(session) && store.get('sessions', session.id) === session) {
       for (const se of session.exercises) se.sets = se.sets.filter((x) => x.done);

@@ -183,6 +183,8 @@ async function removeLongSession(page) {
 const routes = (ids) => [
   ['today', '#/today'], ['calendar', '#/calendar'], ['day', `#/day/${ids.doneDate || TODAY}`], ['history', '#/history'],
   ids.activeId && ['session', `#/session/${ids.activeId}`], ids.done && ['summary', `#/session/${ids.done}/summary`],
+  // Ronda 8 (H): sesión larga con lo terminado plegado, uno desplegado a mano y otro en curso (2/4)
+  ids.activeId && ['session-long', '#/today', longSession, removeLongSession],
   ['activity-new', '#/activity/new?kind=run'], ['activity-new-hike', '#/activity/new?kind=hike'], ids.run && ['activity', `#/activity/${ids.run}`],
   ['bodyweight', '#/bodyweight'], ['exercises', '#/exercises'], ['exercise', '#/exercise/press_banca'], ['exercise-edit', '#/exercise/press_banca/edit'],
   ['templates', '#/templates'], ['template', '#/template/tpl_d1'],

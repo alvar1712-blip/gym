@@ -30,6 +30,47 @@
 .ses-group-head { font-size: calc(13px * var(--ts)); font-weight: 650; color: var(--muted); padding: 0 2px; }
 .ses-group-kind { color: var(--info); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
 
+/* ---------- Sesiones largas (ronda 8, H): lo terminado, plegado en una línea ----------
+   Un ejercicio suelto o un grupo entero terminados se pliegan (views/session.js applyFolds); la línea entera es el
+   botón de desplegar (44 px). El nombre puede ir en dos líneas: nunca «…». */
+.ses-fold {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  -webkit-tap-highlight-color: transparent;
+}
+.ses-fold.is-pressed { background: var(--surface-2); }
+/* Nombre y resumen en una línea si caben; si no, el resumen baja (nunca «…» ni el chevron solo en otra línea) */
+.ses-fold-text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
+.ses-fold-name { min-width: 0; overflow-wrap: anywhere; }
+.ses-fold-meta { flex: none; font-size: calc(15px * var(--ts)); font-weight: 650; color: var(--muted); }
+.ses-fold-chev { flex: none; display: inline-flex; color: var(--muted); }
+.ses-fold .ses-done-mark { flex: none; }
+.ses-card-folded { padding: calc(8px * var(--ts)) 12px; }
+.ses-card-folded .ses-name { font-size: calc(17px * var(--ts)); font-weight: 720; }
+/* Grupo: la cabecera (abierto) o la línea entera (plegado) es el botón; su texto fluye como una frase */
+.ses-fold-group { font-size: calc(14px * var(--ts)); font-weight: 650; color: var(--muted); padding: 0 2px; }
+.ses-fold-group .ses-fold-text { display: block; overflow-wrap: break-word; }
+.ses-fold-group .ses-done-mark { display: inline-flex; vertical-align: -3px; }
+.ses-group-head:has(.ses-fold) { padding: 0; }
+.ses-group-folded { padding-left: 10px; }
+/* En curso: «2/4» discreto en la cabecera (sin sumar altura) */
+.ses-prog { flex: none; font-size: calc(14px * var(--ts)); font-weight: 700; color: var(--text-2); padding: 2px 8px; border-radius: 999px; background: var(--surface-2); }
+/* Con texto grande, el resumen («3 series») baja a su propia línea */
+html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
+
 /* ---------- Tarjeta de ejercicio ---------- */
 .ses-card { gap: 10px; padding: 12px 12px 12px 14px; scroll-margin-top: calc(var(--topbar-h, calc(var(--sat) + 68px)) + 8px); }
 .ses-card-done { border-color: rgba(74, 222, 128, 0.35); }

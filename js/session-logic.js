@@ -478,6 +478,121 @@ export function doneCount(session) {
   return sum(session.exercises || [], (se) => (se.sets || []).filter((s) => s.done).length);
 }
 
+// ===========================================================================
+// Sesiones largas (ronda 8, H): bloques, estado de cada ítem, plegado y salto al siguiente pendiente
+// Todo sale de los datos (series hechas, actividades enlazadas y session.cursor): nada nuevo se guarda.
+// ===========================================================================
+
+/**
+ * Agrupa la lista en bloques: un ejercicio suelto o una superserie/circuito (2 o más seguidos con el mismo groupId;
+ * un groupId aislado cuenta como suelto). La vista pinta la lista con esto mismo: una sola definición de grupo. pura
+ * @returns {{key:string, start:number, end:number, groupId:string|null, groupType:'superset'|'circuit'|null, letter:string|null}[]}
+ *   key: 'se:<seId>' | 'g:<groupId>'; end excluido; letter: 'A', 'B'… por orden de aparición de los grupos.
+ */
+export function listBlocks(exercises = []) {
+  const out = [];
+  const seen = new Set();
+  let letter = 0;
+  let i = 0;
+  while (i < exercises.length) {
+    const se = exercises[i];
+    let j = i + 1;
+    if (se.groupId) while (j < exercises.length && exercises[j].groupId === se.groupId) j++;
+    if (se.groupId && j - i >= 2) {
+      // El mismo groupId en dos tramos separados (raro: se movió un ejercicio): claves distintas
+      let key = `g:${se.groupId}`;
+      if (seen.has(key)) key = `${key}:${i}`;
+      seen.add(key);
+      out.push({ key, start: i, end: j, groupId: se.groupId, groupType: se.groupType === 'circuit' ? 'circuit' : 'superset', letter: String.fromCharCode(65 + (letter++ % 26)) });
+      i = j;
+    } else {
+      out.push({ key: `se:${se.id}`, start: i, end: i + 1, groupId: null, groupType: null, letter: null });
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
+ * Estado de un ítem de la sesión: 'pending' (nada hecho) | 'progress' (algo hecho y queda algo) | 'done'. pura
+ * Fuerza: hecho = tiene series y todas están hechas (sin series → pendiente). Cardio (sin series): hecho si tiene
+ * alguna actividad enlazada.
+ */
+export function itemState(se, { cardio = false, linked = 0 } = {}) {
+  if (cardio) return linked > 0 ? 'done' : 'pending';
+  const sets = se?.sets || [];
+  const n = sets.filter((s) => s && s.done).length;
+  if (!sets.length || !n) return 'pending';
+  return n === sets.length ? 'done' : 'progress';
+}
+
+/**
+ * Estados alineados con session.exercises. logTypeOf(exerciseId) → logType; linkedBySe: Map(seId → nº de
+ * actividades enlazadas), solo hace falta si algún ítem es de cardio. pura
+ */
+export function itemStates(session, { logTypeOf = () => null, linkedBySe = new Map() } = {}) {
+  return (session?.exercises || []).map((se) => itemState(se, {
+    cardio: logTypeOf(se.exerciseId) === 'cardio',
+    linked: linkedBySe.get(se.id) || 0,
+  }));
+}
+
+/**
+ * Bloques que se muestran plegados. Solo en una sesión en curso; un bloque se pliega cuando todos sus ítems están
+ * hechos, salvo que lo impida (por orden): un editor abierto en alguno, que el usuario lo haya desplegado o plegado a
+ * mano (override: Map(key → 'open' | 'folded'), en memoria) o que el cursor esté dentro. pura
+ * @param {{has:(seId:string)=>boolean}} [opts.editing]  ítems con el editor abierto a mano (Map o Set de seId)
+ * @returns {Set<string>} claves de listBlocks
+ */
+export function foldedKeys(session, states, { editing = new Set(), override = new Map() } = {}) {
+  const out = new Set();
+  if (!session || session.status !== 'active') return out;
+  const exs = session.exercises || [];
+  const cursor = Number.isInteger(session.cursor) ? session.cursor : 0;
+  for (const b of listBlocks(exs)) {
+    let all = true;
+    let edit = false;
+    for (let k = b.start; k < b.end; k++) {
+      if (states[k] !== 'done') all = false;
+      if (editing.has(exs[k].id)) edit = true;
+    }
+    if (!all || edit) continue;
+    const o = override.get(b.key);
+    if (o === 'open') continue;
+    if (o !== 'folded' && cursor >= b.start && cursor < b.end) continue;
+    out.add(b.key);
+  }
+  return out;
+}
+
+/** Primer índice no hecho después de `from`, dando la vuelta (`from` cuenta el último); -1 si todo está hecho. pura */
+export function nextPendingIndex(states, from) {
+  const n = states?.length || 0;
+  const f = Number.isInteger(from) ? from : -1;
+  for (let k = 1; k <= n; k++) {
+    const i = (((f + k) % n) + n) % n;
+    if (states[i] !== 'done') return i;
+  }
+  return -1;
+}
+
+/**
+ * Destino de «Siguiente pendiente»: la tarjeta del cursor si no está hecha y no se ve; si no, el siguiente pendiente
+ * después del cursor (con vuelta). -1 si no queda nada. pura
+ */
+export function jumpTarget(states, cursor, cursorVisible = false) {
+  const c = Number.isInteger(cursor) && cursor >= 0 && cursor < (states?.length || 0) ? cursor : 0;
+  if (states?.length && states[c] !== 'done' && !cursorVisible) return c;
+  return nextPendingIndex(states, c);
+}
+
+/** Series que resume la línea plegada: las hechas que no son calentamiento; si no hay ninguna, todas las hechas. pura */
+export function foldedSetCount(se) {
+  const done = (se?.sets || []).filter((s) => s && s.done);
+  const work = done.filter((s) => s.type !== 'warmup').length;
+  return work || done.length;
+}
+
 /**
  * Primer dato que le falta a la serie para poder registrarse: 'weight' | 'reps' | 'timeSec' | 'distanceM' | null.
  * En peso × reps y unilateral el peso es obligatorio (0 vale: sin carga). pura

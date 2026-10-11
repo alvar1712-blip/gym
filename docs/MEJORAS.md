@@ -456,6 +456,25 @@ siguiente pendiente.
   plegado sin nada hecho ni en una sesión terminada, «reducir movimiento», 375 × 667 al 150 %) y pantalla
   `session-long` en `tests/e2e/visual-guard.test.cjs`. Con el código anterior fallan la unitaria (no existen las
   funciones) y las cuatro E2E; con solo `scrollToNext` devuelto al índice + 1 falla «no salta a una tarjeta hecha».
+- **Barra a 375 px**: el botón «Siguiente pendiente» no lleva relleno lateral; con él, «23/37 series» (103 px en un
+  centro de 108 px) se partía en dos líneas (visto en la captura `session-long` a 375 px). Con más de 100 series puede
+  partirse, como antes; nunca se corta.
+- **Rendimiento** (Chromium, 1721 sesiones de 5 años de `seedRealistic`, sesión de 12 ejercicios): registrar una serie
+  ≈ 3–13 ms con el plegado (antes 1–10 ms, misma dispersión); «Siguiente pendiente» ≈ 1,5–3,5 ms (`applyFolds`
+  sustituye uno o dos bloques). `linkedActivities` solo se recorre si la sesión tiene algún ítem de cardio.
+- **Revisión: nada se mueve bajo el dedo.** Si en los 350 ms tras terminar un ejercicio se vuelve a tocar su tarjeta
+  («+ Serie» o corregir una serie hecha), `scrollToNext` no hace nada: ni plegado, ni cursor, ni desplazamiento (antes
+  el cursor saltaba al siguiente y la pantalla se iba de la tarjeta que se editaba). Regresión en
+  `session-long.test.cjs` («tocar la tarjeta recién terminada antes del salto», reloj parado), que fallaba sin el arreglo.
+- **Revisión final: abrir la sesión sin layout síncrono.** La etiqueta de «Siguiente pendiente» miraba si se veía la
+  tarjeta del cursor (`getBoundingClientRect`) dentro de `renderList` → `updateFinishHint` → `updateFocusBar`, y eso
+  forzaba el layout de la lista a medio montar (≈ 110 ms con la CPU ×4 en el perfil). Ahora `updateFocusBar()` usa la
+  última visibilidad medida y pide la medida para el fotograma siguiente (`updateFocusBar(true)` en un
+  `requestAnimationFrame`, el mismo que ya usaba el desplazamiento); el botón (activo o no) no depende de la medida.
+  Apertura de una sesión de 12 ejercicios con 1 año de historial (CPU ×4, mediana de 5, media de 2 rondas
+  intercaladas): antes del arreglo 274 ms hasta la lista y 262 ms de tarea más larga frente a 198/217 ms al empezar la
+  ronda; después 208/226 ms (al empezar la ronda, 195/228). Regresión «abrir una sesión de 12 y registrar no fuerzan un
+  layout síncrono de la lista» (Chromium y WebKit), que fallaba con el código anterior.
 - Modo mujer y menores no se ven afectados (no hay kcal). Sin archivos nuevos de la app.
 
 ## Propietarios en esta ronda
