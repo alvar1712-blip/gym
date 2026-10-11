@@ -209,7 +209,7 @@
 .an-cyc-state { font-size: calc(17px * var(--ts)); font-weight: 750; }
 .an-cyc-next { font-size: calc(15px * var(--ts)); color: var(--text); }
 .an-cyc-basis { font-size: calc(13px * var(--ts)); line-height: 1.4; color: var(--text-2); }
-.an-cyc-btn { min-height: 48px; }
+.an-cyc-btn, .an-rcv-btn { min-height: 48px; }
 
 /* ---------- Informe para tu IA ---------- */
 .an-card-report .an-card-icon { background: var(--accent-soft); color: var(--accent); }

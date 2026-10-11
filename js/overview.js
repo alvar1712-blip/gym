@@ -115,7 +115,7 @@ function recoveryRow(weeks, a) {
   const spark = weeks.slice(-SPARK_WEEKS).map((w) => w.loadTotal || 0);
   const { cur, prev } = halves(weeks, (w) => w.loadTotal || 0);
   const load = changeVs(cur, prev, 'Carga');
-  const row = { area: 'recovery', label: 'Recuperación', spark, sparkLabel: 'Carga semanal (minutos × esfuerzo)', href: '#/analysis?area=recovery' };
+  const row = { area: 'recovery', label: 'Recuperación', spark, sparkLabel: 'Carga semanal (minutos × esfuerzo)', href: '#/recovery' };
   const n = (wb?.sleep?.n || 0) + (wb?.energy?.n || 0);
   if (!wb || !wb.count || !n) {
     return { ...row, value: 'Sin check-ins', change: load || 'Responde «¿Cómo llegas hoy?» para verla', state: insufficient };

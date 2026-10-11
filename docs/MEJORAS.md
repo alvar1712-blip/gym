@@ -234,6 +234,230 @@ direcciones; una copia antigua sin él = «sin responder»; una app antigua lo i
 - **Pruebas**: `tests/unit/races-result.test.mjs` (16), `tests/unit/races.test.mjs`, `tests/e2e/race-outcome.test.cjs`
   (Chromium; omitir y vincular también en WebKit), pantalla `race-result` en `tests/e2e/visual-guard.test.cjs`.
 
+## 9. Contexto dentro de las gráficas (ronda 8, E1–E4)
+
+«Tu contexto» (fases y hechos) y los eventos pasados con resultado se ven DENTRO de las gráficas, para leerlas con lo
+que pasaba (una bajada de peso durante una enfermedad, la fuerza tras empezar la creatina, el ritmo de una carrera).
+
+- **Franja superior, no bandas de fondo** (`js/charts.js`, opción `context` de `lineChart` y `barChart`): solo existe
+  con el contexto encendido y algo dentro del periodo; entonces el margen de arriba pasa de 10 a 18 px (`svg[data-t]`) y
+  la franja va ahí. Apagada, la gráfica es exactamente la de antes. No choca con las franjas rosas de la regla (modo
+  mujer), no tapa líneas ni barras y cabe a 375 px.
+- **Fases**: una sola fila de segmentos de 5 px, un único color neutro (`--text-2` al 45 %; sin arcoíris). Varias a
+  la vez se pintan como su UNIÓN (`mergeSegments`); los nombres solo salen en el globo, por prioridad y con «+N». Un
+  lado que sigue fuera del periodo (fase abierta o que acaba después) tiene el extremo recto; si no, redondo.
+- **Hechos**: punto de 3,5 px. Precisión día → relleno en su fecha; mes → hueco a mitad de mes («sep 2026»); estación o
+  año → no se dibujan (no se pueden situar con honradez; siguen en «Tu contexto»). El peso habitual y los pesos en una
+  fecha nunca salen (son referencias). Dos marcadores a menos de 12 px van juntos (`groupFacts`): «2 hechos».
+- **Eventos pasados**: con resultado (`outcome.status 'done'`), un hecho más con su tiempo, leído con `resolveResult`
+  (la misma fuente que «¿Cómo te fue?»): «10K Valencia · 49:18». Si el resultado vive en un resultado de carrera de tu
+  contexto (`contextId`), se pinta una sola vez, como evento. «No participé», omitido, sin responder y futuros, no.
+  Nombre: el del evento o, sin nombre, el corto del tipo («10K · 50:00»). (El diseño proponía `eventLabel`, que con un
+  nombre como «10K Valencia» daría «10K Valencia (10K)»: se usa `name || raceShortLabel`.)
+- **Toque**: un toque SIN arrastre que levanta en la franja (py ≤ T + 26, ≈ 44 px desde arriba) y a ±22 px de un hecho
+  abre su globo de una línea, «15 sep · Inicio creatina» (varios: «3 hechos» y una fila por hecho, hasta 3 y «+N
+  más»). Con ratón, al pasar por encima. El resto de toques y el arrastre, como siempre.
+- **Globo de un punto**: una línea más, `.chart-tip-ctx`, siempre de una línea («…» si no cabe): hechos de ese día y
+  después fases vigentes por prioridad, «Parón · +1». En barras semanales cuenta la semana entera. Así se lee «28 ago
+  2026 · 72,7 kg · Parón de verano» (fecha, valor, contexto).
+- **Interruptor «Contexto»** (`button.chart-ctx-toggle`, `aria-pressed`, `aria-label` «Mostrar contexto en la
+  gráfica», ≥ 44 px): al final de la leyenda (o en una fila propia sin leyenda; con texto grande baja a su fila); su
+  icono es una muestra de la franja. Solo aparece si algo cae en el periodo. Se recuerda por gráfica en
+  `localStorage['entreno.chartctx.<key>']` ('1'/'0', respaldo en memoria), como el periodo: no va en la copia y «Borrar
+  todo» o importar ya lo borran (`LOCAL_KEY_PREFIXES`). Pulsarlo solo redibuja (no recalcula datos).
+  Encendido por defecto: `bodyweight` (Progreso, #/bodyweight y el análisis comparten la clave), `exercise` (todas las
+  gráficas de la ficha), `run-pace`, `bike-speed`, `swim-pace`. Apagado (barras con ruido): `load`, `km`.
+- **Accesibilidad**: con el contexto encendido, la descripción del SVG añade «Contexto: Parón (fase), Inicio creatina
+  el 15 sep y 2 más» (3 como mucho; fases por prioridad y después hechos). Apagado, nada.
+- **Qué entra en cada gráfica** (`js/chart-context.js`, puro): perfiles `weight` y `strength` (vida, entrenamiento,
+  cuerpo, personalizada; sin carreras), `endurance` (vida, entrenamiento, deporte, personalizada; todo; las fases y
+  eventos de OTRO deporte no entran: Prep. ciclismo no sale en el ritmo de carrera, Híbrido sí) y `load`. El orden de
+  aspectos es la prioridad del nombre. Nombres: `short` nuevo en `PHASE_TYPES`/`EVENT_TYPES` («Parón», «Prep. 10K»,
+  «Inicio creatina»…); en personalizada y «Otro», su texto (la descripción de un tipo con nombre no es un nombre: una
+  fase de parón sale «Parón»). Resultado de carrera: «San Silvestre · 49:18» (o la distancia si no tiene nombre).
+- **Gráficas con franja**: Progreso (peso, ritmo de carrera, velocidad en bici, ritmo de natación, carga semanal y km
+  semanales —con un deporte elegido, su contexto; con «Todos», sin filtro—), ficha de ejercicio (todas sus gráficas),
+  #/bodyweight (también con la regla) y el peso del análisis. Sin franja, a propósito: volumen, músculos, adherencia, las
+  minigráficas de «Cómo vas» y las barras del ciclo. Las tarjetas con franja llevan una frase: «La franja de arriba es
+  tu contexto: fases y hechos de «Tu contexto». Toca un punto para verlo.» (solo cuando hay contexto en el periodo).
+- **Una fuente de verdad y caché**: nada se copia. `contextItems` normaliza contexto + eventos una vez por clave de
+  revisiones (`epoch|context|races|sessions|hoy`; un hueco; los datos pueden llegar perezosos y solo se leen al
+  recalcular); `chartContext` se cachea por perfil + deporte dentro de ese objeto. `progress-ui.chartCtxFor(data,
+  perfil, opts)` lo usa con un `dataFromStore()` completo o, sin él, lee el store (un `data` parcial no entra en la
+  caché). Sin cambios de esquema ni de versión de la BD; las copias no cambian.
+- **Rendimiento** (Chromium, 5 años de pesajes diarios, 20 fases y 20 hechos, mediana de 40 redibujos): `lineChart` del
+  peso 4,4–4,5 ms sin contexto y 4,7–5,0 ms con él (+0,3–0,5 ms); montaje de Progreso 66–72 ms frente a 68–76 ms antes
+  (ruido). El arranque (Hoy) no carga ni charts.js ni chart-context.js: `npm run perf -- --sets=1y,5y --runs=5` → hoy
+  538 / 761 ms, listo 1094 / 1859 ms.
+- **Pruebas**: `tests/unit/chart-context.test.mjs` (fases con día/mes/estación abiertas y cerradas, hechos por
+  precisión, perfiles, eventos por actividad / contextId / a mano y los que no salen, `ctxLine`, `ctxAria`, caché),
+  `tests/unit/charts.test.mjs` (`mergeSegments`, `groupFacts`, preferencia con localStorage que lanza),
+  `tests/e2e/chart-context.test.cjs` (Chromium y WebKit: fase, hecho y su globo exacto, tres fases → «Enfermedad ·
+  +2», interruptor que se recuerda al navegar y recargar y por clave, carga apagada, globo de una semana, evento con
+  tiempo en el ritmo de carrera, modo mujer en #/bodyweight y el análisis, texto al 150 % a 375 px) y pantallas
+  `progress-ctx-tip` y `progress-exercise-ctx-tip` en `tests/e2e/visual-guard.test.cjs`.
+
+## 10. Recuperación: evolución de los check-ins (ronda 8, F1–F3)
+
+Los check-ins (sueño, energía, estrés y agujetas de 1 a 3; zonas de 0 a 10) ya se guardaban y el analista los cruzaba
+con el rendimiento, pero nada enseñaba **cómo evolucionan**. Ahora hay una pantalla sencilla, sin parte médica, y el
+analista dice cuándo algo ha cambiado. Solo lectura: sin cambio de esquema ni de versión de la BD (v3), las copias no
+cambian y no se añade ninguna nota general al check-in (solo existe la nota de cada zona).
+
+- **Dónde**: ruta `#/recovery` (pestaña Progreso, «atrás» a `#/progress`, carga diferida: `js/views/recovery.js`).
+  Entradas: la fila «Recuperación» de «Cómo vas» (antes iba a `#/analysis?area=recovery`; la cifra y el estado de la
+  fila no cambian) y el botón «Ver evolución» de la tarjeta Recuperación de #/analysis.
+- **Lógica pura** (`js/recovery-logic.js`, reutiliza `checkin-logic`): `dayValues` (un valor por día y campo: el de
+  antes de entrenar y, si falta, el de después, como `checkinFor`; con copias repetidas, la editada más tarde);
+  `wellbeingTrend(checkins, hoy, '4w'|'12w'|'all')` → bloques por día (28), por semana (12, de lunes a domingo; la
+  última acaba hoy) o, en «Todo», por mes (trimestre si son más de 36 meses; año si ni así cabe: siempre ≤ 36 celdas),
+  con la media del periodo (null con menos de 4 días con ese campo) y la del periodo anterior de la misma duración
+  (null en «Todo» o con menos de 4 días). «Todo» solo existe si el primer check-in tiene 84 días o más. `zoneTrends`:
+  zonas apuntadas en 3 fechas distintas o más del periodo (izquierda y derecha aparte; el mismo día antes y después →
+  el máximo), las 6 últimas, la última nota no vacía y `zoneTrend`: media de los 2 últimos − media de los 2 primeros
+  mostrados; ≤ −2 → mejorando, ≥ +2 → empeorando, si no, estable. `trendWindows`: últimos 14 días frente a los 42
+  anteriores.
+- **Analista** (`analysis-training.wellbeingTrendInsights`, llamada desde `analyzeRecovery`; una sola fuente: los
+  mismos Insights salen en la tarjeta de #/analysis, en la pantalla nueva, en los puntos clave/«Lo importante» si
+  tocan y en el informe para IA, que ya lista `a.all`): `recovery-trend-<sleep|energy|stress|soreness>` solo con ≥ 4
+  días con check-in recientes, ≥ 6 en las 6 semanas anteriores y |diferencia| ≥ 0,5 (si no, nada: sin aviso nuevo de
+  «faltan datos»). Peor (hacia el valor desfavorable de `FIELDS[].low`) → «Info», prioridad 34 y «Tenlo en cuenta al
+  planificar la semana.»; mejor → «Bien», prioridad 18. Frases: «Tu energía ha sido más baja durante las últimas dos
+  semanas.», «Has dormido peor…», «Tu estrés ha sido más alto…», «Has tenido más agujetas…» (y sus contrarias) como
+  título, y el texto solo con el dato (no repite la frase: la tarjeta y el informe muestran título y texto)
+  «Media 1,4 de 3 en 5 días con check-in, frente a 2,2 en las 6 semanas anteriores (11 días).» Confianza: días
+  recientes (4/6/10), días de base (6/10/18), baja si la diferencia es < 0,75 y como mucho media («son tus
+  valoraciones»). «¿Por qué?» con la regla y «no es un diagnóstico». Modo mujer: nada de esto habla del ciclo ni de
+  fases (siguen solo en la tarjeta «Ciclo»); la pantalla no pinta franjas del ciclo. Menores: sin cambios (no hay kcal).
+- **Pantalla**: periodo (`segmented` 4 semanas · 12 semanas · Todo, recordado en `localStorage
+  'entreno.recovery.period'` con try/catch; «Borrar todo» e importar ya lo limpian por el prefijo `entreno.`); tarjeta
+  «Cómo te has sentido» con una fila por campo («Normal · media 2,1 · antes 2,4», texto neutro, sin `deltaTone`) y su
+  tira de bloques (`div.rcv-strip[role=img]` con `aria-label` «Energía, 4 semanas: 10 días con check-in, media 1,6
+  (normal)», celdas ocultas a VoiceOver con `title`); con menos de 4 días, bloques sin medias y «En estas 4 semanas
+  solo hay 2 días con check-in: aún pocos para ver una tendencia.»; «Tendencia reciente» (los `recovery-trend-*` con
+  `insightList`, ahora exportada de views/analysis.js; nada si no hay); «Zonas que has apuntado» («Rodilla izq. ·
+  molestia», `6 → 5 → 4 → 2`, «Mejorando» / «Estable» / «Empeorando» con `stateTag`, «Último: 6 oct · 4 veces», la
+  nota) con el pie fijo que explica la regla y recomienda consultar a un profesional si una molestia sigue o va a más.
+  Sin check-ins: estado vacío 🌙 «Aún no hay check-ins» con «Ir a Hoy».
+- **Correcciones del diseño**: (1) prefijo CSS `rcv-` en vez de `rc-` (que ya usa Eventos: `.rc-row`, `.rc-opt`…);
+  (2) leyenda «Tenue = bajo · intenso = alto» en vez de «Claro = bajo»: con el tema oscuro, la celda más «clara» es la
+  del valor alto; (3) con la app totalmente vacía Progreso no muestra «Cómo vas» (solo aparece con alguna sesión o
+  pesaje), así que la prueba del estado vacío entra desde Progreso con pesajes y sin check-ins (y la guarda visual abre
+  `#/recovery` con la app vacía); (4) el campo del Insight se llama `field` (no `key`) para no confundirlo con otras
+  claves; (5) se añade el cubo «año» por si «Todo» no cabe ni en 36 trimestres.
+- **Rendimiento** (Node, 5 años: 2 088 check-ins): `trendWindows` 0,24 ms (lo único que se añade a `buildAnalysis`);
+  la pantalla calcula `wellbeingTrend` + `zoneTrends` en 3–6 ms. El arranque no carga ninguno de los dos módulos nuevos.
+- **Pruebas**: `tests/unit/recovery-logic.test.mjs` (datos escasos, periodos y cubos, antes/después, zonas y su regla,
+  ventana de 14/42 días), `tests/unit/analysis-training.test.mjs` (insight con confianza baja y media, mínimos, estrés
+  a la baja = «Bien»), `tests/unit/analysis.test.mjs` (modo mujer: área recuperación, sin ciclo/fase/regla, fuera de
+  «Ciclo»), `tests/unit/overview.test.mjs` (`href '#/recovery'`), `tests/e2e/recovery.test.cjs` (Chromium y WebKit:
+  vacío desde Progreso, tiras de 28 y 12, el periodo se recuerda, insight con confianza y «¿Por qué?», zona que
+  mejora con su nota, el mismo insight en #/analysis y «Ver evolución», 150 % a 375 px) y pantallas `recovery` y
+  `recovery-12w` en `tests/e2e/visual-guard.test.cjs` (con `seedRealistic({ recovery: true })`: estrés y zonas que se
+  repiten; sin la opción los datos son los de siempre).
+
+## 11. Puesta a punto contextual (ronda 8, G)
+
+Evento de prioridad A o B cerca → una bajada de carga se lee como **compatible con una puesta a punto**, no como pérdida
+de forma. Interpretar, no planificar: nunca cambia el nivel, nunca recomienda nada ni da un porcentaje de taper.
+
+- **Ya resuelto antes de este bloque** (verificado): ninguna bajada de carga salía en ámbar (`load-warn`/`runkm-warn`
+  solo saltan con subidas; `load`, `load-ok` y los chips del resumen son neutros en una bajada; «Lo importante» mira la
+  semana en curso, donde no se calcula bajada).
+- **Una sola regla** (`js/races-logic.js`, puro): `TAPER_DAYS = 28` y `taperRace(list, from, today)` → el evento A/B
+  con `from ≤ date ≤ from + 28` y `date ≥ today` (ya pasado, fuera), el más cercano y, a igual fecha, A antes que B
+  (`byPrio`, compartido con `nextRelevant`); los C no cuentan. `taperText(race, today)` → «Compatible con una puesta a
+  punto antes del 10K del domingo.» (nombre o tipo con artículo, «de hoy» · «de mañana» · «del domingo» a 2–6 días ·
+  «del 25 oct» a 7 o más). `racesContext(...)` añade `taper: { race, days } | null` (aditivo): el analista lo conoce
+  en `analysis.context.events.taper`. `outcomePrompt` comparte con ella `raceRef` (sin cambios de texto).
+- **Panel semanal** (`js/insights.js`): `data.races` es opcional (lo trae `views/weekly.js · weeklyData`;
+  `dataFromStore` no cambia, así Progreso no lee nada más). Ancla = `ctx.ref` (el domingo en una semana terminada).
+  Solo en una semana terminada, con referencia suficiente, carga > 0 y bajada que supera `loadWarn.low` con el mismo
+  redondeo que el aviso de subida, en espejo (−20 % exacto no; −20,5 % sí). Entonces «Carga semanal» (id `load`, sigue
+  `neutral`) añade la frase, `tag: 'Puesta a punto'`, la fila «Evento próximo» del «¿Por qué?» («10K · mié 14 oct ·
+  10 km · Prioridad A · en 7 días»), la regla y `taper: { raceId, days }`. Sin carga (−100 %) no: es un parón. Una
+  bajada extrema sigue siendo solo informativa.
+- **Corrección del diseño**: el % de carga ahora usa un decimal también cerca de −`low` (antes «−20 %» junto a una
+  regla «baja más de un 20 %» con −20,3 % real); afecta a «Carga semanal» y «Sin avisos de carga» con o sin evento.
+  La fila «Evento próximo» usa el nombre o la etiqueta corta («10K»), no `raceTitle` («10 km · … · 10 km»).
+- **Informe para IA** (`js/analysis-report.js · loadSection`): con `context.events.taper`, «- Evento A en 10 días: 10K,
+  el 12 oct. Una bajada de carga en estas semanas es compatible con una puesta a punto: no la interpretes como pérdida
+  de forma ni de constancia.» («hoy» / «mañana» a 0 y 1 días). En condicional: no calcula nada. La caché del análisis ya
+  depende de la fecha y de `races`.
+- **Fuera de alcance, a propósito**: semanas antiguas mirando atrás tras la carrera (evento pasado → como siempre),
+  enfermedad o lesión (la frase dice «compatible», no «es») y el insight `load-sport` del analista (no trata las
+  bajadas como negativas).
+- Sin datos nuevos, sin subir la versión de la BD, copias sin cambios; sin archivos nuevos de la app ni CSS nuevo salvo
+  dos reglas de texto grande en css/weekly.css (PULIDO §25). Modo mujer y menores no se ven afectados (no hay kcal).
+- **Rendimiento**: `taperRace` es O(eventos) una vez por render del panel. Arranque de Hoy (CPU ×4, mediana de 5):
+  1y listo 1015 ms (antes 1062), 5y 1768 ms (antes 1856): ruido.
+- **Pruebas**: `tests/unit/races.test.mjs` (taperRace: 10/28/29 días, C, pasado, A antes que B, ancla antigua;
+  taperText; outcomePrompt igual; racesContext.taper y analysisContext), `tests/unit/insights.test.mjs` (A a 10 días:
+  neutro, etiqueta, frase, fila, regla, sin avisos; sin evento / C / pasado / a 29 días → idéntico; −20 % y −20,5 %,
+  carga 0, subida, umbral editado, −70 %, semana en curso, «Lo importante»), `tests/unit/analysis-report.test.mjs`
+  (línea en CARGA con A y con B mañana; sin evento, C, pasado o a 29 días → CARGA idéntica),
+  `tests/e2e/taper.test.cjs` (Chromium y WebKit con `seedRealistic`: tarjeta neutra «Puesta a punto», frase, fila,
+  chip de Carga neutro; esta semana sin frase; sin el evento «Info»; 150 % a 375 px con el «¿Por qué?» abierto y los
+  chips del resumen dentro de su ficha) y pantalla `weekly-taper` en `tests/e2e/visual-guard.test.cjs`. Todas las
+  unitarias y la E2E fallan con el código anterior.
+
+## 12. Sesiones largas (ronda 8, H)
+
+Con 9–12 ejercicios costaba ver qué estaba hecho, qué faltaba y cómo saltar. Solución mínima, sin pantalla nueva ni
+lista aparte: lo terminado se pliega solo, cada tarjeta dice su estado y el centro de la barra de la sesión salta al
+siguiente pendiente.
+
+- **Antes de este bloque** (verificado en el código): una tarjeta hecha solo llevaba borde verde y ✓; no había plegado,
+  ni «en curso», ni salto. `scrollToNext` iba siempre al índice + 1 (aunque estuviera hecho) y no movía el cursor.
+- **Lógica pura** (`js/session-logic.js`): `listBlocks(exercises)` (un ejercicio suelto o una superserie/circuito de 2
+  o más seguidos con el mismo `groupId`; `renderList` pinta con esto: una sola definición de grupo), `itemState` /
+  `itemStates` ('pending' | 'progress' | 'done'; fuerza: todas las series hechas; cardio: alguna actividad enlazada),
+  `foldedKeys(session, states, { editing, override })`, `nextPendingIndex(states, from)` (con vuelta),
+  `jumpTarget(states, cursor, cursorVisible)` y `foldedSetCount(se)`. `renderCard` usa `itemState` en lugar de su
+  cálculo propio (antes un ítem de cardio con su carrera registrada nunca salía como hecho; ahora sí, con su ✓).
+- **Cuándo se pliega**: solo en una sesión en curso y en momentos naturales, nunca bajo el dedo: a los 350 ms de
+  terminar un ejercicio (primero se ve el ✓ con la tarjeta abierta), al saltar y al volver a pintar la lista (montar,
+  recargar, mover/añadir/quitar, deshacer). Un bloque terminado no se pliega si tiene el cursor, un editor abierto
+  («Hecha · editando») o el usuario lo desplegó a mano. Dentro de una superserie o un circuito se pliega el grupo
+  entero, nunca un ejercicio suelto. En una sesión terminada (editar) nada se pliega.
+- **Una sola fuente**: lo plegado sale de los datos (series hechas, actividades enlazadas y `session.cursor`, que ya
+  existía y se guarda); lo desplegado o plegado a mano vive solo en memoria (`ctx.override`). Tras recargar se ve igual
+  sin guardar nada nuevo. Sin datos nuevos, sin subir la versión de la BD, copias sin cambios.
+- **Al terminar un ejercicio** (`scrollToNext`): el cursor pasa al siguiente **pendiente** (con vuelta al principio) y
+  se guarda; se pliega lo terminado y la tarjeta de destino sube (`revealCard`: con su «Registrar» por encima de la
+  barra). El foco pasa a ella solo si seguía en la terminada (se mira antes de plegar). Si no queda nada pendiente, nada
+  se mueve: la última tarjeta queda abierta con su ✓ y «Terminar» está en la barra.
+- **Estados visibles sin más alto**: pendiente, como siempre; en curso, «2/4» discreto en la cabecera (`.ses-prog`,
+  con «2 de 4 series hechas» para VoiceOver); hecho, la línea plegada (✓, nombre, «3 series» —hechas sin
+  calentamientos; en cardio, el resumen de la actividad—, ⌄) o, desplegada, el borde verde y la cabecera como botón
+  con ⌃. Grupo plegado: «SUPERSERIE A · 2 ejercicios · 6 series ✓». La tarjeta lleva `data-state`.
+- **«Siguiente pendiente»**: el centro de la barra de la sesión (`button.fb-status.fb-next`, 44 px) con ⌄ junto a
+  «En sesión» (con texto grande, junto a «n/N»). Destino: la tarjeta del cursor si no está hecha y no se ve; si no, el
+  siguiente pendiente después del cursor, con vuelta. Cada toque mueve el cursor: tocar seguido recorre todos. Sin
+  pendientes queda desactivado, sin ⌄ y sin atenuar. VoiceOver: «En sesión. Siguiente pendiente: Remo con barra. 12 de
+  30 series hechas.» (la etiqueta se actualiza al desplazar, una vez por fotograma como mucho).
+- **Vista** (`js/views/session.js`): `renderBlock` (tarjeta, línea plegada o grupo, con `data-block` y
+  `data-folded`), `applyFolds` (sustituye **solo** los bloques que cambian; las demás tarjetas no se repintan, cada una
+  consulta su historial), `toggleFold` (foco de vuelta al botón del bloque nuevo), `revealCard`, `jumpToPending`.
+  `rerenderCard` de una tarjeta plegada (o dentro de un grupo plegado) recurre a `renderList`. Tarjetas:
+  `renderFoldedCard`, `renderFoldedGroup`, `renderGroupHead` en `js/session-view-card.js`; `revealWarm` pasa a ser
+  `reveal(el)` (opacidad y −6 px, 220 ms, nada con «reducir movimiento») y se usa también al desplegar.
+- **Correcciones del diseño**: (1) el ⌄ va junto a «En sesión» y no junto a «n/N series»: a 375 px «2/20 series ⌄» no
+  cabía sin partirse (la guarda de la barra lo detecta); con texto grande, donde «series» se oculta, va junto a n/N.
+  (2) «2/4» lleva el texto para VoiceOver en un `sr-only`, no en `aria-label` de un `span` (que VoiceOver no lee
+  fiable). (3) El chevron cambia de icono (⌄/⌃) en vez de girar: el bloque se vuelve a pintar entero al plegar, así que
+  no hay transición que hacer. (4) Con «reducir movimiento» la app ya deja las transiciones CSS en 0,01 ms (la cabecera
+  compacta al desplazar las crea), así que `document.getAnimations().length === 0` no es cierto en ninguna pantalla:
+  la prueba exige que no haya ninguna animación visible (> 1 ms) ni ninguna Web Animation (`reveal`).
+- **Pruebas**: `tests/unit/session-fold.test.mjs` (itemState, itemStates, listBlocks, foldedKeys, nextPendingIndex,
+  jumpTarget, foldedSetCount); `tests/e2e/session-long.test.cjs` (Chromium y WebKit, `seedRealistic` + sesiones de 4,
+  8 y 12 ejercicios: plegado con foco y cursor, recarga, desplegar/editar/«Listo»/plegar con el foco, superserie,
+  circuito, recorrido de pendientes con vuelta y botón desactivado, salto a un pendiente y no al índice + 1, nada
+  plegado sin nada hecho ni en una sesión terminada, «reducir movimiento», 375 × 667 al 150 %) y pantalla
+  `session-long` en `tests/e2e/visual-guard.test.cjs`. Con el código anterior fallan la unitaria (no existen las
+  funciones) y las cuatro E2E; con solo `scrollToNext` devuelto al índice + 1 falla «no salta a una tarjeta hecha».
+- Modo mujer y menores no se ven afectados (no hay kcal). Sin archivos nuevos de la app.
+
 ## Propietarios en esta ronda
 | Parte | Archivos |
 |---|---|

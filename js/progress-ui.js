@@ -6,6 +6,7 @@ import { h } from './ui.js';
 import { lineChart, periodSelector, periodStart, getPeriod, COLORS } from './charts.js';
 import { bodyweightSeries, dataRange } from './stats.js';
 import { levelSummary } from './chart-summary.js';
+import { contextItems, chartContext } from './chart-context.js';
 import { todayStr, fmtNum, weekStart } from './util.js';
 
 /**
@@ -28,6 +29,29 @@ export function dataFromStore(today = todayStr()) {
     createdAt: store.get('meta', 'app')?.createdAt ?? null,
   };
 }
+
+/**
+ * Franja de contexto de una gráfica (ronda 8, E; js/chart-context.js): `profileId` = 'weight' | 'strength' |
+ * 'endurance' | 'load'; opts = { key, defaultOn, sport }. `data` puede ser un dataFromStore() (trae revisiones y
+ * datos) o null: entonces se lee del store, solo si cambiaron las revisiones (contextItems guarda un hueco de caché).
+ */
+export function chartCtxFor(data, profileId, opts) {
+  const today = data?.today || todayStr();
+  // Solo un dataFromStore() completo (con sus revisiones) vale como fuente: un `data` parcial (p. ej. sessions:[])
+  // dejaría en la caché, con las revisiones de ahora, unos elementos incompletos.
+  const full = !!data?.revisions;
+  const items = contextItems({
+    rev: full ? data.revisions : store.revisions(),
+    today,
+    context: full && data.context ? data.context : () => store.all('context'),
+    races: full && data.races ? data.races : () => store.all('races'),
+    sessions: full && data.sessions ? data.sessions : () => store.all('sessions'),
+  });
+  return chartContext(items, profileId, opts);
+}
+
+/** Frase de ayuda de las tarjetas con franja de contexto. */
+export const CTX_HOWTO = 'La franja de arriba es tu contexto: fases y hechos de «Tu contexto». Toca un punto para verlo.';
 
 /**
  * Primer día del periodo, sin ir más atrás que el primer dato (`first`): «1 año» con dos meses de datos
@@ -75,7 +99,7 @@ const kgTxt = (v) => `${fmtNum(v, 1)} kg`;
  * cambiar de periodo.
  * @returns {object} opts (series, xDomain, formato, mensaje vacío…)
  */
-export function bodyweightChartOpts(data, periodId, { height = 220, series = null } = {}) {
+export function bodyweightChartOpts(data, periodId, { height = 220, series = null, context = undefined } = {}) {
   const today = data.today || todayStr();
   const first = dataRange(data).firstBodyweight;
   const { from } = periodRange(periodId, today, first);
@@ -89,6 +113,8 @@ export function bodyweightChartOpts(data, periodId, { height = 220, series = nul
     yFormat: kgTxt,
     yTickFormat: (v) => fmtNum(v, 1),
     xDomain: [from, today],
+    // Contexto (ronda 8, E): la misma clave 'bodyweight' en Progreso, #/bodyweight y el análisis
+    context: context === undefined ? chartCtxFor(data, 'weight', { key: 'bodyweight', defaultOn: true }) : context,
     empty: s.count ? 'Sin pesajes en este periodo' : 'Registra tu primer pesaje para ver la gráfica.',
     ariaLabel: 'Peso corporal: pesajes diarios y media móvil de 7 días',
   };
@@ -104,12 +130,14 @@ export function bodyweightChartCard({ key = 'bodyweight' } = {}) {
   const slot = h('div.prg-chart');
   const summary = h('p.chart-summary', { hidden: true, 'aria-live': 'polite' });
   const sel = periodSelector({ key, value: period, ariaLabel: 'Periodo de la gráfica de peso', onChange: (id) => { period = id; paint(); } });
+  const ctxHowto = h('p.prg-ctx-howto', { hidden: true }, CTX_HOWTO);
   const el = h('section.card.prg-card.prg-bw-chart', { dataset: { chart: 'bodyweight' } },
     cardHead('Evolución', 'kg · pesajes diarios y media móvil de 7 días'),
     summary,
     sel,
     slot,
-    h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Toca o arrastra para ver el valor exacto.'));
+    h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Toca o arrastra para ver el valor exacto.'),
+    ctxHowto);
   let chart = null;
   function paint() {
     const data = { bodyweight: store.bodyweightList(), settings: store.settings(), sessions: [], today: todayStr() };
@@ -122,6 +150,7 @@ export function bodyweightChartCard({ key = 'bodyweight' } = {}) {
     summary.dataset.dir = res?.dir || '';
     if (chart) chart.update(o);
     else chart = lineChart(slot, o);
+    ctxHowto.hidden = !chart.hasContext();
   }
   paint();
   let raf = 0;

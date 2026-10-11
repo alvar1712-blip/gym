@@ -10,6 +10,8 @@
 //   checkins: store 'checkins' { id, date, timing:'pre'|'post', sessionId, sleep, energy, stress?, soreness, areas? }
 //   (1 bajo, 2 normal, 3 alto; estrés y zonas desde la ronda 6, solo se muestran). Solo son contexto: un mensaje de información «Check-ins de la semana» y la condición (c)
 //   de la sugerencia de descarga (ninguna otra regla depende de ellos).
+//   races (opcional; store 'races', ronda 8, G): solo para la frase de puesta a punto de «Carga semanal»
+//   (races-logic.taperRace). Sin ellos, el panel es el de siempre.
 //
 // SALIDA de weeklyInsights(data, weekStart):
 //   { week, weekEnd, today, ref, inProgress, future, daysLeft, hasHistory, beforeHistory, firstDate,
@@ -29,6 +31,7 @@ import { targetText, LOAD_REP_TYPES } from './session-logic.js';
 import { joinList } from './activity-logic.js';
 import { checkinsBetween, isLowCheckin, valueText, areasText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
 import { incrementFor, upAction, progressionHint, progressStatus, stallThresholds, MIN_SESSIONS, GAP_DAYS } from './progression.js';
+import { taperRace, taperText, raceShortLabel, rowMeta, TAPER_DAYS } from './races-logic.js';
 
 // Doble progresión y estancamiento: la regla vive en progression.js (la usa también la sesión en curso); se reexporta aquí.
 export { incrementFor, progressionCheck, progressionHint, progressStatus, MIN_SESSIONS, GAP_DAYS } from './progression.js';
@@ -167,7 +170,7 @@ export function weeklyInsights(data, weekArg = null) {
   if (!firstDate || future) return out;
   if (firstDate > ref) { out.beforeHistory = true; return out; }
 
-  const ctx = makeCtx(d, { week, weekEnd, ref, inProgress, daysLeft, firstDate });
+  const ctx = makeCtx(d, { week, weekEnd, today, ref, inProgress, daysLeft, firstDate });
   out.info = [
     ...muscleMessages(ctx),
     pushPullMessage(ctx),
@@ -184,7 +187,7 @@ export function weeklyInsights(data, weekArg = null) {
   return out;
 }
 
-function makeCtx(d, { week, weekEnd, ref, inProgress, daysLeft, firstDate }) {
+function makeCtx(d, { week, weekEnd, today, ref, inProgress, daysLeft, firstDate }) {
   const settings = d.settings || {};
   const sessions = toArr(d.sessions).filter((s) => s && s.status === 'done' && isDateStr(s.date));
   // 4 semanas previas + esta (stats.weeklySeries: todas las semanas, las vacías con ceros).
@@ -193,7 +196,9 @@ function makeCtx(d, { week, weekEnd, ref, inProgress, daysLeft, firstDate }) {
   return {
     d, settings, cfg: cfgOf(settings), exMap: toMap(d.exercises), sessions,
     byId: new Map(sessions.map((s) => [s.id, s])),
-    week, weekEnd, prevWeek: addDays(week, -7), ref, inProgress, daysLeft,
+    week, weekEnd, prevWeek: addDays(week, -7), today, ref, inProgress, daysLeft,
+    // Ronda 8 (G): evento A/B en los 28 días siguientes al final de la semana mirada que aún no ha pasado (o null)
+    taper: d.races ? taperRace(d.races, ref, today) : null,
     cur: rows[rows.length - 1],
     prev: rows[rows.length - 2],
     // Semanas previas que cuentan para la media: las 4 anteriores, sin las de antes del primer registro.
@@ -472,8 +477,11 @@ const noRefTxt = (weeks, withN, what) => (weeks > 0 ? `sin referencia suficiente
 const r1 = (p) => Math.round(p * 10) / 10;
 const warnPct = (p, ths, signed = true) => fmtPct(r1(p), ths.some((t) => Math.abs(p - t) < 1) ? 1 : 0, signed);
 const warnOver = (p, t) => p != null && r1(p) > t + EPS;
-/** % de carga / de km de carrera con el mismo formato que sus avisos (información y sugerencias coinciden). */
-const lwPct = (ctx, p) => warnPct(p, [ctx.cfg.loadWarn.low, ctx.cfg.loadWarn.high]);
+/**
+ * % de carga / de km de carrera con el mismo formato que sus avisos (información y sugerencias coinciden). La carga
+ * mira también −low: el umbral, en espejo, de la puesta a punto (ronda 8, G; «−20,3 %» y no «−20 %»).
+ */
+const lwPct = (ctx, p) => warnPct(p, [ctx.cfg.loadWarn.low, ctx.cfg.loadWarn.high, -ctx.cfg.loadWarn.low]);
 const kmPct = (ctx, kind, p) => (kind === 'run' ? warnPct(p, [ctx.cfg.runKmWarn.low, ctx.cfg.runKmWarn.high]) : pctTxt(p));
 
 function loadRule() {
@@ -482,6 +490,19 @@ function loadRule() {
 
 function loadWeekRows(ctx) {
   return ctx.prevRows.map((r) => ({ label: `Semana ${fmtWeekRange(r.week)}`, value: r.loadTotal > 0 ? loadTxt(r.loadTotal) : '0 (sin carga)', sub: true }));
+}
+
+/**
+ * Ronda 8 (G): puesta a punto. En una semana terminada con referencia, si la carga BAJA más de loadWarn.low (el mismo
+ * umbral y redondeo que el aviso de subida, en espejo) y hay un evento A o B en los TAPER_DAYS días siguientes al
+ * domingo que aún no ha pasado, «Carga semanal» lo dice como contexto. Nunca cambia el nivel (sigue neutro), nunca
+ * recomienda nada ni da un porcentaje de puesta a punto. Sin carga en la semana (−100 %) no: eso es un parón.
+ */
+function taperNote(ctx) {
+  if (!ctx.taper || ctx.inProgress) return null;
+  const L = loadStats(ctx);
+  if (!L.enough || !(L.total > 0) || L.pct == null || !warnOver(-L.pct, ctx.cfg.loadWarn.low)) return null;
+  return { race: ctx.taper, text: taperText(ctx.taper, ctx.today) };
 }
 
 function loadMessage(ctx) {
@@ -513,9 +534,20 @@ function loadMessage(ctx) {
     },
     L.noLoad ? { label: 'Sesiones sin esfuerzo percibido', value: `${L.noLoad} (no suman carga)` } : null,
   ];
+  const note = taperNote(ctx);
+  if (!note) {
+    return info('load', 'neutral', {
+      title: 'Carga semanal', text, rule: loadRule(), data, items,
+      total: L.total, mean: L.mean, pct: L.pct, enough: L.enough,
+    });
+  }
+  const r = note.race;
+  data.push({ label: 'Evento próximo', value: `${r.name || raceShortLabel(r)} · ${rowMeta(r, ctx.today)}` });
   return info('load', 'neutral', {
-    title: 'Carga semanal', text, rule: loadRule(), data, items,
+    title: 'Carga semanal', text: `${text} ${note.text}`, tag: 'Puesta a punto', data, items,
+    rule: `${loadRule()} Si hay un evento de prioridad A o B en los ${TAPER_DAYS} días siguientes al final de la semana y la carga baja más de un ${num(ctx.cfg.loadWarn.low, 0)} % (el mismo umbral que el aviso de subida), se indica que es compatible con una puesta a punto. No es un aviso ni una recomendación. Sin carga en la semana no se indica: eso es un parón.`,
     total: L.total, mean: L.mean, pct: L.pct, enough: L.enough,
+    taper: { raceId: r.id, days: diffDays(ctx.today, r.date) },
   });
 }
 
@@ -854,7 +886,8 @@ function loadWarningMessages(ctx) {
   const R = runKmStats(ctx);
   const { low, high } = ctx.cfg.loadWarn;
   const now = ctx.inProgress ? `De momento (${leftIn(ctx.daysLeft)}), la` : 'La';
-  const loadPct = (p, signed = true) => warnPct(p, [low, high], signed);
+  // El mismo formato que «Carga semanal» (lwPct, con −low incluido): las dos tarjetas del panel dan la misma cifra
+  const loadPct = (p, signed = true) => warnPct(p, [low, high, -low], signed);
   const runPct = (p, signed = true) => warnPct(p, [R.low, R.high], signed);
   const loadRuleTxt = `Aviso orientativo si la carga de la semana (minutos × esfuerzo) supera la media de las 4 semanas previas en más de un ${num(low, 0)} % (aviso suave) o de un ${num(high, 0)} % (aviso). Umbrales en Ajustes › Umbrales › Aviso de carga semanal. Es una referencia prudente para que las subidas sean graduales, no una predicción de lesión.`;
   const runRuleTxt = `Aviso orientativo si los km de carrera de la semana suben más de un ${num(R.low, 0)} % (aviso suave) o de un ${num(R.high, 0)} % (aviso) frente a la semana anterior; solo se evalúa si la semana anterior tuvo al menos ${num(R.minBaseKm, 1)} km (con menos, un cambio pequeño da porcentajes grandes). Umbrales en Ajustes › Umbrales › Aviso de km de carrera. Es una referencia prudente, no una predicción de lesión.`;

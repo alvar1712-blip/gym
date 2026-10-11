@@ -176,6 +176,22 @@ test('buildAnalysis (mujer con ciclo): CycleInfo al peso y a la recuperación, t
   assert.equal(a.weight.target.maxPct, 0.4);
 });
 
+test('ronda 8 (F3): la tendencia de los check-ins va en Recuperación, también en modo mujer, sin hablar del ciclo', () => {
+  const base = femaleData();
+  // Energía alta antes y baja en las 2 últimas semanas (el resto del check-in, igual)
+  const checkins = base.checkins.map((c) => ({ ...c, energy: c.date >= ago(13) ? 1 : 3 }));
+  const a = buildAnalysis({ ...base, checkins }, TODAY);
+  assert.ok(a.cycle, 'modo mujer con ciclo natural');
+  const i = a.all.find((x) => x.id === 'recovery-trend-energy');
+  assert.ok(i, 'insight de energía');
+  assert.equal(i.area, 'recovery');
+  assert.ok(areaInsights(a, 'recovery').some((x) => x.id === 'recovery-trend-energy'));
+  assert.ok(!areaInsights(a, 'cycle').some((x) => x.id.startsWith('recovery-trend-')));
+  const all = [i.title, i.text, i.why.rule, ...i.why.data.map((r) => `${r.label} ${r.value}`)].join(' · ');
+  assert.ok(!/ciclo|fase|regla/i.test(all), all);
+  assert.ok(i.confidence && i.why.data.some((r) => r.label === 'Confianza'));
+});
+
 test('buildAnalysis: sin seguimiento del ciclo o en modo hombre no se calcula el ciclo; anticonceptivo hormonal sin fases', () => {
   assert.equal(buildAnalysis(femaleData({ cycleTracking: false }), TODAY).cycle, null);
   assert.equal(buildAnalysis({ ...femaleData(), settings: settingsFor({ sex: 'male', goal: 'gain' }) }, TODAY).cycle, null);

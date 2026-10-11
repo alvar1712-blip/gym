@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import {
   PERIODS, DEFAULT_PERIOD, periodStart, getPeriod, setPeriod, COLORS,
   niceTicks, tickDecimals, timeTicks, barAxisLabels, nearestIndex, dayNum, dayStr, dateTitle, isWeekly, monthLabel, estimateText,
+  mergeSegments, groupFacts, getContextPref, setContextPref,
 } from '../../js/charts.js';
 import { addDays, weekStart, MONTH_SHORT, fmtNum, fmtDuration } from '../../js/util.js';
 
@@ -296,4 +297,68 @@ test('minigráfica (sparkPoints): dentro del rectángulo, sin inventar puntos; p
   assert.deepEqual(sparkPoints([], 60, 20), []);
   assert.deepEqual(sparkPoints(null, 60, 20), []);
   assert.ok(sparkPoints([0, 1e9, Infinity, -5], 60, 20).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+});
+
+// ---------------------------------------------------------------------------
+// Franja de contexto (ronda 8, E)
+// ---------------------------------------------------------------------------
+test('mergeSegments: solapadas y contiguas en una unión, recortada al periodo, open en las que siguen', () => {
+  const d0 = dayNum('2026-08-01');
+  const d1 = dayNum('2026-10-07');
+  const segs = mergeSegments([
+    { from: '2026-08-10', to: '2026-08-30' },
+    { from: '2026-08-20', to: '2026-09-05' }, // se solapa
+    { from: '2026-09-06', to: '2026-09-10' }, // contigua (día siguiente)
+    { from: '2026-09-20', to: null }, // abierta
+    { from: '2026-07-01', to: '2026-08-03' }, // empieza antes del periodo
+    { from: '2026-05-01', to: '2026-06-01' }, // fuera
+    { from: 'mal', to: null }, null,
+  ], d0, d1).map((s) => [dayStr(s.d0), dayStr(s.d1), s.open, s.clipL]);
+  assert.deepEqual(segs, [
+    ['2026-08-01', '2026-08-03', false, true],
+    ['2026-08-10', '2026-09-10', false, false],
+    ['2026-09-20', '2026-10-07', true, false],
+  ]);
+  // Una fase cerrada que acaba después del periodo también «sigue» (extremo recto)
+  assert.deepEqual(mergeSegments([{ from: '2026-09-01', to: '2026-12-01' }], d0, d1).map((s) => s.open), [true]);
+  assert.deepEqual(mergeSegments([], d0, d1), []);
+});
+
+test('groupFacts: a menos de 12 px van juntos; x en el centro del grupo', () => {
+  const facts = [{ x: 10 }, { x: 18 }, { x: 40 }, { x: 51.9 }, { x: 70 }, { x: NaN }];
+  const g = groupFacts(facts, (f) => f.x);
+  assert.deepEqual(g.map((x) => [x.x, x.items.length]), [[14, 2], [45.95, 2], [70, 1]]);
+  assert.deepEqual(groupFacts(facts, (f) => f.x, 30).map((x) => x.items.length), [5]);
+  assert.deepEqual(groupFacts([], (f) => f.x), []);
+});
+
+test('getContextPref / setContextPref: valor por defecto, recuerdo y localStorage que lanza', () => {
+  assert.equal(getContextPref('t-ctx-a', true), true);
+  assert.equal(getContextPref('t-ctx-a', false), false);
+  assert.equal(setContextPref('t-ctx-a', false), false);
+  assert.equal(getContextPref('t-ctx-a', true), false, 'lo guardado manda sobre el valor por defecto');
+  setContextPref('t-ctx-a', true);
+  assert.equal(getContextPref('t-ctx-a', false), true);
+  assert.equal(getContextPref('t-ctx-b', false), false, 'cada clave es independiente');
+  // Con un localStorage que lanza (modo privado, cuota), queda en memoria
+  const prev = globalThis.localStorage;
+  const store = new Map();
+  globalThis.localStorage = { getItem: () => { throw new Error('bloqueado'); }, setItem: () => { throw new Error('bloqueado'); } };
+  try {
+    assert.equal(getContextPref('t-ctx-c', true), true);
+    assert.doesNotThrow(() => setContextPref('t-ctx-c', false));
+    assert.equal(getContextPref('t-ctx-c', true), false);
+  } finally {
+    if (prev === undefined) delete globalThis.localStorage; else globalThis.localStorage = prev;
+  }
+  // Y con uno que funciona, se guarda '1' / '0' con el prefijo entreno.chartctx.
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  try {
+    setContextPref('t-ctx-d', false);
+    assert.equal(store.get('entreno.chartctx.t-ctx-d'), '0');
+    store.set('entreno.chartctx.t-ctx-e', '1');
+    assert.equal(getContextPref('t-ctx-e', false), true, 'se lee lo guardado en otra sesión');
+  } finally {
+    if (prev === undefined) delete globalThis.localStorage; else globalThis.localStorage = prev;
+  }
 });

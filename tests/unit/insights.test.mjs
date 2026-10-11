@@ -977,6 +977,78 @@ test('aviso de carga: suave por encima de loadWarn.low, aviso por encima de load
   assert.equal(byId(weeklyInsights(noRef, W.w4), 'load-warn'), undefined);
 });
 
+// ---------------------------------------------------------------------------
+// Ronda 8 (G): puesta a punto contextual en «Carga semanal»
+// ---------------------------------------------------------------------------
+
+/** Evento (la semana W.w4 acaba el domingo 20 sep; hoy es el jueves 24). */
+const evt = (date, o = {}) => ({ id: `ev_${date}_${o.priority || 'A'}`, name: '', type: '10k', date, priority: 'A', createdAt: 1, ...o });
+const TAPER_RE = /Compatible con una puesta a punto antes/;
+
+test('puesta a punto: bajada de carga con un evento A en 10 días → contexto neutro, nunca aviso', () => {
+  const r = weeklyInsights(loadData(300, { races: [evt('2026-09-30')] }), W.w4); // −25 %; el evento, miércoles 30
+  const m = byId(r, 'load');
+  assert.equal(m.level, 'neutral');
+  assert.equal(m.tag, 'Puesta a punto');
+  assert.equal(m.text, '300 (minutos × esfuerzo), −25 % frente a la media de las 4 semanas previas (400). Compatible con una puesta a punto antes del 10K del miércoles.');
+  assert.deepEqual(m.taper, { raceId: 'ev_2026-09-30_A', days: 6 });
+  const row = m.why.data.find((x) => x.label === 'Evento próximo');
+  assert.ok(row, 'fila «Evento próximo»');
+  assert.equal(row.value, '10K · mié 30 sep · 10 km · Prioridad A · en 6 días');
+  assert.match(m.why.rule, /prioridad A o B en los 28 días siguientes al final de la semana y la carga baja más de un 20 %/);
+  assert.match(m.why.rule, /No es un aviso ni una recomendación/);
+  assert.ok(!all(r).some((x) => /load|runkm/.test(x.id) && x.level === 'warn'), 'ningún aviso de carga');
+  assert.equal(byId(r, 'load-ok').level, 'neutral');
+  // Interpreta, no prescribe: la frase añadida no lleva porcentajes
+  assert.ok(!m.text.slice(m.text.indexOf('Compatible')).includes('%'));
+  // Un B también cuenta; la fecha relativa es desde hoy (a 7 días o más, con fecha)
+  assert.match(byId(weeklyInsights(loadData(300, { races: [evt('2026-10-18', { priority: 'B', name: 'San Silvestre' })] }), W.w4), 'load').text,
+    /Compatible con una puesta a punto antes de San Silvestre del 18 oct\.$/);
+});
+
+test('puesta a punto: sin evento, con un C, con uno pasado o lejano → «Carga semanal» exactamente como siempre', () => {
+  const base = byId(weeklyInsights(loadData(300), W.w4), 'load');
+  assert.equal(base.tag, undefined);
+  assert.ok(!TAPER_RE.test(base.text));
+  for (const races of [[], [evt('2026-09-30', { priority: 'C' })], [evt('2026-09-22')], [evt('2026-10-19')]]) {
+    assert.deepEqual(byId(weeklyInsights(loadData(300, { races }), W.w4), 'load'), base, JSON.stringify(races));
+  }
+  // A 28 días del domingo (18 oct) sí cuenta; a 29 (19 oct), no (comprobado arriba)
+  assert.equal(byId(weeklyInsights(loadData(300, { races: [evt('2026-10-18')] }), W.w4), 'load').tag, 'Puesta a punto');
+});
+
+test('puesta a punto: bordes (umbral en espejo, parón, semana en curso, umbral editado y bajada extrema)', () => {
+  const races = [evt('2026-09-30')];
+  const load = (cur, extra = {}) => byId(weeklyInsights(loadData(cur, { races, ...extra }), W.w4), 'load');
+  assert.equal(load(320).tag, undefined, '−20 % exacto: no supera el umbral');
+  assert.ok(!TAPER_RE.test(load(320).text));
+  assert.equal(load(318).tag, 'Puesta a punto', '−20,5 %: sí');
+  assert.match(load(318).text, /−20,5 % frente a/, 'con decimal junto al umbral, como el aviso de subida');
+  // …y la sugerencia «Sin avisos de carga» del mismo panel dice la misma cifra (información y sugerencias coinciden)
+  const ok318 = byId(weeklyInsights(loadData(318, { races }), W.w4), 'load-ok');
+  assert.match(ok318.text, /La carga queda un 20,5 % por debajo de tu media/, ok318.text);
+  assert.equal(ok318.why.data.find((x) => x.label === 'Variación').value, '−20,5 %');
+  assert.equal(load(318).why.data.find((x) => x.label === 'Variación').value, '−20,5 %');
+  assert.ok(!TAPER_RE.test(load(0).text), 'sin carga en la semana: es un parón');
+  assert.equal(load(0).tag, undefined);
+  assert.equal(load(560).tag, undefined, 'una subida nunca es puesta a punto');
+  // Umbral editado: el mismo que el aviso de subida
+  assert.equal(load(300, { settings: settingsWith({ loadWarn: { low: 30, high: 40 } }) }).tag, undefined);
+  assert.equal(load(340, { settings: settingsWith({ loadWarn: { low: 10, high: 30 } }) }).tag, 'Puesta a punto');
+  // Bajada extrema: sigue siendo informativa y neutra
+  const extreme = load(120);
+  assert.equal(extreme.level, 'neutral');
+  assert.match(extreme.text, /−70 % frente a .*Compatible con una puesta a punto/);
+  // Semana en curso con el evento cerca y la carga baja: nunca (no hay bajada calculada a mitad de semana)
+  const sessions = ['w1', 'w2', 'w3', 'w4'].map((wk) => act(`o_${wk}`, 'other', W[wk], { min: 80, rpe: 5 }));
+  sessions.push(act('o_cur', 'other', '2026-09-22', { min: 10, rpe: 5 }));
+  const cur = byId(weeklyInsights(mk({ sessions, races: [evt('2026-09-27')] })), 'load');
+  assert.ok(!TAPER_RE.test(cur.text));
+  assert.equal(cur.tag, undefined);
+  // «Lo importante» no cambia: «Carga semanal» sigue sin entrar por sí sola
+  assert.ok(!keyMessages(weeklyInsights(loadData(300, { races }), W.w4)).some((x) => x.level === 'warn' && /load/.test(x.id)));
+});
+
 test('aviso de km de carrera: frente a la semana anterior, solo si esa semana llegó a runKmWarn.minBaseKm', () => {
   const run = (prev, cur, extra = {}) => mk({ sessions: [act('r0', 'run', W.w3, { km: prev, min: 10 }), act('r1', 'run', W.w4, { km: cur, min: 10 })], ...extra });
   const high = byId(weeklyInsights(run(10, 12), W.w4), 'runkm-warn'); // +20 %

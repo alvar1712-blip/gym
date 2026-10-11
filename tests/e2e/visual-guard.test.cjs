@@ -7,6 +7,9 @@
 //   · la cabecera no tapa el principio del contenido y lo último queda por encima de la barra de pestañas;
 //   · ningún texto por debajo de 12 px, ninguno cortado con «…» o a N líneas, ninguno que se salga de su caja (un
 //     botón, una ficha) y ningún botón por debajo de 44 px de alto;
+//   · las gráficas con la franja de contexto (ronda 8, E) y el globo de un hecho abierto;
+//   · el panel de la semana pasada con «Puesta a punto» y su «¿Por qué?» abierto (ronda 8, G);
+//   · una sesión larga con superserie y ejercicios plegados, uno desplegado a mano y otro en curso (ronda 8, H);
 //   · ningún error en la consola.
 // Deja una captura de cada pantalla en test-results/visual/ (para mirarlas, no se comparan píxel a píxel).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/visual-guard.test.cjs  (E2E_BROWSER=webkit para WebKit)
@@ -78,8 +81,103 @@ async function seedPastRaces(page) {
   });
 }
 
+/** #/recovery en «4 semanas» (el periodo se recuerda: tras «12 semanas» de la anchura anterior, se vuelve). */
+async function recovery4w(page) {
+  const b = page.locator('.rcv-period .seg-btn', { hasText: '4 semanas' });
+  if (!(await b.count())) return; // app vacía: estado vacío, sin selector
+  await b.click();
+  await page.locator('.rcv-feel[data-period="4w"]').waitFor();
+}
+
+/** #/recovery con «12 semanas» elegido (ronda 8, F): una celda por semana. */
+async function recovery12w(page) {
+  await page.locator('.rcv-period .seg-btn', { hasText: '12 semanas' }).click();
+  await page.locator('.rcv-feel[data-period="12w"]').waitFor();
+}
+
 /**
- * Pantallas: [clave, hash, preparar?]; `ids` da las que dependen de los datos (null → se omiten con la app vacía).
+ * Franja de contexto (ronda 8, E): toca el primer hecho de la primera gráfica con franja (encendida) y deja su globo
+ * abierto. En Progreso es la de peso; en la ficha de ejercicio, el 1RM.
+ */
+async function openContextTip(page) {
+  const fact = page.locator('.chart-ctx-fact').first();
+  await fact.waitFor();
+  await fact.evaluate((el) => el.closest('.chart').scrollIntoView({ block: 'center' }));
+  await settle(page);
+  const b = await fact.boundingBox();
+  await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+  await page.locator('.chart:has(.chart-ctx-fact) .chart-tip:not([hidden])').first().waitFor();
+}
+
+/**
+ * Ronda 8 (G): panel de la semana pasada con «Puesta a punto». Los datos traen un 10K A dentro de los 28 días tras el
+ * domingo; aquí se quitan las sesiones de fuerza de esa semana (la carga baja, sin llegar a 0) y `restoreTaperWeek` las
+ * devuelve después de medir, para que el resto de pantallas vea los datos de siempre.
+ */
+const TAPER_WEEK = '2026-09-28';
+async function taperWeek(page) {
+  await page.evaluate(async (from) => {
+    const st = window.__app.store;
+    const u = await import('./js/util.js');
+    const to = u.addDays(from, 6);
+    const gone = st.all('sessions').filter((x) => x.kind === 'strength' && x.status === 'done' && x.date >= from && x.date <= to);
+    window.__vgTaper = gone;
+    for (const x of gone) await st.remove('sessions', x.id);
+  }, TAPER_WEEK);
+  await go(page, '#/today');
+  await go(page, `#/weekly?week=${TAPER_WEEK}`);
+  const tag = await page.locator('.wk-msg[data-id="load"] .wk-level').textContent();
+  assert.strictEqual(tag.trim(), 'Puesta a punto', 'el panel muestra la puesta a punto');
+  // «¿Por qué?» abierto: la fila «Evento próximo» también se mide
+  await page.locator('.wk-msg[data-id="load"] .why-btn').click();
+  await settle(page);
+}
+async function restoreTaperWeek(page) {
+  await page.evaluate(async () => {
+    const st = window.__app.store;
+    for (const x of window.__vgTaper || []) await st.save('sessions', x);
+    window.__vgTaper = null;
+    await st.flush();
+  });
+}
+
+/**
+ * Ronda 8 (H): sesión larga en curso de 12 ejercicios: superserie terminada (plegada), 4 terminados plegados, uno
+ * terminado desplegado a mano, uno en curso (2/4) con el cursor y el resto pendientes. `removeLongSession` la borra.
+ */
+async function longSession(page) {
+  await page.evaluate(async () => {
+    const { store } = window.__app;
+    const sl = await import('./js/session-logic.js');
+    const exs = store.all('exercises').filter((e) => e.logType === 'weight_reps' && !e.archived).slice(0, 12);
+    const s = await sl.createStrengthSession({});
+    await store.remove('sessions', s.id);
+    s.id = 'vg_long';
+    s.templateName = 'Sesión larga';
+    s.exercises = exs.map((e, i) => {
+      const se = sl.newSessionExercise(e.id, s);
+      const n = i === 7 ? 4 : 3;
+      const k = i <= 6 ? n : i === 7 ? 2 : 0;
+      se.sets = Array.from({ length: n }, (_, j) => ({ ...sl.newSet(null, se, 'weight_reps'), weight: 40, reps: 8, rir: 2, done: j < k, doneAt: j < k ? 1 : null }));
+      if (i < 2) Object.assign(se, { groupId: 'vg_g', groupType: 'superset' });
+      return se;
+    });
+    s.cursor = 7;
+    await store.save('sessions', s);
+  });
+  await go(page, '#/session/vg_long');
+  await page.locator('[data-block^="se:"][data-folded="1"] .ses-fold').nth(4).click(); // el 7.º, desplegado a mano
+  await page.waitForFunction(() => document.querySelectorAll('[data-folded="1"]').length === 5);
+  // La entrada al desplegar (fundido de 220 ms) termina antes de medir: a medio fundido la guarda no vería la tarjeta
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+  await settle(page);
+}
+async function removeLongSession(page) {
+  await page.evaluate(async () => { await window.__app.store.remove('sessions', 'vg_long'); await window.__app.store.flush(); });
+}
+
+/**
+ * Pantallas: [clave, hash, preparar?, deshacer?]; `ids` da las que dependen de los datos (null → se omiten con la app vacía).
  * `preparar(page)` deja la pantalla en el estado que se mide (p. ej. un paso concreto de la bienvenida).
  */
 const routes = (ids) => [
@@ -90,13 +188,18 @@ const routes = (ids) => [
   ['templates', '#/templates'], ['template', '#/template/tpl_d1'],
   ['settings', '#/settings'], ['settings-week', '#/settings/week'], ['settings-thresholds', '#/settings/thresholds'], ['settings-data', '#/settings/data'],
   ['settings-data-rp', '#/settings/data', restorePoint], ['profile', '#/settings/profile'],
-  ['progress', '#/progress'], ['progress-exercise', '#/progress/exercise/press_banca'], ['records', '#/records'], ['records-past', '#/records/past'], ['records-past-new', '#/records/past/new'],
+  ['progress', '#/progress'], ['progress-exercise', '#/progress/exercise/press_banca'],
+  // Ronda 8 (E): contexto encendido con el globo de un hecho abierto (Progreso y ficha de ejercicio)
+  ids.done && ['progress-ctx-tip', '#/progress', openContextTip], ids.done && ['progress-exercise-ctx-tip', '#/progress/exercise/press_banca', openContextTip], ['records', '#/records'], ['records-past', '#/records/past'], ['records-past-new', '#/records/past/new'],
   ['races', '#/races', ids.pastRaces ? openPast : null], ['race-new', '#/races/new'],
   // Ronda 8 (D): la tarjeta del resultado de un evento pasado (con resultado, sin responder con el formulario a mano
   // abierto, y con la actividad vinculada borrada)
   ids.pastRaces && ['race-result', '#/races/vg_past_done'], ids.pastRaces && ['race-result-pending', '#/races/vg_past_pending', openManual],
-  ids.pastRaces && ['race-result-missing', '#/races/vg_past_missing'], ['weekly', '#/weekly'], ['goals', '#/goals'], ['goal-new', '#/goal/new'],
+  ids.pastRaces && ['race-result-missing', '#/races/vg_past_missing'], ['weekly', '#/weekly'],
+  ids.done && ['weekly-taper', `#/weekly?week=${TAPER_WEEK}`, taperWeek, restoreTaperWeek], ['goals', '#/goals'], ['goal-new', '#/goal/new'],
   ['import', '#/import'], ['predictions', '#/predictions'], ['summary-period', '#/summary'], ['analysis', '#/analysis'],
+  // Ronda 8 (F): evolución de los check-ins (con datos: tiras, tendencia y zonas; vacía: su estado vacío) y 12 semanas
+  ['recovery', '#/recovery', recovery4w], ids.done && ['recovery-12w', '#/recovery', recovery12w],
   ids.female && ['cycle', '#/cycle'], ['context', '#/context'], ['context-new', '#/context/new?kind=event&type=race_result'],
   ['welcome', '#/welcome'], !ids.done && ['welcome-week', '#/welcome', weekStep],
 ].filter(Boolean);
@@ -316,7 +419,7 @@ async function sweep(app, { tag, widths, ids }) {
   const problems = [];
   for (const w of widths) {
     await page.setViewportSize({ width: w, height: 844 });
-    for (const [key, hash, prepare] of routes(ids)) {
+    for (const [key, hash, prepare, undo] of routes(ids)) {
       await go(page, '#/today'); // se entra siempre desde Hoy (como en el uso real)
       await go(page, hash);
       if (prepare) await prepare(page);
@@ -326,6 +429,7 @@ async function sweep(app, { tag, widths, ids }) {
       await page.evaluate(scrollToEnd);
       const bottom = await page.evaluate(inspectBottom);
       for (const p of [...top, ...bottom]) problems.push(`${key} @${w}: ${p}`);
+      if (undo) await undo(page);
     }
   }
   return problems;
@@ -343,7 +447,7 @@ const beforeLoad = (scale) => async (page) => {
 async function withData(browser, tag, { scale = 1, widths = [375, 390, 430] } = {}) {
   const app = await openApp({ browser, beforeLoad: beforeLoad(scale) });
   try {
-    const { activeId } = await seedRealistic(app.page, { months: 6, female: true, activeSession: true });
+    const { activeId } = await seedRealistic(app.page, { months: 6, female: true, activeSession: true, recovery: true });
     await seedPastRaces(app.page);
     const ids = await app.page.evaluate(() => {
       const ss = window.__app.store.all('sessions');

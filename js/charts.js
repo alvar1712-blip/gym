@@ -3,10 +3,14 @@
 //   lineChart(container, opts) / barChart(container, opts) → { update(opts), destroy(), el }
 //   legend(items) → HTMLElement · periodSelector({ value, onChange, key }) → HTMLElement
 //   PERIODS · periodStart() · getPeriod() / setPeriod() · COLORS
+//   getContextPref() / setContextPref() · mergeSegments() · groupFacts()  (franja de contexto, opción `context`)
 //
 // Ancho = el del contenedor (ResizeObserver, redibuja al cambiar); alto = opts.height (incluye el eje X).
 // Tocar o arrastrar en horizontal muestra una guía y un globo con la fecha y el valor EXACTO de cada serie
 // (point.label / segment.label si existen). Tocar fuera lo oculta. touch-action: pan-y (el scroll vertical sigue).
+// Contexto (ronda 8, E): con opts.context (de chart-context.js) y algo en el periodo, una franja fina arriba con las
+// fases (una fila de segmentos neutros) y los hechos (puntos); el interruptor «Contexto» de la leyenda la apaga y se
+// recuerda por gráfica (entreno.chartctx.<key>). Apagada, la gráfica es exactamente la de antes.
 // Las funciones puras (niceTicks, timeTicks, barAxisLabels, nearestIndex, dayNum…) se exportan para las pruebas.
 import { h, segmented } from './ui.js';
 import { todayStr, addDays, addMonths, isDateStr, fmtDate, fmtWeekRange, fmtNum, MONTH_SHORT } from './util.js';
@@ -77,6 +81,70 @@ export function setPeriod(key = 'global', id) {
   memPeriods.set(key, id);
   try { localStorage.setItem(LS_PREFIX + key, id); } catch { /* sin almacenamiento: queda en memoria */ }
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Contexto en la gráfica (ronda 8, E): interruptor recordado por gráfica, como el periodo
+// ---------------------------------------------------------------------------
+const CTX_PREFIX = 'entreno.chartctx.';
+const memCtx = new Map(); // respaldo si localStorage no está disponible
+
+/** ¿Contexto encendido en la gráfica `key`? '1' / '0' guardado; si no hay nada, `def`. */
+export function getContextPref(key, def = true) {
+  let v = memCtx.get(key) ?? null;
+  if (v !== '1' && v !== '0') {
+    try { v = localStorage.getItem(CTX_PREFIX + key); } catch { v = null; }
+  }
+  return v === '1' ? true : v === '0' ? false : !!def;
+}
+
+/** Guarda el interruptor de contexto de la gráfica `key` (localStorage con try/catch; si falla, queda en memoria). */
+export function setContextPref(key, on) {
+  const v = on ? '1' : '0';
+  memCtx.set(key, v);
+  try { localStorage.setItem(CTX_PREFIX + key, v); } catch { /* sin almacenamiento: queda en memoria */ }
+  return !!on;
+}
+
+/**
+ * Fases de la franja de contexto como UNA fila: unión de sus días (dayNum), recortada a [d0, d1]. Dos fases que se
+ * solapan o se tocan (día siguiente) se juntan. open = sigue más allá del final del periodo (fase abierta, to:null, o
+ * que acaba después): su extremo derecho se pinta recto. clipL = empezó antes del periodo. PURA.
+ * phases: [{ from:'YYYY-MM-DD', to:'YYYY-MM-DD'|null }] → [{ d0, d1, open, clipL }]
+ */
+export function mergeSegments(phases, d0, d1) {
+  const list = [];
+  for (const p of phases || []) {
+    if (!p || !isDateStr(p.from)) continue;
+    const a = dayNum(p.from);
+    const z = p.to == null ? Infinity : isDateStr(p.to) ? dayNum(p.to) : a;
+    if (z < d0 || a > d1) continue;
+    list.push([a, z]);
+  }
+  list.sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const [a, z] of list) {
+    const last = out[out.length - 1];
+    if (last && a <= last.z + 1) { if (z > last.z) last.z = z; } else out.push({ a, z });
+  }
+  return out.map(({ a, z }) => ({ d0: Math.max(a, d0), d1: Math.min(z, d1), open: z > d1, clipL: a < d0 }));
+}
+
+/**
+ * Hechos de la franja agrupados por cercanía: dos marcadores a menos de `minGap` px van juntos (el globo dice «2
+ * hechos»). facts ordenados por fecha; xPx(fact) → px. PURA. → [{ x, items }]
+ */
+export function groupFacts(facts, xPx, minGap = 12) {
+  const out = [];
+  let cur = null;
+  for (const f of facts || []) {
+    const x = xPx(f);
+    if (!Number.isFinite(x)) continue;
+    if (cur && x - cur.last < minGap) { cur.items.push(f); cur.last = x; continue; }
+    cur = { items: [f], first: x, last: x };
+    out.push(cur);
+  }
+  return out.map((g) => ({ x: g.items.length > 1 ? (g.first + g.last) / 2 : g.first, items: g.items }));
 }
 
 /**
@@ -439,15 +507,97 @@ function validBand(b) {
   return { ...b, min: Math.min(lo, hi), max: Math.max(lo, hi) };
 }
 
-/** Marco común: márgenes según el ancho de las etiquetas del eje Y. */
-function frame(W, H, yLabels) {
+/** Marco común: márgenes según el ancho de las etiquetas del eje Y. Con la franja de contexto, el de arriba crece (CTX_T). */
+function frame(W, H, yLabels, T = 10) {
   const labW = Math.max(0, ...yLabels.map((t) => measureText(t)));
   const L = Math.ceil(labW) + 10;
   const R = 10;
-  const T = 10;
   const B = 24; // banda del eje X
   return { L, R, T, B, W, H, pw: Math.max(20, W - L - R), ph: Math.max(20, H - T - B), bottom: H - B };
 }
+// ---------------------------------------------------------------------------
+// Franja de contexto (ronda 8, E): fases (una fila de segmentos neutros) y hechos (puntos) en el margen de arriba
+// ---------------------------------------------------------------------------
+const CTX_T = 18; // margen de arriba con la franja (sin ella, 10: la gráfica queda exactamente igual)
+const CTX_Y = 9; // centro de la franja
+const CTX_SEG_H = 5;
+const CTX_R = 3.5;
+const CTX_HIT_Y = 26; // un toque que levanta con py ≤ T + 26 (≈ 44 px desde arriba) puede abrir un hecho…
+const CTX_HIT_X = 22; // …si cae a ±22 px de él
+
+/**
+ * Qué hay de contexto en [d0, d1] (dayNum). null si la gráfica no tiene `context` o nada cae en el periodo (entonces
+ * tampoco sale el interruptor). `on` = preferencia guardada de esa gráfica (o su valor por defecto).
+ */
+function ctxPlan(cc, d0, d1) {
+  if (!cc || typeof cc !== 'object' || !cc.key) return null;
+  const segs = mergeSegments(cc.phases, d0, d1);
+  const facts = [];
+  for (const f of cc.facts || []) {
+    if (!f || !isDateStr(f.date)) continue;
+    const d = dayNum(f.date);
+    if (d >= d0 && d <= d1) facts.push({ ...f, d });
+  }
+  if (!segs.length && !facts.length) return null;
+  facts.sort((a, b) => a.d - b.d);
+  return { cc, segs, facts, on: getContextPref(cc.key, cc.defaultOn !== false) };
+}
+
+/** Segmento de la franja: extremos redondos, salvo el lado que sigue fuera del periodo (recto). */
+function ctxSegPath(xa, xz, roundL, roundR) {
+  const y = CTX_Y - CTX_SEG_H / 2;
+  const r = CTX_SEG_H / 2;
+  const w = xz - xa;
+  if (w < CTX_SEG_H) { roundL = false; roundR = false; }
+  const b = y + CTX_SEG_H;
+  let d = `M${r1(roundL ? xa + r : xa)} ${r1(y)}H${r1(roundR ? xz - r : xz)}`;
+  d += roundR ? `A${r} ${r} 0 0 1 ${r1(xz - r)} ${r1(b)}` : `V${r1(b)}`;
+  d += `H${r1(roundL ? xa + r : xa)}`;
+  d += roundL ? `A${r} ${r} 0 0 1 ${r1(xa + r)} ${r1(y)}Z` : `V${r1(y)}Z`;
+  return d;
+}
+
+/** Dibuja la franja: segs = [{ xa, xz, d0, d1, open, clipL }], groups = groupFacts(...). */
+function drawContextRail(svg, segs, groups) {
+  const g = sv('g', { class: 'chart-ctx', 'aria-hidden': 'true' }, svg);
+  for (const s of segs) {
+    if (s.xz - s.xa < 0.5) continue;
+    sv('path', { class: 'chart-ctx-seg', d: ctxSegPath(s.xa, Math.max(s.xz, s.xa + 2), !s.clipL, !s.open), 'data-from': dayStr(s.d0), 'data-to': dayStr(s.d1), 'data-open': s.open ? '1' : null }, g);
+  }
+  for (const gr of groups) {
+    const hollow = gr.items.every((it) => it.hollow);
+    sv('circle', { class: `chart-ctx-fact${hollow ? ' chart-ctx-fact-hollow' : ''}`, cx: r1(gr.x), cy: CTX_Y, r: CTX_R, 'data-date': gr.items[0].date, 'data-n': gr.items.length }, g);
+  }
+  svg.dataset.ctx = '1';
+}
+
+/** Globo de un hecho (o de varios juntos): «15 sep · Inicio creatina» · «3 hechos» + una fila por hecho (3 y «+N más»). */
+function ctxSelection(gr, i, f) {
+  const n = gr.items.length;
+  const line = (it) => `${it.when} · ${it.name}`;
+  const rows = n === 1 ? [] : gr.items.slice(0, 3).map((it) => ({ kind: 'none', value: line(it), cls: 'chart-tip-ctxrow' }));
+  if (n > 3) rows.push({ kind: 'none', value: `+${n - 3} más`, cls: 'chart-tip-ctxrow' });
+  return {
+    key: `ctx:${i}`, gx: gr.x, title: n === 1 ? line(gr.items[0]) : `${n} hechos`, rows, notes: [], marksY: [], plotBottom: f.bottom, ctx: null,
+    draw(g) { sv('circle', { class: 'chart-ctx-sel', cx: r1(gr.x), cy: CTX_Y, r: 6 }, g); },
+  };
+}
+
+/** Hecho tocado: py dentro de la franja (≤ T + 26) y el grupo más cercano a ±22 px. null si no. */
+function ctxHit(plan, groups, f, px, py) {
+  if (!plan?.on || !groups.length || !(py <= f.T + CTX_HIT_Y)) return null;
+  let best = -1;
+  let bd = Infinity;
+  groups.forEach((g, i) => { const d = Math.abs(g.x - px); if (d < bd) { bd = d; best = i; } });
+  return best >= 0 && bd <= CTX_HIT_X ? ctxSelection(groups[best], best, f) : null;
+}
+
+/** Selección guardada de un hecho ('ctx:i') tras redibujar; null si ya no existe o el contexto está apagado. */
+function ctxSelect(plan, groups, f, key) {
+  const i = Number(String(key).slice(4));
+  return plan?.on && Number.isInteger(i) && groups[i] ? ctxSelection(groups[i], i, f) : null;
+}
+
 function yMapper(scale, f, invert) {
   const span = scale.max - scale.min || 1;
   return (v) => {
@@ -524,6 +674,7 @@ function createChart(container, initialOpts, spec) {
   let holdTimer = 0;
   let raf = 0;
   let legendEl = null;
+  let ctxRow = null; // fila propia del interruptor «Contexto» cuando la gráfica no tiene leyenda
 
   const svg = sv('svg', { class: 'chart-svg', role: 'img', focusable: 'false' });
   const tip = h('div.chart-tip', { hidden: true, 'aria-hidden': 'true' });
@@ -531,6 +682,31 @@ function createChart(container, initialOpts, spec) {
   const plot = h('div.chart-plot', svg, tip, emptyEl);
   const root = h(`div.chart.chart--${spec.kind}`, plot);
   container.appendChild(root);
+  // Interruptor «Contexto» (ronda 8, E): su icono es una muestra de la franja, así que hace también de leyenda
+  const ctxBtn = h('button.chart-ctx-toggle', { type: 'button', 'aria-label': 'Mostrar contexto en la gráfica', 'aria-pressed': 'false', onClick: toggleContext },
+    h('span.chart-ctx-swatch', { 'aria-hidden': 'true' }, h('span.chart-ctx-swatch-seg'), h('span.chart-ctx-swatch-dot')),
+    h('span.chart-ctx-label', 'Contexto'));
+  const ctxItem = h('span.chart-legend-item.chart-legend-ctx', { role: 'listitem' }, ctxBtn);
+
+  function toggleContext() {
+    const k = model?.ctx?.key;
+    if (!k) return;
+    setContextPref(k, !model.ctx.on);
+    render(); // sin recalcular los datos: solo se redibuja con la nueva preferencia
+  }
+  /** Pone el interruptor al final de la leyenda (o en una fila propia) solo si hay contexto en el periodo. */
+  function placeContextToggle() {
+    const c = model?.ctx;
+    if (!c) { ctxItem.remove(); ctxRow?.remove(); ctxRow = null; return; }
+    ctxBtn.setAttribute('aria-pressed', c.on ? 'true' : 'false');
+    if (legendEl) {
+      ctxRow?.remove(); ctxRow = null;
+      if (ctxItem.parentNode !== legendEl) legendEl.appendChild(ctxItem);
+    } else {
+      if (!ctxRow) { ctxRow = h('div.chart-legend', { role: 'list' }); root.appendChild(ctxRow); }
+      if (ctxItem.parentNode !== ctxRow) ctxRow.appendChild(ctxItem);
+    }
+  }
 
   function height() { return Math.max(80, Math.round(Number(opts.height) || 200)); }
 
@@ -552,6 +728,7 @@ function createChart(container, initialOpts, spec) {
     svg.setAttribute('height', H);
     svg.setAttribute('viewBox', `0 0 ${w} ${H}`);
     svg.style.height = `${H}px`;
+    delete svg.dataset.ctx;
     model = spec.draw(svg, opts, w, H);
     const empty = !model;
     svg.toggleAttribute('hidden', empty);
@@ -561,6 +738,7 @@ function createChart(container, initialOpts, spec) {
     // Título de la vista + descripción calculada (periodo, nº de valores, último valor): VoiceOver no puede arrastrar
     svg.setAttribute('aria-label', [opts.ariaLabel, model ? model.aria : opts.empty].filter(Boolean).join('. ') || 'Gráfica');
     if (legendEl) legendEl.hidden = empty;
+    placeContextToggle();
     root.classList.toggle('chart-is-empty', empty);
     if (model) {
       model.hover = sv('g', { class: 'chart-hover' }, svg);
@@ -601,11 +779,13 @@ function createChart(container, initialOpts, spec) {
     // Fila: marca de color + texto (valor y nombre; si no caben en una línea, el nombre baja y el valor parte).
     tip.replaceChildren(
       h('div.chart-tip-title', s.title),
-      ...s.rows.map((r) => h('div.chart-tip-row', { class: r.strong ? 'chart-tip-total' : '' },
+      ...s.rows.map((r) => h('div.chart-tip-row', { class: [r.strong ? 'chart-tip-total' : '', r.cls || ''].filter(Boolean).join(' ') },
         r.kind === 'none' ? null : h('span.chart-tip-key', h(`span.chart-key.chart-key-${r.kind || 'line'}`, { style: { color: r.color } })),
         h('span.chart-tip-txt',
           h('span.chart-tip-val', r.value),
           r.name ? h('span.chart-tip-name', r.name) : null))),
+      // Contexto de ese día (o semana), siempre en una línea (replaceChildren no se salta los null: se añade solo si hay)
+      ...(s.ctx ? [h('div.chart-tip-ctx', String(s.ctx))] : []),
       ...(s.notes || []).filter((t) => t != null && t !== '').map((t) => h('div.chart-tip-note', String(t))));
     tip.hidden = false;
     const W = plot.clientWidth;
@@ -636,12 +816,14 @@ function createChart(container, initialOpts, spec) {
     tip.hidden = true;
     root.classList.remove('chart-active');
   }
-  function pick(clientX) {
+  /** Selecciona lo que hay bajo el dedo. Con `ctx` (un toque sin arrastre o el ratón), primero un hecho de la franja. */
+  function pick(clientX, clientY = null, ctx = false) {
     if (!model) return;
     const rect = svg.getBoundingClientRect();
     if (!rect.width) return;
     const px = (clientX - rect.left) * (width / rect.width);
-    const s = model.hit(px);
+    const py = clientY == null || !rect.height ? Infinity : (clientY - rect.top) * (height() / rect.height);
+    const s = (ctx && model.hitContext ? model.hitContext(px, py) : null) || model.hit(px);
     if (s && !(s.key === selKey && !tip.hidden)) showSel(s); // mismo punto: no se rehace el globo
   }
 
@@ -653,16 +835,16 @@ function createChart(container, initialOpts, spec) {
       if (e.button !== 0) return;
       gesture = { id: e.pointerId, mouse: true };
       try { plot.setPointerCapture(e.pointerId); } catch { /* sin captura */ }
-      pick(e.clientX);
+      pick(e.clientX, e.clientY, true);
       return;
     }
-    gesture = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, scrub: false };
+    gesture = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, scrub: false, moved: false };
     const g = gesture;
     holdTimer = setTimeout(() => { if (gesture === g) { g.scrub = true; pick(g.x); } }, 180);
   }
   function onMove(e) {
     if (!model) return;
-    if (e.pointerType === 'mouse') { if (!gesture || gesture.mouse) pick(e.clientX); return; }
+    if (e.pointerType === 'mouse') { if (!gesture || gesture.mouse) pick(e.clientX, e.clientY, !gesture); return; }
     if (!gesture || e.pointerId !== gesture.id) return;
     gesture.x = e.clientX;
     if (!gesture.scrub) {
@@ -670,12 +852,14 @@ function createChart(container, initialOpts, spec) {
       const dy = Math.abs(e.clientY - gesture.y0);
       if (dx > 6 && dx > dy) { gesture.scrub = true; clearTimeout(holdTimer); }
     }
+    if (Math.abs(e.clientX - gesture.x0) > 6) gesture.moved = true;
     if (gesture.scrub) pick(e.clientX);
   }
   function onUp(e) {
     if (!gesture || e.pointerId !== gesture.id) return;
     clearTimeout(holdTimer);
-    if (!gesture.mouse) pick(e.clientX); // el globo se queda visible al levantar el dedo
+    // El globo se queda visible al levantar el dedo. Un toque sin arrastre en la franja abre el hecho de ahí.
+    if (!gesture.mouse) pick(e.clientX, e.clientY, !gesture.moved);
     gesture = null;
   }
   function onCancel(e) { // el navegador empezó a desplazar la página (pan-y)
@@ -710,6 +894,8 @@ function createChart(container, initialOpts, spec) {
 
   return {
     el: root,
+    /** ¿Hay contexto en el periodo dibujado (sale la franja o su interruptor)? Para la frase de ayuda de la tarjeta. */
+    hasContext: () => !!model?.ctx,
     update(next = {}) {
       if (!alive) return;
       opts = { ...opts, ...next };
@@ -821,6 +1007,8 @@ export function sparkline(values, { width = 72, height = 28, color = COLORS.mute
  *   bands?: [{ from:'YYYY-MM-DD', to:'YYYY-MM-DD', color?, opacity?: 0.16, note?: string }] (franjas verticales de
  *            fechas detrás de las series, p. ej. días de regla; `note` sale en el globo de los días que cubre),
  *   bandsLegend?: { label, color? } (se añade a la leyenda automática o a la de `legend: true`),
+ *   context?: chart-context.chartContext(...) | null (franja de contexto arriba: { key, defaultOn, phases, facts,
+ *            line(d0, d1), aria(d0, d1) }; line → línea del globo, aria → se añade a la descripción),
  *   empty: 'Sin datos en este periodo', ariaLabel }
  * y:null corta la línea. Con alguna serie emphasis, las demás se atenúan. Varios puntos el mismo día (dos
  * carreras): el globo da una fila por punto. point.note: línea de nota bajo las filas (texto que parte línea).
@@ -948,7 +1136,8 @@ function drawLine(svg, o, W, H) {
   // Rango mínimo del eje (yMinSpan): un cambio de 1 kg sobre 100 no se dibuja como un precipicio
   if (o.yMinSpan != null) [lo, hi] = widenDomain(lo, hi, typeof o.yMinSpan === 'function' ? o.yMinSpan(lo, hi) : o.yMinSpan);
   const { scale, labels: tickLabels } = yAxis(lo, hi, o, ints, fmtTick);
-  const f = frame(W, H, tickLabels);
+  const plan = ctxPlan(o.context, d0, d1);
+  const f = frame(W, H, tickLabels, plan?.on ? CTX_T : 10);
   const yPx = yMapper(scale, f, !!o.invertY);
   const padX = 6;
   const x0 = f.L + padX;
@@ -961,6 +1150,14 @@ function drawLine(svg, o, W, H) {
   const vbands = validVBands(o.bands);
   drawVBands(svg, vbands, f, xPx, d0, d1, (x1 - x0) / Math.max(1, d1 - d0));
   const bandLabel = band ? drawBandH(svg, band, f, yPx, fmtY) : null;
+  // Franja de contexto: cada fase cubre sus días enteros (como las franjas verticales); cada hecho, en su día
+  let groups = [];
+  if (plan?.on) {
+    const half = Math.max(1, (x1 - x0) / Math.max(1, d1 - d0) / 2);
+    const segs = plan.segs.map((sg) => ({ ...sg, xa: Math.max(f.L, xPx(sg.d0) - half), xz: Math.min(f.L + f.pw, xPx(sg.d1) + half) }));
+    groups = groupFacts(plan.facts, (it) => xPx(it.d));
+    drawContextRail(svg, segs, groups);
+  }
   const xt = singleDay != null ? [{ d: singleDay, label: fmtDate(dayStr(singleDay), 'day') }] : timeTicks(d0, d1, x1 - x0, { measure: measureText });
   drawXLabels(svg, xt.map((t) => ({ x: xPx(t.d), label: t.label })), f, true);
 
@@ -1034,8 +1231,9 @@ function drawLine(svg, o, W, H) {
       }
     }
     for (const b of vbands) if (b.note && d >= b.d0 && d <= b.d1 && !notes.includes(String(b.note))) notes.push(String(b.note));
+    const ctx = plan?.on && typeof plan.cc.line === 'function' ? plan.cc.line(dayStr(d), dayStr(d)) : null;
     return {
-      key: d, gx, title: title(d), rows, notes, marksY: marks.map((m) => m[0]), plotBottom: f.bottom,
+      key: d, gx, title: title(d), rows, notes, ctx, marksY: marks.map((m) => m[0]), plotBottom: f.bottom,
       draw(g) {
         const x = crisp(gx);
         sv('line', { class: 'chart-guide', x1: x, x2: x, y1: f.T, y2: f.bottom }, g);
@@ -1052,13 +1250,19 @@ function drawLine(svg, o, W, H) {
   const LP = vis.find((P) => P.s.emphasis) || vis[0];
   const lq = LP.inside[LP.inside.length - 1];
   const lastTxt = `, último ${lq.p.label ?? fmtY(lq.y)}`;
+  const ctxAria = plan?.on && typeof plan.cc.aria === 'function' ? plan.cc.aria(dayStr(d0), dayStr(d1)) : '';
   return {
-    aria: `Gráfica de líneas${names ? ` (${names})` : ''}: ${total} valores del ${fmtDate(dayStr(d0), 'full')} al ${fmtDate(dayStr(d1), 'full')}${lastTxt}`,
+    aria: `Gráfica de líneas${names ? ` (${names})` : ''}: ${total} valores del ${fmtDate(dayStr(d0), 'full')} al ${fmtDate(dayStr(d1), 'full')}${lastTxt}${ctxAria ? `. ${ctxAria}` : ''}`,
     hit(px) {
       const d = d0 + ((px - x0) / (x1 - x0)) * (d1 - d0);
       return selAt(keys[nearestIndex(keys, d)]);
     },
-    select(d) { const i = nearestIndex(keys, d); return i >= 0 && keys[i] === d ? selAt(d) : null; },
+    hitContext: (px, py) => ctxHit(plan, groups, f, px, py),
+    select(d) {
+      if (typeof d === 'string' && d.startsWith('ctx:')) return ctxSelect(plan, groups, f, d);
+      const i = nearestIndex(keys, d); return i >= 0 && keys[i] === d ? selAt(d) : null;
+    },
+    ctx: plan ? { key: plan.cc.key, on: plan.on } : null,
   };
 }
 
@@ -1112,7 +1316,8 @@ function yAxis(lo, hi, o, ints, fmtTick) {
  *   overlay?: { points:[{ x, y, label? }], color?, label?, dashed? },   // se une a las barras por x
  *   legend?: [{ key, label, color, kind? }], totalLabel?: 'Total', yMin?, yMax?, yTicks?, barMax?: 24,
  *   bandColor?, overlap?: auto (agrupadas superpuestas —la mayor detrás— si no caben de lado; true/false fuerza),
- *   emptyWhenZero?: true (todo a cero → mensaje empty), empty, ariaLabel }
+ *   emptyWhenZero?: true (todo a cero → mensaje empty), empty, ariaLabel,
+ *   context?: como en lineChart (solo se usa si las barras son semanales: cada x un lunes) }
  * Nombre de cada segmento en el globo: segment.name, o la etiqueta de la leyenda con su key, o la key.
  * Con legend, se añaden solas la línea overlay (si tiene label) y la franja (su label o bandLabel).
  */
@@ -1199,7 +1404,12 @@ function drawBars(svg, o, W, H) {
   if (!any && o.emptyWhenZero !== false) return null;
 
   const { scale, labels: tickLabels } = yAxis(lo, hi, { ...o, zeroBased: true }, ints, fmtTick);
-  const f = frame(W, H, tickLabels);
+  const xs = bars.map((b) => String(b.x));
+  const weekly = isWeekly(xs);
+  // Contexto solo en barras semanales (cada x es un lunes): la semana i cubre sus 7 días
+  const wkDays = weekly && o.context ? xs.map(dayNum) : null;
+  const plan = wkDays ? ctxPlan(o.context, wkDays[0], wkDays[n - 1] + 6) : null;
+  const f = frame(W, H, tickLabels, plan?.on ? CTX_T : 10);
   const yPx = yMapper(scale, f, false);
   const slot = f.pw / n;
   const cx = (i) => f.L + slot * (i + 0.5);
@@ -1343,8 +1553,22 @@ function drawBars(svg, o, W, H) {
 
   bandLabel?.();
 
+  // Franja de contexto: la x de un día es f.L + slot·(i + (día − lunes_i)/7), con i la semana que lo contiene
+  let groups = [];
+  if (plan?.on) {
+    const xOf = (d) => {
+      let lo2 = 0;
+      let hi2 = n - 1;
+      while (lo2 < hi2) { const m = (lo2 + hi2 + 1) >> 1; if (wkDays[m] <= d) lo2 = m; else hi2 = m - 1; }
+      const frac = Math.min(1, Math.max(0, (d - wkDays[lo2]) / 7));
+      return Math.min(f.L + f.pw, Math.max(f.L, f.L + slot * (lo2 + frac)));
+    };
+    const segs = plan.segs.map((sg) => ({ ...sg, xa: xOf(sg.d0), xz: sg.d1 >= wkDays[n - 1] + 6 ? f.L + f.pw : xOf(sg.d1 + 1) }));
+    groups = groupFacts(plan.facts, (it) => xOf(it.d) + slot / 14);
+    drawContextRail(svg, segs, groups);
+  }
+
   // Eje X
-  const xs = bars.map((b) => String(b.x));
   const labels = barAxisLabels(xs, f.pw, {
     measure: measureText,
     format: typeof o.xFormat === 'function' ? (x, i) => o.xFormat(bars[i].x, i) : null,
@@ -1353,7 +1577,6 @@ function drawBars(svg, o, W, H) {
   drawXLabels(svg, labels.map((l) => ({ x: cx(l.i), label: l.label })), f, false);
 
   // Globo
-  const weekly = isWeekly(xs);
   const selAt = (i) => {
     const b = bars[i];
     const segs = segsOf(b);
@@ -1385,8 +1608,10 @@ function drawBars(svg, o, W, H) {
     if (pos > 0) marksY.push(yPx(pos));
     if (neg < 0) marksY.push(yPx(neg));
     if (ov) marksY.push(yPx(ov.y));
+    // Contexto de la semana entera (lunes a domingo)
+    const ctx = plan?.on && typeof plan.cc.line === 'function' ? plan.cc.line(xs[i], addDays(xs[i], 6)) : null;
     return {
-      key: i, gx, title: t, rows, notes: Array.isArray(b.tooltip) ? b.tooltip : [], marksY, plotBottom: f.bottom,
+      key: i, gx, title: t, rows, notes: Array.isArray(b.tooltip) ? b.tooltip : [], ctx, marksY, plotBottom: f.bottom,
       draw(g, under) {
         const pad = Math.min(4, slot * 0.1);
         sv('rect', { class: 'chart-guide chart-guide-col', x: r1(f.L + slot * i + pad), y: f.T - 4, width: r1(Math.max(1, slot - pad * 2)), height: f.ph + 4, rx: Math.min(4, slot / 4) }, under);
@@ -1406,10 +1631,16 @@ function drawBars(svg, o, W, H) {
   const lastSegs = segsOf(bars[n - 1]);
   const lastTxt = lastSegs.length === 1 ? `, última ${lastSegs[0].label ?? fmtY(lastSegs[0].value)}`
     : stacked && lastSegs.length ? `, última ${fmtY(lastSegs.reduce((t, s) => t + s.value, 0))}` : '';
+  const ctxAria = plan?.on && typeof plan.cc.aria === 'function' ? plan.cc.aria(xs[0], addDays(xs[n - 1], 6)) : '';
   return {
-    aria: `Gráfica de barras: ${n} ${n === 1 ? 'barra' : 'barras'}${n > 1 ? `, de ${first} a ${last}` : `, ${first}`}${lastTxt}`,
+    aria: `Gráfica de barras: ${n} ${n === 1 ? 'barra' : 'barras'}${n > 1 ? `, de ${first} a ${last}` : `, ${first}`}${lastTxt}${ctxAria ? `. ${ctxAria}` : ''}`,
     hit(px) { return selAt(Math.min(n - 1, Math.max(0, Math.floor((px - f.L) / slot)))); },
-    select(i) { return Number.isInteger(i) && i >= 0 && i < n ? selAt(i) : null; },
+    hitContext: (px, py) => ctxHit(plan, groups, f, px, py),
+    select(i) {
+      if (typeof i === 'string' && i.startsWith('ctx:')) return ctxSelect(plan, groups, f, i);
+      return Number.isInteger(i) && i >= 0 && i < n ? selAt(i) : null;
+    },
     hoverUnder,
+    ctx: plan ? { key: plan.cc.key, on: plan.on } : null,
   };
 }

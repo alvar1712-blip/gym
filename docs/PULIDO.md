@@ -272,6 +272,8 @@ barra de la sesión: «‹ Hoy» · «En sesión · 2/20 series» · «Terminar�
   vuelven las pestañas.
 - Texto grande: «Hoy» se queda en la flecha (VoiceOver dice «Ir a Hoy»), «Terminar» sin icono y n/N sin la palabra
   «series»; la letra no se reduce.
+- Ronda 8 (H): el centro es el botón «Siguiente pendiente» (⌄ junto a «En sesión»; con texto grande, junto a n/N).
+  Ver §26.
 
 Pruebas: tests/e2e/focus-bar.test.cjs (Chromium y WebKit, 375/390/430, texto 100 % y 150 %: la barra cabe, nada
 de la pantalla queda bajo ella, n/N se actualiza, «Hoy» sale con la sesión abierta y «Terminar» la termina).
@@ -384,3 +386,57 @@ Pruebas: tests/e2e/restore-point.test.cjs (Chromium y WebKit): cancelar no crea 
 importar → recuperar → volver dejan memoria y disco idénticos por almacén; el punto no va en la copia; sin espacio o
 con una relectura distinta no se borra ni se importa nada; exportar antes; sin datos se conserva el punto; eliminar.
 La guarda visual recorre `settings-data-rp`.
+
+## 23. Contexto dentro de las gráficas (ronda 8, E)
+
+Reglas de UI (detalle en docs/MEJORAS.md §9):
+
+- El contexto va en una **franja superior** de la gráfica (margen de arriba 18 px en vez de 10), nunca como bandas de
+  fondo: las franjas verticales quedan para la regla. Apagado, la gráfica no cambia ni un píxel.
+- **Un solo color neutro** (`--text-2`): fases al 45 % en una fila (unión de las que se solapan), hechos como puntos
+  (relleno = día exacto, hueco = mes). Sin colores por tipo, sin texto en la franja: los nombres van en el globo.
+- **Globo**: una línea de contexto como mucho (`.chart-tip-ctx`, sin saltos, «…»), hechos primero y fases por
+  prioridad con «+N». El globo de un hecho es una línea «15 sep · Inicio creatina».
+- **Interruptor «Contexto»** al final de la leyenda, ≥ 44 px, `aria-pressed`, sin animación; con texto grande baja a
+  su fila. Solo existe si hay contexto en el periodo. Barras con ruido (carga, km): apagado por defecto.
+- La descripción accesible de la gráfica nombra como mucho 3 elementos de contexto y «y N más».
+
+## 24. Recuperación: bloques sin juicio (ronda 8, F)
+
+Reglas de UI de `#/recovery` (detalle en docs/MEJORAS.md §10):
+
+- **Escalas de 1 a 3 en bloques**, no en líneas: una celda por día, semana o mes, con una rampa neutra (`--text-2` al
+  28 / 60 / 100 %: tenue = bajo, intenso = alto) y un contorno discontinuo sin datos. Sin rojo ni verde: el bloque no
+  juzga; lo interpretan las frases del analista, con su confianza.
+- La tira es una imagen accesible (`role="img"` con su resumen); las celdas, ocultas a VoiceOver.
+- Medias y «antes» en texto secundario neutro; con menos de 4 días no hay medias, solo los bloques y la nota.
+- Las zonas: secuencia en cifras tabulares y estado con `stateTag` (Mejorando · Estable · Empeorando), con la regla
+  y «no es un diagnóstico» siempre a la vista.
+- Texto grande: etiqueta y resumen en columna; sin animaciones. Prefijo CSS `rcv-` (en css/progress.css).
+
+## 25. Puesta a punto: contexto, nunca aviso (ronda 8, G)
+
+- Una bajada de carga cerca de un evento A o B no se pinta como negativa: «Carga semanal» sigue en **neutro**, con la
+  etiqueta «Puesta a punto» (`stateTag('info', …)`, el azul de información, nunca ámbar) y la frase al final del texto.
+  El chip de «Carga» del «Resumen de la semana» sigue con `deltaTone` sin regla (neutro): una bajada nunca es `warn`.
+- La frase interpreta, no prescribe: «Compatible con una puesta a punto antes del 10K del domingo.» Sin porcentajes de
+  taper ni consejos; el único % es la variación que ya estaba.
+- Texto grande (arreglos que la nueva pantalla de la guarda destapó en cualquier semana pasada): «Ir a esta semana»
+  pasa a dos líneas en vez de cortarse con «…» y, en las fichas del resumen, la diferencia larga («−4 h 13 min»,
+  «−33.207 kg») parte por sus espacios en vez de salirse; el % sigue entero.
+- Guarda visual: pantalla `weekly-taper` (semana pasada con «Puesta a punto» y su «¿Por qué?» abierto).
+
+## 26. Sesiones largas: lo terminado, plegado (ronda 8, H)
+
+- Plegar solo en momentos naturales (tras el ✓ de terminar, al saltar, al volver a pintar la lista), nunca mientras se
+  toca la tarjeta: nada se mueve bajo el dedo. Lo plegado sale de los datos; lo tocado a mano, en memoria.
+- La línea plegada es un único botón de 44 px con `aria-expanded`; el nombre pasa a dos líneas antes que cortarse con
+  «…» y, con texto grande, el resumen («3 series») baja a su propia línea. Al plegar o desplegar a mano, el foco vuelve
+  al botón del bloque nuevo.
+- «En curso» = «2/4» discreto en la cabecera; no añade alto. Un grupo se pliega entero, nunca un ejercicio suelto.
+- El salto vive en la barra de la sesión (§18), sin botón nuevo: el centro «En sesión · n/N» con ⌄. Desactivado sin
+  pendientes, sin atenuar (sigue informando).
+- Entrada al desplegar: solo opacidad y −6 px (`session-view-card.reveal`); sin animación y con desplazamiento
+  instantáneo con «reducir movimiento».
+- Guarda visual: pantalla `session-long` (superserie y cuatro plegados, uno desplegado a mano y otro en curso).
+

@@ -14,7 +14,7 @@ import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, emptyState, toast, sheet, stateTag, kpiValue, scrollBehavior } from '../ui.js';
 import { todayStr, addDays, fmtNum, fmtDuration, clamp } from '../util.js';
-import { dataFromStore, chartHeight } from '../progress-ui.js';
+import { dataFromStore, chartHeight, chartCtxFor } from '../progress-ui.js';
 import { lineChart, COLORS } from '../charts.js';
 import { buildAnalysis, areaInsights, isPlaceholder, AREA_LABEL, LEVEL_LABEL, DISCLAIMER } from '../analysis.js';
 import { reportText } from '../analysis-report.js';
@@ -140,7 +140,8 @@ function insightItem(ins) {
     folds(ins));
 }
 
-const insightList = (list) => (list.length ? h('div.an-ins-list', list.map(insightItem)) : null);
+/** Lista de Insights con nivel, confianza, «¿Por qué?» y fuentes (también la usa #/recovery). */
+export const insightList = (list) => (list.length ? h('div.an-ins-list', list.map(insightItem)) : null);
 
 function cardHead(ic, title, sub = null, right = null) {
   return h('div.an-card-head',
@@ -365,6 +366,8 @@ function weightChart(a) {
     xDomain: [from, a.today],
     bands,
     bandsLegend: bands.length ? { label: 'Regla', color: PERIOD_COLOR } : null,
+    // Ronda 8 (E): la misma franja de contexto (y el mismo interruptor, clave 'bodyweight') que Progreso y #/bodyweight
+    context: chartCtxFor({ today: a.today }, 'weight', { key: 'bodyweight', defaultOn: true }),
     empty: 'Sin pesajes recientes',
     ariaLabel: 'Peso de las últimas semanas: pesajes y tendencia',
   });
@@ -536,6 +539,8 @@ function recoveryCard(a) {
   const list = areaInsights(a, 'recovery');
   el.appendChild(list.length ? insightList(list) : note('Sin datos de recuperación todavía.'));
   el.appendChild(h('p.an-hint', 'Haz el check-in (sueño, energía, estrés y agujetas, y si quieres las zonas con agujetas o molestias) al empezar tus sesiones de fuerza: son 4 toques.'));
+  // Ronda 8 (F): la evolución de los check-ins y de las zonas, en su pantalla
+  el.appendChild(h('button.btn.btn-secondary.btn-block.an-rcv-btn', { type: 'button', dataset: { link: 'recovery' }, onClick: () => navigate('#/recovery') }, icon('chart', 20), 'Ver evolución'));
   return el;
 }
 

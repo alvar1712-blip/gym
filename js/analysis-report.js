@@ -271,6 +271,10 @@ function loadSection(a) {
   const lines = [`- Carga total (minutos × esfuerzo RPE), media semanal de las 4 semanas completas: ${fmtNum(total, 0)}${change != null ? ` (${signed(change, 0, ' %')} frente a las 4 anteriores)` : ''}`,
     `- Reparto: ${rows.map((r) => `${r.label.toLowerCase()} ${pct(r.share)}`).join(', ')} (cada deporte se mide aparte: 3 h de senderismo suave no pesan como 3 h de carrera)`];
   for (const r of (sl.rows || []).filter((x) => x.spike)) lines.push(`- Esta semana: pico de carga de ${r.label.toLowerCase()} (${fmtNum(r.lastWeekLoad, 0)} frente a ${fmtNum(r.load4w, 0)} de media)`);
+  // Ronda 8 (G): con un evento A o B cerca (races-logic.taperRace, vía context.events.taper), una bajada de carga no
+  // es pérdida de forma. En condicional: no calcula nada ni prescribe porcentajes.
+  const tp = a.context?.events?.taper;
+  if (tp) lines.push(`- Evento ${tp.race.priority} ${tp.days === 0 ? 'hoy' : tp.days === 1 ? 'mañana' : `en ${tp.days} días`}: ${eventName(tp.race)}, el ${day(tp.race.date, a.today)}. Una bajada de carga en estas semanas es compatible con una puesta a punto: no la interpretes como pérdida de forma ni de constancia.`);
   return section('CARGA', lines);
 }
 

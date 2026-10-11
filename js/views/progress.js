@@ -13,7 +13,7 @@ import * as S from '../stats.js';
 import { MUSCLES, MUSCLE_LABEL } from '../seed.js';
 import { emptyBests, addToBests, detectPRs } from '../calc.js';
 import { formatSet, fmtSec } from '../session-logic.js';
-import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts } from '../progress-ui.js';
+import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts, chartCtxFor, CTX_HOWTO } from '../progress-ui.js';
 import { bodyMap, bodyMapData } from '../bodymap.js';
 import { goalsSummaryCard } from './goals.js';
 import { pastRecoveryCard, pastRecordsLink } from './past-records.js';
@@ -107,18 +107,26 @@ function chartHolder(charts, slot, kind, base) {
   };
 }
 
-function chartSection(id, { title, sub, right = null, before = [], note = null, howto = null }) {
+function chartSection(id, { title, sub, right = null, before = [], note = null, howto = null, ctx = false }) {
   const slot = h('div.prg-chart');
   // La frase de lo que hay que entender del periodo (docs/PULIDO.md §12); vacía, no ocupa sitio
   const summary = h('p.chart-summary', { hidden: true, 'aria-live': 'polite' });
+  // Ronda 8 (E): qué es la franja de contexto; solo se ve si la gráfica tiene contexto en el periodo
+  const ctxHelp = ctx ? h('p.prg-ctx-howto', { hidden: true }, CTX_HOWTO) : null;
   const el = h('section.card.prg-card', { dataset: { chart: id } },
     cardHead(title, sub, right),
     summary,
     ...before,
     slot,
     note ? h('p.prg-note', icon('info', 16), h('span', note)) : null,
-    howto ? h('p.prg-howto', howto) : null);
-  return { el, slot, summary };
+    howto ? h('p.prg-howto', howto) : null,
+    ctxHelp);
+  return { el, slot, summary, ctxHelp };
+}
+
+/** Muestra la frase de la franja de contexto si la gráfica (recién dibujada) tiene contexto en su periodo. */
+function syncCtxHelp(help, chart) {
+  if (help && chart) help.hidden = !chart.hasContext();
 }
 
 /** Pone (o quita) la frase de una gráfica: { text, dir } de chart-summary.js o null. */
@@ -329,7 +337,8 @@ function loadCard(ctx) {
   const cur = weeks[weeks.length - 1];
   const prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
   const ref = avg.length && avg[avg.length - 1].x === cur.week ? avg[avg.length - 1] : null; // la de esta semana
-  const { el, slot, summary } = chartSection('load', {
+  const { el, slot, summary, ctxHelp } = chartSection('load', {
+    ctx: true,
     title: 'Carga semanal',
     sub: 'Minutos × esfuerzo percibido (1–10)',
     before: [ctx.hasSessions ? statLine([
@@ -350,7 +359,7 @@ function loadCard(ctx) {
       setSummary(summary, weeklySummary(weeks, (r) => r.loadTotal, { from: wk, unit: '' }));
       const used = LOAD_KINDS.filter((k) => rows.some((r) => r.load[k.key] > 0));
       const kinds = used.length ? used : LOAD_KINDS;
-      draw({
+      syncCtxHelp(ctxHelp, draw({
         bars: rows.map((r) => ({
           x: r.week,
           segments: kinds.map((k) => ({ key: k.key, value: r.load[k.key], color: k.color, label: r.labels.load[k.key] })),
@@ -358,8 +367,10 @@ function loadCard(ctx) {
         })),
         legend: kinds.map(({ key, label, color }) => ({ key, label, color })),
         overlay: { points: avg.filter((p) => p.x >= wk), color: COLORS.text, label: 'Media 4 sem. previas' },
+        // Ronda 8 (E): barras con ruido → contexto apagado por defecto
+        context: chartCtxFor(ctx.data, 'load', { key: 'load', defaultOn: false }),
         empty: ctx.hasSessions ? 'Sin sesiones en este periodo' : 'Registra tu primera sesión para ver tu carga semanal.',
-      });
+      }));
     },
   };
 }
@@ -518,7 +529,8 @@ function kmCard(ctx) {
   });
   // Cinco opciones: en dos filas (css/activity.css) para que «Senderismo» no se corte.
   seg.classList.add('prg-seg', 'act-seg-wrap');
-  const { el, slot, summary } = chartSection('km', {
+  const { el, slot, summary, ctxHelp } = chartSection('km', {
+    ctx: true,
     title: 'Kilómetros semanales',
     sub: 'km por semana · carrera, bici, natación y senderismo',
     before: [
@@ -538,19 +550,21 @@ function kmCard(ctx) {
     setSummary(summary, swimOnly
       ? weeklySummary(weeks, (r) => (r.km.swim || 0) * 1000, { from: wk, unit: 'm' })
       : weeklySummary(weeks, (r) => kinds.reduce((t, k) => t + (r.km[k.key] || 0), 0), { from: wk, unit: 'km', decimals: 1 }));
-    draw({
+    syncCtxHelp(ctxHelp, draw({
       bars: rows.map((r) => ({
         x: r.week,
         segments: kinds.map((k) => ({ key: k.key, value: r.km[k.key], color: k.color, label: r.labels.km[k.key], name: k.label })),
         tooltip: r.current ? ['Semana en curso'] : [],
       })),
+      // Con un deporte elegido, solo su contexto; con «Todos», sin filtro de deporte. Apagado por defecto (ruido)
+      context: chartCtxFor(ctx.data, 'endurance', { key: 'km', defaultOn: false, sport: one ? one.key : null }),
       legend: one ? [] : kinds.map(({ key, label, color }) => ({ key, label, color })),
       yFormat: swimOnly ? (v) => S.fmtMetric('km.swim', v) : (v) => `${nf1(v)} km`,
       yTickFormat: swimOnly ? (v) => S.fmtNumFast(v * 1000, 0) : nf1,
       empty: !any.length
         ? 'Registra tu primera carrera, salida en bici, natación o ruta de senderismo (con distancia) para ver tus kilómetros.'
         : one ? `Sin kilómetros de ${one.label.toLowerCase()} en este periodo` : 'Sin kilómetros en este periodo',
-    });
+    }));
   }
   return { el, update(p) { pid = p; paint(); } };
 }
@@ -561,7 +575,7 @@ function activityLineCard(ctx, spec) {
   const avg = rolling(pts, 5, spec.ratio);
   const last = pts[pts.length - 1] || null;
   const statsBox = h('div.prg-stats-box');
-  const { el, slot } = chartSection(spec.id, { title: spec.title, sub: spec.sub, before: [statsBox], howto: spec.howto });
+  const { el, slot, ctxHelp } = chartSection(spec.id, { title: spec.title, sub: spec.sub, before: [statsBox], howto: spec.howto, ctx: true });
   const draw = chartHolder(ctx.charts, slot, 'line', {
     height: ctx.h(210),
     series: [
@@ -586,7 +600,11 @@ function activityLineCard(ctx, spec) {
         last ? { label: 'Última', value: spec.fmt(last.y), sub: `${S.distanceLabel(spec.kind, last.km)} · ${fmtDay(last.x, ctx.today)}` } : null,
         { label: 'Media del periodo', value: y != null ? spec.fmt(y) : '—', sub: inP.length ? `${S.distanceLabel(spec.kind, km)} en ${plural(inP.length, spec.one, spec.many)}` : 'sin datos en el periodo' },
       ]) : '');
-      draw({ xDomain: [from, ctx.today], empty: pts.length ? `Sin ${spec.many} en este periodo` : spec.emptyAll });
+      syncCtxHelp(ctxHelp, draw({
+        xDomain: [from, ctx.today],
+        context: chartCtxFor(ctx.data, 'endurance', { key: spec.id, defaultOn: true, sport: spec.kind }),
+        empty: pts.length ? `Sin ${spec.many} en este periodo` : spec.emptyAll,
+      }));
     },
   };
 }
@@ -626,7 +644,8 @@ function swimCard(ctx) {
 // ---------- f) Peso corporal ----------
 function bodyweightCard(ctx) {
   const s = S.bodyweightSeries(ctx.data);
-  const { el, slot, summary } = chartSection('bodyweight', {
+  const { el, slot, summary, ctxHelp } = chartSection('bodyweight', {
+    ctx: true,
     title: 'Peso corporal',
     sub: 'kg · pesajes diarios y media móvil de 7 días',
     right: h('button.prg-head-link', { type: 'button', onClick: () => goChild('#/bodyweight') }, s.count ? 'Ver todo' : 'Registrar', icon('chevron-right', 16)),
@@ -643,7 +662,7 @@ function bodyweightCard(ctx) {
       const o = bodyweightChartOpts(ctx.data, pid, { height: ctx.h(210), series: s });
       // Sobre la media de 7 días (la que marca la tendencia), no sobre un pesaje suelto; ±0,3 kg es ruido
       setSummary(summary, levelSummary(s.ma, { from: o.xDomain[0], today: ctx.today, unit: 'kg', stable: 0.3 }));
-      draw(o);
+      syncCtxHelp(ctxHelp, draw(o));
     },
   };
 }
@@ -948,8 +967,10 @@ export function mountExerciseProgress(root, params = {}) {
     let period = getPeriod('exercise');
     const update = (pid) => {
       const { from } = periodRange(pid, today, first);
-      for (const { draw, d, el, summary } of holders) {
-        const o = { xDomain: [from, today] };
+      // Ronda 8 (E): todas las gráficas de la ficha comparten la clave 'exercise' (perfil de fuerza)
+      const context = chartCtxFor(data, 'strength', { key: 'exercise', defaultOn: true });
+      for (const { draw, d, el, summary, ctxHelp } of holders) {
+        const o = { xDomain: [from, today], context };
         if (d.summary) setSummary(summary, levelSummary(d.points, { from, today, ...d.summary }));
         if (d.adapt) { // lo que dibuja depende del periodo (mejor serie con doble progresión)
           const m = d.adapt(from, today);
@@ -960,21 +981,21 @@ export function mountExerciseProgress(root, params = {}) {
           if (subEl) subEl.textContent = m.sub;
           if (howEl) howEl.textContent = m.howto;
         }
-        draw(o);
+        syncCtxHelp(ctxHelp, draw(o));
       }
     };
     // Selector pegajoso solo sobre las gráficas (no sobre el historial, que no depende del periodo).
     const chartsBox = h('div.prg-charts', periodBar(root, 'exercise', (id) => { period = id; update(period); }));
     c.appendChild(chartsBox);
     for (const d of defs) {
-      const { el, slot, summary } = chartSection(d.id, { title: d.title, sub: d.sub, note: d.note, howto: d.howto });
+      const { el, slot, summary, ctxHelp } = chartSection(d.id, { title: d.title, sub: d.sub, note: d.note, howto: d.howto, ctx: true });
       chartsBox.appendChild(el);
       const draw = chartHolder(charts, slot, 'line', {
         series: d.series || [{ id: d.id, label: d.title, color: d.color, points: d.points, dots: true }],
         height: chartHeight(190), yFormat: d.fmt, yTickFormat: d.tick || d.fmt, invertY: !!d.invertY, yTicks: d.yTicks || 'auto', yMinSpan: d.span || null,
         empty: d.empty || 'Sin datos en este periodo', ariaLabel: `${ex.name}: ${d.title.toLowerCase()}`,
       });
-      holders.push({ draw, d, el, summary });
+      holders.push({ draw, d, el, summary, ctxHelp });
     }
     update(period);
   }

@@ -2,8 +2,10 @@
 // 4 días/semana con sus check-ins, carrera y bici, pesajes diarios, ciclo (modo mujer), objetivos, tu contexto (una
 // fase, creatina y un resultado de carrera), una marca histórica de fuerza, un evento próximo y, si se pide, una sesión
 // de fuerza en curso. Mismo generador que scripts/perf-startup.cjs (semilla fija): nada personal.
-async function seedRealistic(page, { months = 6, female = true, activeSession = false } = {}) {
-  return page.evaluate(async ({ months, female, activeSession }) => {
+// `recovery: true` (ronda 8, F): además, estrés en los check-ins y una zona que se repite (rodilla izquierda, con una
+// nota) y unas agujetas en cuádriceps; sin la opción, los datos son exactamente los de siempre (no toca el generador).
+async function seedRealistic(page, { months = 6, female = true, activeSession = false, recovery = false } = {}) {
+  return page.evaluate(async ({ months, female, activeSession, recovery }) => {
     const db = await import('./js/db.js');
     const util = await import('./js/util.js');
     const { store } = window.__app;
@@ -62,6 +64,16 @@ async function seedRealistic(page, { months = 6, female = true, activeSession = 
       }
       if (female && i % 28 < 5) cycle.push({ id: d, flow: ['heavy', 'medium', 'medium', 'light', 'spotting'][i % 28], symptoms: ['cramps'], notes: '', createdAt: base, updatedAt: base });
     }
+    if (recovery) {
+      // Determinista y después del bucle: el resto de los datos no cambia
+      checkins.forEach((c, k) => { c.stress = 1 + (k % 3); });
+      const recent = checkins.filter((c) => c.timing === 'pre' && c.date >= util.addDays(today, -40));
+      const knee = [7, 6, 6, 5, 4, 3, 3, 2];
+      recent.slice(-knee.length).forEach((c, k) => {
+        c.areas = [{ id: `rs_z${k}`, kind: 'joint', zone: 'knee', side: 'left', level: knee[k], note: k === 1 ? 'Molestia al bajar escaleras tras la sentadilla' : '' }];
+        if (k % 2 === 0) c.areas.push({ id: `rs_q${k}`, kind: 'muscle', zone: 'quads', side: null, level: 3 + (k % 3), note: '' });
+      });
+    }
     const settings = store.settings();
     settings.profile = { ...(settings.profile || {}), sex: female ? 'female' : 'male', goal: 'gain', experience: 'intermediate', cycleTracking: female, promptDismissed: true, onboardedAt: 1, birthDate: '1990-06-15' };
     settings.lastBackupAt = Date.now();
@@ -81,7 +93,7 @@ async function seedRealistic(page, { months = 6, female = true, activeSession = 
     const pastRecords = [{ id: 'rs_pr1', exerciseId: 'press_banca', weight: 82.5, reps: 5, rir: null, date: ap('2024-06-01', 'season'), beforeApp: true, bodyweightKg: null, note: '', createdAt: 1, updatedAt: 1 }];
     await db.putStores({ sessions, bodyweight, checkins, cycle, goals, context, races, pastRecords, meta: [settings] });
     return sessions.length;
-  }, { months, female, activeSession }).then(async (count) => {
+  }, { months, female, activeSession, recovery }).then(async (count) => {
     await page.reload();
     await page.waitForFunction(() => document.documentElement.classList.contains('ready'), null, { timeout: 30000 });
     let activeId = null;

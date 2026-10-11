@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   analyzeStrength, analyzeEndurance, analyzeRecovery, theilSen, median, exerciseTrend, stallState, strengthStatus,
   forecastE1rm, classifyIntensity, intensitySplit, findInterference, fitnessBlocks, sessionPerformance, compareByCheckin,
-  cyclePhase, experienceOf, isMainExercise, rateText, SOURCES, THRESHOLDS, TAU_WEEKS,
+  cyclePhase, experienceOf, isMainExercise, rateText, SOURCES, THRESHOLDS, TAU_WEEKS, wellbeingTrendInsights,
 } from '../../js/analysis-training.js';
 import { getProfile } from '../../js/profile.js';
 import { defaultSettings, exampleWeekPatterns, SEED_EXERCISES } from '../../js/seed.js';
@@ -605,6 +605,82 @@ test('entrada: perfil desde data.settings y hoy desde data.today', () => {
   // intensitySplit y stallState también son puras
   assert.equal(intensitySplit(mk(), { today: TODAY }).easyShare, null);
   assert.equal(stallState([], TODAY, {}).stalled, false);
+});
+
+// ---------------------------------------------------------------------------
+// Ronda 8 (F3): tendencia de los check-ins (últimas 2 semanas frente a las 6 anteriores)
+// ---------------------------------------------------------------------------
+
+/** Check-ins de un campo: `recent` valores en los últimos 14 días y `base` en los 42 anteriores (un día cada uno). */
+function trendCheckins(key, recent, base, extra = {}) {
+  const out = [];
+  recent.forEach((v, i) => out.push({ id: `tr${++seq}`, date: ago(i), timing: 'pre', sessionId: null, [key]: v, ...extra }));
+  base.forEach((v, i) => out.push({ id: `tb${++seq}`, date: ago(14 + i * 2), timing: 'pre', sessionId: null, [key]: v, ...extra }));
+  return out;
+}
+const rep = (v, n) => Array(n).fill(v);
+
+test('tendencia de los check-ins: una bajada de energía da un insight con su frase, confianza y «¿Por qué?»', () => {
+  // 5 días recientes (media 1,4) frente a 12 de base (media 2,5): confianza baja por los pocos días recientes
+  const d = mk({ checkins: trendCheckins('energy', [1, 1, 1, 2, 2], [...rep(3, 6), ...rep(2, 6)]) });
+  const r = analyzeRecovery(d, { profile: prof(), today: TODAY });
+  checkInsights(r.insights);
+  const i = byId(r.insights, 'recovery-trend-energy');
+  assert.ok(i, 'hay insight de energía');
+  assert.equal(i.area, 'recovery');
+  assert.equal(i.level, 'info');
+  assert.equal(i.priority, 34);
+  assert.equal(i.direction, 'worse');
+  assert.equal(i.title, 'Tu energía ha sido más baja durante las últimas dos semanas');
+  // El texto sigue con el dato, sin repetir la frase del título (la tarjeta y el informe muestran los dos)
+  assert.equal(i.text, 'Media 1,4 de 3 en 5 días con check-in, frente a 2,5 en las 6 semanas anteriores (12 días). Tenlo en cuenta al planificar la semana.');
+  assert.ok(!i.text.includes(i.title), i.text);
+  assert.equal(i.confidence.level, 'low');
+  const confRow = i.why.data.find((x) => x.label === 'Confianza');
+  assert.ok(confRow && /^Baja: 5 días con check-in en 2 semanas/.test(confRow.value), confRow?.value);
+  assert.match(i.why.rule, /últimos 14 días frente a los 42 anteriores.*no es un diagnóstico/);
+  assert.deepEqual(i.why.data.slice(0, 3).map((x) => x.value), ['media 1,4 de 3 · 5 días', 'media 2,5 de 3 · 12 días', '−1,1']);
+  // Sin otros campos con datos: solo la energía
+  assert.deepEqual(r.insights.filter((x) => x.id.startsWith('recovery-trend-')).map((x) => x.id), ['recovery-trend-energy']);
+
+  // 10 recientes y 18 de base con una diferencia clara: media (el techo de las valoraciones propias)
+  const many = mk({ checkins: trendCheckins('energy', rep(1, 10), rep(3, 18)) });
+  const m = byId(wellbeingTrendInsights(many, TODAY), 'recovery-trend-energy');
+  assert.equal(m.confidence.level, 'medium');
+  assert.ok(m.confidence.reasons.includes('son tus valoraciones (bajo · normal · alto)'));
+});
+
+test('tendencia de los check-ins: sin los mínimos no hay insight (ni aviso nuevo de «faltan datos»)', () => {
+  const ids = (checkins) => wellbeingTrendInsights(mk({ checkins }), TODAY).map((i) => i.id);
+  assert.deepEqual(ids(trendCheckins('energy', [1, 1, 1], rep(3, 12))), [], '3 días recientes');
+  // Base de 5 días con una diferencia clara (1,0 frente a 3,0): sin la base mínima no hay nada; con 6, sí
+  assert.deepEqual(ids(trendCheckins('energy', rep(1, 6), rep(3, 5))), [], 'base de 5 días');
+  assert.deepEqual(ids(trendCheckins('energy', rep(1, 6), rep(3, 6))), ['recovery-trend-energy'], 'base de 6 días');
+  assert.deepEqual(ids(trendCheckins('energy', [1, 1, 1, 1], rep(3, 6))), ['recovery-trend-energy'], '4 días recientes');
+  // diferencia de 0,4: recientes 2,0 frente a base 2,4
+  assert.deepEqual(ids(trendCheckins('energy', rep(2, 6), [...rep(3, 4), ...rep(2, 6)])), [], 'diferencia de 0,4');
+  // diferencia de 0,5 justa: sí
+  assert.deepEqual(ids(trendCheckins('energy', rep(2, 6), [...rep(3, 5), ...rep(2, 5)])), ['recovery-trend-energy']);
+  const small = wellbeingTrendInsights(mk({ checkins: trendCheckins('energy', rep(2, 10), [...rep(3, 9), ...rep(2, 9)]) }), TODAY)[0];
+  assert.equal(small.confidence.level, 'low', 'diferencia pequeña (< 0,75): confianza baja');
+});
+
+test('tendencia de los check-ins: menos estrés es una buena noticia (prioridad baja); más agujetas, a tener en cuenta', () => {
+  const [st] = wellbeingTrendInsights(mk({ checkins: trendCheckins('stress', rep(1, 6), rep(3, 10)) }), TODAY);
+  assert.equal(st.id, 'recovery-trend-stress');
+  assert.equal(st.level, 'good');
+  assert.equal(st.priority, 18);
+  assert.equal(st.direction, 'better');
+  assert.equal(st.title, 'Tu estrés ha sido más bajo durante las últimas dos semanas');
+  assert.match(st.text, /^Media 1,0 de 3 en 6 días con check-in, frente a 3,0/);
+  assert.ok(!/Tenlo en cuenta/.test(st.text));
+  const [so] = wellbeingTrendInsights(mk({ checkins: trendCheckins('soreness', rep(3, 6), rep(2, 10)) }), TODAY);
+  assert.deepEqual([so.id, so.level, so.direction], ['recovery-trend-soreness', 'info', 'worse']);
+  assert.equal(so.title, 'Has tenido más agujetas durante las últimas dos semanas');
+  assert.match(so.text, /Tenlo en cuenta al planificar la semana\.$/);
+  const [sl] = wellbeingTrendInsights(mk({ checkins: trendCheckins('sleep', rep(3, 6), rep(2, 10)) }), TODAY);
+  assert.equal(sl.title, 'Has dormido mejor durante las últimas dos semanas');
+  assert.equal(sl.level, 'good');
 });
 
 // ---------------------------------------------------------------------------

@@ -21,7 +21,8 @@ import { isWorkSet, setMetrics, sessionDurationMin, pace } from './calc.js';
 import { exercisesWithHistory, exerciseHistory, weeklySeries, runPaceSeries, dataRange, adherenceSeries, adherenceTotals } from './stats.js';
 import { predictWindow, predictFor, MIN_KM as RUN_MIN_KM, MIN_VALID, MAX_SPREAD, TOP_N, plausibleRunPace } from './race-predict.js';
 import { getProfile, isFemale, g } from './profile.js';
-import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin, areasOf } from './checkin-logic.js';
+import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin, areasOf, FIELDS as CK_FIELDS } from './checkin-logic.js';
+import { trendWindows, TREND_RECENT_DAYS, TREND_BASE_DAYS, TREND_MIN_RECENT, TREND_MIN_BASE, TREND_MIN_DIFF } from './recovery-logic.js';
 import { defaultSettings, MUSCLE_LABEL } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
 import { exerciseRecovery, markLabel, markWhen } from './past-records-logic.js';
@@ -1490,6 +1491,9 @@ export function analyzeRecovery(data, opts = {}) {
     }
   }
 
+  // Ronda 8 (F3): tendencia de los check-ins (últimas 2 semanas frente a las 6 anteriores), sin tocar lo de arriba
+  insights.push(...wellbeingTrendInsights(d, today));
+
   // --- Ciclo (modo mujer, ciclo natural) ------------------------------------------
   let phases = null;
   if (isFemale(p) && cycle && cycle.enabled !== false && !cycle.hormonal) {
@@ -1497,6 +1501,58 @@ export function analyzeRecovery(data, opts = {}) {
     if (phases.ok) insights.push(phaseInsight(phases, today, p));
   }
   return { insights, linked: pairs.length, sleep, energy, phases };
+}
+
+/**
+ * Ronda 8 (F3; docs/MEJORAS.md §10): frases de tendencia de sueño, energía, estrés y agujetas. Un valor por día
+ * (recovery-logic.trendWindows: el de antes de entrenar si lo hay); media de los últimos 14 días frente a los 42
+ * anteriores. Solo si hay TREND_MIN_RECENT días recientes, TREND_MIN_BASE de base y una diferencia ≥ TREND_MIN_DIFF;
+ * si no, nada (sin aviso de «faltan datos» nuevo). Describe registros: confianza media como mucho. Nada habla del
+ * ciclo (las fases siguen solo en la tarjeta «Ciclo»).
+ * @returns {Insight[]} área 'recovery', id `recovery-trend-<campo>`
+ */
+const TREND_TEXT = {
+  sleep: { worse: 'Has dormido peor durante las últimas dos semanas.', better: 'Has dormido mejor durante las últimas dos semanas.' },
+  energy: { worse: 'Tu energía ha sido más baja durante las últimas dos semanas.', better: 'Tu energía ha sido más alta durante las últimas dos semanas.' },
+  stress: { worse: 'Tu estrés ha sido más alto durante las últimas dos semanas.', better: 'Tu estrés ha sido más bajo durante las últimas dos semanas.' },
+  soreness: { worse: 'Has tenido más agujetas durante las últimas dos semanas.', better: 'Has tenido menos agujetas durante las últimas dos semanas.' },
+};
+export function wellbeingTrendInsights(d, today) {
+  const w = trendWindows(toArr(d?.checkins), today);
+  const out = [];
+  const m1 = (v) => fmtNum(v, 1, 1);
+  const signed = (v) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${fmtNum(Math.abs(v), 1, 1)}`;
+  const baseWeeks = TREND_BASE_DAYS / 7;
+  const rule = `Media de tus check-ins (1 bajo · 2 normal · 3 alto; un valor por día, el de antes de entrenar si lo hay) de los últimos ${TREND_RECENT_DAYS} días frente a los ${TREND_BASE_DAYS} anteriores. Hacen falta ${TREND_MIN_RECENT} días con check-in recientes, ${TREND_MIN_BASE} en el periodo anterior y una diferencia de ${fmtNum(TREND_MIN_DIFF, 1)} o más. Describe tus registros; no es un diagnóstico.`;
+  for (const f of CK_FIELDS) {
+    const t = w[f.key];
+    if (!t || t.diff == null || t.recent.n < TREND_MIN_RECENT || t.base.n < TREND_MIN_BASE || Math.abs(t.diff) < TREND_MIN_DIFF - EPS) continue;
+    const unfavorable = f.low === 1 ? t.diff < 0 : t.diff > 0;
+    const sentence = TREND_TEXT[f.key][unfavorable ? 'worse' : 'better'];
+    const detail = `Media ${m1(t.recent.mean)} de 3 en ${plural(t.recent.n, 'día', 'días')} con check-in, frente a ${m1(t.base.mean)} en las ${baseWeeks} semanas anteriores (${plural(t.base.n, 'día', 'días')}).`;
+    out.push(insight({
+      id: `recovery-trend-${f.key}`, area: 'recovery',
+      level: unfavorable ? 'info' : 'good', priority: unfavorable ? 34 : 18,
+      confidence: combine([
+        byCount(t.recent.n, { low: TREND_MIN_RECENT, medium: 6, high: 10 }, (k) => `${k} días con check-in en 2 semanas`, 'recent'),
+        byCount(t.base.n, { low: TREND_MIN_BASE, medium: 10, high: 18 }, (k) => `${k} días en las ${baseWeeks} semanas anteriores`, 'base'),
+        Math.abs(t.diff) < 0.75 ? capAt('low', 'diferencia pequeña', 'effect') : null,
+        capAt('medium', 'son tus valoraciones (bajo · normal · alto)', 'self'),
+      ]),
+      // La frase va en el título; el texto sigue con el dato (si lo repitiera, se leería dos veces en la tarjeta, en
+      // #/recovery y en el informe para la IA, que escribe «título. texto»)
+      title: sentence.replace(/\.$/, ''),
+      text: `${detail}${unfavorable ? ' Tenlo en cuenta al planificar la semana.' : ''}`,
+      rule,
+      data: [
+        { label: `Últimos ${TREND_RECENT_DAYS} días`, value: `media ${m1(t.recent.mean)} de 3 · ${plural(t.recent.n, 'día', 'días')}` },
+        { label: `${baseWeeks} semanas anteriores`, value: `media ${m1(t.base.mean)} de 3 · ${plural(t.base.n, 'día', 'días')}` },
+        { label: 'Diferencia', value: signed(t.diff) },
+      ],
+      extra: { direction: unfavorable ? 'worse' : 'better', field: f.key },
+    }));
+  }
+  return out;
 }
 
 const word = (v, key) => {

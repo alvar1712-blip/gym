@@ -38,6 +38,8 @@ export const TODAY_AB_DAYS = 365;
 export const TODAY_C_DAYS = 30;
 /** El analista cuenta como «evento próximo» lo de las próximas 26 semanas. */
 export const CONTEXT_DAYS = 182;
+/** Puesta a punto (ronda 8, G): un evento A o B en los 28 días siguientes explica una bajada de carga. */
+export const TAPER_DAYS = 28;
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const toArr = (x) => (Array.isArray(x) ? x : x instanceof Map ? [...x.values()] : x && typeof x === 'object' ? Object.values(x) : []);
@@ -224,13 +226,30 @@ export function linkedWarning(list, ref) {
 
 const ARTICLE = { '5k': 'el 5K', '10k': 'el 10K', half: 'la media maratón', marathon: 'el maratón', cycling: 'la marcha en bici', hiking: 'la ruta', triathlon: 'el triatlón', custom: 'el evento' };
 
+/** Cómo se nombra el evento dentro de una frase: su nombre («San Silvestre») o el tipo con artículo («el 10K»). */
+const raceRef = (race) => race.name || ARTICLE[typeInfo(race.type).value];
+/** Con «de» contraído: «del 10K» · «de la media maratón» · «de San Silvestre». */
+const deRef = (w) => (w.startsWith('el ') ? `del ${w.slice(3)}` : `de ${w}`);
+const weekdayOf = (date) => DAY_LONG[(parseDate(date).getDay() + 6) % 7];
+
 /** Aviso de Hoy: «¿Cómo te fue en el 10K del domingo?» · «… en San Silvestre de ayer?». */
 export function outcomePrompt(race, today = todayStr()) {
   const n = diffDays(race.date, today);
-  const what = race.name ? race.name : ARTICLE[typeInfo(race.type).value];
-  const wd = DAY_LONG[(parseDate(race.date).getDay() + 6) % 7];
+  const what = raceRef(race);
+  const wd = weekdayOf(race.date);
   const when = n === 0 ? 'de hoy' : n === 1 ? 'de ayer' : n === 7 ? `del ${wd} pasado` : `del ${wd}`;
   return `¿Cómo te fue en ${what} ${when}?`;
+}
+
+/**
+ * Puesta a punto (ronda 8, G): frase de contexto para una bajada de carga cerca de un evento. Interpreta, no prescribe
+ * (ni porcentajes ni consejos). → «Compatible con una puesta a punto antes del 10K del domingo.»
+ * Cuándo, contado desde `today`: «de hoy» · «de mañana» · «del domingo» (2–6 días) · «del 25 oct» (7 o más).
+ */
+export function taperText(race, today = todayStr()) {
+  const n = diffDays(today, race.date);
+  const when = n <= 0 ? 'de hoy' : n === 1 ? 'de mañana' : n < 7 ? `del ${weekdayOf(race.date)}` : `del ${fmtDate(race.date, 'day')}`;
+  return `Compatible con una puesta a punto antes ${deRef(raceRef(race))} ${when}.`;
 }
 
 /** Objetivos que se pueden enlazar: de resistencia, activos (ni archivados ni conseguidos) y del mismo deporte. */
@@ -284,6 +303,9 @@ export function rowMeta(race, today = todayStr()) {
 // Selección
 // ---------------------------------------------------------------------------
 
+/** Orden de los próximos: el más cercano primero; a igual fecha, el de mayor prioridad (A antes que B). */
+const byPrio = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.priority.localeCompare(b.priority));
+
 /** Próximos (hoy incluido), del más cercano al más lejano, y pasados, del más reciente al más antiguo. */
 export function splitRaces(list, today = todayStr()) {
   const all = normalizeRaces(list);
@@ -297,15 +319,27 @@ export function splitRaces(list, today = todayStr()) {
 export function nextRelevant(list, today = todayStr()) {
   const { upcoming } = splitRaces(list, today);
   const within = (r, days) => diffDays(today, r.date) <= days;
-  const byPrio = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.priority.localeCompare(b.priority));
   const ab = upcoming.filter((r) => r.priority !== 'C' && within(r, TODAY_AB_DAYS)).sort(byPrio);
   if (ab.length) return ab[0];
   return upcoming.filter((r) => r.priority === 'C' && within(r, TODAY_C_DAYS)).sort(byPrio)[0] || null;
 }
 
 /**
+ * Puesta a punto (ronda 8, G): el evento A o B entre `from` y from + TAPER_DAYS (ambos incluidos) que aún no ha pasado
+ * (date >= today); el más cercano y, a igual fecha, A antes que B. Los C no cuentan. → race | null
+ * `from` = el ancla: el último día de la semana mirada en el panel semanal; hoy en el analista y el informe.
+ * UNA sola regla: el panel (insights.js), el analista (racesContext.taper) y el informe la llaman, no la copian.
+ */
+export function taperRace(list, from = todayStr(), today = from) {
+  return splitRaces(list, today).upcoming
+    .filter((r) => r.priority !== 'C' && r.date >= from && diffDays(from, r.date) <= TAPER_DAYS)
+    .sort(byPrio)[0] || null;
+}
+
+/**
  * Lo que el analista puede usar: los eventos de las próximas 26 semanas (y el más próximo), con días y semanas que
- * faltan. → { next, upcoming:[{ race, days, weeks, sport }], labels:[{ key, text }] }
+ * faltan, y el de puesta a punto (taperRace desde hoy, con los días que faltan).
+ * → { next, upcoming:[{ race, days, weeks, sport }], labels:[{ key, text }], taper:{ race, days }|null }
  */
 export function racesContext(list, today = todayStr()) {
   const upcoming = splitRaces(list, today).upcoming.filter((r) => diffDays(today, r.date) <= CONTEXT_DAYS)
@@ -313,5 +347,6 @@ export function racesContext(list, today = todayStr()) {
   const first = nextRelevant(list, today);
   const next = first ? upcoming.find((x) => x.race.id === first.id) || null : null;
   const labels = upcoming.slice(0, 3).map((x) => ({ key: `race:${x.race.id}`, text: `${raceTitle(x.race)}${x.race.name && typeInfo(x.race.type).km != null ? ` (${typeInfo(x.race.type).label})` : ''} · ${fmtDate(x.race.date, 'short')} (${whenText(x.race.date, today)})${x.race.targetSec ? ` · objetivo ${targetText(x.race)}` : ''} · prioridad ${x.race.priority}` }));
-  return { next, upcoming, labels };
+  const tr = taperRace(list, today, today);
+  return { next, upcoming, labels, taper: tr ? { race: tr, days: diffDays(today, tr.date) } : null };
 }

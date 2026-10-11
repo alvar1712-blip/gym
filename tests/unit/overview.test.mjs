@@ -90,4 +90,7 @@ test('recuperación: señales de cansancio de los check-ins y la carga frente a 
   assert.equal(r.change, 'Carga −10 % frente a las 4 anteriores');
   const fine = rows({ weeks: [], analysis: { wellbeing: { count: 6, daysWith: 6, sleep: { n: 6, low: 0 }, energy: { n: 6, low: 1 } } } }).recovery;
   assert.deepEqual([fine.value, fine.state.kind, fine.change], ['Sin señales de fatiga', 'ok', '6 días con check-in en 4 semanas']);
+  // Ronda 8 (F): la fila lleva a la evolución de los check-ins (#/recovery), con y sin check-ins
+  assert.equal(r.href, '#/recovery');
+  assert.equal(rows({ weeks: [], analysis: null }).recovery.href, '#/recovery');
 });

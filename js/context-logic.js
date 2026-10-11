@@ -23,43 +23,45 @@ import { isDateStr, todayStr, addDays, addMonths, diffDays, fmtDate, fmtNum, fmt
  *   sport     preparación de un deporte o prueba
  *   life      circunstancias (enfermedad, lesión, viaje, estrés)
  *   custom    personalizada
+ * `short` (ronda 8, E): nombre corto para la franja de contexto de las gráficas («Parón», «Prep. 10K»): el `text` de una
+ * entrada es una DESCRIPCIÓN («3 g al día») y solo hace de nombre en los tipos personalizada y «Otro».
  */
 export const PHASE_TYPES = [
-  { id: 'gain', label: 'Ganancia muscular', aspect: 'body' },
-  { id: 'deficit', label: 'Déficit (perder grasa)', aspect: 'body' },
-  { id: 'maintain', label: 'Mantenimiento', aspect: 'body' },
-  { id: 'recomp', label: 'Recomposición', aspect: 'body' },
-  { id: 'break', label: 'Parón o entrenamiento irregular', aspect: 'training' },
-  { id: 'return', label: 'Vuelta tras vacaciones o parón', aspect: 'training' },
-  { id: 'recondition', label: 'Reacondicionamiento', aspect: 'training' },
-  { id: 'deload', label: 'Descarga', aspect: 'training' },
-  { id: 'prep_5k', label: 'Preparación 5K', aspect: 'sport', sport: 'run' },
-  { id: 'prep_10k', label: 'Preparación 10K', aspect: 'sport', sport: 'run' },
-  { id: 'prep_half', label: 'Preparación media maratón', aspect: 'sport', sport: 'run' },
-  { id: 'prep_marathon', label: 'Preparación maratón', aspect: 'sport', sport: 'run' },
-  { id: 'prep_cycling', label: 'Preparación ciclismo', aspect: 'sport', sport: 'bike' },
-  { id: 'hybrid', label: 'Entrenamiento híbrido', aspect: 'sport' },
-  { id: 'illness', label: 'Enfermedad', aspect: 'life' },
-  { id: 'injury', label: 'Lesión o molestia', aspect: 'life' },
-  { id: 'travel', label: 'Viaje', aspect: 'life' },
-  { id: 'stress', label: 'Exámenes o época de estrés', aspect: 'life' },
-  { id: 'custom', label: 'Personalizada', aspect: 'custom' },
+  { id: 'gain', label: 'Ganancia muscular', short: 'Ganancia', aspect: 'body' },
+  { id: 'deficit', label: 'Déficit (perder grasa)', short: 'Déficit', aspect: 'body' },
+  { id: 'maintain', label: 'Mantenimiento', short: 'Mantenimiento', aspect: 'body' },
+  { id: 'recomp', label: 'Recomposición', short: 'Recomposición', aspect: 'body' },
+  { id: 'break', label: 'Parón o entrenamiento irregular', short: 'Parón', aspect: 'training' },
+  { id: 'return', label: 'Vuelta tras vacaciones o parón', short: 'Vuelta tras parón', aspect: 'training' },
+  { id: 'recondition', label: 'Reacondicionamiento', short: 'Reacondicionamiento', aspect: 'training' },
+  { id: 'deload', label: 'Descarga', short: 'Descarga', aspect: 'training' },
+  { id: 'prep_5k', label: 'Preparación 5K', short: 'Prep. 5K', aspect: 'sport', sport: 'run' },
+  { id: 'prep_10k', label: 'Preparación 10K', short: 'Prep. 10K', aspect: 'sport', sport: 'run' },
+  { id: 'prep_half', label: 'Preparación media maratón', short: 'Prep. media', aspect: 'sport', sport: 'run' },
+  { id: 'prep_marathon', label: 'Preparación maratón', short: 'Prep. maratón', aspect: 'sport', sport: 'run' },
+  { id: 'prep_cycling', label: 'Preparación ciclismo', short: 'Prep. ciclismo', aspect: 'sport', sport: 'bike' },
+  { id: 'hybrid', label: 'Entrenamiento híbrido', short: 'Híbrido', aspect: 'sport' },
+  { id: 'illness', label: 'Enfermedad', short: 'Enfermedad', aspect: 'life' },
+  { id: 'injury', label: 'Lesión o molestia', short: 'Lesión', aspect: 'life' },
+  { id: 'travel', label: 'Viaje', short: 'Viaje', aspect: 'life' },
+  { id: 'stress', label: 'Exámenes o época de estrés', short: 'Estrés', aspect: 'life' },
+  { id: 'custom', label: 'Personalizada', short: 'Personalizada', aspect: 'custom' },
 ];
 export const ASPECTS = ['body', 'training', 'sport', 'life', 'custom'];
 
 export const EVENT_TYPES = [
-  { id: 'creatine_start', label: 'Empiezo creatina' },
-  { id: 'creatine_stop', label: 'Dejo la creatina' },
-  { id: 'gym_return', label: 'Vuelvo al gimnasio' },
-  { id: 'holidays', label: 'Vacaciones' },
-  { id: 'illness', label: 'Enfermedad' },
-  { id: 'routine_change', label: 'Cambio importante de rutina' },
-  { id: 'nutrition_change', label: 'Cambio en la alimentación' },
-  { id: 'injury', label: 'Lesión' },
-  { id: 'usual_weight', label: 'Peso habitual', kg: true },
-  { id: 'weight', label: 'Peso en esa fecha', kg: true },
-  { id: 'race_result', label: 'Resultado de carrera', race: true },
-  { id: 'other', label: 'Otro' },
+  { id: 'creatine_start', label: 'Empiezo creatina', short: 'Inicio creatina' },
+  { id: 'creatine_stop', label: 'Dejo la creatina', short: 'Fin creatina' },
+  { id: 'gym_return', label: 'Vuelvo al gimnasio', short: 'Vuelta al gimnasio' },
+  { id: 'holidays', label: 'Vacaciones', short: 'Vacaciones' },
+  { id: 'illness', label: 'Enfermedad', short: 'Enfermedad' },
+  { id: 'routine_change', label: 'Cambio importante de rutina', short: 'Cambio de rutina' },
+  { id: 'nutrition_change', label: 'Cambio en la alimentación', short: 'Cambio de alimentación' },
+  { id: 'injury', label: 'Lesión', short: 'Lesión' },
+  { id: 'usual_weight', label: 'Peso habitual', short: 'Peso habitual', kg: true },
+  { id: 'weight', label: 'Peso en esa fecha', short: 'Peso', kg: true },
+  { id: 'race_result', label: 'Resultado de carrera', short: 'Resultado de carrera', race: true },
+  { id: 'other', label: 'Otro', short: 'Otro' },
 ];
 
 /**

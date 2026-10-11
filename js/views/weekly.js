@@ -29,9 +29,13 @@ const ITEMS_VISIBLE = 6;
 const isLong = (label, value) => String(label).length + String(value).length > 36;
 /** Secciones de la tarjeta resumen, en el orden del panel: información primero, sugerencias después. */
 
-/** Entrada de insights.js con los datos actuales del store (stats + check-ins). Una vez por render. */
+/**
+ * Entrada de insights.js con los datos actuales del store (stats + check-ins + eventos). Una vez por render.
+ * Los eventos (ronda 8, G) son para la frase de puesta a punto de «Carga semanal»; dataFromStore no los trae para no
+ * cambiar Progreso.
+ */
 export function weeklyData(today = todayStr()) {
-  return { ...dataFromStore(today), checkins: store.all('checkins') };
+  return { ...dataFromStore(today), checkins: store.all('checkins'), races: store.all('races') };
 }
 
 // ===========================================================================

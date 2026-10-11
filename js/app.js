@@ -44,6 +44,7 @@ export const ROUTES = [
   { pattern: '/predictions', tab: 'progress', load: v('predictions'), fn: 'mountPredictions' },
   { pattern: '/summary', tab: 'progress', load: v('summary'), fn: 'mountSummary' },
   { pattern: '/analysis', tab: 'progress', load: v('analysis'), fn: 'mountAnalysis' },
+  { pattern: '/recovery', tab: 'progress', load: v('recovery'), fn: 'mountRecovery' },
   { pattern: '/cycle', tab: 'today', load: v('cycle'), fn: 'mountCycle' },
   { pattern: '/settings/profile', tab: 'settings', load: v('settings'), fn: 'mountProfile' },
   // Ronda 6 (docs/MEJORAS6.md): contexto del usuario y bienvenida

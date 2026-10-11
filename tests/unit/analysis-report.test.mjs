@@ -111,3 +111,24 @@ test('informe: modo mujer sin permiso del ciclo no saca nada del ciclo aunque ha
   assert.doesNotMatch(txt, /CICLO MENSTRUAL|Anticonceptivo|\bregla\b|menstrua/i);
   assert.match(txt, /- Sexo: Mujer/);
 });
+
+// Ronda 8 (G): con un evento A o B en los próximos 28 días, CARGA avisa a la IA de que una bajada es compatible con una
+// puesta a punto (en condicional; sin porcentajes ni consejos). Sin evento, con un C o con uno pasado, igual que antes.
+test('informe: puesta a punto en CARGA solo con un evento A/B en los próximos 28 días', () => {
+  const T = '2026-10-02';
+  const carga = (txt) => txt.split('\n\n').find((b) => b.startsWith('CARGA'));
+  const ev = (o) => ({ id: 'tp', name: '', type: '10k', date: addDays(T, 10), distanceKm: 10, targetSec: null, priority: 'A', note: '', goalId: null, createdAt: 1, updatedAt: 1, ...o });
+  const withA = carga(reportText(scenario({ extra: { races: [ev()] } })));
+  assert.match(withA, /\n- Evento A en 10 días: 10K, el 12 oct\. Una bajada de carga en estas semanas es compatible con una puesta a punto: no la interpretes como pérdida de forma ni de constancia\.$/);
+  const line = withA.split('\n').find((l) => l.includes('puesta a punto'));
+  assert.ok(!line.includes('%'), 'sin porcentajes');
+  assert.match(carga(reportText(scenario({ extra: { races: [ev({ priority: 'B', name: 'Media de otoño', type: 'half', date: addDays(T, 1) })] } }))),
+    /- Evento B mañana: Media de otoño \(Media maratón\), el 3 oct\. Una bajada de carga/);
+  const none = carga(reportText(scenario({ extra: { races: [] } })));
+  assert.doesNotMatch(none, /puesta a punto/);
+  for (const races of [[ev({ priority: 'C' })], [ev({ date: addDays(T, -3) })], [ev({ date: addDays(T, 29) })]]) {
+    assert.equal(carga(reportText(scenario({ extra: { races } }))), none, JSON.stringify(races));
+  }
+  // El escenario de siempre (San Silvestre a 73 días): sin la línea
+  assert.doesNotMatch(carga(reportText(scenario())), /puesta a punto/);
+});

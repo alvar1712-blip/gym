@@ -118,3 +118,53 @@ test('contexto del analista: los eventos de las próximas 26 semanas, con el má
   const none = analysisContext({ context: [], sessions: [], today: TODAY });
   assert.deepEqual([none.events.next, none.events.upcoming], [null, []]);
 });
+
+// ---------------------------------------------------------------------------
+// Ronda 8 (G): puesta a punto contextual
+// ---------------------------------------------------------------------------
+
+test('taperRace: evento A o B en los 28 días siguientes al ancla, que aún no ha pasado; el más cercano y A antes que B', () => {
+  const at = (n, o = {}) => race({ id: `d${n}${o.priority || 'A'}`, date: addDays(TODAY, n), ...o });
+  assert.equal(R.TAPER_DAYS, 28);
+  assert.equal(R.taperRace([at(10)], TODAY)?.id, 'd10A');
+  assert.equal(R.taperRace([at(28, { priority: 'B' })], TODAY)?.id, 'd28B', 'a 28 días, dentro');
+  assert.equal(R.taperRace([at(29, { priority: 'B' })], TODAY), null, 'a 29 días, fuera');
+  assert.equal(R.taperRace([at(10, { priority: 'C' })], TODAY), null, 'los C no cuentan');
+  assert.equal(R.taperRace([at(-1)], TODAY), null, 'ya pasado');
+  assert.equal(R.taperRace([at(0)], TODAY)?.id, 'd0A', 'hoy cuenta');
+  // A y B el mismo día → A; uno más cercano gana aunque sea B
+  assert.equal(R.taperRace([at(12, { priority: 'B' }), at(12)], TODAY)?.id, 'd12A');
+  assert.equal(R.taperRace([at(20), at(9, { priority: 'B' })], TODAY)?.id, 'd9B');
+  // Ancla antigua (el domingo de una semana pasada): dentro de su ventana pero ya pasado respecto a hoy → null
+  const sunday = addDays(TODAY, -12);
+  assert.equal(R.taperRace([at(-3)], sunday, TODAY), null);
+  assert.equal(R.taperRace([at(3)], sunday, TODAY)?.id, 'd3A', 'a 15 días del ancla y aún por llegar');
+  assert.equal(R.taperRace([at(17)], sunday, TODAY), null, 'a 29 días del ancla');
+  assert.equal(R.taperRace([], TODAY), null);
+  assert.equal(R.taperRace(null, TODAY), null);
+});
+
+test('taperText: interpreta sin prescribir («Compatible con una puesta a punto antes del 10K del domingo.»)', () => {
+  // TODAY = viernes 2 oct 2026
+  assert.equal(R.taperText(race({ date: addDays(TODAY, 2) }), TODAY), 'Compatible con una puesta a punto antes del 10K del domingo.');
+  assert.equal(R.taperText(race({ type: 'half', date: addDays(TODAY, 1) }), TODAY), 'Compatible con una puesta a punto antes de la media maratón de mañana.');
+  assert.equal(R.taperText(race({ name: 'San Silvestre', date: TODAY }), TODAY), 'Compatible con una puesta a punto antes de San Silvestre de hoy.');
+  assert.equal(R.taperText(race({ type: 'marathon', date: addDays(TODAY, 12) }), TODAY), 'Compatible con una puesta a punto antes del maratón del 14 oct.');
+  assert.equal(R.taperText(race({ type: 'custom', date: addDays(TODAY, 6) }), TODAY), 'Compatible con una puesta a punto antes del evento del jueves.');
+  assert.equal(R.taperText(race({ date: addDays(TODAY, 7) }), TODAY), 'Compatible con una puesta a punto antes del 10K del 9 oct.');
+  for (const n of [0, 1, 3, 10, 28]) assert.ok(!/%|\d+ ?%|reduce|baja la carga/i.test(R.taperText(race({ date: addDays(TODAY, n) }), TODAY)), 'sin porcentajes ni consejos');
+  // outcomePrompt sigue igual tras sacar raceRef
+  assert.equal(R.outcomePrompt(race({ date: addDays(TODAY, -5) }), TODAY), '¿Cómo te fue en el 10K del domingo?');
+  assert.equal(R.outcomePrompt(race({ name: 'San Silvestre', date: addDays(TODAY, -1) }), TODAY), '¿Cómo te fue en San Silvestre de ayer?');
+});
+
+test('racesContext.taper: el analista conoce el evento de puesta a punto (o null)', () => {
+  const a = race({ id: 'ta', date: addDays(TODAY, 10) });
+  assert.deepEqual(R.racesContext([a], TODAY).taper, { race: R.normalizeRace(a), days: 10 });
+  assert.equal(R.racesContext([], TODAY).taper, null);
+  assert.equal(R.racesContext([race({ date: addDays(TODAY, 10), priority: 'C' })], TODAY).taper, null);
+  assert.equal(R.racesContext([race({ date: addDays(TODAY, -2) })], TODAY).taper, null);
+  assert.equal(R.racesContext([race({ date: addDays(TODAY, 40) })], TODAY).taper, null);
+  // y llega al contexto del análisis
+  assert.equal(analysisContext({ context: [], sessions: [], races: [a], today: TODAY }).events.taper.race.id, 'ta');
+});

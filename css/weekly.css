@@ -36,6 +36,8 @@
   text-overflow: ellipsis;
 }
 .wk-nav-cur:disabled { color: var(--text-2); opacity: 1; }
+/* Texto grande: «Ir a esta semana» (semanas pasadas) no cabe en una línea a 375 px; pasa a dos en vez de cortarse */
+html.text-large .wk-nav-cur { white-space: normal; text-overflow: clip; line-height: 1.2; padding: 6px 8px; }
 .wk-provisional {
   display: flex;
   align-items: flex-start;
@@ -228,6 +230,10 @@
 .wk-recap-label { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); }
 .wk-recap-value { font-size: calc(20px * var(--ts)); font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .wk-recap-kpi .sum-delta { margin-top: 3px; }
+/* Texto grande: «−4 h 13 min» o «−33.207 kg» no caben enteros en medio ancho a 375 px y se salían de la ficha;
+   la diferencia parte por sus espacios en vez de desbordar; el % sigue entero («(−57 %)», nunca «(−57 / %)») y a
+   tamaño normal todo sigue en una pieza */
+html.text-large .wk-recap-kpi .sum-delta-part:first-child { white-space: normal; }
 .wk-recap-km { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .wk-recap-km-row {
   display: flex;

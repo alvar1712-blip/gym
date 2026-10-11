@@ -5,7 +5,7 @@ import { navigate } from '../router.js';
 import { h, icon, screen, stepper, toast, undoToast, sheet, confirmDialog, whyBox, field, confirmRare } from '../ui.js';
 import { todayStr, fmtDate, fmtNum, fmtKg, fmtSigned, relDay, parseDate, isDateStr } from '../util.js';
 import { bwStats, bwWithDeltas, roundKg, trendWord, BW_TREND } from '../activity-logic.js';
-import { bodyweightChartCard, bodyweightChartOpts, cardHead } from '../progress-ui.js';
+import { bodyweightChartCard, bodyweightChartOpts, cardHead, CTX_HOWTO } from '../progress-ui.js';
 import { lineChart, periodSelector, getPeriod } from '../charts.js';
 import { getProfile, cycleEnabled, isHormonal } from '../profile.js';
 import { periodsFromDays } from '../cycle-logic.js';
@@ -348,12 +348,14 @@ function weightChartCard() {
   const slot = h('div.prg-chart');
   const summary = h('p.chart-summary', { hidden: true, 'aria-live': 'polite' });
   const sel = periodSelector({ key, value: period, ariaLabel: 'Periodo de la gráfica de peso', onChange: (id) => { period = id; paint(); } });
+  const ctxHowto = h('p.prg-ctx-howto', { hidden: true }, CTX_HOWTO);
   const el = h('section.card.prg-card.prg-bw-chart', { dataset: { chart: 'bodyweight', cycle: '1' } },
     cardHead('Evolución', 'kg · pesajes diarios y media móvil de 7 días'),
     summary,
     sel,
     slot,
-    h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Las franjas rosas son tus días de regla: es normal que el peso suba un poco antes y al empezar la regla por retención de líquidos. Toca o arrastra para ver el valor exacto.'));
+    h('p.prg-howto', 'Cada punto es un pesaje; la línea verde es la media de 7 días, la que marca la tendencia. Las franjas rosas son tus días de regla: es normal que el peso suba un poco antes y al empezar la regla por retención de líquidos. Toca o arrastra para ver el valor exacto.'),
+    ctxHowto);
   let chart = null;
   function paint() {
     const data = { bodyweight: store.bodyweightList(), settings: store.settings(), sessions: [], today: todayStr() };
@@ -367,6 +369,7 @@ function weightChartCard() {
     summary.dataset.dir = res?.dir || '';
     if (chart) chart.update(o);
     else chart = lineChart(slot, o);
+    ctxHowto.hidden = !chart.hasContext();
   }
   paint();
   let raf = 0;
