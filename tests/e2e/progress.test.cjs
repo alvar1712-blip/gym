@@ -103,6 +103,9 @@ function xOfDate(b, dateStr) {
   return b.x + Number(b.ds.x0) + t * (Number(b.ds.x1) - Number(b.ds.x0));
 }
 /** Nº de puntos pintados en una gráfica de líneas (cada punto es «M x y h0.01» en la ruta de puntos). */
+/** Espera (por condición, sin tiempos fijos) a que la gráfica tenga `n` puntos diarios. */
+const waitDots = (page, sel, n) => page.waitForFunction(([q, k]) => [...document.querySelectorAll(`${q} .chart-dots`)]
+  .reduce((t, e) => t + ((e.getAttribute('d') || '').match(/h0\.01/g) || []).length, 0) === k, [sel, n]);
 const dotCount = (page, sel) => page.locator(`${sel} .chart-dots`).evaluateAll((els) => els.reduce((t, e) => t + (e.getAttribute('d').match(/h0\.01/g) || []).length, 0));
 const chartState = (page, sel) => page.locator(sel).evaluate((card) => ({
   svg: !!card.querySelector('.chart-svg:not([hidden])'),
@@ -574,7 +577,7 @@ test('base de datos vacía: estados vacíos útiles; #/bodyweight: la gráfica s
     assert.strictEqual(await page.locator(`${slot} .chart-period`).count(), 1, 'selector de periodo propio');
     await page.fill('[aria-label="Peso (kg)"]', '75,4');
     await page.locator('.bw-entry .btn-primary').click();
-    await page.waitForTimeout(200);
+    await waitDots(page, `${slot} [data-id="daily"]`, 1); // se redibuja sola al cambiar el store (antes, 200 ms fijos)
     st = await chartState(page, slot);
     assert.ok(st.svg && !st.empty, 'la gráfica aparece al guardar');
     assert.strictEqual(await dotCount(page, `${slot} [data-id="daily"]`), 1);
@@ -582,7 +585,7 @@ test('base de datos vacía: estados vacíos útiles; #/bodyweight: la gráfica s
     await page.locator('.bw-date').dispatchEvent('change');
     await page.fill('[aria-label="Peso (kg)"]', '76,1');
     await page.locator('.bw-entry .btn-primary').click();
-    await page.waitForTimeout(200);
+    await waitDots(page, `${slot} [data-id="daily"]`, 2);
     assert.strictEqual(await dotCount(page, `${slot} [data-id="daily"]`), 2);
     // Toque en el 20 sep: pesaje exacto
     let b = await svgBox(page, slot);
@@ -593,14 +596,15 @@ test('base de datos vacía: estados vacíos útiles; #/bodyweight: la gráfica s
     await page.locator('.sheet-overlay.open [aria-label="Peso del pesaje (kg)"]').fill('77');
     await page.locator('.sheet-overlay.open [aria-label="Peso del pesaje (kg)"]').dispatchEvent('change');
     await page.locator('.sheet-overlay.open .sheet-actions .btn', { hasText: 'Listo' }).click();
-    await page.waitForTimeout(350);
+    // La lista y la gráfica se repintan juntas: se espera a ver 77 en la fila y a que la hoja se haya ido
+    await page.waitForFunction(() => /77/.test(document.querySelector('.bw-row[data-id="2026-09-20"]')?.textContent || '') && !document.querySelector('.sheet-overlay'));
     b = await svgBox(page, slot);
     await page.touchscreen.tap(xOfDate(b, '2026-09-20'), b.y + b.height / 2);
     assert.match(await page.locator(`${slot} .chart-tip`).innerText(), /77 kg/);
     // Borrar → 1 punto
     await page.locator('.bw-row[data-id="2026-09-20"]').click();
     await page.locator('.sheet-overlay.open button', { hasText: 'Borrar pesaje' }).click();
-    await page.waitForTimeout(350);
+    await waitDots(page, `${slot} [data-id="daily"]`, 1);
     assert.strictEqual(await dotCount(page, `${slot} [data-id="daily"]`), 1);
     // Periodo propio de la gráfica de peso
     await page.locator(`${slot} .seg-btn`, { hasText: '1 año' }).click();

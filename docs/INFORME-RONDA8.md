@@ -152,9 +152,16 @@ deltas-neutral, exercise-glance, focus-bar, import-splits, large-text-rows, pred
 progression-decision, race-outcome, records-partials, recovery, restore-point, session-long, taper, today-green,
 week-setup (+ guarda visual ampliada).
 
-## 17–19. Resultados
+## 17–19. Resultados (última batería completa sobre 9481143)
 
-Ver la sección final (se rellena con la última batería completa sobre 9481143).
+- Unitarias: **722/722**.
+- E2E Chromium: **303/303**.
+- E2E WebKit: **291 pasan, 1 falla, 11 omitidas** (solo Chromium: CDP y gestos táctiles). El fallo era de la
+  prueba, no de la app: «#/bodyweight: la gráfica se redibuja al guardar, editar y borrar» esperaba 350 ms fijos
+  antes de contar los puntos y, con la máquina cargada, el redibujado aún no había llegado. Pasa sola 3/3; ahora
+  espera por condición (los puntos, la fila con el valor nuevo) y pasa 6/6 con seis ejecuciones WebKit simultáneas
+  y en Chromium (progress.test 11/11).
+- Cada bloque pasó además su batería completa en los dos motores al cerrarlo (A: 234; B: 258; C: 269; D: 280).
 
 ## 20. Rendimiento (antes a20dbe7 → después; CPU ×4, mediana de 5, media de 2 rondas intercaladas, ms)
 
@@ -185,5 +192,7 @@ antiguas importan igual. El punto de restauración vive en `meta` con ids `~…`
 - Un archivo con > 10 % de marcas de tiempo repetidas no guarda parciales (degrada de forma segura).
 - Un evento de tipo «Otro» no tiene predicción. Una versión antigua de la app que edite un evento pierde `outcome`.
 - Dos copias guardadas de la misma carrera cuentan dos veces en las predicciones (como antes).
+- progress.test.cjs (y otros archivos antiguos) aún tienen esperas fijas cortas; se han quitado las de la prueba que
+  falló. Conviene ir sustituyéndolas por condiciones.
 - En la sesión, el texto corto «Estancado · revisar» / «Mantén y reevalúa» (la frase completa va en VoiceOver y en
   el panel) para no añadir altura en un iPhone SE.
