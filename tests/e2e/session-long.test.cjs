@@ -189,7 +189,9 @@ async function run(browser) {
         await page.waitForFunction((t) => document.querySelector('#tabbar .fb-next .sr-only').textContent.includes(t), label, { timeout: 5000 })
           .catch(async () => assert.fail(`etiqueta (${doneIdx.length} hechos, paso ${k}): «${await srNext(page)}» en vez de «${label}»`));
         await page.locator('#tabbar .fb-next').click();
-        await page.waitForFunction(registerVisible, s.se[want], { timeout: 5000 });
+        // Se comprueba ADÓNDE llega el desplazamiento (suave), no lo rápido que llega: con la batería completa en
+        // paralelo los fotogramas se espacian y 5 s no siempre bastaban; límite estándar de Playwright
+        await page.waitForFunction(registerVisible, s.se[want]);
         const m = await mem(page, s.id);
         seen.push(m.cursor);
         assert.ok(await focusIn(page, s.se[want]), 'el foco pasa a la tarjeta de destino');
@@ -300,7 +302,9 @@ async function touchBeforeJump(browser) {
     await seedRealistic(page, { months: 2 });
     for (const action of ['add-set', 'edit-done']) {
       const s = await build(page, { n: 8, progress: { 0: 2 }, cursor: 0 });
-      await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now()) + 10));
+      // Margen de 1 s: con la máquina cargada, +10 ms ya era pasado al llegar la orden («Cannot fast-forward to the
+      // past»). Adelantar el reloj ANTES del toque no cambia lo que se prueba (aún no hay salto programado).
+      await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now()) + 1000));
       await cardOf(page, s.se[0]).locator('.ses-editor .ses-register').click();
       if (action === 'add-set') await cardOf(page, s.se[0]).locator('.ses-add-set').click();
       else await cardOf(page, s.se[0]).locator('.ses-row[data-state="done"]').first().click();

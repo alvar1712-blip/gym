@@ -8,6 +8,9 @@
 //   listo   ms hasta que las tarjetas del final de Hoy están completas (.today-extra[data-ready])
 //   bloqTot suma de tareas largas (> 50 ms) durante el arranque
 //   bloqMax tarea larga más larga (lo que se nota como «la pantalla no responde»)
+//   funde   ms hasta que empieza a fundirse la pantalla de arranque (máx(800 ms, Hoy listo); «—» sin splash)
+//   toque   ms hasta que se puede tocar Hoy (splash retirado; sin splash, = listo)
+// Todos los tiempos cuentan desde el inicio de la navegación (performance.now() de la página).
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { chromium, devices } = require('playwright');
@@ -133,7 +136,7 @@ const median = (xs) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2
   const { startServer } = await import(pathToFileURL(path.join(ROOT, 'tests/serve.mjs')).href);
   const server = await startServer(0);
   console.log(`Arranque de Hoy · CPU ×${CPU} · mediana de ${RUNS} aperturas (ms)`);
-  console.log('historial   sesiones   hoy   listo  bloqTot  bloqMax');
+  console.log('historial   sesiones   hoy   listo  bloqTot  bloqMax   funde   toque');
   try {
     for (const set of SETS) {
       const browser = await chromium.launch();
@@ -151,12 +154,17 @@ const median = (xs) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2
       for (let r = 0; r <= RUNS; r++) {
         await page.reload();
         await page.waitForFunction(() => window.__perf?.marks.listo, null, { timeout: 120000 });
+        await page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 120000 });
         await page.waitForTimeout(300);
-        const p = await page.evaluate(() => window.__perf);
-        if (r > 0) runs.push({ hoy: p.marks.hoy, listo: p.marks.listo, bloqTot: p.long.reduce((a, b) => a + b, 0), bloqMax: Math.max(0, ...p.long) });
+        const p = await page.evaluate(() => ({ ...window.__perf, boot: window.__boot || null }));
+        const b = p.boot;
+        if (r > 0) {
+          runs.push({ hoy: p.marks.hoy, listo: p.marks.listo, bloqTot: p.long.reduce((a, x) => a + x, 0), bloqMax: Math.max(0, ...p.long),
+            funde: b ? Math.round(b.t0 + b.fadeStart) : null, toque: b ? Math.round(b.t0 + b.interactive) : p.marks.listo });
+        }
       }
-      const m = (k) => String(median(runs.map((x) => x[k]))).padStart(7);
-      console.log(`${set.padEnd(9)} ${String(count).padStart(9)} ${m('hoy')} ${m('listo')} ${m('bloqTot')} ${m('bloqMax')}`);
+      const m = (k) => String(runs[0][k] == null ? '—' : median(runs.map((x) => x[k]))).padStart(7);
+      console.log(`${set.padEnd(9)} ${String(count).padStart(9)} ${m('hoy')} ${m('listo')} ${m('bloqTot')} ${m('bloqMax')} ${m('funde')} ${m('toque')}`);
       await browser.close();
     }
   } finally {

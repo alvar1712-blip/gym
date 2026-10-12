@@ -1,7 +1,7 @@
 // sw.js — service worker: la app funciona sin conexión (caché primero).
 // IMPORTANTE: VERSION sale del contenido de la app. Antes de publicar ejecuta `node scripts/stamp-sw.mjs`
 // (lo comprueba `node scripts/check-assets.mjs`): si no cambia, los iPhone no descargan la versión nueva.
-const VERSION = 'v1-b483ca9ddd';
+const VERSION = 'v1-658b444b01';
 const CACHE = `entreno-${VERSION}`;
 // Entrada que marca la caché que está sirviendo la versión activa (se escribe al activar).
 const ACTIVE_MARK = 'entreno-cache-activa';
@@ -12,6 +12,7 @@ const ASSETS = [
   './index.html',
   './manifest.json',
   './icons/icon.svg',
+  './icons/mark.svg',
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png',

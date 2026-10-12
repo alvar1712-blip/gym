@@ -256,6 +256,8 @@ async function boot() {
         h('p', 'La app necesita IndexedDB. Si estás en modo privado de Safari, ábrela en modo normal o desde la pantalla de inicio.'),
         h('pre.err-pre', String(err && (err.message || err))),
         h('button.btn.btn-primary', { type: 'button', onClick: () => location.reload() }, 'Reintentar'))));
+    document.getElementById('splash')?.remove();
+    document.getElementById('app')?.removeAttribute('inert');
     return;
   }
   store.requestPersist();
@@ -281,8 +283,57 @@ async function boot() {
   } else if (!location.hash || location.hash === '#' || location.hash === '#/') {
     history.replaceState(null, '', '#/today');
   }
+  window.__boot.storeReady = performance.now() - window.__boot.t0;
   await start(viewEl, onRouteChange);
+  window.__boot.mounted = performance.now() - window.__boot.t0;
   document.documentElement.classList.add('ready');
+  await hideSplash(viewEl);
+}
+
+// ---------------------------------------------------------------------------
+// Pantalla de arranque (index.html #splash; docs/PULIDO.md §27)
+// ---------------------------------------------------------------------------
+/** Mínimo visible desde que se ve el logo: una entrada con ritmo de app nativa, nunca un retraso artificial largo. */
+export const SPLASH_MIN_MS = 800;
+/** Lo que se espera a las tarjetas de Hoy tras montar; si tardan más, se entra igual (no se esconde una lentitud). */
+const SPLASH_CARDS_CAP_MS = 1500;
+const SPLASH_FADE_MS = 220;
+
+/** Hoy completo bajo el logo: el hueco de las tarjetas marca data-ready cuando ha terminado (o el tope). */
+function todayCardsReady(viewEl) {
+  const done = () => !viewEl.querySelector('.today') || !!viewEl.querySelector('.today-extra[data-ready]');
+  if (done()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const obs = new MutationObserver(() => { if (done()) { obs.disconnect(); clearTimeout(timer); resolve(true); } });
+    const timer = setTimeout(() => { obs.disconnect(); resolve(false); }, SPLASH_CARDS_CAP_MS);
+    obs.observe(viewEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-ready'] });
+  });
+}
+
+/**
+ * Retira la pantalla de arranque cuando la app está lista DEBAJO y ha pasado el mínimo:
+ * duración = máx(SPLASH_MIN_MS, tiempo real hasta Hoy listo). Funde 220 ms y sale del DOM (sin capas invisibles).
+ * Mientras está, la app es inerte (no se toca nada de debajo). Deja los tiempos en window.__boot.
+ */
+async function hideSplash(viewEl) {
+  const splash = document.getElementById('splash');
+  const app = document.getElementById('app');
+  const b = window.__boot;
+  if (!splash) { app?.removeAttribute('inert'); return; }
+  b.cardsInTime = await todayCardsReady(viewEl);
+  b.appReady = performance.now() - b.t0;
+  const wait = SPLASH_MIN_MS - (performance.now() - b.t0);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  // Hoy ya está montado debajo de un splash opaco: el fundido puede empezar ya (esperar un fotograma más solo
+  // añadía tiempo; en WebKit con la página cargada, hasta ~300 ms)
+  b.fadeStart = performance.now() - b.t0;
+  app.removeAttribute('inert');
+  splash.classList.add('splash-out');
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  await new Promise((r) => setTimeout(r, reduce ? 60 : SPLASH_FADE_MS));
+  splash.remove();
+  b.interactive = performance.now() - b.t0;
+  document.documentElement.classList.add('splash-done');
 }
 
 boot();

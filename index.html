@@ -15,6 +15,43 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <!-- Arranque (docs/PULIDO.md §27): estilos en línea para que el primer fotograma ya sea la pantalla de Entreno,
+       sin esperar a las hojas de estilo. El fondo es el de la app (#0b0d10 = --bg, theme-color y manifest). -->
+  <style>
+    html, body { background: #0b0d10; }
+    #splash { position: fixed; inset: 0; z-index: 2147483000; background: #0b0d10; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; transition: opacity 220ms cubic-bezier(.4, 0, .2, 1); touch-action: none; }
+    #splash .splash-mark { width: 84px; height: 84px; display: block; animation: splash-in 260ms cubic-bezier(.2, .8, .2, 1) both; }
+    #splash .splash-by { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 32px); text-align: center;
+      font: 500 13px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; color: #6b7280;
+      letter-spacing: .01em; animation: splash-fade 260ms 120ms cubic-bezier(.2, .8, .2, 1) both; }
+    #splash.splash-out { opacity: 0; pointer-events: none; }
+    @keyframes splash-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+    @keyframes splash-fade { from { opacity: 0; } to { opacity: 1; } }
+    /* Abierta desde la pantalla de inicio de iOS: su imagen de arranque ya enseña el logo en el mismo sitio; sin animación
+       de entrada (no parpadea). Movimiento reducido: estática, y salida casi instantánea. */
+    .splash-static #splash * { animation: none !important; }
+    @media (prefers-reduced-motion: reduce) { #splash * { animation: none !important; } #splash { transition-duration: 60ms; } }
+  </style>
+  <script>
+    // Momento en que la pantalla de arranque es visible (la duración mínima cuenta desde aquí) y si viene de la
+    // pantalla de inicio de iOS (entonces su imagen de arranque ya enseña el logo: sin animación de entrada).
+    window.__boot = { t0: performance.now() };
+    if (navigator.standalone) document.documentElement.classList.add('splash-static');
+  </script>
+  <!-- splash:start (scripts/make-splash.cjs) -->
+  <link rel="apple-touch-startup-image" href="splash/splash-640x1136.png" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"><!-- SE (1.ª) -->
+  <link rel="apple-touch-startup-image" href="splash/splash-750x1334.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"><!-- SE (2.ª/3.ª), 8 -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- X/XS/11 Pro/12 mini/13 mini -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- 12/13/14 -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1179x2556.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- 14 Pro/15/15 Pro/16 -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1206x2622.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- 16 Pro -->
+  <link rel="apple-touch-startup-image" href="splash/splash-828x1792.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"><!-- XR/11 -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- XS Max/11 Pro Max -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1284x2778.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- 12/13 Pro Max/14 Plus -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- 14 Pro Max/15 Plus/15 Pro Max/16 Plus -->
+  <link rel="apple-touch-startup-image" href="splash/splash-1320x2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"><!-- 16 Pro Max -->
+  <!-- splash:end -->
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/session.css">
   <link rel="stylesheet" href="css/activity.css">
@@ -32,13 +69,21 @@
   <link rel="stylesheet" href="css/context.css">
 </head>
 <body>
-  <div id="app">
-    <main id="view" class="view">
-      <div class="boot">
-        <div class="boot-logo">Entreno</div>
-        <div class="boot-sub">Cargando…</div>
-      </div>
-    </main>
+  <div id="splash" role="img" aria-label="Entreno">
+    <svg class="splash-mark" viewBox="80 120 352 352" aria-hidden="true">
+      <g fill="#b8f34a">
+        <rect x="96" y="176" width="48" height="160" rx="16"/>
+        <rect x="152" y="136" width="56" height="240" rx="18"/>
+        <rect x="304" y="136" width="56" height="240" rx="18"/>
+        <rect x="368" y="176" width="48" height="160" rx="16"/>
+        <rect x="200" y="236" width="112" height="40" rx="12"/>
+      </g>
+      <path d="M120 420 H210 L236 382 L262 452 L290 400 H392" fill="none" stroke="#b8f34a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/>
+    </svg>
+    <div class="splash-by" aria-hidden="true">by Álvar</div>
+  </div>
+  <div id="app" inert>
+    <main id="view" class="view"></main>
     <nav id="tabbar" class="tabbar" aria-label="Secciones"></nav>
   </div>
   <noscript><p style="padding:24px;color:#fff">Esta app necesita JavaScript.</p></noscript>

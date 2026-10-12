@@ -440,3 +440,36 @@ Reglas de UI de `#/recovery` (detalle en docs/MEJORAS.md §10):
   instantáneo con «reducir movimiento».
 - Guarda visual: pantalla `session-long` (superserie y cuatro plegados, uno desplegado a mano y otro en curso).
 
+
+## 27. Arranque: el logo de Entreno, no un estado de carga
+
+Antes: `#view` traía «Entreno / Cargando…» (texto pequeño) mientras cargaba, y el router lo sustituía por Hoy en
+cuanto montaba: pantalla negra → texto técnico → Hoy (con las tarjetas apareciendo después).
+
+Ahora (index.html `#splash`, js/app.js `hideSplash`):
+
+- **Qué se ve**: el símbolo del icono (icons/mark.svg = las formas de icons/icon.svg sin el fondo) a 84 px de caja
+  (~76 px de dibujo), centrado; «by Álvar» a 13 px en gris (#6b7280), 32 px por encima de la safe area inferior.
+  Probadas A (solo logo) y B (logo + «Entreno» en blanco): B compite con el logo y lo descentra; se queda A.
+  Sin «Cargando…», spinner, barra ni porcentaje.
+- **Primer fotograma**: estilos y SVG en línea en index.html (no espera a las hojas de estilo ni a ninguna petición).
+- **Duración**: `máx(800 ms desde que se ve, Hoy listo)`. Hoy listo = el router ha montado y las tarjetas de Hoy
+  terminaron (`.today-extra[data-ready]`, con un tope de 1,5 s tras montar: si tardan más se entra igual; nunca se
+  esconde una lentitud). Nunca se suma el mínimo a un arranque lento.
+- **Entrada**: logo `opacity 0→1` + `scale(.96)→1` en 260 ms; la firma, un fundido 120 ms después. Abierta desde la
+  pantalla de inicio de iOS (`navigator.standalone`): sin animación de entrada, porque la imagen de arranque de iOS
+  ya enseña el mismo logo en el mismo sitio (no parpadea).
+- **Salida**: el splash funde en 220 ms con Hoy YA montado y completo debajo, y sale del DOM (no quedan capas).
+  Mientras está, `#app` es `inert` y el splash recibe los toques: no se pulsa nada de Hoy por accidente.
+- **Movimiento reducido**: sin animaciones; salida en 60 ms; se mantiene el tiempo mínimo.
+- **Un mismo fondo**: `#0b0d10` en `--bg`, `html, body` en línea, `theme-color`, `background_color` y
+  `theme_color` del manifest, el splash y las imágenes de arranque.
+- **iOS**: `apple-touch-startup-image` para 11 tamaños de iPhone (splash/*.png, generadas con
+  `scripts/make-splash.cjs` desde el mismo `#splash` de index.html, con la safe area de cada modelo). iOS las lee al
+  **añadir a la pantalla de inicio**: una instalación anterior las verá tras quitar y volver a añadir el icono.
+  iOS decide si y cuánto enseña su imagen; la nuestra sigue igual detrás. «by Álvar» en esas imágenes usa la fuente
+  del generador (Linux), no la del sistema del iPhone: puede notarse un matiz en esa línea, no en el logo.
+- **Cuándo aparece**: solo al cargar la página (arranque en frío, recarga o tras actualizar el service worker).
+  Volver a la app que estaba en memoria no la enseña.
+- Tiempos en `window.__boot` (t0, storeReady, mounted, appReady, fadeStart, interactive, relativos a t0) y en
+  `npm run perf` (columnas «funde» y «toque»). Pruebas: tests/e2e/splash.test.cjs.

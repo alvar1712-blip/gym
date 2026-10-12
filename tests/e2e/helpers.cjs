@@ -55,7 +55,8 @@ async function openApp({ serviceWorkers = 'block', hash = '', browser: name = BR
 }
 
 async function waitReady(page) {
-  await page.waitForFunction(() => document.documentElement.classList.contains('ready'), null, { timeout: 15000 });
+  // Montada y sin la pantalla de arranque encima (index.html #splash: se retira a los ~800 ms o cuando Hoy está listo)
+  await page.waitForFunction(() => document.documentElement.classList.contains('ready') && !document.getElementById('splash'), null, { timeout: 15000 });
 }
 
 /** Pone la semana de ejemplo como semana tipo (como un usuario que ya la tenía) y recarga la pantalla actual. */

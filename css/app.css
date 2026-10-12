@@ -168,9 +168,6 @@ img, svg { display: block; }
 /* Testigo del título compacto (ui.js): los primeros px de la página. */
 .topbar-probe { position: absolute; top: 0; left: 0; width: 1px; pointer-events: none; visibility: hidden; }
 .view-inner { min-height: 60vh; }
-.boot { min-height: 80vh; display: grid; place-content: center; text-align: center; gap: 6px; }
-.boot-logo { font-size: calc(34px * var(--ts)); font-weight: 800; color: var(--accent); letter-spacing: -0.02em; }
-.boot-sub { color: var(--muted); }
 
 .topbar {
   position: sticky;
