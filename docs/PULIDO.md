@@ -41,6 +41,7 @@ y la app vacía a 375 px, en Chromium y en WebKit. Comprueba invariantes que no 
 - sin scroll horizontal ni nada que se salga por un lado (salvo dentro de un carrusel);
 - la cabecera no tapa el principio y lo último queda por encima de la barra de pestañas;
 - ningún texto de menos de 12 px y ningún objetivo táctil de menos de 44 px;
+- cada icono junto a su texto y sin encogerse (§29);
 - ningún error en la consola.
 
 Deja una captura de cada pantalla en `test-results/visual/` para revisarlas a ojo (no se comparan píxel a píxel:
@@ -185,6 +186,12 @@ de los números de detalle:
   por lado) para que una sesión rara al principio o al final no decida la frase.
 - Totales semanales (carga, km): «Media 24 km/sem · +12 % frente al periodo anterior» (semanas completas; sin un
   periodo anterior entero, solo la media).
+- «Estable» dice siempre la oscilación que se ve (± la mitad del rango), también cuando el cambio redondea a 0: nunca
+  «±0 reps» con puntos de 6 a 10 (auditoría final).
+- La gráfica no contradice la frase: cada una tiene su **rango mínimo de eje** (`yMinSpan`, nunca uno global): peso
+  `BODYWEIGHT_SPAN` = `relativeSpan(0.025, 2)` (Progreso, #/bodyweight y Análisis), ritmo de carrera y natación
+  `relativeSpan(0.05, 20)` s, bici `relativeSpan(0.1, 3)` km/h y las del ejercicio (§21). Antes, 76,6–77,2 kg con
+  «Estable: ±0,1 kg» dibujaba una joroba de medio alto.
 - Sin color de juicio (subir de peso puede ser bueno o malo según tu objetivo) y nunca NaN ni signos dobles.
 - El periodo elegido (4 sem · 3 meses · …) ya se recordaba por pantalla (localStorage, charts.getPeriod).
 
@@ -484,3 +491,30 @@ Ahora (index.html `#splash`, js/app.js `hideSplash`):
   Volver a la app que estaba en memoria no la enseña.
 - Tiempos en `window.__boot` (t0, storeReady, mounted, appReady, fadeStart, interactive, relativos a t0) y en
   `npm run perf` (columnas «funde» y «toque»). Pruebas: tests/e2e/splash.test.cjs.
+
+## 29. Icono + etiqueta (auditoría final)
+
+Un icono (SVG de `ui.icon` o emoji en su span) delante de su texto en un botón, una baldosa, una fila de lista o una
+cabecera sigue cuatro reglas de sistema, no de cada pantalla:
+
+1. **El icono nunca se encoge.** `.icon { flex: none }` global (css/app.css); `icon()` ya pone la clase. Sin ella, un
+   ítem flex cedía ancho cuando el texto no cabía y el icono quedaba de 4–16 px con el texto grande. Lo que se adapta
+   es la etiqueta.
+2. **Una etiqueta junto a un icono nunca se centra por dentro.** El centrado lo hace el contenedor
+   (`justify-content`); la etiqueta va `text-align: start` (`.btn:has(> svg.icon)`, `.prg-link-wide .prg-link-label`,
+   `.imp-settings-label`). Una etiqueta centrada que parte de línea ocupa todo el ancho y cada línea centrada aleja
+   el primer glifo 30–50 px del icono («⏱️ Tiempos previstos» en Progreso a 375–430 px, «Registrar síntomas» al
+   125 %). Los botones sin icono siguen centrados. Contrapartida aceptada: si la etiqueta parte de línea, su caja
+   ocupa todo el ancho libre (CSS no ajusta una caja al ancho de sus líneas) y el conjunto queda algo cargado al
+   inicio; mejor eso que un icono suelto a 30 px de su texto.
+3. **El emoji en caja fija no escala** (o la caja escala con él): `.goal-emoji` va a 26 px (22 px por debajo de
+   380 px), como las baldosas. Antes crecía con el texto y al 150 % se montaba en el título (−3 px).
+4. **Distancia entre el icono y el primer glifo**: la del `gap`, de 4 a 8 px en línea y de 10 a 14 px con baldosa, igual
+   a 100, 125 y 150 %. El icono va centrado con la primera línea o con el bloque. Un número no se queda solo en la
+   segunda línea: «Registrar serie 3» lleva un espacio duro.
+
+La guarda visual (§4) lo comprueba en cada pantalla: `iconGapIssues` (para `.btn`, `.prg-link-wide`, `.list-item` y
+las cabeceras `*-head` en fila con el icono como primer hijo: primer glifo − icono ≤ gap + 6 px y ≥ 2 px, medido con
+Range; un emoji sobre baldosa se mide desde la baldosa) e `iconShrinkIssues` (ningún `svg.icon` más estrecho que su
+`width`). No cuentan los iconos detrás del texto («Ver progreso ›») ni la salida del modo foco (§18). Su prueba propia
+monta un caso roto y su arreglo de cada regla.

@@ -436,6 +436,12 @@ html.text-large :is(.list-item-title, .list-item-sub, .topbar-sub, .cal-ses-key,
 .list-item-sub > .badge:first-child { margin-left: 0; }
 .list-item .chev { color: var(--muted); flex: none; }
 
+/* ---------- Icono + etiqueta (docs/PULIDO.md, «Icono + etiqueta») ----------
+   El icono nunca cede ancho: sin esto, un ítem flex se encoge (9–16 px) cuando el texto no cabe. Lo que se adapta es
+   la etiqueta. Y una etiqueta junto a un icono no se centra por dentro: si parte de línea, cada línea centrada aleja el
+   primer glifo del icono (30–50 px); el centrado lo hace el contenedor con justify-content. */
+.icon { flex: none; }
+
 /* ---------- Botones ---------- */
 .btn {
   display: inline-flex;
@@ -453,6 +459,7 @@ html.text-large :is(.list-item-title, .list-item-sub, .topbar-sub, .cal-ses-key,
   user-select: none;
   -webkit-user-select: none;
 }
+.btn:has(> svg.icon) { text-align: start; } /* con icono: si parte de línea, el texto sigue junto al icono (sin icono, centrado) */
 .btn:disabled { opacity: 0.45; pointer-events: none; }
 .btn-block { width: 100%; }
 .btn-lg { min-height: var(--tap-lg); font-size: calc(18px * var(--ts)); border-radius: 14px; }

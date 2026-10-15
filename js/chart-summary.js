@@ -36,13 +36,14 @@ export function levelSummary(points, { from = null, today, unit = 'kg', decimals
   const mean = (list) => list.reduce((t, p) => t + p.y, 0) / list.length;
   const d = mean(pts.slice(-k)) - mean(pts.slice(0, k));
   const u = unit ? ` ${unit}` : '';
-  if (Math.abs(d) <= stable) {
+  const r = Math.round(Math.abs(d) * 10 ** decimals) / 10 ** decimals;
+  // «Estable» (por debajo del umbral, o un cambio que redondea a 0): siempre la oscilación que se ve, ± la mitad del
+  // rango. Antes, redondear a 0 decía «±0» con puntos de 6 a 10 reps, y 60,02 frente a 60 cambiaba ±0 por ±10 kg.
+  if (Math.abs(d) <= stable || r === 0) {
     const ys = pts.map((p) => p.y);
     const half = (Math.max(...ys) - Math.min(...ys)) / 2;
     return { text: `Estable: ±${fmtNum(half, decimals)}${u} en el periodo`, dir: 'flat' };
   }
-  const r = Math.round(Math.abs(d) * 10 ** decimals) / 10 ** decimals;
-  if (r === 0) return { text: `Estable: ±0${u} en el periodo`, dir: 'flat' };
   return { text: `${sign(d)}${fmtNum(r, decimals)}${u} ${sinceText(first.x, today)}`.trim(), dir: d > 0 ? 'up' : 'down' };
 }
 

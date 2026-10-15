@@ -454,7 +454,7 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
   const headNum = h('span.ses-editor-num');
   const paintSubmit = () => {
     headNum.textContent = num === 'C' ? 'Calentamiento' : `Serie ${num}`;
-    submit.replaceChildren(icon('check', 22), pending ? (set.type === 'warmup' ? 'Registrar calentamiento' : `Registrar serie ${num}`) : 'Listo');
+    submit.replaceChildren(icon('check', 22), pending ? (set.type === 'warmup' ? 'Registrar calentamiento' : `Registrar serie\u00a0${num}`) : 'Listo'); // «serie 3» no se separa al partir la línea
   };
   paintSubmit();
 

@@ -300,7 +300,7 @@ html.text-large .wk-recap-kpi .sum-delta-part:first-child { white-space: normal;
   text-align: left;
 }
 .goal-head.is-pressed { opacity: 0.75; }
-.goal-emoji { flex: none; width: 34px; font-size: calc(26px * var(--ts)); line-height: 1; text-align: center; }
+.goal-emoji { flex: none; width: 34px; font-size: 26px; line-height: 1; text-align: center; } /* fijo, como las baldosas: con el texto grande crecía más que su caja y se montaba en el título */
 .goal-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .goal-title { font-size: calc(17px * var(--ts)); font-weight: 750; line-height: 1.25; overflow-wrap: anywhere; }
 .goal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
@@ -439,7 +439,7 @@ html.text-large .wk-recap-kpi .sum-delta-part:first-child { white-space: normal;
 
 @media (max-width: 380px) {
   .goal-val-v { font-size: calc(18px * var(--ts)); }
-  .goal-emoji { width: 28px; font-size: calc(22px * var(--ts)); }
+  .goal-emoji { width: 28px; font-size: 22px; }
 }
 /* ---------- /goals ---------- */
 

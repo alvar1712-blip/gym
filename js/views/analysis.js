@@ -14,7 +14,7 @@ import * as store from '../store.js';
 import { navigate } from '../router.js';
 import { h, icon, screen, emptyState, toast, sheet, stateTag, kpiValue, scrollBehavior } from '../ui.js';
 import { todayStr, addDays, fmtNum, fmtDuration, clamp } from '../util.js';
-import { dataFromStore, chartHeight, chartCtxFor } from '../progress-ui.js';
+import { dataFromStore, chartHeight, chartCtxFor, BODYWEIGHT_SPAN } from '../progress-ui.js';
 import { lineChart, COLORS } from '../charts.js';
 import { buildAnalysis, areaInsights, isPlaceholder, AREA_LABEL, LEVEL_LABEL, DISCLAIMER } from '../analysis.js';
 import { reportText } from '../analysis-report.js';
@@ -363,6 +363,7 @@ function weightChart(a) {
     height: chartHeight(150),
     yFormat: (v) => `${fmtNum(v, 1)} kg`,
     yTickFormat: (v) => fmtNum(v, 1),
+    yMinSpan: BODYWEIGHT_SPAN, // el mismo rango mínimo que Progreso y #/bodyweight
     xDomain: [from, a.today],
     bands,
     bandsLegend: bands.length ? { label: 'Regla', color: PERIOD_COLOR } : null,

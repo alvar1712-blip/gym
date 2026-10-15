@@ -68,7 +68,7 @@ test('calentamiento sugerido: plegado, desplegar, añadir series, 1 toque y sin 
     }, `[data-se="${seOf('press_banca').id}"]`);
     assert.ok(Math.abs(withH - withoutH) < 1, `plegada no ocupa espacio (${withH} vs ${withoutH})`);
     // el registro de 1 toque no cambia
-    assert.match(await bc.locator('.ses-register').innerText(), /Registrar serie 1/);
+    assert.match(await bc.locator('.ses-register').innerText(), /Registrar serie\s1/);
     // Solo con carga: no en peso corporal (dominadas) ni sin peso de referencia (primera vez); sí en aislamiento.
     assert.strictEqual(await card('dominadas').locator('.ses-warm-toggle').count(), 0, 'peso corporal: sin sugerencia');
     assert.strictEqual(await card('press_inclinado_mancuerna').locator('.ses-warm-toggle').count(), 0, 'sin carga: sin sugerencia');

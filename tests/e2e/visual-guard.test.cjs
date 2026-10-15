@@ -10,6 +10,8 @@
 //   · las gráficas con la franja de contexto (ronda 8, E) y el globo de un hecho abierto;
 //   · el panel de la semana pasada con «Puesta a punto» y su «¿Por qué?» abierto (ronda 8, G);
 //   · una sesión larga con superserie y ejercicios plegados, uno desplegado a mano y otro en curso (ronda 8, H);
+//   · icono junto a su texto, sin encogerse (PULIDO §«Icono + etiqueta»): el primer glifo de la etiqueta, a la
+//     distancia del gap aunque parta de línea, y ningún icono SVG más estrecho que su tamaño;
 //   · ningún error en la consola.
 // Deja una captura de cada pantalla en test-results/visual/ (para mirarlas, no se comparan píxel a píxel).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/visual-guard.test.cjs  (E2E_BROWSER=webkit para WebKit)
@@ -249,6 +251,7 @@ function inspectTop() {
     if (tappable && r.height < 43.5 && !el.closest('svg, .why-body')) issues.push(`objetivo táctil de ${Math.round(r.width)}×${Math.round(r.height)}: ${desc(el)}`);
   }
   issues.push(...overlapIssues(root, desc, shown));
+  issues.push(...iconGapIssues(root, desc, shown), ...iconShrinkIssues(root, desc));
   // La cabecera (título compacto) no tapa el primer bloque del contenido
   const top = root.querySelector('.topbar');
   const content = root.querySelector('.content');
@@ -367,8 +370,95 @@ function overlapIssues(root, desc, shown) {
   return issues;
 }
 
-/** inspectTop con overlapIssues a su alcance (page.evaluate solo serializa la función que recibe). */
-const measureTop = (page) => page.evaluate(`(() => { const overlapIssues = ${overlapIssues}; return (${inspectTop})(); })()`);
+/**
+ * Icono + etiqueta (docs/PULIDO.md, «Icono + etiqueta»): en un botón, una baldosa, una fila de lista o una cabecera
+ * (`*-head`) en fila cuyo PRIMER hijo es un icono (SVG o emoji en su span), el primer glifo de la etiqueta queda a la
+ * distancia del gap: ni lejos (≤ gap + 6 px; una etiqueta centrada que parte de línea lo aleja 30–50 px) ni encima
+ * (≥ 2 px; un emoji que crece más que su caja fija se le monta). El glifo se mide con Range, no con la caja de la
+ * etiqueta. No cuentan los iconos que van detrás del texto («Ver progreso ›») ni la salida del modo foco (§18).
+ */
+function iconGapIssues(root, desc, shown) {
+  const issues = [];
+  // (los iconos llevan aria-hidden —la etiqueta ya lo dice—: aquí cuenta si se ven)
+  const seen = (el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width >= 1 && r.height >= 1 && !el.closest('[hidden]') && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05;
+  };
+  const EMOJI = /^[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]+$/u;
+  const textRect = (node, from, to) => {
+    const rg = document.createRange();
+    rg.setStart(node, from);
+    rg.setEnd(node, to);
+    return [...rg.getClientRects()].find((r) => r.width > 0.5 && r.height > 0.5) || null;
+  };
+  for (const el of root.querySelectorAll('.btn, .prg-link-wide, .list-item, [class*="-head"]')) {
+    if (el.matches('.fb-exit') || ![...el.classList].some((c) => c === 'btn' || c === 'prg-link-wide' || c === 'list-item' || c.endsWith('-head'))) continue;
+    if (!shown(el)) continue;
+    const cs = getComputedStyle(el);
+    if (!/flex/.test(cs.display) || cs.flexDirection !== 'row') continue;
+    const ic = el.firstElementChild;
+    // El icono tiene que ser lo primero (sin texto delante)
+    if (!ic || [...el.childNodes].slice(0, [...el.childNodes].indexOf(ic)).some((n) => n.textContent.trim())) continue;
+    const isSvg = ic.matches('svg.icon');
+    const isEmoji = !isSvg && ic.tagName === 'SPAN' && EMOJI.test(ic.textContent.trim());
+    if ((!isSvg && !isEmoji) || !seen(ic)) continue;
+    let ir = ic.getBoundingClientRect();
+    const ics = getComputedStyle(ic);
+    // Un emoji sobre baldosa (fondo o borde) se mide desde la baldosa; uno suelto, desde su tinta: su caja puede ser
+    // más ancha que el glifo (una columna fija) o más estrecha (el glifo crece con el texto y se sale)
+    const tile = !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(ics.backgroundColor) || ics.backgroundImage !== 'none' || parseFloat(ics.borderRightWidth) > 0;
+    if (isEmoji && !tile) {
+      const t = [...ic.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+      ir = (t && textRect(t, 0, t.textContent.length)) || ir;
+    }
+    // Primer glifo de la etiqueta: el primer texto visible después del icono
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let glyph = null;
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (ic.contains(n) || !n.parentElement || !shown(n.parentElement) || n.parentElement.closest('svg')) continue;
+      const i = n.textContent.search(/\S/);
+      if (i < 0) continue;
+      glyph = textRect(n, i, i + 1);
+      if (glyph) break;
+    }
+    if (!glyph) continue;
+    const gap = parseFloat(cs.columnGap) || 0;
+    const d = glyph.left - ir.right;
+    if (d > gap + 6) issues.push(`texto lejos de su icono (${Math.round(d)} px, gap ${gap}): ${desc(el)}`);
+    else if (d < 2) issues.push(`texto pegado o encima de su icono (${Math.round(d)} px): ${desc(el)}`);
+  }
+  return issues;
+}
+
+/**
+ * Ningún icono SVG se encoge (PULIDO, «Icono + etiqueta»): un ítem flex sin `flex: none` cede ancho cuando el texto no
+ * cabe y el icono queda de 9–16 px. Se compara con su atributo `width` (icon()), o con su alto si una regla lo
+ * redimensiona (los iconos son cuadrados: una regla cambia los dos lados; encogerse solo cambia el ancho).
+ */
+function iconShrinkIssues(root, desc) {
+  const issues = [];
+  for (const svg of root.querySelectorAll('svg.icon')) {
+    // (lleva aria-hidden: cuenta si se ve)
+    const cs = getComputedStyle(svg);
+    const r = svg.getBoundingClientRect();
+    if (r.height < 1 || svg.closest('[hidden]') || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    const aw = parseFloat(svg.getAttribute('width'));
+    const ah = parseFloat(svg.getAttribute('height'));
+    if (!(aw > 0)) continue;
+    const want = Math.abs(r.height - ah) <= 0.5 ? aw : r.height;
+    if (r.width < want - 0.5) issues.push(`icono encogido (${r.width.toFixed(1)} de ${want} px): ${desc(svg.parentElement)}`);
+  }
+  return issues;
+}
+
+/** inspectTop con las guardas auxiliares a su alcance (page.evaluate solo serializa la función que recibe). */
+const measureTop = (page) => page.evaluate(`(() => {
+  const overlapIssues = ${overlapIssues};
+  const iconGapIssues = ${iconGapIssues};
+  const iconShrinkIssues = ${iconShrinkIssues};
+  return (${inspectTop})();
+})()`);
 
 /** Al final de la pantalla: lo último visible queda por encima de la barra de pestañas (o del pie fijo). */
 function inspectBottom() {
@@ -516,6 +606,11 @@ async function selfTest(browserName) {
           <span style="position:absolute;left:0;right:0;bottom:4px;text-align:center;font-size:19px;line-height:1.2">min</span>
         </label>
         <div class="case" id="word-bad" style="width:60px;font-size:20px;overflow-wrap:anywhere">Senderismo</div>
+        <div class="case" id="icon-far"><button class="btn" style="display:flex;align-items:center;justify-content:center;gap:8px;width:170px;font-size:20px;text-align:center"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" style="flex:none"></svg>Tiempos previstos</button></div>
+        <div class="case" id="icon-near"><button class="btn" style="display:flex;align-items:center;justify-content:center;gap:8px;width:170px;font-size:20px;text-align:start"><svg class="icon" width="20" height="20" viewBox="0 0 24 24" style="flex:none"></svg>Tiempos previstos</button></div>
+        <div class="case" id="icon-shrunk"><button class="btn" style="display:flex;align-items:center;gap:8px;width:170px;font-size:20px;white-space:nowrap"><svg class="icon" width="20" height="20" viewBox="0 0 24 24"></svg><span>Tiempos previstos</span></button></div>
+        <div class="case" id="emoji-over"><div class="goal-head" style="display:flex;align-items:center;gap:4px;font-size:20px"><span style="flex:none;width:20px;font-size:40px;line-height:1;text-align:center">🏃</span><span>10K</span></div></div>
+        <div class="case" id="emoji-ok"><div class="goal-head" style="display:flex;align-items:center;gap:10px;font-size:20px"><span style="flex:none;width:34px;font-size:26px;line-height:1;text-align:center">🏃</span><span>10K</span></div></div>
         <div class="case" id="word-ok" style="width:200px;font-size:20px;overflow-wrap:anywhere">Senderismo</div>
       </div></body></html>`);
     const run = (id) => page.evaluate(`(() => {
@@ -533,9 +628,26 @@ async function selfTest(browserName) {
     const word = await run('word-bad');
     assert.ok(word.some((x) => /palabra partida «Senderismo»/.test(x)), `palabra: ${word.join(' | ')}`);
     assert.deepStrictEqual(await run('word-ok'), []);
+    // Icono + etiqueta: lejos (etiqueta centrada que parte de línea), encogido y emoji montado sobre el texto
+    const icons = (id) => page.evaluate(`(() => {
+      const iconGapIssues = ${iconGapIssues};
+      const iconShrinkIssues = ${iconShrinkIssues};
+      const shown = (el) => { const r = el.getBoundingClientRect(); return r.width >= 1 && r.height >= 1 && !el.closest('[aria-hidden="true"]'); };
+      const desc = (el) => el.tagName.toLowerCase();
+      const root = document.getElementById(${JSON.stringify(id)});
+      return [...iconGapIssues(root, desc, shown), ...iconShrinkIssues(root, desc)];
+    })()`);
+    const far = await icons('icon-far');
+    assert.ok(far.some((x) => /texto lejos de su icono/.test(x)), `icono lejos: ${far.join(' | ')}`);
+    assert.deepStrictEqual(await icons('icon-near'), []);
+    const shrunk = await icons('icon-shrunk');
+    assert.ok(shrunk.some((x) => /icono encogido/.test(x)), `icono encogido: ${shrunk.join(' | ')}`);
+    const over = await icons('emoji-over');
+    assert.ok(over.some((x) => /encima de su icono/.test(x)), `emoji encima: ${over.join(' | ')}`);
+    assert.deepStrictEqual(await icons('emoji-ok'), []);
   } finally {
     await browser.close();
   }
 }
-test('la guarda de solapes avisa de un texto sobre el anillo, un valor sobre su unidad y una palabra partida', () => selfTest('chromium'));
+test('la guarda de solapes avisa de un texto sobre el anillo, un valor sobre su unidad, una palabra partida y un icono lejos, encogido o encima de su texto', () => selfTest('chromium'));
 test('WebKit: la guarda de solapes avisa de los mismos casos', { skip: skipWebkit }, () => selfTest('webkit'));

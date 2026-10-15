@@ -180,5 +180,5 @@
 
 /* ---------- Botón en Ajustes › Copias y datos (js/views/settings.js) ---------- */
 .imp-settings-btn { padding-top: 8px; padding-bottom: 8px; }
-.imp-settings-label { text-align: center; line-height: 1.25; }
+.imp-settings-label { text-align: start; line-height: 1.25; } /* junto al icono al partir la línea (PULIDO, «Icono + etiqueta») */
 .imp-nowrap { white-space: nowrap; }

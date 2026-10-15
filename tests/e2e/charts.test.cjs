@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 // Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
 const playwright = require('playwright');
 const { devices } = playwright;
-const { waitReady, BROWSER, chromiumOnly } = require('./helpers.cjs');
+const { waitReady, BROWSER, chromiumOnly, openApp, go, reload } = require('./helpers.cjs');
 
 const RESULTS = path.join(__dirname, '..', '..', 'test-results');
 
@@ -671,5 +671,62 @@ test('capturas del banco a 390 y 375 px (revísalas con Read)', async () => {
     } finally {
       await app.close();
     }
+  }
+});
+
+/**
+ * Rango mínimo del eje en las gráficas de la app (auditoría final, charts-1): con pesajes de 71,66–71,7 kg, 3
+ * carreras a 4:59–5:00 /km y 3 salidas a 30,0–30,2 km/h, el eje no dibuja el ruido como un cambio grande. Peso:
+ * al menos 2 kg (Progreso, #/bodyweight y Análisis); ritmo: al menos 20 s; bici: al menos 3 km/h. Se compara con ≥:
+ * las marcas redondas pueden ensanchar algo más el eje.
+ */
+test('ejes con un rango mínimo: peso ≥ 2 kg, ritmo ≥ 20 s y bici ≥ 3 km/h con datos casi iguales', async () => {
+  const TODAY = '2026-10-07';
+  const app = await openApp({ beforeLoad: (page) => page.context().clock.install({ time: new Date(`${TODAY}T12:00:00+02:00`).getTime() }) });
+  const { page } = app;
+  try {
+    await page.evaluate(async () => {
+      const util = await import('./js/util.js');
+      const db = await import('./js/db.js');
+      const today = util.todayStr();
+      const kgs = [71.673, 71.7, 71.66];
+      const bodyweight = [];
+      const sessions = [];
+      const base = { status: 'done', templateId: null, templateName: '', durationMin: 30, rpe: 6, notes: '', parentId: null, templateItemId: null, elapsedSec: null, subtype: '', feel: '' };
+      for (let i = 0; i < 3; i++) {
+        const d = util.addDays(today, -i * 3);
+        const t = util.tsFromDate(d, 18);
+        bodyweight.push({ id: d, kg: kgs[i], createdAt: t, updatedAt: t });
+        // 6 km en 29:54–30:00 → 4:59–5:00 /km; 30 km en 59:36–60:00 → 30,0–30,2 km/h
+        sessions.push({ ...base, id: `rng_r${i}`, kind: 'run', date: d, planDate: d, startedAt: t, endedAt: t + 1800e3, createdAt: t, updatedAt: t, distanceKm: 6, movingSec: 1800 - i * 3 });
+        sessions.push({ ...base, id: `rng_b${i}`, kind: 'bike', date: d, planDate: d, startedAt: t + 7200e3, endedAt: t + 10800e3, durationMin: 60, createdAt: t, updatedAt: t, distanceKm: 30, movingSec: 3600 - i * 12 });
+      }
+      await db.putStores({ sessions, bodyweight });
+    });
+    await reload(page);
+    /** Rótulos del eje Y como números: «71,5» → 71.5; «4:59» → 299 s. */
+    const ticks = (sel) => page.locator(`${sel} .chart-ylabel`).evaluateAll((els) => els.map((e) => {
+      const t = e.textContent.trim();
+      const m = /^(\d+):(\d{2})$/.exec(t);
+      return m ? Number(m[1]) * 60 + Number(m[2]) : Number(t.replace(/\./g, '').replace(',', '.'));
+    }));
+    const span = (v) => Math.max(...v) - Math.min(...v);
+    const check = async (sel, min, what) => {
+      await page.locator(`${sel} .chart-ylabel`).first().waitFor();
+      const v = await ticks(sel);
+      assert.ok(v.length >= 2 && v.every(Number.isFinite), `${what}: rótulos ${v.join(' | ')}`);
+      assert.ok(span(v) >= min - 1e-9, `${what}: eje ${v.join(' | ')} (menos de ${min})`);
+    };
+    await go(page, '#/progress');
+    await check('[data-chart="bodyweight"]', 2, 'peso en Progreso');
+    await check('[data-chart="run-pace"]', 20, 'ritmo de carrera');
+    await check('[data-chart="bike-speed"]', 3, 'velocidad en bici');
+    await go(page, '#/bodyweight');
+    await check('.prg-chart', 2, 'peso en #/bodyweight');
+    await go(page, '#/analysis');
+    await check('.an-chart', 2, 'peso en Análisis');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
   }
 });

@@ -570,6 +570,9 @@ function kmCard(ctx) {
 }
 
 // ---------- e) Ritmo de carrera, velocidad en bici (y ritmo de natación si hay) ----------
+/** Rango mínimo del eje de ritmo (carrera /km y natación /100 m): al menos 20 s (o el 5 % del ritmo). */
+const PACE_SPAN = relativeSpan(0.05, 20);
+
 function activityLineCard(ctx, spec) {
   const pts = spec.points;
   const avg = rolling(pts, 5, spec.ratio);
@@ -586,6 +589,7 @@ function activityLineCard(ctx, spec) {
     yTicks: spec.yTicks || 'auto',
     yFormat: spec.fmt,
     yTickFormat: spec.tick,
+    yMinSpan: spec.span, // rango mínimo de cada deporte: unos segundos o décimas no ocupan todo el alto
     ariaLabel: spec.aria,
   });
   return {
@@ -612,7 +616,7 @@ function activityLineCard(ctx, spec) {
 function runCard(ctx) {
   return activityLineCard(ctx, {
     id: 'run-pace', kind: 'run', title: 'Ritmo de carrera', sub: 'min/km · más arriba = más rápido', color: COLORS.run,
-    points: S.runPaceSeries(ctx.data), ratio: paceOf, invertY: true, yTicks: 'time', fmt: (v) => fmtPace(v), tick: fmtDuration,
+    points: S.runPaceSeries(ctx.data), ratio: paceOf, invertY: true, yTicks: 'time', fmt: (v) => fmtPace(v), tick: fmtDuration, span: PACE_SPAN,
     eachLabel: 'Cada carrera', one: 'carrera', many: 'carreras', aria: 'Ritmo medio de cada carrera y media de las 5 últimas',
     emptyAll: 'Registra tu primera carrera (con distancia y tiempo) para ver tu ritmo.',
     howto: 'Cada punto es una carrera (su ritmo medio); la línea es la media de las 5 últimas, ponderada por distancia. El eje va invertido: subir es ir más rápido.',
@@ -622,7 +626,7 @@ function runCard(ctx) {
 function bikeCard(ctx) {
   return activityLineCard(ctx, {
     id: 'bike-speed', kind: 'bike', title: 'Velocidad en bici', sub: 'km/h · velocidad media de cada salida', color: COLORS.bike,
-    points: S.bikeSpeedSeries(ctx.data), ratio: speedOf, fmt: (v) => `${nf1(v)} km/h`, tick: nf1,
+    points: S.bikeSpeedSeries(ctx.data), ratio: speedOf, fmt: (v) => `${nf1(v)} km/h`, tick: nf1, span: relativeSpan(0.1, 3),
     eachLabel: 'Cada salida', one: 'salida', many: 'salidas', aria: 'Velocidad media de cada salida en bici y media de las 5 últimas',
     emptyAll: 'Registra tu primera salida en bici (con distancia y tiempo) para ver tu velocidad.',
     howto: 'Cada punto es una salida (km ÷ tiempo en movimiento); la línea es la media de las 5 últimas, ponderada por distancia. Las rutas con desnivel bajan la media.',
@@ -634,7 +638,7 @@ function swimCard(ctx) {
   if (!pts.length) return null; // solo si ya nadas: no es una gráfica pedida y evita una tarjeta vacía más
   return activityLineCard(ctx, {
     id: 'swim-pace', kind: 'swim', title: 'Ritmo de natación', sub: 'min/100 m · más arriba = más rápido', color: COLORS.swim,
-    points: pts, ratio: pace100Of, invertY: true, yTicks: 'time', fmt: (v) => fmtPace(v, '/100 m'), tick: fmtDuration,
+    points: pts, ratio: pace100Of, invertY: true, yTicks: 'time', fmt: (v) => fmtPace(v, '/100 m'), tick: fmtDuration, span: PACE_SPAN,
     eachLabel: 'Cada sesión', one: 'sesión', many: 'sesiones', aria: 'Ritmo de natación por sesión',
     emptyAll: '',
     howto: 'Cada punto es una sesión de natación; la línea es la media de las 5 últimas, ponderada por distancia.',

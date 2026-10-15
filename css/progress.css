@@ -175,7 +175,7 @@ html.text-large .chart-ctx-toggle { margin: -6px 0 -8px -8px; }
 .prg-link-emoji { flex: none; font-size: calc(20px * var(--ts)); line-height: 1; }
 .prg-link-label { max-width: 100%; font-size: calc(14px * var(--ts)); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prg-link-wide { grid-column: span 3; flex-direction: row; gap: 6px; min-height: 52px; padding: 6px 4px; }
-.prg-link-wide .prg-link-label { min-width: 0; font-size: calc(15px * var(--ts)); white-space: normal; overflow-wrap: anywhere; text-align: center; } /* «Tiempos previstos» en dos líneas antes que «…» */
+.prg-link-wide .prg-link-label { min-width: 0; font-size: calc(15px * var(--ts)); white-space: normal; overflow-wrap: anywhere; text-align: start; } /* «Tiempos previstos» en dos líneas antes que «…», junto a su emoji (centrada, cada línea se alejaba 30–50 px) */
 /* «Análisis» (ronda 5): a lo ancho, arriba, con subtítulo y flecha */
 .prg-link-full {
   grid-column: 1 / -1;

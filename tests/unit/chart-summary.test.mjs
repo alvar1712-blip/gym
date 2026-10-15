@@ -27,6 +27,19 @@ test('nivel: solo el periodo que se ve; sin 2 puntos válidos → sin frase; nun
   assert.equal(t, 'Estable: ±0 kg en el periodo', 'un cambio que redondea a 0 no es «−0»');
 });
 
+test('nivel «Estable»: una sola oscilación, la que se ve (nunca «±0» con puntos que suben y bajan)', () => {
+  const days = (ys) => pts(ys.map((y, i) => [addDays('2026-09-01', i * 3), y]));
+  // Una diferencia de extremos que redondea a 0 y una exactamente 0 dicen lo mismo: ± la mitad del rango
+  const exact = levelSummary(days([60, 70, 50, 60]), { today: T });
+  assert.deepEqual(exact, { text: 'Estable: ±10 kg en el periodo', dir: 'flat' });
+  assert.deepEqual(levelSummary(days([60, 70, 50, 60.02]), { today: T }), exact);
+  // Repeticiones máximas (ficha de ejercicio: stable 0, sin decimales) que oscilan entre 6 y 10
+  const reps = { today: T, unit: 'reps', decimals: 0 };
+  assert.deepEqual(levelSummary(days([6, 7, 6, 10, 9, 8, 6, 6, 7]), reps), { text: 'Estable: ±2 reps en el periodo', dir: 'flat' });
+  assert.deepEqual(levelSummary(days([6, 7, 6, 10, 9, 8, 6, 7, 7]), reps), { text: 'Estable: ±2 reps en el periodo', dir: 'flat' },
+    'extremos 6,3 → 6,7: redondea a 0 y dice la oscilación, no «±0»');
+});
+
 test('nivel con ruido: los extremos se promedian (una sesión rara al principio o al final no decide)', () => {
   // 1RM por sesión: 55,5 · 54 · 55,5 | … | 52,5 · 50,5 · 55 → media inicial 55, final ~52,7 → −2,3 kg (no −0,5 ni −5)
   const p = pts([['2026-07-08', 55.5], ['2026-07-15', 54], ['2026-07-22', 55.5], ['2026-08-05', 49.5], ['2026-08-20', 54], ['2026-09-02', 57],

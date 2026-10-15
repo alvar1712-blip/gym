@@ -3,7 +3,7 @@
 // .bw-chart-slot), para que la gráfica de peso corporal sea la misma en las dos pantallas.
 import * as store from './store.js';
 import { h } from './ui.js';
-import { lineChart, periodSelector, periodStart, getPeriod, COLORS } from './charts.js';
+import { lineChart, periodSelector, periodStart, getPeriod, relativeSpan, COLORS } from './charts.js';
 import { bodyweightSeries, dataRange } from './stats.js';
 import { levelSummary } from './chart-summary.js';
 import { contextItems, chartContext } from './chart-context.js';
@@ -94,6 +94,12 @@ export function cardHead(title, sub = null, right = null) {
 const kgTxt = (v) => `${fmtNum(v, 1)} kg`;
 
 /**
+ * Rango mínimo del eje de peso corporal (PULIDO §12): al menos 2 kg (2,5 % del peso por encima de 80 kg). Lo usan
+ * Progreso, #/bodyweight y el análisis: el ruido de unos gramos que la frase llama «Estable» no ocupa todo el alto.
+ */
+export const BODYWEIGHT_SPAN = relativeSpan(0.025, 2);
+
+/**
  * Opciones de la gráfica de peso corporal (pesajes diarios + media móvil de 7 días destacada), para
  * lineChart(). `data` necesita al menos { bodyweight, today }. Pasa `series` para no recalcular la media al
  * cambiar de periodo.
@@ -112,6 +118,7 @@ export function bodyweightChartOpts(data, periodId, { height = 220, series = nul
     height,
     yFormat: kgTxt,
     yTickFormat: (v) => fmtNum(v, 1),
+    yMinSpan: BODYWEIGHT_SPAN,
     xDomain: [from, today],
     // Contexto (ronda 8, E): la misma clave 'bodyweight' en Progreso, #/bodyweight y el análisis
     context: context === undefined ? chartCtxFor(data, 'weight', { key: 'bodyweight', defaultOn: true }) : context,
