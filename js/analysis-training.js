@@ -26,7 +26,7 @@ import { trendWindows, TREND_RECENT_DAYS, TREND_BASE_DAYS, TREND_MIN_RECENT, TRE
 import { defaultSettings, MUSCLE_LABEL } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
 import { exerciseRecovery, markLabel, markWhen } from './past-records-logic.js';
-import { stallEval } from './progression.js';
+import { stallEval, fatigueState } from './progression.js';
 import { combine, byCount, bySpan, byNoise, capAt, insufficient as confInsufficient, confidenceRow, minLevel } from './confidence.js';
 
 // ===========================================================================
@@ -435,18 +435,28 @@ function targetsOf(settings) {
   return t;
 }
 
-/** Señales de fatiga (para sugerir descarga): RPE de fuerza alto sostenido y check-ins bajos (settings.deload). */
+/**
+ * Fatiga hasta hoy con la regla única (progression.fatigueState, la del panel semanal): `deload` = coinciden las
+ * condiciones de la descarga (solo entonces se habla de «descarga» o de «semana más suave»); `rpeHigh` / `ckLow` /
+ * `any` = señales sueltas (RPE medio alto o la mitad de los check-ins bajos), que deciden reducir volumen y el consejo
+ * de revisar el sueño y el cansancio. Los umbrales son los de settings.deload.
+ */
 function fatigueSignals(d, today) {
-  const dl = { ...defaultSettings().deload, ...((d.settings && d.settings.deload) || {}) };
-  const W = Math.max(1, Math.round(dl.weeks));
-  const from = addDays(today, -7 * W + 1);
-  const rpe = toArr(d.sessions).filter((s) => s && s.kind === 'strength' && s.status === 'done' && s.date >= from && s.date <= today && s.rpe >= 1);
-  const rpeMean = rpe.length ? meanOf(rpe.map((s) => s.rpe)) : null;
-  const rpeHigh = rpe.length >= 2 && rpeMean >= dl.rpeHigh - EPS;
-  const cks = checkinsBetween(d.checkins, from, today);
-  const lows = cks.filter(isLowCheckin).length;
-  const ckLow = cks.length >= 2 && lows * 2 >= cks.length;
-  return { W, from, rpeMean, rpeCount: rpe.length, rpeHigh, rpeLimit: dl.rpeHigh, checkins: cks.length, lows, ckLow, any: rpeHigh || ckLow };
+  const f = fatigueState(d, today);
+  return {
+    W: f.W, from: f.from, rpeMean: f.rpeMean, rpeCount: f.rpeSessions.length, rpeHigh: f.signals.rpeHigh, rpeLimit: f.rpeLimit,
+    checkins: f.checkins.length, lows: f.lows.length, ckLow: f.signals.ckLow, any: f.signals.any,
+    deload: f.deload, stalledCount: f.stalled ? f.stalled.length : null, minStalled: f.minStalled, rpeBlocks: f.blocks.map((b) => b.mean),
+  };
+}
+
+/** Motivos de la fatiga para el texto: con descarga, las tres condiciones; si no, las señales sueltas. */
+function fatigueWhy(fat) {
+  const why = [];
+  if (fat.deload && fat.stalledCount != null) why.push(`${fmtNum(fat.stalledCount, 0)} ejercicios estancados`);
+  if (fat.deload || fat.rpeHigh) why.push(`RPE medio de fuerza ${fmtNum(fat.rpeMean, 1)} en ${lastWeeks(fat.W)}`);
+  if (fat.ckLow || (fat.deload && fat.checkins)) why.push(`${fat.lows} de ${fat.checkins} check-ins bajos`);
+  return why;
 }
 
 /** Último peso corporal registrado hasta hoy (kg) o null. */
@@ -466,6 +476,85 @@ export function strongDomsByMuscle(d, today, { level = 7, days = 14 } = {}) {
     for (const a of areasOf(c)) if (a.kind === 'muscle' && a.level >= level) out.set(a.zone, (out.get(a.zone) || 0) + 1);
   }
   return out;
+}
+
+/** Volumen (ronda 6, fase D): agujetas fuertes (≥ 7/10) repetidas en un músculo (≥ 2 veces en 14 días) cuentan como «mucha molestia». */
+export const DOMS_HIGH = 7;
+export const DOMS_HIGH_TIMES = 2;
+export const DOMS_RECENT_DAYS = 14;
+/** Constancia baja: menos del 70 % de lo planificado hecho en 4 semanas. */
+export const ADHERENCE_LOW_PCT = 70;
+
+/**
+ * Revisión del volumen por músculo (media de series de las 4 semanas completas): mantener, añadir o reducir, con sus
+ * motivos. NO se pide más volumen solo por estar por debajo del rango teórico:
+ *   reduce — agujetas fuertes repetidas en ese músculo o señales de fatiga, con sus ejercicios estancados o bajando
+ *            (aunque esté dentro del rango);
+ *   keep   — sus ejercicios progresan (aunque esté por debajo del rango) o está en el rango sin problemas;
+ *   add    — por debajo del mínimo, con sus ejercicios estancados, sin fatiga ni agujetas fuertes y con constancia
+ *            (≥ 70 % de lo planificado): +1–2 series;
+ *   none   — sin ejercicios con tendencia que lo trabajen (no hay datos para decidir).
+ * Menores: nunca «añadir» (técnica primero). 65+: no añadir si hay fatiga o molestias.
+ * Ronda 9: es LA decisión de volumen por músculo; los consejos de los estancados (más series, quitar series,
+ * constancia) y la tarjeta de volumen (analysis-hybrid.volumeInsight) la leen, no la recalculan. Cada músculo lleva
+ * además sore/soreTimes (agujetas fuertes), progressing y struggling (sus ejercicios progresan / no progresan).
+ */
+export function volumeReview(d, today, { strength = null, age = 'unknown' } = {}) {
+  const exMap = toMap(d.exercises);
+  const settings = d.settings || {};
+  const targets = settings.muscleTargets && typeof settings.muscleTargets === 'object' ? settings.muscleTargets : defaultSettings().muscleTargets;
+  const mus = muscleAverages(d, today);
+  const fat = fatigueSignals(d, today);
+  const adh = adherenceTotals(adherenceSeries(d, addDays(weekStart(today), -28), addDays(weekStart(today), -1)));
+  const lowAdherence = adh.pctPast != null && adh.planned >= 4 && adh.pctPast < ADHERENCE_LOW_PCT;
+  // Agujetas fuertes recientes por músculo
+  const strong = new Map();
+  for (const c of checkinsBetween(d.checkins, addDays(today, -(DOMS_RECENT_DAYS - 1)), today)) {
+    for (const a of areasOf(c)) if (a.kind === 'muscle' && a.level >= DOMS_HIGH) strong.set(a.zone, (strong.get(a.zone) || 0) + 1);
+  }
+  const rows = (strength?.exercises || []).filter((x) => x.status !== 'insufficient');
+  const out = [];
+  if (!mus.weeks) return { weeks: 0, muscles: [], fatigue: fat, adherence: adh, lowAdherence };
+  for (const [m, t] of Object.entries(targets)) {
+    if (!Array.isArray(t) || !(t[1] > 0)) continue;
+    const avg = mus.avg[m] || 0;
+    const exs = rows.filter((x) => (exMap.get(x.exerciseId)?.primary || []).includes(m));
+    if (!exs.length && avg < 1) continue;
+    const progressing = exs.some((x) => x.status === 'fast' || x.status === 'good') && !exs.some((x) => x.status === 'down');
+    const struggling = exs.some((x) => x.status === 'stalled' || x.status === 'down');
+    const sore = (strong.get(m) || 0) >= DOMS_HIGH_TIMES;
+    const below = t[0] > 0 && avg < t[0] - EPS;
+    const above = avg > t[1] + EPS;
+    const reasons = [];
+    let decision;
+    if (!exs.length) { decision = 'none'; reasons.push('sin ejercicios con tendencia que lo trabajen'); }
+    else if ((sore || fat.any) && (struggling || sore)) {
+      decision = 'reduce';
+      if (sore) reasons.push(`agujetas fuertes (≥ ${DOMS_HIGH}/10) ${strong.get(m)} veces en ${DOMS_RECENT_DAYS} días`);
+      if (fat.any) reasons.push('señales de fatiga (RPE alto o check-ins bajos)');
+      if (struggling) reasons.push('sus ejercicios no progresan');
+    } else if (progressing) {
+      decision = 'keep';
+      reasons.push(below ? 'progresas con este volumen aunque esté por debajo del rango' : 'progresas con este volumen');
+    } else if (below && struggling && !lowAdherence && age !== 'minor' && !(age === 'senior' && (fat.any || sore))) {
+      decision = 'add';
+      reasons.push('por debajo del mínimo y sus ejercicios no progresan, sin fatiga ni agujetas fuertes');
+    } else {
+      decision = 'keep';
+      if (below && lowAdherence) reasons.push('primero, constancia: hiciste menos de lo planificado');
+      else if (below && age === 'minor') reasons.push('con menos de 18 años, primero técnica y constancia');
+      // Ronda 9: sin progreso no se dice «sin problemas a la vista» (el «¿Por qué?» contradiría a los estancados).
+      else if (struggling) reasons.push(`${below ? 'por debajo' : above ? 'por encima' : 'dentro'} del rango y sus ejercicios no progresan, pero más series no es lo primero`);
+      else reasons.push(above ? 'por encima del rango, pero sin problemas a la vista' : 'dentro del rango y sin problemas a la vista');
+    }
+    out.push({
+      muscleId: m, name: MUSCLE_LABEL[m] || m, avgSets: round(avg, 0.1), target: t, below, above, decision, reasons, exercises: exs.map((x) => x.name),
+      sore, soreTimes: strong.get(m) || 0, progressing, struggling,
+    });
+  }
+  const order = { reduce: 0, add: 1, keep: 2, none: 3 };
+  out.sort((a, b) => order[a.decision] - order[b.decision] || (b.below - a.below) || a.name.localeCompare(b.name, 'es'));
+  return { weeks: mus.weeks, muscles: out, fatigue: fat, adherence: adh, lowAdherence };
 }
 
 /** Ronda 6 (fase D): constancia de las 4 semanas completas anteriores (planificado frente a hecho). low: < 70 % con ≥ 4 planificadas. */
@@ -626,8 +715,11 @@ export function analyzeStrength(data, opts = {}) {
     experience: exp.id,
     experienceAssumed: exp.assumed,
   };
-  const insights = strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context, age });
-  return { exercises, summary, insights };
+  // Ronda 9: UNA decisión de volumen por músculo (mantener, añadir, reducir): la usan los consejos de los estancados
+  // (aquí) y la tarjeta de volumen (analysis-hybrid), para no pedir a la vez «reduce» y «+1–2 series».
+  const volume = volumeReview(d, today, { strength: { exercises }, age });
+  const insights = strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context, age, volume });
+  return { exercises, summary, insights, volume };
 }
 
 function strengthRule(p, exp, th) {
@@ -657,7 +749,7 @@ function referenceFactors(row, c) {
   return [];
 }
 
-function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context = null, age = 'unknown' }) {
+function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context = null, age = 'unknown', volume = null }) {
   const out = [];
   const minor = age === 'minor';
   const senior = age === 'senior';
@@ -802,29 +894,32 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     const targets = targetsOf(d.settings);
     const fat = fatigueSignals(d, today);
     const bwKg = lastBodyweight(d, today);
-    const sore = strongDomsByMuscle(d, today);
-    const adh = adherence4w(d, today);
+    // Ronda 9: el volumen sale de LA decisión por músculo (volumeReview), la misma de la tarjeta de volumen: nunca
+    // «+1–2 series» de un músculo que se pide reducir.
+    const vr = volume || volumeReview(d, today, { strength: { exercises }, age });
+    const decOf = new Map((vr.muscles || []).map((m) => [m.muscleId, m]));
+    const fatWhy = fatigueWhy(fat);
     stalledList.slice(0, 3).forEach((x, i) => {
       const c = byId.get(x.exerciseId);
       const tips = [];
       const tipRows = [];
       const srcs = [];
-      if (fat.any) {
-        const why = [];
-        if (fat.rpeHigh) why.push(`RPE medio de fuerza ${fmtNum(fat.rpeMean, 1)} en ${lastWeeks(fat.W)}`);
-        if (fat.ckLow) why.push(`${fat.lows} de ${fat.checkins} check-ins bajos`);
-        tips.push(`una semana de descarga (menos series, RPE 6–7), porque hay señales de fatiga (${joinList(why)})`);
-        tipRows.push({ label: 'Fatiga', value: `${joinList(why)} → descarga` });
+      // Ronda 9: «descarga» solo si coinciden las condiciones del panel (progression.fatigueState); con señales
+      // sueltas de fatiga, revisar el sueño y el cansancio.
+      if (fat.deload) {
+        tips.push(`una semana de descarga (menos series, RPE 6–7), porque coinciden ${joinList(fatWhy)}`);
+        tipRows.push({ label: 'Fatiga', value: `${joinList(fatWhy)} → descarga` });
+      } else if (fat.any) {
+        tips.push(`revisar el sueño y el cansancio antes de apretar más, porque hay señales de fatiga (${joinList(fatWhy)})`);
+        tipRows.push({ label: 'Fatiga', value: `${joinList(fatWhy)} → revisa sueño y cansancio (no coinciden las condiciones de la descarga)` });
       } else {
         tipRows.push({ label: 'Fatiga', value: fat.rpeCount ? `RPE medio ${fmtNum(fat.rpeMean, 1)} en ${lastWeeks(fat.W)} (umbral ${fmtNum(fat.rpeLimit, 1)}) · sin señales` : 'sin RPE ni check-ins bajos recientes' });
       }
-      const below = [];
       for (const m of c.ex.primary || []) {
         const t = targets[m];
         if (!Array.isArray(t) || !(t[0] > 0) || !mus.weeks) continue;
         const avg = mus.avg[m] || 0;
         tipRows.push({ label: `Series/sem de ${(MUSCLE_LABEL[m] || m).toLowerCase()}`, value: `${fmtNum(avg, 1)} de media (${plural(mus.weeks, 'semana', 'semanas')}) · rango ${t[0]}–${t[1]}` });
-        if (avg < t[0] - EPS) below.push({ m, avg, t });
       }
       if (minor) {
         tips.push('revisar la técnica con alguien que sepa (entrenador o profesor) y subir el peso solo cuando todas las repeticiones salgan limpias');
@@ -833,18 +928,26 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
         tips.push('cuidar la técnica y recuperarte bien entre sesiones antes de añadir más trabajo');
         srcs.push(SOURCES.fragala2019);
       }
-      // Ronda 6 (fase D): más volumen solo si no hay agujetas fuertes repetidas en ese músculo ni poca constancia; con
-      // agujetas fuertes, al revés: quitar algo.
-      const soreM = (c.ex.primary || []).find((m) => (sore.get(m) || 0) >= 2);
+      // Volumen de sus músculos principales: con agujetas fuertes repetidas, quitar; si la decisión es reducir por
+      // fatiga, no se añade nada aquí (lo dice la tarjeta de volumen); con poca constancia, constancia; y +1–2 series
+      // solo si la decisión es «añadir» (por debajo, sin progreso, sin fatiga ni agujetas y con constancia).
+      const decs = (c.ex.primary || []).map((m) => decOf.get(m)).filter(Boolean);
+      const soreM = decs.find((m) => m.sore);
+      const addM = decs.find((m) => m.decision === 'add');
+      const adhM = decs.find((m) => m.decision === 'keep' && m.below && vr.lowAdherence);
+      const lname = (m) => m.name.toLowerCase();
       if (soreM) {
-        tips.push(`quitar 2–4 series por semana de ${(MUSCLE_LABEL[soreM] || soreM).toLowerCase()} 1–2 semanas, porque has tenido agujetas fuertes ahí ${sore.get(soreM)} veces en 2 semanas`);
-        tipRows.push({ label: 'Agujetas fuertes', value: `${(MUSCLE_LABEL[soreM] || soreM).toLowerCase()}: ${sore.get(soreM)} veces ≥ 7/10 en 14 días → menos volumen, no más` });
-      } else if (below.length && adh.low) {
+        tips.push(`quitar 2–4 series por semana de ${lname(soreM)} 1–2 semanas, porque has tenido agujetas fuertes ahí ${soreM.soreTimes} veces en 2 semanas`);
+        tipRows.push({ label: 'Agujetas fuertes', value: `${lname(soreM)}: ${soreM.soreTimes} veces ≥ ${DOMS_HIGH}/10 en ${DOMS_RECENT_DAYS} días → menos volumen, no más` });
+      } else if (decs.some((m) => m.decision === 'reduce')) {
+        const r = decs.find((m) => m.decision === 'reduce');
+        tipRows.push({ label: 'Volumen', value: `${lname(r)}: reducir (${r.reasons.join(', ')}) → no más series` });
+      } else if (adhM) {
+        const adh = vr.adherence;
         tipRows.push({ label: 'Constancia', value: `${adh.completed} de ${adh.planned - adh.pending} sesiones planificadas (${adh.pctPast} %) → antes que más series, constancia` });
         tips.push(`antes que más series, constancia: en 4 semanas hiciste el ${adh.pctPast} % de lo planificado`);
-      } else if (below.length && !minor && !(senior && fat.any)) {
-        const b = below[0];
-        tips.push(`+1–2 series por semana de ${(MUSCLE_LABEL[b.m] || b.m).toLowerCase()} (haces ${fmtNum(b.avg, 1)} y tu rango es ${b.t[0]}–${b.t[1]})`);
+      } else if (addM) {
+        tips.push(`+1–2 series por semana de ${lname(addM)} (haces ${fmtNum(addM.avgSets, 1)} y tu rango es ${addM.target[0]}–${addM.target[1]})`);
         srcs.push(SOURCES.schoenfeld2017);
       }
       const reps = typicalReps(c.trend.era, c.ex);
@@ -863,7 +966,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
         confidence: x.confidence, context: ctxNotes,
         title: `${x.name}: qué probar para desatascarlo`,
         text: `${ruleTxt} Qué probar, por este orden: ${tips.join('; ')}.${fat.any ? '' : g(p, ' Si te notas cansado, empieza por descansar.', ' Si te notas cansada, empieza por descansar.')}`,
-        rule: `${rule} Qué probar ante un estancamiento: si hay fatiga (RPE medio de fuerza ≥ ${fmtNum(fat.rpeLimit, 1)} en ${lastWeeks(fat.W)} con 2 sesiones o más, o la mitad de los check-ins bajos), una semana de descarga; si su músculo principal hace menos series semanales que el mínimo de su rango (Ajustes › Umbrales), 1–2 series más (más volumen, más progreso hasta ~10–20 series); un cambio de rango de repeticiones unas semanas; y revisar sueño y proteína.`,
+        rule: `${rule} Qué probar ante un estancamiento: una semana de descarga solo si coinciden las condiciones del panel semanal (al menos ${fmtNum(fat.minStalled, 0)} ejercicios estancados, RPE medio de fuerza ≥ ${fmtNum(fat.rpeLimit, 1)} en cada una de ${lastWeeks(fat.W)} y, si los hay, la mitad de los check-ins bajos); con solo alguna señal de fatiga (RPE medio alto o la mitad de los check-ins bajos), revisar el sueño y el cansancio; 1–2 series más solo si la revisión del volumen de su músculo principal lo propone (por debajo del mínimo de su rango, sin progreso, sin fatiga ni agujetas fuertes y con constancia; más volumen, más progreso hasta ~10–20 series); un cambio de rango de repeticiones unas semanas; y revisar sueño y proteína.`,
         data: [exRow(x, p), ...c.trend.points.slice(-6).map((q) => ({ label: dayTxt(q.date, today), value: `${kg(q.e1rm)}${q.set ? ` · ${formatSet(q.set, c.ex.logType, { kg: true })}` : ''}` })), ...tipRows],
         sources: srcs,
         action: progAction(x.exerciseId),
@@ -871,10 +974,16 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     });
     if (stalledList.length > 3) {
       const rest = stalledList.slice(3);
+      const ideas = [
+        fat.deload ? 'descarga' : fat.any ? 'revisar el sueño y el cansancio' : null,
+        !fat.any && !minor ? 'más series si su músculo va corto' : null,
+        minor ? 'técnica con supervisión' : 'otro rango de repeticiones',
+        'sueño y proteína',
+      ].filter(Boolean);
       out.push(insight({
         id: 'strength-stalled-more', area: 'strength', level: 'warn', priority: 46, confidence: groupConfidence(rest),
         title: `${plural(rest.length, 'ejercicio más estancado', 'ejercicios más estancados')}`,
-        text: `${joinList(rest.map((x) => x.name))}: mismas ideas (descarga si hay fatiga, más series si su músculo va corto, otro rango de repeticiones, sueño y proteína).`,
+        text: `${joinList(rest.map((x) => x.name))}: mismas ideas (${ideas.join(', ')}).`,
         rule, data: rest.map((x) => exRow(x, p)),
         sources: [SOURCES.schoenfeld2017, SOURCES.morton2018],
       }));
@@ -897,8 +1006,12 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
       if (fat.ckLow) ctxBits.push(`${fat.lows} de ${fat.checkins} check-ins bajos en ${lastWeeks(fat.W)}`);
       let t = `Su 1RM est. baja un ${fmtNum(Math.abs(x.ratePctPerWeek), 1)} % por semana: de ~${kg(x.e1rmStart)} a ~${kg(x.e1rmNow)} en ${weeksTxt(Math.max(1, Math.round(c.trend.spanDays / 7)))}.`;
       if (ctxBits.length) t += ` Coincide con ${joinList(ctxBits)}.`;
-      if (lose) t += ' Estás en déficit: no subir es normal, pero para conservar músculo intenta que la pérdida no pase de 0,5–1 % del peso por semana y mantén pesos altos con menos series.';
-      else t += ` Mira el sueño, la comida y el cansancio acumulado; una semana más suave suele ayudar a recuperar el nivel${ctxBits.length ? '' : ', y si sigue bajando, revisa la técnica o cambia el ejercicio por una variante'}.`;
+      // Menores: sin «déficit» ni ritmos de pérdida (docs/MEJORAS6.md). «Semana más suave» solo con la descarga del
+      // panel (progression.fatigueState): si no coinciden sus condiciones, no se propone.
+      if (lose && minor) t += ' Si estás intentando bajar de peso, no subir es normal: come suficiente y variado, descansa bien y cuida la técnica.';
+      else if (lose) t += ' Estás en déficit: no subir es normal, pero para conservar músculo intenta que la pérdida no pase de 0,5–1 % del peso por semana y mantén pesos altos con menos series.';
+      else if (fat.deload) t += ` Mira el sueño, la comida y el cansancio acumulado; una semana más suave suele ayudar a recuperar el nivel${ctxBits.length ? '' : ', y si sigue bajando, revisa la técnica o cambia el ejercicio por una variante'}.`;
+      else t += ` Mira el sueño, la comida y el cansancio acumulado${ctxBits.length ? '' : ', y si sigue bajando, revisa la técnica o cambia el ejercicio por una variante'}.`;
       out.push(insight({
         id: `strength-down-${x.exerciseId}`, area: 'strength', level: lose ? 'neutral' : 'warn', priority: lose ? 44 - i * 2 : (x.main ? 66 : 54) - i * 2,
         confidence: x.confidence, context: ctxNotes,

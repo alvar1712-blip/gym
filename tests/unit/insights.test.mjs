@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { weeklyInsights, keyMessages, incrementFor, isLowCheckin, LEVELS, LEVEL_LABEL, MIN_SESSIONS } from '../../js/insights.js';
 import { muscleTable, weeklySeries } from '../../js/stats.js';
+import { bodyMapData } from '../../js/bodymap.js';
 import { defaultSettings, SEED_EXERCISES } from '../../js/seed.js';
 import { tsFromDate, addDays, fmtNum, deepClone } from '../../js/util.js';
 
@@ -202,8 +203,40 @@ test('series por músculo: mismas cifras que stats.muscleTable, rango de setting
   assert.equal(back.sets, 8);
   assert.equal(back.range, '14–22');
   assert.equal(back.statusLabel, 'Por debajo');
-  assert.match(m.text, /de 16 músculos dentro de su rango/);
+  assert.match(m.text, /^Músculos: \d+ en rango, \d+ por debajo/);
   assert.match(m.why.rule, /suma 1 al músculo principal del ejercicio y 0,5 a cada secundario/);
+});
+
+test('series por músculo (ronda 9): la frase cuenta como la leyenda del mapa; las filas no se reclasifican', () => {
+  // Antebrazos con rango 0–6 y 0 series: «en rango» para la tabla, «sin series» para el mapa (y ahora para la frase).
+  const settings = settingsWith({ muscleTargets: { ...defaultSettings().muscleTargets, forearms: [0, 6] } });
+  for (const [week, inProgress] of [[W.w4, false], [W.cur, true]]) {
+    const d = { ...richData(), settings };
+    const m = byId(weeklyInsights(d, week), 'muscles');
+    const map = bodyMapData(m.items);
+    const legend = { below: 0, in: 0, above: 0, none: 0 };
+    for (const x of Object.values(map)) legend[x.status]++;
+    const num = (re) => Number((m.text.match(re) || [])[1] ?? 0);
+    assert.equal(num(/(\d+) en rango/), legend.in, `${week}: ${m.text}`);
+    assert.equal(num(/(\d+) (?:aún )?por debajo/), legend.below, m.text);
+    assert.equal(num(/(\d+) por encima/), legend.above, m.text);
+    assert.equal(num(/(\d+) (?:aún )?sin series/), legend.none, m.text);
+    assert.ok(legend.none > 0, 'hay músculos sin series');
+    assert.equal(m.items.find((x) => x.muscleId === 'forearms').status, 'in', 'la fila conserva su estado');
+    if (!inProgress) {
+      // Semana cerrada: 0 series con mínimo > 0 sigue «por debajo» para los avisos
+      const zero = m.items.find((x) => x.sets === 0 && x.min > 0);
+      assert.equal(zero.status, 'below');
+      assert.ok(byId(weeklyInsights(d, week), 'muscles-below').items.some((x) => x.muscleId === zero.muscleId));
+    }
+    // …y el aviso cuadra con la frase: «N por debajo» del aviso = los «por debajo» de la frase + los que, sin ninguna
+    // serie, la frase y el mapa cuentan como «sin series» (y el aviso lo dice).
+    const below = byId(weeklyInsights(d, week), 'muscles-below');
+    const zeros = below.items.filter((x) => x.sets === 0).length;
+    assert.ok(zeros > 0, 'hay músculos por debajo sin ninguna serie');
+    assert.equal(below.items.length, legend.below + zeros, `${below.title} · ${m.text}`);
+    assert.match(below.text, new RegExp(`${zeros} sin ninguna serie`), below.text);
+  }
 });
 
 test('series por músculo: el porqué lista cada ejercicio con series × factor (principal 1, secundario según settings)', () => {

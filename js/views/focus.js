@@ -1,6 +1,7 @@
 // views/focus.js — «Lo importante esta semana» en Hoy (docs/PULIDO.md §6): UNA tarjeta en lugar de las dos que había
 // (resumen del panel semanal y «Tu análisis»), con un mensaje principal, hasta dos secundarios —sin repetir tema— y
-// un único paso siguiente en cada uno. Sin avisos: «Todo evoluciona dentro de lo esperado…». La lógica es pura
+// un único paso siguiente en cada uno. Sin avisos: «Todo evoluciona dentro de lo esperado…» (o «Aún pocos datos…» si
+// aún no se ha podido valorar nada). La lógica es pura
 // (js/focus.js) y reutiliza lo ya calculado: weeklyInsights/keyMessages y el análisis en caché (analysisFor).
 import * as store from '../store.js';
 import { navigate } from '../router.js';
@@ -55,8 +56,9 @@ export function focusCard({ data, today, weekly: pre = null }) {
     h('div.focus-head',
       h('h2.focus-heading', 'Lo importante esta semana'),
       h('p.focus-sub', sub)),
-    f.allGood ? h('p.focus-allgood', icon('check', 18), h('span', f.message)) : null,
-    f.items.length ? h('ol.focus-list', f.items.map((it, i) => item(it, i === 0 && !f.allGood))) : null,
+    // Sin avisos: «Todo evoluciona…»; sin avisos ni nada evaluado aún (ronda 9): «Aún pocos datos…», sin el check.
+    f.allGood || f.fewData ? h(`p.focus-allgood${f.fewData ? '.focus-fewdata' : ''}`, icon(f.fewData ? 'clock' : 'check', 18), h('span', f.message)) : null,
+    f.items.length ? h('ol.focus-list', f.items.map((it, i) => item(it, i === 0 && !f.allGood && !f.fewData))) : null,
     h('div.focus-links',
       h('button.cal-link-btn.focus-link', { type: 'button', dataset: { go: 'weekly' }, onClick: () => navigate(`#/weekly?week=${r.week}`) }, 'Panel semanal', icon('chevron-right', 18)),
       h('button.cal-link-btn.focus-link', { type: 'button', dataset: { go: 'analysis' }, onClick: () => navigate('#/analysis') }, 'Tu análisis', icon('chevron-right', 18))));

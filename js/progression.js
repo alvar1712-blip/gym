@@ -6,9 +6,12 @@
 // estancado» del panel y el estado del análisis) y progressionHint decide con todo junto (progreso reciente,
 // estancamiento, RIR, tope del rango y confianza): una sola decisión para la sesión y el panel.
 // Pruebas cruzadas: tests/unit/progression-decision.test.mjs.
+// Ronda 9 (bloque 2): también la FATIGA y la DESCARGA (fatigueState): una sola regla para el panel semanal, Hoy y el
+// análisis. Prueba cruzada: tests/unit/analysis-consistency.test.mjs.
 import { isWorkSet, rirValue, setMetrics } from './calc.js';
-import { addDays, diffDays } from './util.js';
-import { fmtNumFast, weightLabel } from './stats.js';
+import { addDays, diffDays, isDateStr } from './util.js';
+import { fmtNumFast, weightLabel, exercisesWithHistory, exerciseHistory } from './stats.js';
+import { checkinsBetween, isLowCheckin } from './checkin-logic.js';
 import { PATTERNS, SET_TYPE_LABEL, defaultSettings } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
 
@@ -229,6 +232,78 @@ export function progressStatus({ exercise, history, ref, stall = null }) {
     isBw: bwRef != null, bwRef, refKind: sh.kind, refs: sh.refs, refBest: maxBy(sh.refs), shown,
     rec: recIdx >= 0 ? shown[recIdx] : null, recPrev: recIdx >= 0 ? sh.prev[recIdx] : null,
     best: maxBy(era), last: era[n - 1], S: se.S, W: se.W, from: se.from, priorFrom: se.priorFrom,
+  };
+}
+
+// ===========================================================================
+// Fatiga y descarga (una sola regla: panel semanal, Hoy y análisis)
+// ===========================================================================
+
+/** Mínimo de sesiones con esfuerzo registrado para hablar de «esfuerzo alto sostenido» en la descarga. */
+export const MIN_RPE_SESSIONS = 2;
+
+/**
+ * Fatiga y descarga hasta `ref` con los umbrales de Ajustes › Umbrales › Sugerencia de descarga (settings.deload).
+ * PURA. La DESCARGA es la regla de docs/REQUISITOS.md §10 («si coinciden estancamiento en varios ejercicios,
+ * esfuerzo percibido alto sostenido y, si lo registro, check-in bajo»):
+ *   (a) al menos minStalled ejercicios estancados (progressStatus; los archivados no cuentan);
+ *   (b) RPE medio de fuerza ≥ rpeHigh en CADA bloque de 7 días de las W semanas hasta `ref` (una semana sin sesiones
+ *       con esfuerzo rompe la racha), con al menos MIN_RPE_SESSIONS sesiones en total;
+ *   (c) si hay check-ins en el periodo, al menos la mitad bajos (checkin-logic.isLowCheckin).
+ * Las SEÑALES sueltas de fatiga no bastan para la descarga: las usan la decisión de reducir volumen y el consejo
+ * «revisa el sueño y el cansancio». rpeHigh: RPE medio del periodo ≥ rpeHigh con 2 sesiones o más; ckLow: 2 check-ins
+ * o más y al menos la mitad bajos. Solo «descarga» o «semana más suave» dependen de `deload`.
+ * @param {object} data stats data (sessions, exercises, checkins, settings)
+ * @param {string} ref último día que cuenta
+ * @param {{ stalled?: object[] }} [opts] stalled: la clasificación ya hecha (el panel, sin archivados). Sin ella se
+ *   calcula aquí, y solo si (b) y (c) se cumplen (si no, la descarga ya no puede salir).
+ * @returns {{ W, from, minStalled, rpeLimit, deload:boolean, conditions:{ stalled:boolean|null, rpe, checkins,
+ *   checkinsApply }, stalled:object[]|null, blocks:{ from, to, list, mean, ok }[], rpeSessions, rpeMean, enoughRpe,
+ *   emptyBlock, lowBlock, checkins:object[], lows:object[], signals:{ rpeHigh, ckLow, any } }}
+ */
+export function fatigueState(data, ref, { stalled = null } = {}) {
+  const d = data || {};
+  const settings = d.settings || {};
+  const dl = { ...defaultSettings().deload, ...(settings.deload && typeof settings.deload === 'object' ? settings.deload : {}) };
+  const W = Math.max(1, Math.round(dl.weeks));
+  const from = addDays(ref, -7 * W + 1);
+  const all = Array.isArray(d.sessions) ? d.sessions : d.sessions instanceof Map ? [...d.sessions.values()] : d.sessions && typeof d.sessions === 'object' ? Object.values(d.sessions) : [];
+  const rpeSessions = all.filter((s) => s && s.status === 'done' && s.kind === 'strength' && isDateStr(s.date) && s.date >= from && s.date <= ref && s.rpe >= 1)
+    .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+  const blocks = [];
+  for (let k = W - 1; k >= 0; k--) {
+    const bEnd = addDays(ref, -7 * k);
+    const bStart = addDays(bEnd, -6);
+    const list = rpeSessions.filter((s) => s.date >= bStart && s.date <= bEnd);
+    const mean = list.length ? list.reduce((t, s) => t + s.rpe, 0) / list.length : null;
+    blocks.push({ from: bStart, to: bEnd, list, mean, ok: mean != null && mean >= dl.rpeHigh - EPS });
+  }
+  const rpeMean = rpeSessions.length ? rpeSessions.reduce((t, s) => t + s.rpe, 0) / rpeSessions.length : null;
+  const emptyBlock = blocks.find((bk) => !bk.list.length) || null;
+  const lowBlock = blocks.find((bk) => bk.list.length && !bk.ok) || null;
+  const enoughRpe = rpeSessions.length >= MIN_RPE_SESSIONS;
+  const b = enoughRpe && !emptyBlock && !lowBlock;
+  const cks = checkinsBetween(d.checkins, from, ref);
+  const lows = cks.filter(isLowCheckin);
+  const cApplies = cks.length > 0;
+  const c = !cApplies || lows.length * 2 >= cks.length;
+  let list = stalled;
+  if (!list && b && c) {
+    list = [];
+    for (const it of exercisesWithHistory(d)) {
+      if (it.archived) continue;
+      const st = progressStatus({ exercise: it.exercise, history: exerciseHistory(d, it.exerciseId, { labels: false }), ref, stall: settings.stall });
+      if (st && st.status === 'stalled') list.push({ exerciseId: it.exerciseId, name: it.name, ...st });
+    }
+  }
+  const a = list ? list.length >= dl.minStalled : null;
+  const rpeHigh = rpeSessions.length >= 2 && rpeMean >= dl.rpeHigh - EPS;
+  const ckLow = cks.length >= 2 && lows.length * 2 >= cks.length;
+  return {
+    W, from, minStalled: dl.minStalled, rpeLimit: dl.rpeHigh, deload: !!(a && b && c),
+    conditions: { stalled: a, rpe: b, checkins: c, checkinsApply: cApplies },
+    stalled: list, blocks, rpeSessions, rpeMean, enoughRpe, emptyBlock, lowBlock, checkins: cks, lows,
+    signals: { rpeHigh, ckLow, any: rpeHigh || ckLow },
   };
 }
 

@@ -13,6 +13,7 @@
 //   detailText(id, entry) / detailHint(entry) / zoneAriaLabel(id, entry) → textos del detalle
 //     («Pecho · 8 series · objetivo 10–20 · por debajo» · «Faltan 2 series para el mínimo»)
 //   BODY_ZONES · STATUS_LABEL · outlinePath() (geometría y textos, exportados para las pruebas)
+//   statusOf(sets, min, max) → el estado de una zona (y de la leyenda); el panel semanal cuenta su frase con él
 //
 // Sin dependencias del DOM al importar (las pruebas unitarias lo cargan en Node). No depende solo del color:
 // tocar una zona la resalta y escribe debajo nombre, series, objetivo y estado; cada zona es un botón accesible
@@ -92,8 +93,11 @@ export function bodyMapData(muscleSets, ranges = null, { zeroAsNone = true } = {
   return out;
 }
 
-/** Estado de unas series frente a [min, max] (misma regla que stats.targetStatus; 0 series → 'none'). */
-function statusOf(sets, min, max, zeroAsNone = true) {
+/**
+ * Estado de unas series frente a [min, max] (misma regla que stats.targetStatus; 0 series → 'none'). Exportado (ronda 9):
+ * la frase del panel semanal cuenta con ESTA regla, así sus números son los de la leyenda del mapa.
+ */
+export function statusOf(sets, min, max, zeroAsNone = true) {
   if (zeroAsNone && sets <= EPS) return 'none';
   if (min == null && max == null) return 'none';
   if (min != null && sets < min - EPS) return 'below';

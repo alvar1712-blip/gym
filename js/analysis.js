@@ -279,10 +279,12 @@ export function buildAnalysis(data = {}, today) {
     bodyweight: d.bodyweight || [],
     today: t,
     profile,
-    strength: isNum(sum.trendPctPerWeek) ? { trendPctPerWeek: sum.trendPctPerWeek, n: sum.mainCount, recoveryShare: sum.recoveryShare } : null,
+    strength: isNum(sum.trendPctPerWeek) ? { trendPctPerWeek: sum.trendPctPerWeek, n: sum.mainCount, down: sum.down, recoveryShare: sum.recoveryShare } : null,
     endurance: { weeklyMinutes4w: endurance.weeklyMinutes4w },
     cycle: info,
     context,
+    // Ronda 9: tus objetivos de peso activos (ni archivados ni conseguidos), del más reciente al más antiguo
+    weightGoals: splitGoals(toArr(d.goals)).active.filter((x) => x.kind === 'bodyweight'),
   }), { ok: false, trend: null, target: null, status: 'insufficient', insights: [] });
   const recovery = attempt(errors, 'recovery', () => analyzeRecovery(d, { ...opts, cycle: info }), { insights: [] });
   // Ronda 6 (fase D): carga por deporte, volumen con contexto, asociaciones personales y agujetas por ejercicio

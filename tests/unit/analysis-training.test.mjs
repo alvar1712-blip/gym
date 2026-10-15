@@ -298,16 +298,17 @@ test('fuerza: resumen global de los principales («Vas mejorando en X de Y…»)
   assert.deepEqual(fc.slice(0, 2), ['forecast-sentadilla', 'forecast-press_banca']);
 });
 
-test('fuerza: estancado con músculo por debajo de su rango y fatiga → descarga y +1–2 series (Schoenfeld)', () => {
+test('fuerza: estancado con músculo por debajo de su rango y sin fatiga → +1–2 series (Schoenfeld); con poca constancia, constancia', () => {
   const flat = [100, 101, 102, 100, 101, 100.5, 101, 100, 101.5, 100.5, 101, 100.5, 101, 100.5];
   // Sin semana tipo (nada planificado): no hay datos de constancia que frenen el «+1–2 series».
-  const data = mk({ sessions: strengthSessions({ press_banca: (i) => flat[i] }, { sets: 2, rpe: (i) => (i >= 10 ? 9 : 7) }), bodyweight: [{ id: ago(3), kg: 80 }], settings: { ...defaultSettings(), weekPatterns: [] } });
+  const data = mk({ sessions: strengthSessions({ press_banca: (i) => flat[i] }, { sets: 2, rpe: 7 }), bodyweight: [{ id: ago(3), kg: 80 }], settings: { ...defaultSettings(), weekPatterns: [] } });
   const r = analyzeStrength(data, { today: TODAY, profile: prof({ experience: 'intermediate' }) });
   checkInsights(r.insights);
   const st = byId(r.insights, 'strength-stalled-press_banca');
-  assert.match(st.text, /descarga/);
+  assert.doesNotMatch(st.text, /descarga/);
   assert.match(st.text, /\+1–2 series por semana de pecho/);
   assert.match(st.text, /≈ 130–175 g para tus 80 kg/);
+  assert.equal(r.volume.muscles.find((m) => m.muscleId === 'chest').decision, 'add', 'la misma decisión que la tarjeta de volumen');
   const shorts = st.sources.map((s) => s.short);
   assert.ok(shorts.includes('Schoenfeld et al., 2017'));
   assert.ok(shorts.includes('Morton et al., 2018'));
@@ -318,6 +319,31 @@ test('fuerza: estancado con músculo por debajo de su rango y fatiga → descarg
   const st2 = byId(analyzeStrength(planned, { today: TODAY, profile: prof({ experience: 'intermediate' }) }).insights, 'strength-stalled-press_banca');
   assert.match(st2.text, /antes que más series, constancia: en 4 semanas hiciste el \d+ % de lo planificado/);
   assert.doesNotMatch(st2.text, /\+1–2 series/);
+});
+
+test('fuerza (ronda 9): con señales de fatiga sin la descarga del panel → revisar sueño y cansancio, y nunca «+1–2 series» de un músculo a reducir', () => {
+  const flat = [100, 101, 102, 100, 101, 100.5, 101, 100, 101.5, 100.5, 101, 100.5, 101, 100.5];
+  // RPE 9 sostenido, pero un solo ejercicio estancado: hay señales de fatiga, no las condiciones de la descarga (≥ 3).
+  const data = mk({ sessions: strengthSessions({ press_banca: (i) => flat[i] }, { sets: 2, rpe: (i) => (i >= 10 ? 9 : 7) }), bodyweight: [{ id: ago(3), kg: 80 }], settings: { ...defaultSettings(), weekPatterns: [] } });
+  const r = analyzeStrength(data, { today: TODAY, profile: prof({ experience: 'intermediate' }) });
+  checkInsights(r.insights);
+  const st = byId(r.insights, 'strength-stalled-press_banca');
+  assert.doesNotMatch(st.text, /descarga|semana más suave/);
+  assert.match(st.text, /revisar el sueño y el cansancio antes de apretar más, porque hay señales de fatiga \(RPE medio de fuerza 9 en las últimas 2 semanas\)/);
+  assert.equal(r.volume.muscles.find((m) => m.muscleId === 'chest').decision, 'reduce');
+  assert.doesNotMatch(st.text, /\+1–2 series/, 'la decisión de pecho es reducir');
+  assert.ok(st.why.data.some((d) => d.label === 'Volumen' && /pecho: reducir/.test(d.value)));
+});
+
+test('fuerza (ronda 9): descarga solo si coinciden las condiciones del panel (≥ 3 estancados, RPE alto sostenido)', () => {
+  const flat = [100, 101, 102, 100, 101, 100.5, 101, 100, 101.5, 100.5, 101, 100.5, 101, 100.5];
+  const specs = { press_banca: (i) => flat[i], sentadilla: (i) => flat[i] * 1.2, remo_pecho_apoyado: (i) => flat[i] * 0.8 };
+  const data = mk({ sessions: strengthSessions(specs, { sets: 2, rpe: (i) => (i >= 10 ? 9 : 7) }), bodyweight: [{ id: ago(3), kg: 80 }], settings: { ...defaultSettings(), weekPatterns: [] } });
+  const r = analyzeStrength(data, { today: TODAY, profile: prof({ experience: 'intermediate' }) });
+  checkInsights(r.insights);
+  const st = byId(r.insights, 'strength-stalled-press_banca');
+  assert.match(st.text, /una semana de descarga \(menos series, RPE 6–7\), porque coinciden 3 ejercicios estancados y RPE medio de fuerza 9/);
+  assert.doesNotMatch(st.text, /\+1–2 series/);
 });
 
 test('fuerza: peso corporal — si solo sube la báscula no hay tendencia al alza', () => {

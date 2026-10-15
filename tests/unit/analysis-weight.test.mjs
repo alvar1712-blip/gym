@@ -412,6 +412,51 @@ test('cruce con la fuerza: peso ↓ y fuerza ↓ → déficit agresivo (y sin su
   assert.match(byId(keep, 'weight-strength').text, /conservas el músculo/);
 });
 
+test('cruce con la fuerza (ronda 9): coherente con el ritmo del peso y con los ejercicios que bajan', () => {
+  // (ganar, subes menos de lo previsto, fuerza plana): el ritmo pide comer algo más → aquí no se apunta a la grasa
+  const slow = checkShape(run({ bodyweight: series({ perWeek: 0.08 }), profile: M({ goal: 'gain' }), strength: { trendPctPerWeek: 0, n: 6 } }));
+  assert.equal(slow.status, 'below');
+  for (const i of slow.insights) assert.doesNotMatch(`${i.title} ${i.text}`, /grasa/, i.id);
+  // (ganar, bajando, mediana −0,04 %/sem pero 5 de 12 ejercicios bajan): ni «Bien» ni «conservas»
+  const gainDown = checkShape(run({ bodyweight: series({ start: 80, perWeek: -0.3 }), profile: M({ goal: 'gain' }), strength: { trendPctPerWeek: -0.04, n: 12, down: 5 } }));
+  const s1 = byId(gainDown, 'weight-strength');
+  assert.notEqual(s1.level, 'good');
+  for (const i of gainDown.insights) assert.ok(!(i.level === 'good' && /conservas/.test(i.text)), i.id);
+  assert.match(s1.text, /5 de 12 ejercicios bajan/);
+  // (ganar, bajando, fuerza estable y casi nada bajando): neutral, sin «buena señal»
+  const gainKeep = byId(checkShape(run({ bodyweight: series({ start: 80, perWeek: -0.3 }), profile: M({ goal: 'gain' }), strength: { trendPctPerWeek: 0, n: 12, down: 1 } })), 'weight-strength');
+  assert.equal(gainKeep.level, 'neutral');
+  assert.doesNotMatch(gainKeep.text, /buena señal/);
+  // (perder, bajando, fuerza estable): el «Bien» se mantiene
+  const lose = byId(checkShape(run({ bodyweight: series({ start: 80, perWeek: -0.5 }), profile: M({ goal: 'lose' }), strength: { trendPctPerWeek: 0, n: 12, down: 1 } })), 'weight-strength');
+  assert.equal(lose.level, 'good');
+  assert.match(lose.text, /conservas el músculo/);
+});
+
+test('objetivo de peso activo (ronda 9): no se propone otro y, si contradice tu objetivo, una nota neutral sin kcal', () => {
+  const bw = series({ start: 80, perWeek: 0.05 }); // ganar: subes poco → «come más»
+  const free = checkShape(run({ bodyweight: bw, profile: M({ goal: 'gain' }) }));
+  assert.ok(free.goalSuggestion, 'sin objetivo de peso, se propone uno');
+  assert.ok(free.insights.some((i) => /kcal más/.test(i.text)), 'y se aconseja comer más');
+  // Perfil «ganar» + objetivo de peso activo «bajar a 76 kg»: ni objetivo propuesto ni «kcal más»; una nota única
+  const down = { id: 'g1', kind: 'bodyweight', targetKg: 76, direction: 'down', archived: false, achievedAt: null };
+  const r = checkShape(run({ bodyweight: bw, profile: M({ goal: 'gain' }), weightGoals: [down] }));
+  assert.equal(r.goalSuggestion, undefined);
+  for (const i of r.insights) assert.doesNotMatch(`${i.title} ${i.text}`, /kcal/, i.id);
+  const notes = r.insights.filter((i) => /direcciones opuestas/.test(i.text));
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].level, 'neutral');
+  assert.match(notes[0].text, /Tu objetivo de peso \(bajar a 76 kg\) y tu objetivo de ganar músculo van en direcciones opuestas: elige uno/);
+  // Objetivo en la misma dirección: tampoco se propone otro, y el consejo de siempre sigue
+  const up = checkShape(run({ bodyweight: bw, profile: M({ goal: 'gain' }), weightGoals: [{ ...down, targetKg: 84, direction: 'up' }] }));
+  assert.equal(up.goalSuggestion, undefined);
+  assert.ok(up.insights.some((i) => /kcal más/.test(i.text)));
+  assert.ok(!up.insights.some((i) => /direcciones opuestas/.test(i.text)));
+  // Menores: su aviso propio se mantiene (sin kcal) y no hay nota de objetivo
+  const minor = checkShape(run({ bodyweight: bw, profile: M({ goal: 'gain', birthDate: '2011-03-01' }), weightGoals: [down] }));
+  assert.ok(minor.insights.some((i) => i.title === 'Tu peso, sin cifras de dieta'));
+});
+
 test('REDs: pérdida rápida con muchos minutos de resistencia → aviso de salud de máxima prioridad', () => {
   const r = checkShape(run({ bodyweight: series({ start: 80, perWeek: -1.0 }), profile: M({ goal: 'lose' }), endurance: { weeklyMinutes4w: 420 } }));
   const reds = byId(r, 'weight-reds');

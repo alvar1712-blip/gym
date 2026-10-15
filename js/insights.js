@@ -29,8 +29,9 @@ import {
 import { PATTERNS, PATTERN_LABEL, defaultSettings } from './seed.js';
 import { targetText, LOAD_REP_TYPES } from './session-logic.js';
 import { joinList } from './activity-logic.js';
+import { statusOf } from './bodymap.js';
 import { checkinsBetween, isLowCheckin, valueText, areasText, FIELD_KEYS, summary as checkinSummary } from './checkin-logic.js';
-import { incrementFor, upAction, progressionHint, progressStatus, stallThresholds, MIN_SESSIONS, GAP_DAYS } from './progression.js';
+import { incrementFor, upAction, progressionHint, progressStatus, stallThresholds, fatigueState, MIN_SESSIONS, GAP_DAYS, MIN_RPE_SESSIONS } from './progression.js';
 import { taperRace, taperText, raceShortLabel, rowMeta, TAPER_DAYS } from './races-logic.js';
 
 // Doble progresión y estancamiento: la regla vive en progression.js (la usa también la sesión en curso); se reexporta aquí.
@@ -43,8 +44,8 @@ export { incrementFor, progressionCheck, progressionHint, progressStatus, MIN_SE
 export const LEVELS = ['neutral', 'good', 'warn'];
 /** Texto de cada nivel (la vista lo muestra junto al color: nunca solo color). */
 export const LEVEL_LABEL = { neutral: 'Info', good: 'Bien', warn: 'Atención' };
-/** Mínimo de sesiones con esfuerzo registrado para hablar de «esfuerzo alto sostenido» en la descarga. */
-export const MIN_RPE_SESSIONS = 2;
+/** Mínimo de sesiones con esfuerzo registrado para la descarga: vive con su regla (progression.fatigueState). */
+export { MIN_RPE_SESSIONS };
 
 const EPS = 1e-9;
 const KIND_LABEL = { strength: 'Fuerza', run: 'Carrera', bike: 'Bici', swim: 'Natación', hike: 'Senderismo', other: 'Otras' };
@@ -290,10 +291,24 @@ function muscleWhyRows(ctx, list, breakdown) {
 
 function muscleMessages(ctx) {
   const rows = muscleRows(ctx);
-  const withT = rows.filter((r) => r.status !== 'none');
   const below = rows.filter((r) => r.status === 'below');
   const above = rows.filter((r) => r.status === 'above');
-  const nIn = withT.length - below.length - above.length;
+  // La frase cuenta como el mapa y su leyenda (bodymap.statusOf: 0 series → «sin series», aunque el mínimo sea 0 o la
+  // semana ya esté cerrada). Las filas NO se reclasifican: en una semana cerrada, 0 series con mínimo > 0 sigue siendo
+  // «por debajo» para los avisos y las recomendaciones.
+  const cnt = { below: 0, in: 0, above: 0, none: 0 };
+  let noneWithSets = false;
+  for (const r of rows) {
+    const st = statusOf(r.sets, r.min, r.max);
+    cnt[st]++;
+    if (st === 'none' && r.sets > EPS) noneWithSets = true;
+  }
+  const countTxt = joinList([
+    `${cnt.in} en rango`,
+    `${cnt.below} ${ctx.inProgress ? 'aún por debajo del mínimo' : 'por debajo'}`,
+    cnt.above ? `${cnt.above} por encima` : null,
+    cnt.none ? `${cnt.none} ${ctx.inProgress ? 'aún ' : ''}sin series${noneWithSets ? ' u objetivo' : ''}` : null,
+  ].filter(Boolean));
   const total = ctx.cur.workSets;
   const prevTotalTxt = ctx.hasPrev ? `semana anterior: ${num(ctx.prev.workSets, 0)}` : 'primera semana con registros';
   const pending = ctx.inProgress ? ` La semana está en curso (${leftIn(ctx.daysLeft)}): lo que aún no llega al mínimo se puede completar.` : '';
@@ -304,8 +319,9 @@ function muscleMessages(ctx) {
   out.push(info('muscles', !below.length && !above.length ? 'good' : 'neutral', {
     title: 'Series efectivas por músculo',
     text: ctx.inProgress
-      ? `Semana en curso, a falta de ${daysTxt(ctx.daysLeft)}: ${nIn} de ${withT.length} músculos ya dentro de su rango, ${above.length} por encima y ${below.length} aún sin llegar al mínimo. Llevas ${effTxt} (${prevTotalTxt}).`
-      : `${nIn} de ${withT.length} músculos dentro de su rango, ${below.length} por debajo y ${above.length} por encima. ${effTxt} de fuerza (${prevTotalTxt}).`,
+      ? `Semana en curso, a falta de ${daysTxt(ctx.daysLeft)}: ${countTxt}. Llevas ${effTxt} (${prevTotalTxt}).`
+      : `Músculos: ${countTxt}. ${effTxt} de fuerza (${prevTotalTxt}).`,
+    counts: cnt,
     rule: `${factorRule(ctx)} El rango de cada músculo es el de Ajustes › Umbrales › Series semanales por músculo; Δ es la diferencia con la semana anterior.${pending}`,
     data: rows.map((r) => ({ label: r.name, value: `${setsTxt(r.sets)} · rango ${r.range ?? 'sin rango'} · ${prevSetsTxt(ctx, r)}` })),
     items: rows,
@@ -322,6 +338,10 @@ function muscleMessages(ctx) {
     const prevNote = alsoPrev.length === below.length
       ? (below.length === 1 ? ' También estaba por debajo la semana anterior.' : ' Todos estaban también por debajo la semana anterior.')
       : alsoPrev.length ? ` ${alsoPrev.length === 1 ? `${alsoPrev[0].name} ya estaba` : `${alsoPrev.length} ya estaban`} por debajo la semana anterior.` : '';
+    // Los que no tienen ninguna serie son «sin series» en la frase de arriba y en el mapa (bodymap.statusOf): se dice,
+    // para que «N por debajo» aquí cuadre con la frase (sus «por debajo» + estos).
+    const zeros = one ? 0 : below.filter((r) => r.sets <= EPS).length;
+    const zeroNote = zeros ? ` De ellos, ${zeros} sin ninguna serie (en el mapa, «sin series»).` : '';
     const base = {
       rule: `Un músculo está por debajo si sus series efectivas de la semana no llegan al mínimo de su rango (Ajustes › Umbrales › Series semanales por músculo). ${factorRule(ctx)}${ctx.inProgress ? ` La semana no ha terminado (${leftIn(ctx.daysLeft)}): es un recuento provisional, no un resultado.` : ''}`,
       data: muscleWhyRows(ctx, below, breakdown),
@@ -334,7 +354,7 @@ function muscleMessages(ctx) {
         title: one ? `${one.name}: aún por debajo del mínimo` : `${below.length} músculos aún por debajo del mínimo`,
         text: one
           ? `Llevas ${setsTxt(one.sets)} de un mínimo de ${n1(one.min)} (faltan ${n1(one.missing)}); ${leftTxt(ctx.daysLeft)}.`
-          : `A falta de ${daysTxt(ctx.daysLeft)}, aún no llegan al mínimo: ${shortList(below.map((r) => `${r.name} (faltan ${n1(r.missing)})`))}. Se puede completar en lo que queda de semana.`,
+          : `A falta de ${daysTxt(ctx.daysLeft)}, aún no llegan al mínimo: ${shortList(below.map((r) => `${r.name} (faltan ${n1(r.missing)})`))}.${zeroNote} Se puede completar en lo que queda de semana.`,
       }));
     } else {
       out.push(info('muscles-below', 'warn', {
@@ -343,7 +363,7 @@ function muscleMessages(ctx) {
         title: one ? `${one.name} por debajo del rango` : `${below.length} músculos por debajo del rango`,
         text: one
           ? `${setsTxt(one.sets)} esta semana; tu rango es ${one.range}. ${ctx.hasPrev ? `Semana anterior: ${n1(one.prevSets)} (${one.deltaLabel}).` : 'Es la primera semana con registros.'}`
-          : `No llegaron al mínimo: ${shortList(below.map((r) => `${r.name} (${n1(r.sets)}, mínimo ${n1(r.min)})`))}.${prevNote}`,
+          : `No llegaron al mínimo: ${shortList(below.map((r) => `${r.name} (${n1(r.sets)}, mínimo ${n1(r.min)})`))}.${zeroNote}${prevNote}`,
       }));
     }
   }
@@ -994,42 +1014,26 @@ function checkinMessage(ctx) {
 function deloadMessage(ctx) {
   if (!ctx.hasStrength) return null;
   const { minStalled, rpeHigh } = ctx.cfg.deload;
-  const W = Math.max(1, Math.round(ctx.cfg.deload.weeks));
-  const from = addDays(ctx.ref, -7 * W + 1);
-  // (a) Los archivados (ya fuera de tu rutina) no cuentan.
+  // La regla vive en progression.fatigueState (la misma de Hoy y del análisis); aquí solo se cuenta. (a) Los
+  // archivados (ya fuera de tu rutina) no cuentan.
   const stalled = classify(ctx).list.filter((x) => x.status === 'stalled' && !x.archived);
-  const a = stalled.length >= minStalled;
-  // (b) Esfuerzo alto SOSTENIDO: el periodo se parte en W bloques de 7 días (hasta hoy o el domingo) y en cada uno
-  // tiene que haber sesiones de fuerza con esfuerzo registrado y un RPE medio ≥ rpeHigh (una semana sin entrenar
-  // rompe la racha); además, al menos MIN_RPE_SESSIONS sesiones en total.
-  const rpeSessions = ctx.sessions.filter((s) => s.kind === 'strength' && s.date >= from && s.date <= ctx.ref && s.rpe >= 1)
-    .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
-  const blocks = [];
-  for (let k = W - 1; k >= 0; k--) {
-    const bEnd = addDays(ctx.ref, -7 * k);
-    const bStart = addDays(bEnd, -6);
-    const list = rpeSessions.filter((s) => s.date >= bStart && s.date <= bEnd);
-    const mean = list.length ? list.reduce((t, s) => t + s.rpe, 0) / list.length : null;
-    blocks.push({ from: bStart, to: bEnd, list, mean, ok: mean != null && mean >= rpeHigh - EPS, label: spanTxt(bStart, bEnd) });
-  }
-  const rpeMean = rpeSessions.length ? rpeSessions.reduce((t, s) => t + s.rpe, 0) / rpeSessions.length : null;
-  const emptyBlock = blocks.find((bk) => !bk.list.length);
-  const lowBlock = blocks.find((bk) => bk.list.length && !bk.ok);
-  const enoughRpe = rpeSessions.length >= MIN_RPE_SESSIONS;
-  const b = enoughRpe && !emptyBlock && !lowBlock;
-  // (c) Check-ins del periodo (si los hay): al menos la mitad bajos.
-  const cks = checkinsBetween(ctx.d.checkins, from, ctx.ref);
-  const lows = cks.filter(isLowCheckin);
-  const cApplies = cks.length > 0;
-  const c = !cApplies || lows.length * 2 >= cks.length;
+  const f = fatigueState(ctx.d, ctx.ref, { stalled });
+  const { W, from, rpeSessions, rpeMean, emptyBlock, lowBlock, enoughRpe } = f;
+  const blocks = f.blocks.map((bk) => ({ ...bk, label: spanTxt(bk.from, bk.to) }));
+  const a = f.conditions.stalled;
+  const b = f.conditions.rpe;
+  const cks = f.checkins;
+  const lows = f.lows;
+  const cApplies = f.conditions.checkinsApply;
+  const c = f.conditions.checkins;
   const period = spanTxt(from, ctx.ref);
   const perWeek = W === 1 ? 'en la última semana' : `en cada una de ${lastWeeksTxt(W)}`;
   const rule = `Se sugiere una semana de descarga solo si coinciden: (a) al menos ${num(minStalled, 0)} ejercicios estancados (ver «Ejercicios estancados»; los archivados no cuentan); (b) esfuerzo percibido alto sostenido: RPE medio de las sesiones de fuerza de ${n1(rpeHigh)} o más ${perWeek} (bloques de 7 días hasta ${ctx.inProgress ? 'hoy' : 'el domingo'}; una semana sin sesiones rompe la racha), con al menos ${MIN_RPE_SESSIONS} sesiones con esfuerzo registrado; y (c) si registraste check-ins en ese periodo, que al menos la mitad sean bajos. ${CK_RULE} Umbrales en Ajustes › Umbrales › Sugerencia de descarga.`;
   const meansTxt = blocks.map((bk) => (bk.mean != null ? n1(bk.mean) : '—')).join(' · ');
   let bValue;
   if (!rpeSessions.length) bValue = `sin sesiones con esfuerzo registrado · ${cumple(false)}`;
-  else if (emptyBlock) bValue = `${cumple(false)}: semana ${emptyBlock.label} sin sesiones de fuerza con esfuerzo registrado`;
-  else if (lowBlock) bValue = `${cumple(false)}: semana ${lowBlock.label} con RPE medio ${n1(lowBlock.mean)} (umbral ${n1(rpeHigh)})`;
+  else if (emptyBlock) bValue = `${cumple(false)}: semana ${spanTxt(emptyBlock.from, emptyBlock.to)} sin sesiones de fuerza con esfuerzo registrado`;
+  else if (lowBlock) bValue = `${cumple(false)}: semana ${spanTxt(lowBlock.from, lowBlock.to)} con RPE medio ${n1(lowBlock.mean)} (umbral ${n1(rpeHigh)})`;
   else if (!enoughRpe) bValue = `${n1(rpeMean)} en ${plural(rpeSessions.length, 'sesión', 'sesiones')} (hacen falta al menos ${MIN_RPE_SESSIONS}) · ${cumple(false)}`;
   else if (W === 1) bValue = `${n1(blocks[0].mean)} en ${plural(rpeSessions.length, 'sesión', 'sesiones')} (umbral ${n1(rpeHigh)}) · ${cumple(true)}`;
   else bValue = `medias por semana: ${meansTxt} (umbral ${n1(rpeHigh)}; ${plural(rpeSessions.length, 'sesión', 'sesiones')}) · ${cumple(true)}`;
@@ -1062,7 +1066,7 @@ function deloadMessage(ctx) {
   const yes = (ok) => (ok ? 'sí' : 'no');
   let bStatus;
   if (!rpeSessions.length) bStatus = 'RPE medio de fuerza: sin sesiones con esfuerzo registrado';
-  else if (emptyBlock) bStatus = `RPE medio de fuerza: semana ${emptyBlock.label} sin sesiones`;
+  else if (emptyBlock) bStatus = `RPE medio de fuerza: semana ${spanTxt(emptyBlock.from, emptyBlock.to)} sin sesiones`;
   else if (W === 1) bStatus = `RPE medio de fuerza ${n1(rpeMean)}${enoughRpe ? '' : ` en ${plural(rpeSessions.length, 'sesión', 'sesiones')}`} (umbral ${n1(rpeHigh)})`;
   else bStatus = `RPE medio de fuerza por semana ${meansTxt} (umbral ${n1(rpeHigh)})`;
   const status = [

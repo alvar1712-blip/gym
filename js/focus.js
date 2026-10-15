@@ -9,11 +9,14 @@
 //   weekly  : insights.keyMessages(weeklyInsights(...)) → Message[] { id, section, level: neutral|good|warn, title, text, why }
 //   analysis: buildAnalysis(...).keyPoints → Insight[] { id, area, level: good|neutral|warn|info, priority, title, text,
 //             why, confidence?, parts?, action? }
-// SALIDA { items: FocusItem[], allGood: boolean, message: string|null }
+// SALIDA { items: FocusItem[], allGood: boolean, fewData: boolean, message: string|null }
 //   FocusItem = { key, source: 'weekly'|'analysis', id, topic, level, title, text, why, confidence, step, stepLabel, href }
 //   - stepLabel: la recomendación propia del analista si la tiene (parts.recommendation); si no, STEPS[step].
 //   - items[0] es el principal; como mucho `max` (3).
-//   - allGood: nada pide un cambio (sin avisos) → `message` = ALL_GOOD y los items son, como mucho, lo que va bien.
+//   - allGood: nada pide un cambio (sin avisos) Y hay algo evaluado (un análisis que no sea «faltan datos» ni
+//     confianza insuficiente, o un mensaje del panel con veredicto: «Bien» o «Atención») → `message` = ALL_GOOD y los
+//     items son, como mucho, lo que va bien. Sin avisos y sin nada evaluado: allGood false, fewData true y
+//     `message` = FEW_DATA (ronda 9: no se dice «Todo evoluciona…» con una sesión).
 
 /** Pasos siguientes: un verbo claro, siempre de esta lista (la explicación larga sigue en su tarjeta). */
 export const STEPS = {
@@ -27,6 +30,8 @@ export const STEPS = {
   up: 'Sube el peso',
 };
 export const ALL_GOOD = 'Todo evoluciona dentro de lo esperado. No necesitas cambiar nada.';
+/** Ronda 9: sin avisos pero sin nada evaluado todavía (solo «faltan datos» o notas): no se afirma que todo va bien. */
+export const FEW_DATA = 'Aún pocos datos para valorar tu evolución: sigue registrando.';
 
 /** Tema de un mensaje: dos mensajes del mismo tema dicen lo mismo con otras palabras (se queda uno). */
 export function topicOf(m) {
@@ -96,11 +101,17 @@ export function weekFocus({ weekly = [], analysis = [] } = {}, max = 3) {
   }
   const chosen = [...byTopic.values()].sort((a, b) => b.w - a.w);
   const warns = chosen.filter((c) => c.m.level === 'warn' || /^dp-up/.test(c.m.id));
-  const allGood = warns.length === 0;
+  // ¿Se ha podido valorar algo? Un análisis de verdad (no «faltan datos», con confianza y con veredicto) o un mensaje
+  // del panel que juzga («Bien» o «Atención»); lo informativo no cuenta.
+  const evaluated = cands.some(({ m, source }) => (source === 'weekly'
+    ? m.level === 'good' || m.level === 'warn'
+    : m.level !== 'info' && m.confidence?.level !== 'insufficient'));
+  const fewData = warns.length === 0 && !evaluated;
+  const allGood = warns.length === 0 && !fewData;
   // Solo lo que pide un cambio o lo que va bien: lo informativo («Nota», «Info») no ocupa un hueco de «lo importante»
   // (sigue en su tarjeta y en el panel). Sin avisos, solo lo que va bien.
   const pool = chosen.filter((c) => c.m.level === 'good' || (!allGood && c.m.level === 'warn'));
-  const items = pool.slice(0, allGood ? Math.max(0, max - 1) : max).map(({ m, source }) => {
+  const items = pool.slice(0, allGood || fewData ? Math.max(0, max - 1) : max).map(({ m, source }) => {
     const step = nextStep(m);
     // Si el analista ya dice qué hacer (parts.recommendation: «…y revisa en 3 semanas»), esa es LA acción: no se
     // pone otra genérica que pueda contradecirla, y el texto se queda con el dato y su lectura (sin repetirla).
@@ -111,5 +122,5 @@ export function weekFocus({ weekly = [], analysis = [] } = {}, max = 3) {
       why: m.why || null, confidence: m.confidence || null, step, stepLabel: rec || STEPS[step], href: hrefOf(m, source),
     };
   });
-  return { items, allGood, message: allGood ? ALL_GOOD : null };
+  return { items, allGood, fewData, message: allGood ? ALL_GOOD : fewData ? FEW_DATA : null };
 }

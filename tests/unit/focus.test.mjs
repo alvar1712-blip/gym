@@ -3,7 +3,7 @@
 // nada». Mensajes sintéticos con la forma de insights.js y analysis.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { weekFocus, nextStep, topicOf, STEPS, ALL_GOOD } from '../../js/focus.js';
+import { weekFocus, nextStep, topicOf, STEPS, ALL_GOOD, FEW_DATA } from '../../js/focus.js';
 
 const why = { rule: 'regla', data: [{ label: 'x', value: '1' }] };
 const wk = (id, level, extra = {}) => ({ id, section: 'info', level, title: `wk ${id}`, text: 't', why, ...extra });
@@ -70,7 +70,24 @@ test('nada que decir → sin elementos; los «faltan datos» del analista y el c
   assert.deepEqual(weekFocus({}).items, []);
   const r = weekFocus({ weekly: [wk('checkins', 'neutral')], analysis: [an('strength-insufficient', 'neutral', 'strength', 30)] });
   assert.deepEqual(r.items, []);
-  assert.equal(r.allGood, true);
+  // Ronda 9: sin nada evaluado no se afirma «Todo evoluciona dentro de lo esperado»
+  assert.equal(r.allGood, false);
+  assert.equal(r.fewData, true);
+  assert.equal(r.message, FEW_DATA);
+});
+
+test('ronda 9: solo «faltan datos», notas o confianza insuficiente → «Aún pocos datos…», nunca «Todo evoluciona…»', () => {
+  const r = weekFocus({
+    weekly: [wk('load', 'neutral'), wk('km', 'neutral'), wk('checkins', 'neutral')],
+    analysis: [an('weight-insufficient', 'neutral', 'weight', 30), an('strength-insufficient', 'info', 'strength', 12), an('forecast-weight', 'info', 'forecast', 34),
+      an('strength-summary', 'good', 'strength', 62, { confidence: { level: 'insufficient', label: 'Datos insuficientes' } })],
+  });
+  assert.notEqual(r.message, ALL_GOOD);
+  assert.equal(r.message, FEW_DATA);
+  assert.equal(r.allGood, false);
+  // Con un solo mensaje que valora (del panel o del analista), vuelve «Todo evoluciona…»
+  assert.equal(weekFocus({ weekly: [wk('ex-progress', 'good')], analysis: [an('weight-insufficient', 'neutral', 'weight', 30)] }).message, ALL_GOOD);
+  assert.equal(weekFocus({ analysis: [an('strength-summary', 'neutral', 'strength', 62, { confidence: { level: 'medium' } })] }).message, ALL_GOOD);
 });
 
 test('temas: el mismo asunto en las dos fuentes cae en el mismo tema', () => {

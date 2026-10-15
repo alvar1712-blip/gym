@@ -457,6 +457,8 @@ html.text-large .wk-recap-kpi .sum-delta-part:first-child { white-space: normal;
 .focus-sub { font-size: var(--fs-sm); color: var(--muted); }
 .focus-allgood { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0 10px; font-size: var(--fs-md); line-height: 1.4; color: var(--text); }
 .focus-allgood .icon { flex: none; margin-top: 1px; color: var(--ok); }
+/* Ronda 9: «Aún pocos datos…» no es un «Bien»: reloj en gris, no el check verde */
+.focus-fewdata .icon { color: var(--muted); }
 .focus-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .focus-item { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .focus-item:last-child { border-bottom: 0; }

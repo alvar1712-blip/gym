@@ -35,7 +35,9 @@
 // ENTRADA analyzeWeight(input):
 //   { bodyweight:[{ id:'YYYY-MM-DD', kg }], today, profile (profile.getProfile(settings)),
 //     strength?: { trendPctPerWeek, n, recoveryShare? } | null, endurance?: { weeklyMinutes4w } | null, cycle?: CycleInfo | null,
-//     context?: analysis-context.analysisContext(...) | null }
+//     context?: analysis-context.analysisContext(...) | null,
+//     weightGoals?: [{ targetKg, direction:'up'|'down' }] (ronda 9: tus objetivos de peso ACTIVOS; con uno, no se propone
+//       otro y, si va en la dirección contraria a tu objetivo de composición, una nota neutral sin kcal) }
 // RONDA 6 (fase C): cada Insight lleva `confidence` (confidence.js: insuficiente · baja · media · alta, con sus motivos) y,
 //   si el contexto cambia la lectura, `context` (hechos tenidos en cuenta) y `parts` ({ observation, interpretation,
 //   recommendation }; `text` sigue siendo el texto completo). El contexto: la fase de composición vigente manda sobre el
@@ -1085,27 +1087,43 @@ function rateInsight(ctx) {
 function validStrength(s) {
   if (!s || !isNum(s.trendPctPerWeek)) return null;
   if (s.n != null && !(s.n >= 1)) return null;
-  return { trendPctPerWeek: s.trendPctPerWeek, n: s.n ?? null, recoveryShare: isNum(s.recoveryShare) ? s.recoveryShare : null };
+  return {
+    trendPctPerWeek: s.trendPctPerWeek, n: s.n ?? null, recoveryShare: isNum(s.recoveryShare) ? s.recoveryShare : null,
+    // Ronda 9: cuántos de esos ejercicios bajan (la mediana sola esconde que un tercio o más baje)
+    down: isNum(s.down) && s.down >= 0 ? s.down : null,
+  };
 }
 const STRENGTH_GOOD = { beginner: 0.75, intermediate: 0.25, advanced: 0.1 };
 
+/** Fuerza que baja: la mediana ≤ −0,25 %/sem o un tercio o más de los ejercicios principales bajando (ronda 9). */
+const STRENGTH_DOWN_PCT = -0.25;
+const STRENGTH_DOWN_SHARE = 1 / 3;
+
 function strengthInsight(ctx) {
-  const { trend: t, strength, profile, goal, female, kcal } = ctx;
+  const { trend: t, strength, profile, goal, female, kcal, minor } = ctx;
   if (!t.ok || !strength) return null;
   const exp = EXP_IDS.includes(profile.experience) ? profile.experience : 'intermediate';
   const s = strength.trendPctPerWeek;
-  const sUp = s >= STRENGTH_GOOD[exp];
-  const sDown = s <= -0.25;
+  const nDown = strength.down;
+  const shareDown = isNum(nDown) && strength.n >= 1 && nDown > 0 && nDown / strength.n >= STRENGTH_DOWN_SHARE - 1e-9;
+  const sDown = s <= STRENGTH_DOWN_PCT || shareDown;
+  const sUp = s >= STRENGTH_GOOD[exp] && !shareDown;
   const sTxt = `${signedPctW(s)} de 1RM estimado`;
+  // «(−0,04 %/sem; 5 de 12 ejercicios bajan)»: si baja por el reparto y no por la mediana, se dice.
+  const sPct = shareDown && s > STRENGTH_DOWN_PCT ? `${signedPctW(s)}; ${fmtNum(nDown, 0)} de ${fmtNum(strength.n, 0)} ejercicios bajan` : signedPctW(s);
   const gainMax = TARGETS.gain[female ? 'female' : 'male'][exp][1];
   const up = t.direction === 'up';
   const down = t.direction === 'down';
   const rows = [
     { label: 'Ritmo del peso', value: `${signedKgW(t.ratePerWeekKg)} · ${signedPctW(t.ratePerWeekPct)}` },
     { label: 'Tendencia de la fuerza', value: `${sTxt}${strength.n ? ` (mediana de ${strength.n} ${strength.n === 1 ? 'ejercicio' : 'ejercicios'})` : ''}` },
-    { label: 'Umbral «la fuerza sube»', value: `≥ ${fmtNum(STRENGTH_GOOD[exp], 2)} %/sem (${(female ? EXP_NAME_F : EXP_NAME)[exp]}) · baja ≤ −0,25 %/sem` },
+    isNum(nDown) && strength.n ? { label: 'Ejercicios bajando', value: `${fmtNum(nDown, 0)} de ${fmtNum(strength.n, 0)}` } : null,
+    { label: 'Umbral «la fuerza sube»', value: `≥ ${fmtNum(STRENGTH_GOOD[exp], 2)} %/sem (${(female ? EXP_NAME_F : EXP_NAME)[exp]}) · baja ≤ −0,25 %/sem o un tercio de los ejercicios bajando` },
   ];
-  const rule = `Cruce del ritmo del peso con la tendencia de la fuerza (mejor 1RM estimado de tus ejercicios principales). Peso ↑ y fuerza ↑ → sobre todo músculo; peso ↑ más rápido que ${fmtNum(gainMax, 2)} %/sem con la fuerza plana → probablemente más grasa; peso ↓ y fuerza ↓ → déficit demasiado agresivo. No se ve el espejo ni el % de grasa: son pistas. Si vienes de una bajada, has vuelto a entrenar o empezaste creatina, parte de la subida puede ser peso recuperado, glucógeno o agua, y parte de la fuerza, marcas que recuperas.`;
+  // Menores: sin calorías ni «déficit» (docs/MEJORAS6.md), también en el «¿Por qué?» y el informe.
+  const rule = minor
+    ? `Cruce del ritmo del peso con la tendencia de la fuerza (mejor 1RM estimado de tus ejercicios principales). Peso ↑ y fuerza ↑ → sobre todo músculo; peso ↑ rápido con la fuerza plana, o peso ↓ con la fuerza ↓ → revisa la técnica, el descanso y que comes lo suficiente. La fuerza baja si su mediana cae 0,25 %/sem o más o si un tercio o más de tus ejercicios bajan. Con menos de 18 años no se dan cifras de dieta. No se ve el espejo ni el % de grasa: son pistas.`
+    : `Cruce del ritmo del peso con la tendencia de la fuerza (mejor 1RM estimado de tus ejercicios principales). Peso ↑ y fuerza ↑ → sobre todo músculo; peso ↑ más rápido que ${fmtNum(gainMax, 2)} %/sem con la fuerza plana → probablemente más grasa; peso ↓ y fuerza ↓ → déficit demasiado agresivo. La fuerza baja si su mediana cae 0,25 %/sem o más o si un tercio o más de tus ejercicios bajan. Si buscas ganar músculo, bajar de peso no es «Bien» aunque conserves la fuerza, y subir menos de lo previsto no apunta a grasa. No se ve el espejo ni el % de grasa: son pistas. Si vienes de una bajada, has vuelto a entrenar o empezaste creatina, parte de la subida puede ser peso recuperado, glucógeno o agua, y parte de la fuerza, marcas que recuperas.`;
   const expl = (ctx.expl?.up || []);
   const recov = isNum(strength.recoveryShare) && strength.recoveryShare >= 0.5;
   const sConf = combine([...ctx.conf.factors, byCount(strength.n ?? 0, { low: 1, medium: 2, high: 3 }, (k) => `${k} ${k === 1 ? 'ejercicio' : 'ejercicios'} con tendencia`, 'exercises')]);
@@ -1143,32 +1161,54 @@ function strengthInsight(ctx) {
       sources: [SOURCES.iraki2019, ctx.context?.creatine?.water ? SOURCES.kreider2017 : null], context: expl.map((x) => x.text),
     });
   }
+  if (up && !sUp && t.ratePerWeekPct > gainMax && minor) {
+    return mk({
+      level: 'neutral', priority: 44, title: 'Tu peso sube rápido y tu fuerza no',
+      text: `Tu peso sube ${kgAbs(t.ratePerWeekKg)} kg por semana pero tu fuerza está ${sDown ? 'bajando' : 'estancada'} (${sPct}). Revisa la técnica y que el entrenamiento progrese, descansa bien y come lo suficiente y variado; si te preocupa tu peso, coméntalo con tu médico.`,
+      sources: [SOURCES.lloyd2014],
+    });
+  }
   if (up && !sUp && t.ratePerWeekPct > gainMax) {
     const cut = kcal?.suggestion && kcal.suggestion.max < 0 ? kcal.suggestion : { min: -300, max: -200 };
     return mk({
       level: 'warn', priority: 60, title: 'Subes rápido y la fuerza no acompaña',
-      text: `Tu peso sube ${kgAbs(t.ratePerWeekKg)} kg por semana pero tu fuerza está ${sDown ? 'bajando' : 'estancada'} (${signedPctW(s)}): probablemente estés ganando más grasa que músculo. Come unas ${kcalTxt(cut)} y revisa que el entrenamiento progrese (más repeticiones o más peso).`,
+      text: `Tu peso sube ${kgAbs(t.ratePerWeekKg)} kg por semana pero tu fuerza está ${sDown ? 'bajando' : 'estancada'} (${sPct}): probablemente estés ganando más grasa que músculo. ${ctx.goalConflict ? 'Revisa' : `Come unas ${kcalTxt(cut)} y revisa`} que el entrenamiento progrese (más repeticiones o más peso).`,
       sources: [SOURCES.iraki2019, SOURCES.hall2008],
     });
   }
   if (up && !sUp) {
+    // Ronda 9: si subes MENOS de lo previsto para ganar músculo (el aviso del ritmo pide comer algo más), no se
+    // apunta a la grasa: sería el consejo contrario en la misma sección.
+    const slowGain = goal === 'gain' && ctx.status === 'below';
     return mk({
       level: 'neutral', priority: 38, title: 'Tu peso sube, tu fuerza aún no',
-      text: `Tu peso sube pero tu fuerza aún no acompaña (${signedPctW(s)}). Revisa que el entrenamiento progrese (más repeticiones o más peso) y dale unas semanas; si sigue igual, puede que estés ganando más grasa que músculo.`,
+      text: slowGain
+        ? `Tu peso sube, aunque poco, y tu fuerza aún no acompaña (${sPct}). Revisa que el entrenamiento progrese (más repeticiones o más peso) y dale unas semanas.`
+        : `Tu peso sube pero tu fuerza aún no acompaña (${sPct}). Revisa que el entrenamiento progrese (más repeticiones o más peso) y dale unas semanas; si sigue igual, puede que estés ganando más grasa que músculo.`,
       sources: [SOURCES.iraki2019],
     });
   }
   if (down && sDown) {
     return mk({
       level: 'warn', priority: 62, title: 'Bajas peso y pierdes fuerza',
-      text: `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${signedPctW(s)}): señal de un déficit demasiado agresivo. Come algo más, mantén la proteína alta y sigue entrenando pesado para conservar el músculo.`,
-      sources: [SOURCES.helms2014, SOURCES.garthe2011],
+      text: minor
+        ? `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${sPct}). A tu edad lo importante es comer suficiente y variado, descansar bien y cuidar la técnica; si estás intentando bajar de peso, coméntalo con tu médico o con un dietista-nutricionista.`
+        : `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${sPct}): señal de un déficit demasiado agresivo. Come algo más, mantén la proteína alta y sigue entrenando pesado para conservar el músculo.`,
+      sources: minor ? [SOURCES.lloyd2014] : [SOURCES.helms2014, SOURCES.garthe2011],
+    });
+  }
+  if (down && goal === 'gain') {
+    // Ronda 9: con el objetivo de ganar músculo, bajar de peso no es «Bien» aunque la fuerza aguante.
+    return mk({
+      level: 'neutral', priority: 38, title: 'Bajas peso; tu fuerza se mantiene',
+      text: `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza se mantiene${sUp ? ' e incluso sube' : ''} (${sPct}). Para ganar músculo tu peso debería subir: conservar la fuerza no basta.`,
+      sources: [SOURCES.iraki2019],
     });
   }
   if (down) {
     return mk({
       level: 'good', priority: 40, title: 'Bajas peso y conservas la fuerza',
-      text: `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza se mantiene${sUp ? ' e incluso sube' : ''} (${signedPctW(s)}): buena señal de que conservas el músculo.`,
+      text: `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza se mantiene${sUp ? ' e incluso sube' : ''} (${sPct}): buena señal de que conservas el músculo.`,
       sources: [SOURCES.helms2014, SOURCES.garthe2011],
     });
   }
@@ -1282,7 +1322,8 @@ function proteinInsight(ctx) {
   return insight({
     id: 'weight-protein', level: 'info', priority: deficit ? 28 : 20, title: 'Proteína para tu peso',
     text: `Para tu peso (${kgTxt(p.refKg)}), apunta a unos ${fmtNum(p.min, 0)}–${fmtNum(p.max, 0)} g de proteína al día (1,6–2,2 g por kilo), repartidos en 3–5 comidas.${deficit ? ` Como estás en déficit, mejor en la parte alta: unos ${fmtNum(p.focus.min, 0)}–${fmtNum(p.focus.max, 0)} g o algo más, para conservar el músculo.` : ''}`,
-    rule: 'Proteína diaria orientativa = peso × 1,6–2,2 g/kg (en déficit, hacia la parte alta o algo más). La misma recomendación para mujeres y hombres. No se registra la comida: es una referencia.',
+    // Menores: sin «déficit» ni siquiera en la regla (docs/MEJORAS6.md).
+    rule: `Proteína diaria orientativa = peso × 1,6–2,2 g/kg${ctx.minor ? '' : ' (en déficit, hacia la parte alta o algo más)'}. La misma recomendación para mujeres y hombres. No se registra la comida: es una referencia.`,
     data: [
       { label: 'Peso de referencia', value: `${kgTxt(p.refKg, 2)} (tendencia)` },
       { label: 'Cálculo', value: `${fmtNum(p.refKg, 1)} × 1,6 ≈ ${fmtNum(p.min, 0)} g · ${fmtNum(p.refKg, 1)} × 2,2 ≈ ${fmtNum(p.max, 0)} g` },
@@ -1380,6 +1421,27 @@ function earlyRateInsight(ctx) {
   });
 }
 
+/**
+ * Ronda 9: tu objetivo de peso activo va en la dirección contraria a tu objetivo de composición (perfil o fase): una
+ * nota neutral única, sin consejo de kcal (cualquier ajuste empujaría hacia uno de los dos).
+ */
+function goalConflictInsight(ctx) {
+  const { trend: t, goal, weightGoal: wg } = ctx;
+  const goalTxt = `${wg.direction === 'down' ? 'bajar' : 'subir'} a ${fmtNum(wg.targetKg, 1)} kg`;
+  const where = ctx.goalSource === 'phase' ? 'tu fase actual en «Tu contexto»' : 'tu perfil';
+  return insight({
+    id: 'weight-rate', level: 'neutral', priority: 50, title: 'Tus objetivos de peso no coinciden',
+    parts: {
+      observation: `${leadTxt(t)} en ${periodTxt(t.windowDays)}.`,
+      interpretation: `Tu objetivo de peso (${goalTxt}) y tu objetivo de ${GOAL_NAME[goal]} van en direcciones opuestas: elige uno.`,
+      recommendation: `Cambia tu objetivo de peso o el objetivo de ${where}; hasta entonces no se da un ajuste de calorías.`,
+    },
+    rule: `${methodRule(ctx)} Si tienes un objetivo de peso activo que va en la dirección contraria a tu objetivo de composición (${where}), no se da un ajuste de calorías ni se propone otro objetivo: primero hay que elegir uno.`,
+    data: [{ label: 'Objetivo de peso', value: cap(goalTxt) }, { label: 'Objetivo', value: `${cap(GOAL_NAME[goal])} (${where})` }, ...trendRows(ctx)],
+    confidence: ctx.conf, context: contextNotes(ctx, []), sources: [],
+  });
+}
+
 /** Menores de 18: el peso se describe, sin calorías, sin ritmos de pérdida y con la prioridad en comer, dormir y la técnica. */
 function minorWeightInsight(ctx) {
   const { trend: t, goal } = ctx;
@@ -1392,7 +1454,7 @@ function minorWeightInsight(ctx) {
         : 'Con menos de 18 años aquí no se calculan calorías ni ritmos exactos: tu cuerpo aún está creciendo y el peso también cambia por eso.',
       recommendation: 'Lo importante es comer suficiente y variado, dormir bien y entrenar con buena técnica, mejor con supervisión. Si quieres cambiar tu peso o te preocupa, coméntalo con tu médico o con un dietista-nutricionista.',
     },
-    rule: `${methodRule(ctx)} Menores de 18 años: sin calorías, sin déficits ni objetivos de peso propuestos; prioridad a la técnica, la constancia y la supervisión.`,
+    rule: `${methodRule(ctx)} Menores de 18 años: sin calorías, sin ritmos de pérdida ni objetivos de peso propuestos; prioridad a la técnica, la constancia y la supervisión.`,
     data: trendRows(ctx), confidence: ctx.conf, context: ['menos de 18 años'], sources: [SOURCES.lloyd2014],
   });
 }
@@ -1434,7 +1496,12 @@ export function analyzeWeight(input = {}) {
   const target = goal ? targetFor(profile, { currentKg: refKg, enduranceHigh: endHigh, senior, goal }) : null;
   // Menores: sin mensajes de déficit (ni en la proteína).
   const deficit = !minor && (goal === 'lose' || (trend.ok && trend.ratePerWeekPct <= -0.25));
+  // Ronda 9: tu objetivo de peso activo (el más reciente, si hay varios) y si contradice al de composición.
+  const weightGoal = (Array.isArray(input.weightGoals) ? input.weightGoals : [])
+    .find((x) => x && isNum(x.targetKg) && (x.direction === 'up' || x.direction === 'down')) || null;
+  const goalConflict = !!weightGoal && ((goal === 'gain' && weightGoal.direction === 'down') || (goal === 'lose' && weightGoal.direction === 'up'));
   const ctx = {
+    weightGoal, goalConflict,
     today, profile, female, hormonal, cycle, goal, goalSource, trend, target, minutes, endHigh, context, age, minor, senior,
     proteinG: proteinFor(refKg, deficit), cyc: cycle ? cycleIrregularity(cycle, today) : null,
     strength: validStrength(input.strength), status: null, kcal: { estimate: null, suggestion: null },
@@ -1463,7 +1530,10 @@ export function analyzeWeight(input = {}) {
       const downCtx = dir === 'down' && ctx.status !== 'in' && ctx.expl.down.length > 0;
       const tooFastLoss = goal === 'lose' && ctx.status === 'below';
       if (minor) insights.push(minorWeightInsight(ctx));
-      else if (upCtx || downCtx) {
+      else if (goalConflict && !tooFastLoss) {
+        ctx.kcal.suggestion = null;
+        insights.push(goalConflictInsight(ctx));
+      } else if (upCtx || downCtx) {
         // El contexto explica parte del cambio: ni ajuste ni «balance» en kcal (darían una precisión que no hay).
         ctx.kcal.suggestion = null;
         ctx.kcal.estimate = null;
@@ -1497,7 +1567,8 @@ export function analyzeWeight(input = {}) {
     projectable: trend.ok && !minor && !early && ctx.conf.level !== 'low',
   };
   if (!trend.ok) { out.reason = trend.reason; out.reasonCode = trend.reasonCode; }
-  const gs = reds || minor || early || ctx.conf.level === 'low' ? null : suggestGoal(ctx);
+  // Con un objetivo de peso activo no se propone otro (ronda 9).
+  const gs = reds || minor || early || weightGoal || ctx.conf.level === 'low' ? null : suggestGoal(ctx);
   if (gs) out.goalSuggestion = gs;
   return out;
 }

@@ -9,6 +9,7 @@ import { buildAnalysis } from '../../js/analysis.js';
 import { analyzeWeight, weightRegain, SENIOR_MAX_KCAL } from '../../js/analysis-weight.js';
 import { analyzeStrength, progressKind, RECOVERY_BELOW_PCT, NEW_EXERCISE_DAYS } from '../../js/analysis-training.js';
 import { addDays } from '../../js/util.js';
+import { reportText } from '../../js/analysis-report.js';
 import { SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
 
 const TODAY = '2026-10-02';
@@ -232,6 +233,41 @@ test('edad: menores sin calorías, sin ritmos de pérdida, sin «déficit» ni p
   assert.ok(sug && Math.max(Math.abs(sug.min), Math.abs(sug.max)) <= SENIOR_MAX_KCAL, JSON.stringify(sug));
   assert.ok(byId(senior, 'weight-rate').sources.some((s) => s.short === 'Fragala et al., 2019'));
   assert.match(byId(senior, 'strength-summary').text, /A partir de los 65, mejor progresar con calma/);
+});
+
+test('objetivo de peso (ronda 9): buildAnalysis pasa solo los objetivos de peso activos', () => {
+  const g = (o) => ({ id: `g${++n}`, kind: 'bodyweight', title: 'Peso', targetKg: 70, direction: 'down', createdAt: n, archived: false, achievedAt: null, ...o });
+  const old = [g({ archived: true }), g({ achievedAt: 1 }), { ...g({}), kind: 'strength', exerciseId: 'press_banca', weight: 100, reps: 5 }];
+  const sinActivo = buildAnalysis(data({ goals: old, context: [] }), TODAY);
+  assert.ok(!sinActivo.all.some((i) => /direcciones opuestas/.test(i.text)), 'archivados, conseguidos y de fuerza no cuentan');
+  const conActivo = buildAnalysis(data({ goals: [...old, g({})], context: [] }), TODAY);
+  assert.equal(conActivo.weight.goalSuggestion, undefined);
+  assert.ok(conActivo.all.some((i) => /Tu objetivo de peso \(bajar a 70 kg\) y tu objetivo de ganar músculo van en direcciones opuestas/.test(i.text)));
+  assert.doesNotMatch(allText(conActivo), /kcal más/);
+});
+
+test('edad (ronda 9): un menor nunca recibe kcal ni «déficit», tampoco desde el cruce peso × fuerza ni en el informe', () => {
+  const base = buildAnalysis(data({ profile: { birthDate: MINOR }, context: [] }), TODAY);
+  assert.equal(base.context.age.group, 'minor');
+  const textOf = (i) => [i.title, i.text, i.parts?.observation, i.parts?.interpretation, i.parts?.recommendation, i.why?.rule,
+    ...(i.why?.data || []).map((x) => `${x.label} ${x.value}`)].filter(Boolean).join(' ');
+  let crossed = 0;
+  for (const goal of ['gain', 'lose', 'maintain']) {
+    for (const ratePct of [-1, -0.5, 0, 0.5, 1]) {
+      for (const sPct of [-1, 0, 1]) {
+        const bw = [];
+        for (let i = 56; i >= 0; i--) bw.push({ id: addDays(TODAY, -i), kg: Math.round((60 * (1 + (ratePct / 100) * ((56 - i) / 7)) + [0.1, -0.1, 0.05, 0][i % 4]) * 10) / 10 });
+        const w = analyzeWeight({ bodyweight: bw, today: TODAY, profile: { sex: 'male', goal, experience: 'intermediate', birthDate: MINOR }, strength: { trendPctPerWeek: sPct, n: 4, down: sPct < 0 ? 2 : 0 } });
+        const tag = `${goal} · peso ${ratePct} %/sem · fuerza ${sPct} %/sem`;
+        if (w.insights.some((i) => i.id === 'weight-strength')) crossed++;
+        for (const i of w.insights) assert.doesNotMatch(textOf(i), /kcal|déficit/i, `${tag} · ${i.id}`);
+        assert.deepEqual(w.kcalPerDay, { estimate: null, suggestion: null });
+        const report = reportText({ ...base, weight: w, all: w.insights, keyPoints: w.insights.slice(0, 3) });
+        assert.doesNotMatch(report, /kcal|déficit/i, tag);
+      }
+    }
+  }
+  assert.ok(crossed >= 10, `la rejilla pasa por el cruce peso × fuerza (${crossed})`);
 });
 
 // ===========================================================================

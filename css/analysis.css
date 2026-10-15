@@ -137,6 +137,8 @@
 .an-key-step b { color: var(--text); }
 .an-allgood { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); line-height: 1.4; }
 .an-allgood .icon { flex: none; margin-top: 1px; color: var(--ok); }
+/* Ronda 9: «Aún pocos datos…» no es un «Bien»: reloj en gris, no el check verde */
+.an-fewdata .icon { color: var(--muted); }
 
 /* ---------- Peso ---------- */
 .an-chart-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

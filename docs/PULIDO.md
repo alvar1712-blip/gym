@@ -77,6 +77,17 @@ resumen de #/analysis:
   analista, que lleva confianza y fuentes).
 - Solo entra lo que pide un cambio (Atención, «Subir peso») o lo que va bien. Lo informativo no ocupa hueco.
 - Sin avisos: «Todo evoluciona dentro de lo esperado. No necesitas cambiar nada.» No se fuerza un problema.
+- Ronda 9: esa frase solo sale si algo se ha podido **valorar** (un análisis que no sea «faltan datos» ni de confianza
+  insuficiente, o un mensaje del panel con veredicto «Bien» o «Atención»). Sin avisos y sin nada valorado: «Aún pocos
+  datos para valorar tu evolución: sigue registrando.», con el icono de reloj en gris (`.focus-fewdata`,
+  `.an-fewdata`), nunca el check verde; en #/analysis el resumen se titula «Aún pocos datos».
+- Ningún «Bien» afirma lo que los datos no dicen: con ejercicios estancados o bajando, nada en «Bien» dice que tus
+  ejercicios progresan; con objetivo de ganar músculo, bajar de peso no es «Bien». Lo vigila la prueba cruzada
+  tests/unit/analysis-consistency.test.mjs (junto con «descarga» solo con la regla del panel, una sola decisión de
+  volumen por músculo y nada de kcal ni «déficit» para menores).
+- Panel semanal, series por músculo: la frase cuenta como la leyenda del mapa (`bodymap.statusOf`: 0 series → «sin
+  series»), p. ej. «2 en rango, 7 por debajo y 7 sin series». El aviso «N músculos por debajo» sigue contando los que
+  no llegan al mínimo (también con 0 series) y, para que cuadre con la frase, dice «De ellos, K sin ninguna serie».
 - Cada uno lleva **un** «Qué hacer». Si el analista ya da su recomendación (`parts.recommendation`), esa es la
   acción y no se repite en el texto; si no, una de esta lista: Mantén lo que haces · No necesitas cambiar nada ·
   Acumula más datos · Reevalúa en una semana · Prioriza la recuperación · Reduce 1–2 series · Añade 1–2 series ·

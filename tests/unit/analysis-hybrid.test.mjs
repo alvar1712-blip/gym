@@ -10,7 +10,7 @@ import {
 import { analyzeStrength } from '../../js/analysis-training.js';
 import { buildAnalysis, areaInsights } from '../../js/analysis.js';
 import { addDays, tsFromDate } from '../../js/util.js';
-import { SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
+import { SEED_EXERCISES, defaultSettings, exampleWeekPatterns } from '../../js/seed.js';
 
 const TODAY = '2026-10-02';
 const EX = new Map(SEED_EXERCISES.map((e) => [e.id, e]));
@@ -185,6 +185,37 @@ test('volumen con contexto: progresar por debajo del rango → mantener; estanca
   const stalledTip = analyzeStrength(sore, { today: TODAY }).insights.find((i) => i.id === 'strength-stalled-press_banca');
   assert.match(stalledTip.text, /quitar 2–4 series por semana de pecho/);
   assert.doesNotMatch(stalledTip.text, /\+1–2 series/);
+});
+
+test('volumen (ronda 9): nunca «Bien» ni «tus ejercicios progresan» sin datos o con ejercicios estancados', () => {
+  const shown = (i) => [i.title, i.text, i.parts?.observation, i.parts?.interpretation, i.parts?.recommendation].filter(Boolean).join(' ');
+  // 3 sesiones en 9 días: ningún ejercicio con tendencia → no hay nada que decir del volumen
+  const three = data({ sessions: [ses(ago(9), [['press_banca', [set(60), set(60), set(60)]]]), ses(ago(5), [['press_banca', [set(62.5), set(62.5), set(62.5)]]]), ses(ago(2), [['press_banca', [set(65), set(65), set(65)]]])] });
+  const a3 = buildAnalysis(three, TODAY);
+  assert.ok(!a3.all.some((i) => i.id === 'strength-volume' && i.level === 'good'), 'sin datos, sin «Bien»');
+  assert.equal(a3.all.find((i) => i.id === 'strength-volume'), undefined);
+
+  // Todo estancado, dentro del rango y sin fatiga: mantener, pero sin «sin problemas a la vista» ni «progresan»
+  const flat = [80, 81, 80, 80.5, 81, 80, 80.5, 81, 80, 80.5, 81, 80, 80.5, 81, 80, 80.5];
+  const inRange = data({ sessions: benchHistory((k) => flat[k], { sets: 8 }) });
+  const stIn = analyzeStrength(inRange, { today: TODAY });
+  const chest = stIn.volume.muscles.find((m) => m.muscleId === 'chest');
+  assert.equal(chest.decision, 'keep');
+  assert.equal(chest.below, false);
+  assert.doesNotMatch(chest.reasons.join(' '), /sin problemas a la vista/);
+  const vIn = analyzeHybrid(inRange, { today: TODAY, strength: stIn }).insights.find((i) => i.id === 'strength-volume');
+  assert.notEqual(vIn.level, 'good');
+  assert.doesNotMatch(shown(vIn), /progresan o se mantienen|Tus ejercicios progresan/);
+  assert.match(shown(vIn), /no progresan/);
+
+  // Todo estancado, por debajo y con poca constancia (semana tipo de ejemplo): constancia, nivel neutral
+  const low = data({ sessions: benchHistory((k) => flat[k]), settings: { ...defaultSettings(), weekPatterns: exampleWeekPatterns() } });
+  const stLow = analyzeStrength(low, { today: TODAY });
+  assert.equal(stLow.volume.lowAdherence, true);
+  const vLow = analyzeHybrid(low, { today: TODAY, strength: stLow }).insights.find((i) => i.id === 'strength-volume');
+  assert.equal(vLow.level, 'neutral');
+  assert.doesNotMatch(shown(vLow), /progresan o se mantienen|Tus ejercicios progresan/);
+  assert.match(vLow.parts.recommendation, /^Antes que más series, constancia/);
 });
 
 test('buildAnalysis: las conclusiones de la fase D van en sus tarjetas, con su confianza, y todo el análisis la lleva', () => {

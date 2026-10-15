@@ -302,10 +302,10 @@ function summaryCard(a, content) {
   const byId = new Map(pts.map((i) => [i.id, i]));
   const items = f.items.map((it) => ({ ...it, ins: byId.get(it.id) })).filter((x) => x.ins);
   return card('summary',
-    cardHead('bolt', 'Resumen', f.allGood && pts.length ? 'Nada que cambiar ahora' : 'Lo más importante ahora'),
-    f.allGood && pts.length ? h('p.an-allgood', icon('check', 18), h('span', f.message)) : null,
+    cardHead('bolt', 'Resumen', f.allGood && pts.length ? 'Nada que cambiar ahora' : f.fewData && pts.length ? 'Aún pocos datos' : 'Lo más importante ahora'),
+    (f.allGood || f.fewData) && pts.length ? h(`p.an-allgood${f.fewData ? '.an-fewdata' : ''}`, icon(f.fewData ? 'clock' : 'check', 18), h('span', f.message)) : null,
     items.length
-      ? h('ul.an-keys', items.map(({ ins: i, step, stepLabel, text }, idx) => h(`li.an-key${idx === 0 && !f.allGood ? '.an-key-main' : ''}`, { dataset: { insight: i.id, level: i.level, step } },
+      ? h('ul.an-keys', items.map(({ ins: i, step, stepLabel, text }, idx) => h(`li.an-key${idx === 0 && !f.allGood && !f.fewData ? '.an-key-main' : ''}`, { dataset: { insight: i.id, level: i.level, step } },
         h('button.an-key-btn', { type: 'button', 'aria-label': `${i.title}. Qué hacer: ${stepLabel}. Ver el detalle en ${AREA_LABEL[i.area]}`, onClick: () => go(i.id) },
           h('span.an-key-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area]), confBadge(i.confidence, true)),
           h('span.an-key-title', i.title),

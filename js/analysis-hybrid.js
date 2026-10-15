@@ -21,14 +21,16 @@
 // nunca «causa». Si hay datos suficientes y NO hay diferencia, también se dice (resultado personal positivo).
 import { addDays, diffDays, isDateStr, todayStr, fmtDate, fmtNum, fmtPace, weekStart, round } from './util.js';
 import { isWorkSet, setMetrics, sessionDurationMin, pace, rirValue } from './calc.js';
-import { weeklySeries, adherenceSeries, adherenceTotals, runPaceSeries, weekPlanOf, exerciseHistory } from './stats.js';
+import { weeklySeries, runPaceSeries, weekPlanOf, exerciseHistory } from './stats.js';
 import { MUSCLE_LABEL, defaultSettings } from './seed.js';
 import { areasOf, checkinsBetween } from './checkin-logic.js';
 import { combine, byCount, bySpan, capAt, insufficient as confInsufficient, confidenceRow } from './confidence.js';
 import {
-  sessionPerformance, classifyIntensity, demandingEndurance, legSetsOf, muscleAverages, fatigueSignals, LEG_MUSCLES, ENDURANCE_KINDS,
-  theilSen, median, rateText,
+  sessionPerformance, classifyIntensity, demandingEndurance, legSetsOf, LEG_MUSCLES, ENDURANCE_KINDS,
+  theilSen, median, rateText, volumeReview, DOMS_HIGH, DOMS_HIGH_TIMES, DOMS_RECENT_DAYS, ADHERENCE_LOW_PCT,
 } from './analysis-training.js';
+
+export { volumeReview, DOMS_HIGH, DOMS_HIGH_TIMES, DOMS_RECENT_DAYS, ADHERENCE_LOW_PCT };
 
 /** Mínimos de las asociaciones personales. */
 export const MIN_OBS = 6;
@@ -45,12 +47,8 @@ export const DOMS_FROM_DAYS = 1;
 export const DOMS_TO_DAYS = 3;
 /** Pico de carga de un deporte: la última semana ≥ 50 % por encima de su media de las 4 anteriores (con ≥ 3 semanas con datos). */
 export const SPIKE_PCT = 50;
-/** Volumen: agujetas fuertes (≥ 7/10) repetidas en un músculo (≥ 2 veces en 14 días) cuentan como «mucha molestia». */
-export const DOMS_HIGH = 7;
-export const DOMS_HIGH_TIMES = 2;
-export const DOMS_RECENT_DAYS = 14;
-/** Constancia baja: menos del 70 % de lo planificado hecho en 4 semanas. */
-export const ADHERENCE_LOW_PCT = 70;
+// Umbrales del volumen (agujetas fuertes repetidas y constancia baja): viven con la decisión de volumen por músculo
+// (analysis-training.volumeReview) y se reexportan aquí.
 /** Sesiones de fuerza saltadas o a medias: diferencia apreciable de 15 puntos porcentuales entre semanas. */
 export const SKIP_POINTS = 15;
 /** Cambios de volumen: bloques de 6 semanas completas; cambio ≥ 25 % y ≥ 2 series/sem; ritmo distinto ≥ 0,5 %/sem. */
@@ -643,102 +641,77 @@ function associationInsights(list, { interference = [], today = null } = {}) {
 // Volumen con contexto
 // ===========================================================================
 
-/**
- * Revisión del volumen por músculo (media de series de las 4 semanas completas): mantener, añadir o reducir, con sus
- * motivos. NO se pide más volumen solo por estar por debajo del rango teórico:
- *   reduce — agujetas fuertes repetidas en ese músculo o señales de fatiga, con sus ejercicios estancados o bajando
- *            (aunque esté dentro del rango);
- *   keep   — sus ejercicios progresan (aunque esté por debajo del rango) o está en el rango sin problemas;
- *   add    — por debajo del mínimo, con sus ejercicios estancados, sin fatiga ni agujetas fuertes y con constancia
- *            (≥ 70 % de lo planificado): +1–2 series;
- *   none   — sin ejercicios con tendencia que lo trabajen (no hay datos para decidir).
- * Menores: nunca «añadir» (técnica primero). 65+: no añadir si hay fatiga o molestias.
- */
-export function volumeReview(d, today, { strength = null, age = 'unknown' } = {}) {
-  const exMap = toMap(d.exercises);
-  const settings = d.settings || {};
-  const targets = settings.muscleTargets && typeof settings.muscleTargets === 'object' ? settings.muscleTargets : defaultSettings().muscleTargets;
-  const mus = muscleAverages(d, today);
-  const fat = fatigueSignals(d, today);
-  const adh = adherenceTotals(adherenceSeries(d, addDays(weekStart(today), -28), addDays(weekStart(today), -1)));
-  const lowAdherence = adh.pctPast != null && adh.planned >= 4 && adh.pctPast < ADHERENCE_LOW_PCT;
-  // Agujetas fuertes recientes por músculo
-  const strong = new Map();
-  for (const c of checkinsBetween(d.checkins, addDays(today, -(DOMS_RECENT_DAYS - 1)), today)) {
-    for (const a of areasOf(c)) if (a.kind === 'muscle' && a.level >= DOMS_HIGH) strong.set(a.zone, (strong.get(a.zone) || 0) + 1);
-  }
-  const rows = (strength?.exercises || []).filter((x) => x.status !== 'insufficient');
-  const out = [];
-  if (!mus.weeks) return { weeks: 0, muscles: [], fatigue: fat, adherence: adh, lowAdherence };
-  for (const [m, t] of Object.entries(targets)) {
-    if (!Array.isArray(t) || !(t[1] > 0)) continue;
-    const avg = mus.avg[m] || 0;
-    const exs = rows.filter((x) => (exMap.get(x.exerciseId)?.primary || []).includes(m));
-    if (!exs.length && avg < 1) continue;
-    const progressing = exs.some((x) => x.status === 'fast' || x.status === 'good') && !exs.some((x) => x.status === 'down');
-    const struggling = exs.some((x) => x.status === 'stalled' || x.status === 'down');
-    const sore = (strong.get(m) || 0) >= DOMS_HIGH_TIMES;
-    const below = t[0] > 0 && avg < t[0] - EPS;
-    const above = avg > t[1] + EPS;
-    const reasons = [];
-    let decision;
-    if (!exs.length) { decision = 'none'; reasons.push('sin ejercicios con tendencia que lo trabajen'); }
-    else if ((sore || fat.any) && (struggling || sore)) {
-      decision = 'reduce';
-      if (sore) reasons.push(`agujetas fuertes (≥ ${DOMS_HIGH}/10) ${strong.get(m)} veces en ${DOMS_RECENT_DAYS} días`);
-      if (fat.any) reasons.push('señales de fatiga (RPE alto o check-ins bajos)');
-      if (struggling) reasons.push('sus ejercicios no progresan');
-    } else if (progressing) {
-      decision = 'keep';
-      reasons.push(below ? 'progresas con este volumen aunque esté por debajo del rango' : 'progresas con este volumen');
-    } else if (below && struggling && !lowAdherence && age !== 'minor' && !(age === 'senior' && (fat.any || sore))) {
-      decision = 'add';
-      reasons.push('por debajo del mínimo y sus ejercicios no progresan, sin fatiga ni agujetas fuertes');
-    } else {
-      decision = 'keep';
-      if (below && lowAdherence) reasons.push('primero, constancia: hiciste menos de lo planificado');
-      else if (below && age === 'minor') reasons.push('con menos de 18 años, primero técnica y constancia');
-      else reasons.push(above ? 'por encima del rango, pero sin problemas a la vista' : 'dentro del rango y sin problemas a la vista');
-    }
-    out.push({ muscleId: m, name: MUSCLE_LABEL[m] || m, avgSets: round(avg, 0.1), target: t, below, above, decision, reasons, exercises: exs.map((x) => x.name), sore });
-  }
-  const order = { reduce: 0, add: 1, keep: 2, none: 3 };
-  out.sort((a, b) => order[a.decision] - order[b.decision] || (b.below - a.below) || a.name.localeCompare(b.name, 'es'));
-  return { weeks: mus.weeks, muscles: out, fatigue: fat, adherence: adh, lowAdherence };
-}
-
 function volumeInsight(vr, age) {
   if (!vr.weeks || !vr.muscles.length) return null;
+  // Ronda 9: sin ningún músculo que valorar (ningún ejercicio con tendencia) no hay nada que decir del volumen.
+  if (vr.muscles.every((x) => x.decision === 'none')) return null;
   const reduce = vr.muscles.filter((x) => x.decision === 'reduce');
   const add = vr.muscles.filter((x) => x.decision === 'add');
-  const keepBelow = vr.muscles.filter((x) => x.decision === 'keep' && x.below && x.exercises.length && /progresas/.test(x.reasons[0]));
+  const keepBelow = vr.muscles.filter((x) => x.decision === 'keep' && x.below && x.progressing);
+  // Músculos cuyos ejercicios no progresan y en los que más series no es lo primero (poca constancia, menor, o dentro
+  // del rango sin fatiga): nunca «Bien» ni «tus ejercicios progresan».
+  const keepStuck = vr.muscles.filter((x) => x.decision === 'keep' && x.struggling && !x.progressing);
+  const anyStruggling = vr.muscles.some((x) => x.struggling);
   const conf = combine([
     bySpan(vr.weeks * 7, { low: 7, medium: 14, high: 28 }),
     byCount(vr.muscles.filter((x) => x.decision !== 'none').length, { low: 1, medium: 2, high: 3 }, (k) => `${k} ${k === 1 ? 'músculo' : 'músculos'} con ejercicios que valorar`, 'count'),
   ]);
+  const lname = (x) => x.name.toLowerCase();
   let parts; let level = 'good'; let priority = 34; let title;
   if (reduce.length) {
     level = 'warn'; priority = 58;
-    title = `Reduce un poco el volumen de ${joinList(reduce.slice(0, 2).map((x) => x.name.toLowerCase()))}`;
+    title = `Reduce un poco el volumen de ${joinList(reduce.slice(0, 2).map(lname))}${reduce.length > 2 ? ` y ${reduce.length - 2} más` : ''}`;
+    // Los motivos comunes, una sola vez: «Con señales de fatiga y sin progreso: bíceps (7), espalda (13,6)…».
+    const groups = new Map();
+    for (const x of reduce) {
+      const k = x.reasons.join(', ');
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(x);
+    }
+    const nBelow = reduce.filter((x) => x.below).length;
+    const nAbove = reduce.filter((x) => x.above).length;
+    const where = nBelow === reduce.length ? 'Aunque estés por debajo de tu rango'
+      : nBelow ? 'Estés por debajo de tu rango o dentro de él'
+        : nAbove === reduce.length ? 'Estás por encima de tu rango y'
+          : nAbove ? 'Estés dentro o por encima de tu rango' : 'Aunque estés dentro de tu rango';
     parts = {
-      observation: `${joinList(reduce.map((x) => `${x.name} (${fmtNum(x.avgSets, 1)} series/sem: ${x.reasons.join(', ')})`))}.`,
-      interpretation: 'Aunque estés dentro de tu rango, el volumen que te sienta bien es el que te deja recuperarte y progresar.',
-      recommendation: 'Quita 2–4 series por semana de ese músculo durante 1–2 semanas y vuelve a mirar cómo respondes.',
+      observation: `${[...groups].map(([k, xs]) => `${cap(k)}: ${joinList(xs.map((x) => `${lname(x)} (${fmtNum(x.avgSets, 1)} series/sem)`))}`).join('. ')}.`,
+      interpretation: nAbove === reduce.length
+        ? `${where} el volumen que te sienta bien es el que te deja recuperarte y progresar.`
+        : `${where}, el volumen que te sienta bien es el que te deja recuperarte y progresar${nBelow ? ': ahora, más series no ayudarían' : ''}.`,
+      recommendation: `Quita 2–4 series por semana de ${reduce.length === 1 ? 'ese músculo' : 'esos músculos'} durante 1–2 semanas y vuelve a mirar cómo respondes.`,
     };
   } else if (add.length) {
     level = 'neutral'; priority = 44;
-    title = `Puedes añadir 1–2 series de ${joinList(add.slice(0, 2).map((x) => x.name.toLowerCase()))}`;
+    title = `Puedes añadir 1–2 series de ${joinList(add.slice(0, 2).map(lname))}`;
     parts = {
       observation: `${joinList(add.map((x) => `${x.name}: ${fmtNum(x.avgSets, 1)} series/sem (rango ${x.target[0]}–${x.target[1]})`))}, y sus ejercicios no progresan.`,
       interpretation: 'Sin fatiga ni agujetas fuertes y con constancia, un poco más de volumen es lo más sencillo de probar.',
       recommendation: 'Añade 1–2 series por semana (no más) y revisa en 3–4 semanas.',
     };
+  } else if (keepStuck.length) {
+    level = 'neutral'; priority = 38;
+    title = 'Sin cambios de volumen por ahora';
+    parts = {
+      observation: `${joinList(keepStuck.slice(0, 3).map((x) => `${x.name} (${fmtNum(x.avgSets, 1)} series/sem)`))}${keepStuck.length > 3 ? ` y ${keepStuck.length - 3} más` : ''}: sus ejercicios no progresan.`,
+      interpretation: vr.lowAdherence
+        ? 'Antes que más series, constancia: hasta hacer lo planificado no se puede saber si el volumen basta.'
+        : age === 'minor'
+          ? 'Con menos de 18 años, antes que más series, técnica y constancia.'
+          : 'Sin fatiga ni agujetas fuertes, más series no es lo primero: prueba antes lo que proponen sus ejercicios estancados.',
+      recommendation: null,
+    };
+    if (vr.lowAdherence) parts.recommendation = `Antes que más series, constancia: en 4 semanas hiciste el ${vr.adherence.pctPast} % de lo planificado.`;
   } else {
+    // Ronda 9: «Bien» solo si nada se estanca ni baja; si algo no progresa, se dice (nivel neutral).
+    if (anyStruggling) { level = 'neutral'; priority = 36; }
     title = keepBelow.length ? 'Tu volumen actual te funciona' : 'Sin cambios de volumen a la vista';
     parts = {
       observation: keepBelow.length
         ? `${joinList(keepBelow.slice(0, 3).map((x) => `${x.name} (${fmtNum(x.avgSets, 1)} series/sem, por debajo de ${x.target[0]})`))}: aun así, sus ejercicios progresan.`
-        : 'Tus ejercicios progresan o se mantienen sin señales de fatiga ni agujetas fuertes repetidas.',
+        : anyStruggling
+          ? 'Algunos de tus ejercicios no progresan, pero sin señales de fatiga ni agujetas fuertes repetidas; donde progresas, el volumen te funciona.'
+          : 'Tus ejercicios progresan o se mantienen sin señales de fatiga ni agujetas fuertes repetidas.',
       interpretation: keepBelow.length ? 'Estás progresando con el volumen actual. No hay una razón clara para aumentarlo.' : 'No hay una razón clara para cambiar el volumen.',
       recommendation: null,
     };
@@ -843,7 +816,8 @@ export function analyzeHybrid(data = {}, { today = null, profile = {}, context =
   const t = isDateStr(today) ? today : isDateStr(d.today) ? d.today : todayStr();
   const age = context?.age?.group || 'unknown';
   const sl = sportLoad(d, t);
-  const volume = volumeReview(d, t, { strength, age });
+  // La decisión de volumen es la del análisis de fuerza (la misma que usan sus consejos); sin él, se calcula aquí.
+  const volume = strength?.volume || volumeReview(d, t, { strength, age });
   const associations = personalAssociations(d, t);
   const doms = domsByExercise(d, t);
   const changes = volumeChanges(d, t, { strength, context });
