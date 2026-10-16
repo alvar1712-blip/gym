@@ -84,7 +84,52 @@ async function compactHeader(browser) {
   }
 }
 
+/**
+ * Regresión (ronda 9, M14): las fichas de RIR (Fallo, 0–5) se tocan en cada serie. Con texto grande, la regla general
+ * `html.text-large .chip { flex: 0 1 auto }` ganaba a la de la sesión y «Fallo» se comía la fila: 0–5 se quedaban en
+ * 14–19 px de ancho. Ahora, con texto grande, «Fallo» va arriba y 0–5 debajo: cada ficha mide ≥ 36 px visibles y
+ * ≥ 44 px de área táctil (con el ::before que cubre el hueco), en una sola línea («Fallo» no se parte). A 100 % van en
+ * una fila (7 fichas en ~293 px no llegan a 44 px cada una): el ::before las deja en ≥ 40 px, sin perder «Fallo».
+ */
+async function rirChips(browser) {
+  for (const scale of [1, 1.06, 1.25, 1.5]) {
+    const app = await openApp({ browser, beforeLoad: async (p) => { await p.evaluate((t) => localStorage.setItem('entreno.textScale', String(t)), scale); } });
+    const { page } = app;
+    try {
+      await page.setViewportSize({ width: 375, height: 800 });
+      const id = await page.evaluate(async () => (await (await import('./js/session-logic.js')).createStrengthSession({ templateId: 'tpl_d4' })).id);
+      await go(page, `#/session/${id}`);
+      await page.waitForSelector('.ses-editor .ses-rir .chip');
+      const chips = await page.evaluate(() => [...document.querySelector('.ses-editor .ses-rir').querySelectorAll('.chip')].map((b) => {
+        const r = b.getBoundingClientRect();
+        const before = getComputedStyle(b, '::before');
+        const ext = before.content !== 'none' && before.position === 'absolute'
+          ? Math.max(0, -parseFloat(before.left) || 0) + Math.max(0, -parseFloat(before.right) || 0) : 0;
+        const range = document.createRange();
+        range.selectNodeContents(b);
+        return { label: b.textContent, w: r.width, hit: r.width + ext, h: r.height, lines: new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size };
+      }));
+      assert.strictEqual(chips.length, 7, 'Fallo y 0–5 (no se quita «Fallo»)');
+      assert.strictEqual(chips[0].label, 'Fallo');
+      const [minW, minHit] = scale > 1 ? [36, 44] : [34, 40];
+      for (const c of chips) {
+        const tag = `${Math.round(scale * 100)} %, «${c.label}»`;
+        assert.ok(c.w >= minW, `${tag}: ${c.w.toFixed(1)} px visibles (< ${minW})`);
+        assert.ok(c.hit >= minHit, `${tag}: ${c.hit.toFixed(1)} px de área táctil (< ${minHit})`);
+        assert.ok(c.h >= 44, `${tag}: ${c.h.toFixed(1)} px de alto`);
+        assert.strictEqual(c.lines, 1, `${tag}: el texto ocupa ${c.lines} líneas`);
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'sin scroll horizontal');
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  }
+}
+
 test('texto al 150 %: una palabra más ancha que la fila no saca el texto de la fila', () => run('chromium'));
+test('fichas de RIR a 375 px con texto al 100, 106, 125 y 150 %: ≥ 44 px de área táctil cada una', () => rirChips('chromium'));
+test('WebKit: fichas de RIR táctiles con cualquier tamaño de texto', { skip: skipWebkit }, () => rirChips('webkit'));
 test('WebKit: texto al 150 %, palabra más ancha que la fila', { skip: skipWebkit }, () => run('webkit'));
 test('texto al 150 %: la cabecera no cambia de alto al compactarse (subtítulo en dos líneas)', () => compactHeader('chromium'));
 test('WebKit: texto al 150 %, la cabecera no cambia de alto al compactarse', { skip: skipWebkit }, () => compactHeader('webkit'));

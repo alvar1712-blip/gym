@@ -22,7 +22,8 @@ documento recoge las reglas que deja la ronda (para que las pantallas nuevas las
 
 ## 2. Objetivos táctiles
 
-- 44 px de alto como mínimo para cualquier botón, enlace o campo, también los compactos (`.btn-sm`).
+- 44 px de alto como mínimo para cualquier botón, enlace o campo, también los compactos (`.btn-sm`), y 44 px de ancho
+  para botones y fichas (con su área ampliada; excepciones explícitas en §30).
 - Las zonas del mapa corporal son regiones de un dibujo (SVG) y se tocan por su área: no cuentan.
 
 ## 3. Nodos del DOM
@@ -534,3 +535,33 @@ las cabeceras `*-head` en fila con el icono como primer hijo: primer glifo − i
 Range; un emoji sobre baldosa se mide desde la baldosa) e `iconShrinkIssues` (ningún `svg.icon` más estrecho que su
 `width`). No cuentan los iconos detrás del texto («Ver progreso ›») ni la salida del modo foco (§18). Su prueba propia
 monta un caso roto y su arreglo de cada regla.
+
+## 30. Sesión de fuerza: olvidada abierta, fichas de RIR y «Aplicar a la plantilla» (ronda 9)
+
+- **Sesión olvidada abierta** (session-logic `proposedDuration`, `lastActivityAt`): el límite es lo último registrado
+  (la serie confirmada más reciente o el fin de la última actividad enlazada: inicio + duración si es importada; si
+  no, cuándo se registró, pero como mucho su duración después de lo anterior, para que registrarla tarde, justo antes
+  de terminar, no cuente como «ahora»). Si han pasado más de 60 min (`STALE_GAP_MIN`) desde ese límite, la sesión está
+  olvidada: la propuesta llega hasta el límite + 5 min y `endedAt` se guarda ahí (no «ahora»), así que la duración
+  automática no vuelve a «46 h» si después cambia una actividad enlazada. El criterio es el hueco, no el total: una
+  sesión larga activa (fuerza + carrera de 3 h) no se recorta. Sin nada con hora, el campo queda vacío y obligatorio,
+  como a posteriori. La hoja lo explica («La sesión lleva abierta 46 h: propuesta hasta tu última serie (18:00–19:05).
+  Revísala.») y Hoy cambia el reloj por «Sesión sin terminar · Abierta desde el mar 13 oct» (o «desde las 10:00» si es
+  de hoy) y «Terminar», que abre directamente la hoja (`#/session/<id>?finish=1`, la URL vuelve a la de la sesión).
+  Las sesiones ya guardadas no se migran.
+- **Fichas de RIR** (css/session.css): «Fallo» se queda (datos con `rir:'F'`, Epley y la progresión). A 100 %, una fila
+  con un `::before` que cubre el hueco (≥ 40 px de área a 375 px: 7 fichas en ~293 px no llegan a 44). Con texto
+  grande, «Fallo» arriba a todo el ancho y 0–5 debajo (≥ 44 px), siempre en una línea. Causa de fondo: la regla general
+  `html.text-large .chip { flex: 0 1 auto }` pisaba el reparto de cada fila de fichas (RIR, RPE, zonas, RIR de marcas
+  históricas) y las cifras se quedaban en 14–20 px; ahora va con `:where(html.text-large)` y manda el de cada fila.
+- **¿Aplicar a la plantilla?**: por defecto solo vienen marcados «Cambiar» y «Añadir»; «Quitar» y el nuevo orden, no
+  (saltarse hoy un ejercicio no es borrarlo de la rutina). Un ítem borrado de la plantilla con la sesión abierta
+  (estaba en `templateItemIds` al empezar y ya no está) no se vuelve a proponer como añadido; las sesiones antiguas
+  sin `templateItemIds` siguen como antes.
+
+Guarda (§4): además del alto, ningún botón ni ficha por debajo de 44 px de **ancho**, contando el área ampliada con
+`::before` (que tampoco cuenta como «texto que se sale de su caja»). Excepciones explícitas en `WIDTH_EXCEPTIONS`: las
+fichas de RIR a 100 % (≥ 40) y las celdas del calendario del resumen (7 por semana, ≥ 40); las zonas del mapa
+corporal (SVG) no cuentan. Pruebas: tests/unit/session.test.mjs, tests/e2e/session.test.cjs (sesión olvidada, sin
+series con hora y hoja de plantilla segura), tests/e2e/large-text-rows.test.cjs (RIR a 100/106/125/150 %, Chromium y
+WebKit).

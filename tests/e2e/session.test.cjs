@@ -216,7 +216,12 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     assert.match(diffTxt, /Añadir «Curl martillo»/);
     assert.match(diffTxt, /Quitar «Face pull»/);
     assert.strictEqual(await diff.locator('.ses-check').count(), 2);
+    // Segura por defecto: el añadido viene marcado; quitar de la rutina, no (saltarlo hoy no es borrarlo).
+    const box = (re) => diff.locator('.ses-check', { hasText: re }).locator('input');
+    assert.strictEqual(await box(/Añadir «Curl martillo»/).isChecked(), true);
+    assert.strictEqual(await box(/Quitar «Face pull»/).isChecked(), false);
     await shot(page, 'session-diff');
+    await box(/Quitar «Face pull»/).check(); // aquí sí se quiere quitar de la rutina
     await diff.locator('.sheet-actions button', { hasText: 'Aplicar a la plantilla' }).click();
     await page.waitForFunction((sid) => location.hash.split("?")[0] === `#/session/${sid}/summary`, id);
 
@@ -587,6 +592,164 @@ test('ejercicio repetido (Sprint 20 m y 30 m), asistencia en peso corporal y cam
     s = await getSession(page, id);
     assert.deepStrictEqual(s.exercises[0].sets.map((x) => [x.reps, x.timeSec]), [[null, 30], [null, 30]]);
     await shot(page, 'session-repeated');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('sesión olvidada abierta: Hoy lo dice, la propuesta llega hasta la última serie y la carga no se dispara', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    // Empezada hace 2 días a las 18:00, todas las series hechas en la primera hora; nunca se tocó «Terminar».
+    const id = await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      const m = await import('./js/session-logic.js');
+      const d = u.addDays(u.todayStr(), -2);
+      const s = await m.createStrengthSession({ templateId: 'tpl_d1', date: d, planDate: d });
+      s.startedAt = u.tsFromDate(d, 18);
+      s.createdAt = s.startedAt;
+      for (const se of s.exercises) for (const x of se.sets) Object.assign(x, { weight: x.weight ?? 50, reps: x.reps ?? 8, done: true, doneAt: s.startedAt + 3600e3 });
+      await window.__app.store.save('sessions', s);
+      return s.id;
+    });
+    await go(page, '#/today');
+    const card = page.locator('.today-active');
+    await card.waitFor();
+    const txt = await card.innerText();
+    assert.match(txt, /Abierta desde el /, txt);
+    assert.match(txt, /Terminar/, txt);
+    assert.doesNotMatch(txt, /\d+:\d\d:\d\d/, 'sin el reloj de 46 h');
+    await card.click();
+    // «Terminar» abre directamente la hoja de terminar.
+    const fin = page.locator('.sheet-panel.ses-finish-sheet');
+    await fin.waitFor();
+    assert.strictEqual(await page.evaluate(() => location.hash), `#/session/${id}`, 'la URL no se queda con ?finish');
+    const finTxt = await fin.innerText();
+    assert.match(finTxt, /La sesión lleva abierta \d+ h: propuesta hasta tu última serie \(18:00–19:05\)/, finTxt);
+    assert.strictEqual(await fin.locator('.ses-dur input').inputValue(), '65');
+    await fin.locator('.rpe-chips .chip', { hasText: /^7$/ }).click();
+    await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
+    await page.waitForFunction((sid) => location.hash.split('?')[0] === `#/session/${sid}/summary`, id);
+    let s = await getSession(page, id);
+    const load = await page.evaluate(async (sid) => (await import('./js/calc.js')).sessionLoad(window.__app.store.get('sessions', sid)), id);
+    assert.ok(s.durationMin < 300, `duración ${s.durationMin}`);
+    assert.ok(load < 3000, `carga ${load}`);
+    assert.deepStrictEqual([s.durationMin, s.durationAuto, (s.endedAt - s.startedAt) / 60000, load], [65, true, 65, 455]);
+    // Registrar después una actividad enlazada recalcula sobre la ventana propuesta (65 − 20), no sobre las 46 h.
+    await page.evaluate(async (sid) => {
+      const ses = window.__app.store.get('sessions', sid);
+      await window.__app.store.save('sessions', { id: 'act_late', kind: 'run', date: ses.date, planDate: ses.date, status: 'done', parentId: sid, parentItemId: null, movingSec: 1200, durationMin: 20 });
+    }, id);
+    await go(page, '#/today');
+    await go(page, `#/session/${id}`);
+    await page.waitForSelector('.ses-card');
+    s = await getSession(page, id);
+    assert.strictEqual(s.durationMin, 45);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('sesión olvidada sin series con hora: la duración se pide (no se inventa)', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    const id = await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      const m = await import('./js/session-logic.js');
+      const d = u.addDays(u.todayStr(), -1);
+      const s = await m.createStrengthSession({ templateId: 'tpl_d1', date: d, planDate: d });
+      s.startedAt = u.tsFromDate(d, 18);
+      await window.__app.store.save('sessions', s);
+      return s.id;
+    });
+    await go(page, `#/session/${id}`);
+    await page.waitForSelector('.ses-card');
+    await page.locator('.ses-finish').click();
+    const fin = page.locator('.sheet-panel.ses-finish-sheet');
+    await fin.waitFor();
+    assert.strictEqual(await fin.locator('.ses-dur input').inputValue(), '');
+    assert.match(await fin.innerText(), /La sesión lleva abierta \d+ h y no hay ninguna serie registrada con hora: indica cuánto duró la fuerza/);
+    await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
+    assert.match(await fin.locator('.ses-dur-error').innerText(), /Indica la duración/);
+    assert.strictEqual((await getSession(page, id)).status, 'active');
+    await fin.locator('.ses-dur input').fill('50');
+    await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
+    await page.waitForFunction((sid) => window.__app.store.get('sessions', sid).status === 'done', id);
+    const s = await getSession(page, id);
+    assert.deepStrictEqual([s.durationMin, s.durationAuto, (s.endedAt - s.startedAt) / 60000], [50, false, 50]);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('sesión olvidada abierta hoy mismo: Hoy dice desde qué hora (no «desde el» día de hoy)', async () => {
+  // A mediodía de Madrid (reloj de Playwright, el tiempo sigue corriendo): la hora y media de antes es del mismo día
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date());
+  const app = await openApp({ beforeLoad: (p) => p.context().clock.install({ time: new Date(`${day}T10:30:00Z`) }) });
+  const { page } = app;
+  try {
+    const at = await page.evaluate(async () => {
+      const m = await import('./js/session-logic.js');
+      const s = await m.createStrengthSession({ templateId: 'tpl_d1' });
+      s.startedAt = Date.now() - 90 * 60000; // empezada hace hora y media, sin ninguna serie confirmada
+      await window.__app.store.save('sessions', s);
+      return (await import('./js/util.js')).hhmm(s.startedAt);
+    });
+    await go(page, '#/today');
+    const card = page.locator('.today-active[data-stale="1"]');
+    await card.waitFor();
+    const txt = await card.innerText();
+    assert.match(txt, new RegExp(`Abierta desde las ${at}`), txt);
+    assert.doesNotMatch(txt, /Abierta desde el /, txt);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('«¿Aplicar a la plantilla?»: por defecto no borra lo saltado hoy ni recupera lo borrado de la rutina', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    const id = await createSession(page, { templateId: 'tpl_d1' });
+    await go(page, `#/session/${id}`);
+    await page.waitForSelector('.ses-card');
+    const s0 = await getSession(page, id);
+    const face = s0.exercises.find((x) => x.exerciseId === 'face_pull');
+    // Hoy se salta Face pull…
+    await card(page, face.id).locator('.ses-more').click();
+    await page.locator('.action-item', { hasText: 'Quitar de esta sesión' }).click();
+    await page.waitForFunction((sid) => !window.__app.store.get('sessions', sid).exercises.some((x) => x.exerciseId === 'face_pull'), id);
+    // …y, con la sesión abierta, se borra Dominadas de la rutina.
+    await page.evaluate(async () => {
+      const { store } = window.__app;
+      const t = store.get('templates', 'tpl_d1');
+      t.items = t.items.filter((i) => i.exerciseId !== 'dominadas');
+      await store.save('templates', t);
+    });
+    await go(page, '#/today');
+    await go(page, `#/session/${id}`);
+    await page.waitForSelector('.ses-card');
+    await page.locator('.ses-finish').click();
+    const fin = page.locator('.sheet-panel.ses-finish-sheet');
+    await fin.waitFor();
+    await fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' }).click();
+    const diff = page.locator('.sheet-panel.ses-diff-sheet');
+    await diff.waitFor();
+    const diffTxt = await diff.innerText();
+    assert.doesNotMatch(diffTxt, /Añadir «Dominadas»/, diffTxt);
+    assert.match(diffTxt, /Quitar «Face pull»/);
+    assert.strictEqual(await diff.locator('.ses-check', { hasText: /Quitar «Face pull»/ }).locator('input').isChecked(), false);
+    await diff.locator('.sheet-actions button', { hasText: 'Aplicar a la plantilla' }).click();
+    await page.waitForFunction((sid) => location.hash.split('?')[0] === `#/session/${sid}/summary`, id);
+    const ids = (await storeAll(page, 'templates')).find((t) => t.id === 'tpl_d1').items.map((i) => i.exerciseId);
+    assert.ok(ids.includes('face_pull'), `conserva Face pull: ${ids}`);
+    assert.ok(!ids.includes('dominadas'), `no recupera Dominadas: ${ids}`);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

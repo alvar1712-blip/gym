@@ -7,7 +7,7 @@
 import * as store from '../store.js';
 import { navigate, refresh } from '../router.js';
 import { h, icon, screen } from '../ui.js';
-import { todayStr, fmtDate, fmtDuration, addDays, diffDays, weekStart, parseDate, DAY_LETTER } from '../util.js';
+import { todayStr, fmtDate, fmtDuration, addDays, diffDays, weekStart, parseDate, dateFromTs, hhmm, DAY_LETTER } from '../util.js';
 import {
   ctxFromStore, dayStatus, weekPlan, effectiveDay, adherence, adherenceText, planEmoji, planLabel, STATUS_LABEL, hasWeekPattern,
 } from '../plan.js';
@@ -17,6 +17,7 @@ import {
 } from '../plan-ui.js';
 import { bodyweightQuickEntry } from './bodyweight.js';
 import { setProgress } from '../calc.js';
+import { proposedDuration, linkedActivities } from '../session-logic.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
 import { currentLabel } from '../context-logic.js';
 import { nextRelevant, todayLine, raceTitle, raceShortLabel, targetText, pendingOutcome, outcomePrompt } from '../races-logic.js';
@@ -276,20 +277,30 @@ function backupBanner() {
  * lugar de lo planificado, qué sustituye. `plan`: el plan de hoy si la sesión cuenta para hoy (si no, null).
  */
 function activeCard(s, timers, plan = null) {
-  const clock = h('span.today-clock.tnum');
+  // Olvidada abierta (más de una hora sin registrar nada, session-logic.proposedDuration): sin el reloj de «46:38:11»,
+  // desde cuándo está abierta y «Terminar», que abre directamente la hoja de terminar.
+  const stale = !!s.startedAt && proposedDuration(s, linkedActivities(s, store.all('sessions'))).stale;
+  const clock = stale ? null : h('span.today-clock.tnum');
   const tick = () => { clock.textContent = s.startedAt ? fmtDuration((Date.now() - s.startedAt) / 1000) : fmtDate(s.date); };
-  tick();
-  if (s.startedAt) timers.push(setInterval(tick, 1000));
+  if (clock) tick();
+  if (clock && s.startedAt) timers.push(setInterval(tick, 1000));
   const { done, total } = setProgress(s); // la misma cuenta que la barra de la sesión
   const progress = total ? `${done} de ${total} series` : null;
   const instead = plan && plan.kind !== 'rest' && plan.label && (plan.kind !== 'template' || plan.templateId !== s.templateId) ? `En lugar de ${plan.label}` : null;
-  const when = (s.planDate ?? s.date) !== todayStr() ? `Del ${fmtDate(s.planDate ?? s.date)}` : null;
+  const opened = s.startedAt ? dateFromTs(s.startedAt) : null;
+  const when = stale ? (opened === todayStr() ? `Abierta desde las ${hhmm(s.startedAt)}` : `Abierta desde el ${fmtDate(opened)}`)
+    : (s.planDate ?? s.date) !== todayStr() ? `Del ${fmtDate(s.planDate ?? s.date)}` : null;
   const sub = [progress, instead, when].filter(Boolean).join(' · ');
-  return h('button.card.card-accent.today-active', { type: 'button', dataset: { live: plan ? '1' : '' }, onClick: () => navigate(`#/session/${s.id}`) },
-    h('span.today-active-top', h('span.today-kicker', 'Sesión en curso'), clock),
-    h('span.today-active-name', s.templateName || 'Sesión'),
-    sub ? h('span.today-active-sub', sub) : null,
-    h('span.btn.btn-primary.btn-lg.btn-block', icon('play', 20), 'Continuar'));
+  return h('button.card.card-accent.today-active', {
+    type: 'button',
+    dataset: { live: plan ? '1' : '', stale: stale ? '1' : '' },
+    onClick: () => navigate(`#/session/${s.id}${stale ? '?finish=1' : ''}`),
+  },
+  h('span.today-active-top', h('span.today-kicker', stale ? 'Sesión sin terminar' : 'Sesión en curso'), clock),
+  h('span.today-active-name', s.templateName || 'Sesión'),
+  sub ? h('span.today-active-sub', sub) : null,
+  stale ? h('span.btn.btn-primary.btn-lg.btn-block', icon('check', 20), 'Terminar')
+    : h('span.btn.btn-primary.btn-lg.btn-block', icon('play', 20), 'Continuar'));
 }
 
 /** Próximo evento en las próximas 2 semanas: una tarjeta (cuanto más cerca, más visible). Más lejos, raceLine. */

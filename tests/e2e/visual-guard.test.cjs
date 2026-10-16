@@ -6,7 +6,8 @@
 //   · sin scroll horizontal ni nada que se salga por los lados (salvo dentro de un carrusel);
 //   · la cabecera no tapa el principio del contenido y lo último queda por encima de la barra de pestañas;
 //   · ningún texto por debajo de 12 px, ninguno cortado con «…» o a N líneas, ninguno que se salga de su caja (un
-//     botón, una ficha) y ningún botón por debajo de 44 px de alto;
+//     botón, una ficha), ningún botón por debajo de 44 px de alto y ningún botón ni ficha por debajo de 44 px de ancho
+//     (con su área ampliada con ::before; excepciones explícitas en WIDTH_EXCEPTIONS);
 //   · las gráficas con la franja de contexto (ronda 8, E) y el globo de un hecho abierto;
 //   · el panel de la semana pasada con «Puesta a punto» y su «¿Por qué?» abierto (ronda 8, G);
 //   · una sesión larga con superserie y ejercicios plegados, uno desplegado a mano y otro en curso (ronda 8, H);
@@ -210,6 +211,15 @@ const routes = (ids) => [
 
 /** Medición en la página (pantalla arriba del todo): devuelve la lista de problemas. */
 function inspectTop() {
+  // Excepciones explícitas al ancho táctil de 44 px: [selector, mínimo]. Cada una, con su porqué. (Las zonas del mapa
+  // corporal son regiones de un dibujo SVG: no cuentan, como en el alto.)
+  const WIDTH_EXCEPTIONS = [
+    // RIR a 100 %: Fallo y 0–5 en una fila de ~293 px (375 px) no llegan a 44 px; el ::before cubre el hueco (≥ 40).
+    // Con texto grande van en dos filas y sí se exigen 44 (tests/e2e/large-text-rows.test.cjs).
+    ['html:not(.text-large) .ses-editor .ses-rir .chip', 39.5],
+    // Celdas del calendario del resumen: 7 por semana (41–43 px a 375–390 px).
+    ['.sum-cal-cell', 39.5],
+  ];
   const vw = innerWidth;
   const issues = [];
   const cls = (el) => String(el.className?.baseVal ?? el.className ?? '').split(/\s+/).filter(Boolean).slice(0, 2).join('.');
@@ -240,8 +250,13 @@ function inspectTop() {
     // Recortado a N líneas (-webkit-line-clamp) con más texto del que cabe. Excepto los avances marcados con
     // data-preview (el resumen del analista: el texto entero está a un toque, en «Ver análisis» / su tarjeta)
     if (cs.webkitLineClamp && cs.webkitLineClamp !== 'none' && el.scrollHeight > el.clientHeight + 1 && !el.closest('[data-preview]')) issues.push(`texto cortado a ${cs.webkitLineClamp} líneas: ${desc(el)}`);
+    // Área táctil ampliada con un ::before absoluto (fichas de RIR): no es texto, pero cuenta en scrollWidth
+    const bf = getComputedStyle(el, '::before');
+    const hitArea = bf.content !== 'none' && bf.position === 'absolute';
+    const extL = hitArea ? Math.max(0, -parseFloat(bf.left) || 0) : 0;
+    const extR = hitArea ? Math.max(0, -parseFloat(bf.right) || 0) : 0;
     // Texto que se sale de su propia caja (un botón, una ficha) y pisa lo de al lado
-    if ((own.trim() || el.matches('button, [role=button]')) && !el.closest('svg') && cs.overflowX === 'visible' && cs.display !== 'inline' && el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1) issues.push(`texto que se sale de su caja (${el.scrollWidth} > ${el.clientWidth} px): ${desc(el)}`);
+    if ((own.trim() || el.matches('button, [role=button]')) && !el.closest('svg') && cs.overflowX === 'visible' && cs.display !== 'inline' && el.clientWidth > 0 && el.scrollWidth > el.clientWidth + extR + 1) issues.push(`texto que se sale de su caja (${el.scrollWidth} > ${el.clientWidth} px): ${desc(el)}`);
     if (own.trim()) {
       if (parseFloat(cs.fontSize) < 11.9) issues.push(`texto de ${cs.fontSize}: ${desc(el)}`);
       if (/\bnull\b|\bundefined\b|NaN|Infinity|\[object |:-\d|\d+:\d{2}:\d{2}\s?\/km/.test(own)) issues.push(`texto roto: ${desc(el)}`);
@@ -249,6 +264,11 @@ function inspectTop() {
     const tappable = el.matches('button, a[href], input:not([type=hidden]):not([type=checkbox]):not([type=radio]), select, textarea, [role=button], [role=tab]');
     // Las zonas del mapa corporal (SVG) son regiones del dibujo, no botones: se tocan por su área
     if (tappable && r.height < 43.5 && !el.closest('svg, .why-body')) issues.push(`objetivo táctil de ${Math.round(r.width)}×${Math.round(r.height)}: ${desc(el)}`);
+    // Ancho táctil (ronda 9, M14): ≥ 44 px para botones y fichas, contando el área ampliada con ::before.
+    if (el.matches('button, .chip, [role=button]') && !el.closest('svg, .why-body')) {
+      const min = WIDTH_EXCEPTIONS.find(([sel]) => el.matches(sel))?.[1] ?? 43.5;
+      if (r.width + extL + extR < min) issues.push(`objetivo táctil de ${Math.round(r.width + extL + extR)} px de ancho: ${desc(el)}`);
+    }
   }
   issues.push(...overlapIssues(root, desc, shown));
   issues.push(...iconGapIssues(root, desc, shown), ...iconShrinkIssues(root, desc));

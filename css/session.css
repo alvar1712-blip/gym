@@ -253,9 +253,16 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 
 .ses-sub { display: flex; flex-direction: column; gap: 5px; }
 .ses-sub-label { font-size: calc(12px * var(--ts)); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+/* RIR (Fallo, 0–5): se toca en cada serie (docs/PULIDO.md §30). `.ses-editor .ses-rir .chip` (0,3,0) gana a las
+   reglas generales de texto grande sin depender del orden de carga; sin partir ni guiones: «Fallo» en una línea. */
 .ses-rir { flex-wrap: nowrap; gap: 5px; }
-.ses-rir .chip { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0; font-size: calc(16px * var(--ts)); }
-.ses-rir .chip:first-child { flex-grow: 1.6; }
+.ses-editor .ses-rir .chip { position: relative; flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0; font-size: calc(16px * var(--ts)); white-space: nowrap; hyphens: none; }
+.ses-editor .ses-rir .chip:first-child { flex-grow: 1.6; }
+/* Área táctil hasta el hueco de al lado: 7 fichas en una fila de ~293 px (375 px) no llegan a 44 px visibles. */
+.ses-editor .ses-rir .chip::before { content: ''; position: absolute; inset: -3px; }
+/* Texto grande: no caben en una fila. «Fallo» arriba a todo el ancho y 0–5 debajo (≥ 44 px cada una). */
+html.text-large .ses-editor .ses-rir { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+html.text-large .ses-editor .ses-rir .chip:first-child { grid-column: 1 / -1; }
 
 .ses-type .seg-btn { min-height: 44px; font-size: calc(15px * var(--ts)); padding: 0 2px; }
 /* Tipo elegido bien visible bajo la luz del gimnasio (decide si cuenta para volumen, series y récords). */

@@ -8,11 +8,11 @@ import {
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress } from '../calc.js';
-import { navigate, back, refresh, screenToken, backFrom, navigateFrom } from '../router.js';
+import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import { exerciseHistory } from '../stats.js';
 import {
-  lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, finishSession,
+  lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, lastActivityAt, finishSession,
   pendingCount, doneCount, templateDiff, applyTemplateDiff, autoDuration, syncAutoDuration,
   listBlocks, itemStates, foldedKeys, nextPendingIndex, jumpTarget,
 } from '../session-logic.js';
@@ -831,8 +831,16 @@ export function mountSession(root, params = {}) {
     const nothing = doneCount(session) === 0 && acts.length === 0;
 
     let explain;
+    // Sesión olvidada abierta (más de una hora sin registrar nada): lo dice y propone hasta lo último registrado.
+    const openFor = pd.elapsedMin >= 180 ? `${Math.floor(pd.elapsedMin / 60)} h` : fmtMinutes(pd.elapsedMin);
     if (!live) {
       explain = 'Sesión registrada a posteriori: indica cuánto duró la fuerza (sin el cardio que registres aparte).';
+    } else if (pd.stale && pd.proposed == null) {
+      explain = `La sesión lleva abierta ${openFor} y no hay ninguna serie registrada con hora: indica cuánto duró la fuerza (sin el cardio que registres aparte).`;
+    } else if (pd.stale) {
+      const what = lastActivityAt(session, []) === pd.lastAt ? 'tu última serie' : 'tu última actividad enlazada';
+      const minus = pd.activitiesMin > 0 ? ` − ${pd.activitiesMin} min de ${acts.length === 1 ? 'la actividad enlazada' : 'las actividades enlazadas'} = ${pd.proposed} min` : '';
+      explain = `La sesión lleva abierta ${openFor}: propuesta hasta ${what} (${hhmm(session.startedAt)}–${hhmm(pd.endAt)})${minus}. Revísala.`;
     } else if (acts.length && pd.activitiesMin > 0) {
       explain = `${pd.elapsedMin} min desde el inicio − ${pd.activitiesMin} min de ${acts.length === 1 ? 'la actividad enlazada' : 'las actividades enlazadas'} (se cuentan aparte) = ${pd.proposed} min.`;
     } else {
@@ -840,7 +848,7 @@ export function mountSession(root, params = {}) {
     }
     const durErr = h('p.form-error.ses-dur-error', { hidden: true, role: 'alert' });
     const durInp = numInput({
-      value: dur, decimals: 0, inputmode: 'numeric', suffix: 'min', placeholder: live ? String(pd.proposed) : 'Minutos', ariaLabel: 'Duración en minutos',
+      value: dur, decimals: 0, inputmode: 'numeric', suffix: 'min', placeholder: pd.proposed != null ? String(pd.proposed) : 'Minutos', ariaLabel: 'Duración en minutos',
       onInput: (v) => {
         dur = v;
         touched = true;
@@ -900,7 +908,11 @@ export function mountSession(root, params = {}) {
           } else {
             auto = fresh.proposed != null && Math.round(minutes) === fresh.proposed;
           }
-          finishSession(session, { durationMin: minutes, rpe, notes: session.notes, now, auto });
+          // Olvidada abierta: termina donde acaba la propuesta (o lo indicado), no ahora; así la duración automática
+          // no vuelve a «hasta ahora» si después cambia una actividad enlazada.
+          const endedAt = !fresh.stale ? now
+            : fresh.endAt ?? Math.min(now, session.startedAt + (Math.max(0, minutes) + fresh.activitiesMin) * 60000);
+          finishSession(session, { durationMin: minutes, rpe, notes: session.notes, now, endedAt, auto });
           clearInterval(timer);
           await store.save('sessions', session).catch(() => {});
           close();
@@ -918,8 +930,10 @@ export function mountSession(root, params = {}) {
     const changes = templateDiff(tpl, session, { nameOf: (eid) => store.exercise(eid)?.name });
     if (!changes.length) return Promise.resolve(false);
     return new Promise((resolve) => {
+      // Segura por defecto: cambiar y añadir vienen marcados; quitar y reordenar, no (saltarse hoy un ejercicio o
+      // cambiar el orden un día no es querer cambiar la rutina).
       const checks = changes.map((c) => {
-        const box = h('input.ses-check-input', { type: 'checkbox', checked: true, dataset: { change: c.id } });
+        const box = h('input.ses-check-input', { type: 'checkbox', checked: c.type === 'swap' || c.type === 'add', dataset: { change: c.id } });
         return { c, box, row: h('label.ses-check', box, h('span', c.label)) };
       });
       let applied = false;
@@ -958,6 +972,11 @@ export function mountSession(root, params = {}) {
   root.replaceChildren(content);
   renderAll();
   if (session.status === 'active') focusBar(focusEl);
+  // «Terminar» desde Hoy (sesión olvidada abierta): directo a la hoja; la URL vuelve a la de la sesión.
+  if (params.finish && session.status === 'active') {
+    replaceUrl(`#/session/${session.id}`);
+    openFinish();
+  }
   if (synced) toast(`Duración de la fuerza recalculada: ${fmtMinutes(synced.to)} (se descuentan las actividades enlazadas).`, { kind: 'success' });
 
   // Volver a donde se dejó: tras el scroll a 0 que hace el router, ir a la tarjeta del cursor.

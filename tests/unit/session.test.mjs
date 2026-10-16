@@ -65,6 +65,21 @@ test('templateDiff: un ítem que se repite en la sesión cuenta como añadido', 
   assert.deepEqual(ch.map((c) => c.id), ['add:dup']);
 });
 
+test('templateDiff: un ítem borrado de la plantilla con la sesión abierta no se vuelve a proponer como añadido', () => {
+  const s = sessionFrom(D1);
+  s.templateItemIds = D1.items.map((it) => it.id); // la plantilla al empezar
+  // Se borra «Dominadas» (ti_d1_2) de la plantilla durante la sesión.
+  const tpl = { ...D1, items: D1.items.filter((it) => it.id !== 'ti_d1_2') };
+  const se = s.exercises.find((x) => x.templateItemId === 'ti_d1_2');
+  assert.equal(templateDiff(tpl, s).some((c) => c.type === 'add'), false, 'no recupera el borrado');
+  // Un ejercicio añadido en la sesión (sin templateItemId) sí sigue siendo un añadido.
+  s.exercises.push({ id: 'seX', exerciseId: 'curl_martillo', templateItemId: null, alternatives: [], target: { sets: 3 }, sets: [] });
+  assert.deepEqual(templateDiff(tpl, s).filter((c) => c.type === 'add').map((c) => c.seId), ['seX']);
+  // Sesiones antiguas sin templateItemIds: como hasta ahora (no se sabe si estaba al empezar).
+  delete s.templateItemIds;
+  assert.ok(templateDiff(tpl, s).some((c) => c.id === `add:${se.id}`));
+});
+
 test('applyTemplateDiff: aplica todo sin mutar la plantilla original', () => {
   const before = JSON.stringify(D1);
   const s = sessionFrom(D1);
@@ -249,13 +264,74 @@ test('validateSet: en peso × reps y unilateral el peso es obligatorio (0 = sin 
 
 test('proposedDuration resta las actividades enlazadas; sesión pasada → null', () => {
   const now = Date.UTC(2026, 8, 23, 19, 0);
-  const s = { id: 's1', startedAt: now - 95 * 60000 };
-  const acts = [{ kind: 'run', parentId: 's1', movingSec: 1800, durationMin: 30 }];
-  assert.deepEqual(proposedDuration(s, acts, now), { elapsedMin: 95, activitiesMin: 30, proposed: 65 });
-  assert.deepEqual(proposedDuration(s, [], now), { elapsedMin: 95, activitiesMin: 0, proposed: 95 });
+  // La última serie, hace 10 min: la sesión sigue viva (no está olvidada).
+  const s = { id: 's1', startedAt: now - 95 * 60000, exercises: [{ sets: [{ done: true, doneAt: now - 10 * 60000 }] }] };
+  const acts = [{ kind: 'run', parentId: 's1', movingSec: 1800, durationMin: 30, createdAt: now - 40 * 60000 }];
+  assert.deepEqual(proposedDuration(s, acts, now), { elapsedMin: 95, activitiesMin: 30, proposed: 65, stale: false, endAt: now, lastAt: now - 10 * 60000 });
+  assert.deepEqual(proposedDuration(s, [], now), { elapsedMin: 95, activitiesMin: 0, proposed: 95, stale: false, endAt: now, lastAt: now - 10 * 60000 });
   assert.equal(proposedDuration({ startedAt: null }, [], now).proposed, null);
+  assert.equal(proposedDuration({ startedAt: null }, [], now).stale, false);
   const all = [...acts, { kind: 'strength', parentId: 's1' }, { kind: 'bike', parentId: 'otra' }];
   assert.equal(linkedActivities(s, all).length, 1);
+});
+
+test('proposedDuration: sesión olvidada abierta → propuesta hasta la última serie o actividad, no hasta ahora', () => {
+  const t0 = Date.UTC(2026, 9, 13, 16, 0); // mar 13 oct, 18:00 en Madrid
+  const now = t0 + 46 * 3600e3;
+  const sets = (...mins) => mins.map((m) => ({ done: true, doneAt: t0 + m * 60000 }));
+  const s = { id: 's1', startedAt: t0, exercises: [{ sets: sets(10, 35, 60) }, { sets: [{ done: false, doneAt: null }] }] };
+  // 46 h abierta, última serie a los 60 min: 60 + 5 de cortesía (no 2.760)
+  let pd = proposedDuration(s, [], now);
+  assert.equal(pd.stale, true);
+  assert.equal(pd.proposed, 65);
+  assert.equal(pd.lastAt, t0 + 60 * 60000);
+  assert.equal(pd.endAt, t0 + 65 * 60000);
+  assert.equal(pd.elapsedMin, 46 * 60, 'el transcurrido real sigue disponible para explicarlo');
+  // Una actividad enlazada registrada después de la fuerza mueve el límite a su final (y se descuenta): registrada
+  // a los 85 min, acaba ahí; registrada a los 100, como mucho a los 60 + 30 (su duración tras la última serie).
+  const run = { kind: 'run', parentId: 's1', movingSec: 1800, durationMin: 30, createdAt: t0 + 85 * 60000 };
+  pd = proposedDuration(s, [run], now);
+  assert.deepEqual([pd.stale, pd.endAt, pd.proposed], [true, t0 + 90 * 60000, 60]);
+  pd = proposedDuration(s, [{ ...run, createdAt: t0 + 100 * 60000 }], now);
+  assert.deepEqual([pd.stale, pd.endAt, pd.proposed], [true, t0 + 95 * 60000, 65]);
+  // Registrada tarde (al volver, justo antes de terminar): no cuenta como «ahora»; como mucho acaba su duración
+  // después de lo anterior (la última serie), así que la sesión sigue olvidada y la propuesta no se dispara.
+  const lateRun = { ...run, createdAt: now - 60000 };
+  pd = proposedDuration(s, [lateRun], now);
+  assert.deepEqual([pd.stale, pd.lastAt, pd.endAt, pd.proposed], [true, t0 + 90 * 60000, t0 + 95 * 60000, 65]);
+  // Importada (con hora de inicio): su fin es inicio + duración, no cuándo se importó.
+  const imported = { kind: 'run', parentId: 's1', movingSec: 1800, elapsedSec: 1860, durationMin: 30, startedAt: t0 + 70 * 60000, createdAt: now - 60000 };
+  pd = proposedDuration(s, [imported], now);
+  assert.deepEqual([pd.stale, pd.lastAt, pd.endAt], [true, t0 + 101 * 60000, t0 + 106 * 60000]);
+  // Sin ninguna serie con hora (datos antiguos o con horas ajenas a la sesión): sin propuesta, campo obligatorio.
+  const old = { id: 's2', startedAt: t0, exercises: [{ sets: [{ done: true, doneAt: 1 }, { done: true }] }] };
+  pd = proposedDuration(old, [], now);
+  assert.deepEqual([pd.stale, pd.proposed, pd.endAt, pd.lastAt], [true, null, null, null]);
+  // Una sesión larga de verdad (3 h, fuerza + carrera), activa ahora: no se recorta.
+  const long = { id: 's3', startedAt: now - 180 * 60000, exercises: [{ sets: [{ done: true, doneAt: now - 70 * 60000 }] }] };
+  const longRun = { kind: 'run', parentId: 's3', movingSec: 3600, durationMin: 60, createdAt: now - 5 * 60000 };
+  pd = proposedDuration(long, [longRun], now);
+  assert.deepEqual([pd.stale, pd.proposed, pd.endAt], [false, 120, now]);
+  // Y a 59 min de la última serie todavía no está olvidada; a 61, sí.
+  assert.equal(proposedDuration(s, [], t0 + 119 * 60000).stale, false);
+  assert.equal(proposedDuration(s, [], t0 + 121 * 60000).stale, true);
+});
+
+test('finishSession con el fin propuesto de una sesión olvidada: la duración automática no vuelve a «hasta ahora»', () => {
+  const t0 = Date.UTC(2026, 9, 13, 16, 0);
+  const now = t0 + 46 * 3600e3;
+  const s = { id: 's1', kind: 'strength', status: 'active', startedAt: t0, notes: '', exercises: [{ sets: [{ done: true, doneAt: t0 + 60 * 60000 }] }] };
+  const pd = proposedDuration(s, [], now);
+  finishSession(s, { durationMin: pd.proposed, rpe: 7, now, endedAt: pd.endAt, auto: true });
+  assert.equal(s.endedAt, t0 + 65 * 60000);
+  assert.equal(s.durationMin, 65);
+  // Registrar o editar después una actividad enlazada recalcula sobre la ventana propuesta, no sobre 46 h.
+  const run = { kind: 'run', parentId: 's1', movingSec: 20 * 60, durationMin: 20 };
+  assert.deepEqual(syncAutoDuration(s, [run]), { from: 65, to: 45 });
+  // Sin `endedAt` se cierra en `now`, como siempre.
+  const s2 = { id: 's2', status: 'active', startedAt: t0, notes: '', exercises: [] };
+  finishSession(s2, { durationMin: 30, now });
+  assert.equal(s2.endedAt, now);
 });
 
 test('finishSession: descarta pendientes y cierra', () => {

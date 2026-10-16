@@ -755,15 +755,57 @@ export function linkedActivities(session, sessions, seId = null) {
     && (seId == null || a.parentItemId === seId));
 }
 
+/** Sin registrar nada (serie ni actividad enlazada) durante más de estos minutos, la sesión se da por olvidada abierta. */
+export const STALE_GAP_MIN = 60;
+/** Cortesía tras lo último registrado (recoger, estirar) al proponer el final de una sesión olvidada. */
+const STALE_GRACE_MIN = 5;
+
+/**
+ * Último momento con algo registrado en una sesión con cronómetro: la serie confirmada más reciente (doneAt)
+ * o el fin de la última actividad enlazada. Una importada (con hora) acaba en inicio + duración; una manual, cuando
+ * se registró, pero como mucho su duración después de lo anterior: registrada tarde (al volver al día siguiente,
+ * antes de terminar) no es «ahora». Solo cuenta lo que cae entre el inicio y `now` (las horas ajenas a la sesión no
+ * dicen nada de ella); null si no hay nada. pura
+ */
+export function lastActivityAt(session, activities = [], now = Date.now()) {
+  const start = session?.startedAt;
+  if (!start) return null;
+  let last = null;
+  const take = (t) => { if (Number.isFinite(t) && t >= start && (last == null || t > last)) last = t; };
+  for (const se of session.exercises || []) for (const s of se.sets || []) if (s.done && s.doneAt <= now) take(s.doneAt);
+  const manual = [];
+  for (const a of activities) {
+    if (Number.isFinite(a.startedAt) && a.startedAt > 0) {
+      const sec = a.elapsedSec || a.movingSec || (sessionDurationMin(a) || 0) * 60;
+      take(Math.min(a.startedAt + sec * 1000, now));
+    } else if (Number.isFinite(a.createdAt)) manual.push(a);
+  }
+  // Manuales en el orden en que se registraron: cada una, a continuación de lo anterior
+  manual.sort((a, b) => a.createdAt - b.createdAt);
+  for (const a of manual) take(Math.min(a.createdAt, (last ?? start) + (sessionDurationMin(a) || 0) * 60000, now));
+  return last;
+}
+
 /**
  * Duración propuesta al terminar: minutos desde el inicio menos la duración de las actividades
- * enlazadas (para no contar dos veces la carga). Sesión pasada (sin startedAt): proposed = null. pura
+ * enlazadas (para no contar dos veces la carga). Sesión pasada (sin startedAt): proposed = null.
+ * Sesión olvidada abierta (`stale`: más de STALE_GAP_MIN sin registrar nada; si no hay nada, desde el inicio):
+ * la propuesta llega hasta lo último registrado + la cortesía, y `endAt` es ese final (el `endedAt` que hay que
+ * guardar para que la duración automática no vuelva a «hasta ahora»). Sin nada con hora → proposed = null (la
+ * duración se pide, como a posteriori). El criterio es el hueco, no el total: una sesión larga activa no se recorta.
+ * Devuelve { elapsedMin, activitiesMin, proposed, stale, endAt, lastAt }. pura
  */
 export function proposedDuration(session, activities = [], now = Date.now()) {
   const activitiesMin = Math.round(sum(activities, (a) => sessionDurationMin(a)));
-  if (!session.startedAt) return { elapsedMin: null, activitiesMin, proposed: null };
+  if (!session.startedAt) return { elapsedMin: null, activitiesMin, proposed: null, stale: false, endAt: null, lastAt: null };
   const elapsedMin = Math.max(0, Math.round((now - session.startedAt) / 60000));
-  return { elapsedMin, activitiesMin, proposed: Math.max(0, elapsedMin - activitiesMin) };
+  const lastAt = lastActivityAt(session, activities, now);
+  const stale = now - (lastAt ?? session.startedAt) > STALE_GAP_MIN * 60000;
+  if (!stale) return { elapsedMin, activitiesMin, proposed: Math.max(0, elapsedMin - activitiesMin), stale, endAt: now, lastAt };
+  if (lastAt == null) return { elapsedMin, activitiesMin, proposed: null, stale, endAt: null, lastAt };
+  const endAt = Math.min(now, lastAt + STALE_GRACE_MIN * 60000);
+  const upToMin = Math.round((endAt - session.startedAt) / 60000);
+  return { elapsedMin, activitiesMin, proposed: Math.max(0, upToMin - activitiesMin), stale, endAt, lastAt };
 }
 
 /**
@@ -813,9 +855,10 @@ export function syncLinkedDuration(sessionId) {
 /**
  * Cierra la sesión: descarta las series pendientes y fija estado, fin, duración, RPE y notas.
  * `auto`: la duración es la propuesta automática (se recalcula si cambian las actividades enlazadas).
+ * `endedAt`: fin de la sesión si no es `now` (sesión olvidada abierta: el `endAt` de proposedDuration).
  * Muta `session`. Devuelve el nº de series descartadas. pura
  */
-export function finishSession(session, { durationMin = null, rpe = null, notes = session.notes, now = Date.now(), auto = false } = {}) {
+export function finishSession(session, { durationMin = null, rpe = null, notes = session.notes, now = Date.now(), endedAt = null, auto = false } = {}) {
   let discarded = 0;
   for (const se of session.exercises || []) {
     const before = (se.sets || []).length;
@@ -824,7 +867,7 @@ export function finishSession(session, { durationMin = null, rpe = null, notes =
     for (const s of se.sets) delete s.origWeight;
   }
   session.status = 'done';
-  session.endedAt = session.startedAt ? now : null;
+  session.endedAt = session.startedAt ? (Number.isFinite(endedAt) && endedAt >= session.startedAt ? endedAt : now) : null;
   session.durationMin = durationMin != null && Number.isFinite(durationMin) ? Math.max(0, Math.round(durationMin)) : null;
   session.durationAuto = !!(auto && session.startedAt && session.durationMin != null);
   delete session.durationDraft;
@@ -862,10 +905,14 @@ export function templateDiff(template, session, { nameOf = null } = {}) {
   const nm = (id, fallback) => (nameOf && nameOf(id)) || fallback || id;
   const { matched, isMatched } = matchItems(template, session);
   const ses = session.exercises || [];
+  // Ítems que estaban en la plantilla al empezar (sesiones antiguas: no se sabe → como antes).
+  const atStart = Array.isArray(session.templateItemIds) ? new Set(session.templateItemIds) : null;
   const swaps = [];
   const adds = [];
   for (const se of ses) {
     if (!isMatched(se)) {
+      // Su ítem se borró de la plantilla con la sesión abierta: fue a propósito, no se vuelve a proponer.
+      if (atStart && se.templateItemId && atStart.has(se.templateItemId) && !(template.items || []).some((i) => i.id === se.templateItemId)) continue;
       adds.push({ id: `add:${se.id}`, type: 'add', seId: se.id, exerciseId: se.exerciseId, label: `Añadir «${nm(se.exerciseId, se.exName)}»` });
       continue;
     }

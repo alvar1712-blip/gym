@@ -1165,7 +1165,9 @@ html.text-large :is(.btn, .seg-btn, .chip, .today-quick-btn, .prg-mrow) {
   padding-bottom: 6px;
   line-height: 1.15;
 }
-html.text-large .chip { flex: 0 1 auto; max-width: 100%; }
+/* :where(): pesa como `.chip` (gana a su `flex: none` por orden), así que el reparto propio de una fila de fichas
+   (`.rpe-chips .chip`, RIR, zonas, flujo del ciclo) sigue mandando; antes lo pisaba y las cifras se quedaban en 15–20 px. */
+:where(html.text-large) .chip { flex: 0 1 auto; max-width: 100%; }
 html.text-large :is(.list-item-title.lines-2, .lib-tpl-ex, .cal-row-plan-name) { -webkit-line-clamp: 4; line-clamp: 4; }
 html.text-large .topbar.topbar-long h1 { -webkit-line-clamp: 3; line-clamp: 3; }
 html.text-large .stepper-step { font-size: calc(14px * min(var(--ts), 1.15)); }
