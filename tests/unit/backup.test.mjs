@@ -10,7 +10,7 @@ import {
 import {
   THRESHOLD_KEYS, thresholdDefaults, getPath, setPath, fixPair, planLabel, shortPlanLabel, weekSummaryText, patternFromDate,
 } from '../../js/settings-logic.js';
-import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT } from '../../js/store.js';
+import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT, STORES } from '../../js/store.js';
 import { defaultSettings, exampleWeekPatterns, SEED_EXERCISES, SEED_TEMPLATES, TEMPLATE_IDS } from '../../js/seed.js';
 import { deepClone } from '../../js/util.js';
 import { buildSeries, encodeTrack, decodeTrack, computeBestEfforts, effortsOf } from '../../js/best-efforts.js';
@@ -117,6 +117,10 @@ function sampleExport() {
       bodyweight: [{ id: '2026-09-20', kg: 75.4 }, { id: '2026-09-21', kg: 75.1 }],
       checkins: [{ id: 'c1', date: '2026-09-21', timing: 'pre', sleep: 2 }],
       goals: [],
+      cycle: [],
+      context: [],
+      pastRecords: [],
+      races: [],
     },
   };
 }
@@ -277,6 +281,93 @@ test('parseBackupText: errores amables para archivos que no son una copia válid
   // Sin validador externo: al menos exige un bloque data.
   assert.equal(parseBackupText('{"x":1}').ok, false);
   assert.equal(parseBackupText(JSON.stringify(obj)).ok, true);
+});
+
+test('validateBackup: formato entero ≥ 1 (NaN, 0, negativo, decimal o texto no valen)', () => {
+  const obj = sampleExport();
+  for (const format of [NaN, 0, -1, 1.5, '2', null, undefined, Infinity]) {
+    const v = validateBackup({ ...obj, format });
+    assert.equal(v.ok, false, `format ${String(format)}`);
+    assert.match(v.error, /formato/, `format ${String(format)}: ${v.error}`);
+  }
+  assert.match(validateBackup({ ...obj, format: BACKUP_FORMAT + 1 }).error, /versión más nueva/);
+  assert.equal(validateBackup({ ...obj, format: 1 }).ok, true);
+  assert.equal(validateBackup({ ...obj, format: 2 }).ok, true);
+});
+
+test('validateBackup: con formato 2 falta cualquier sección → «La copia está incompleta»', () => {
+  const missing = (s, format = 2) => {
+    const obj = sampleExport();
+    obj.format = format;
+    delete obj.data[s];
+    return validateBackup(obj);
+  };
+  assert.equal(missing('exercises').error, 'La copia está incompleta: falta «Ejercicios».');
+  for (const s of STORES) {
+    const v = missing(s);
+    assert.equal(v.ok, false, `sin «${s}»`);
+    assert.match(v.error, /^La copia está incompleta: falta «[^»]+»\.$/, s);
+  }
+  // null tampoco es una sección
+  const obj = sampleExport();
+  obj.data.sessions = null;
+  assert.match(validateBackup(obj).error, /incompleta: falta «Sesiones»/);
+});
+
+test('validateBackup: formato 1 exige solo las 8 secciones de la primera versión (ciclo y las de la ronda 6 llegan vacías)', () => {
+  // La primera versión (formato 1) no tenía 'cycle'; la ronda 5 la añadió sin cambiar el formato.
+  const v1 = sampleExport();
+  v1.format = 1;
+  for (const s of ['cycle', 'context', 'pastRecords', 'races']) delete v1.data[s];
+  const v = validateBackup(v1);
+  assert.equal(v.ok, true, v.error);
+  assert.equal(v.counts.cycle, 0);
+  assert.equal(v.counts.races, 0);
+  // Con ciclo (ronda 5) también vale.
+  assert.equal(validateBackup({ ...v1, data: { ...v1.data, cycle: [{ id: '2026-09-01', flow: 'medium' }] } }).ok, true);
+  for (const s of ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals']) {
+    const o = JSON.parse(JSON.stringify(v1));
+    delete o.data[s];
+    assert.match(validateBackup(o).error || '', /^La copia está incompleta: falta «/, `formato 1 sin «${s}»`);
+  }
+  // Una sección opcional que viene, pero no es una lista, sigue siendo un daño.
+  assert.match(validateBackup({ ...v1, data: { ...v1.data, context: { a: 1 } } }).error, /dañada/);
+});
+
+test('validateBackup: cada id es un texto no vacío o un número finito', () => {
+  for (const id of [true, false, '', null, undefined, NaN, Infinity, { bad: 1 }, ['a']]) {
+    const obj = sampleExport();
+    obj.data.sessions.push({ id, kind: 'run', date: '2026-01-01' });
+    const v = validateBackup(obj);
+    assert.equal(v.ok, false, `id ${JSON.stringify(id)}`);
+    assert.equal(v.error, 'La copia tiene registros sin identificador válido en «Sesiones».');
+  }
+  const ok = sampleExport();
+  ok.data.checkins.push({ id: 7, date: '2026-09-22' });
+  assert.equal(validateBackup(ok).ok, true, 'un número finito vale');
+  const notObj = sampleExport();
+  notObj.data.goals.push('texto');
+  assert.match(validateBackup(notObj).error, /sin identificador válido en «Objetivos»/);
+});
+
+test('validateBackup: sin ids repetidos en una sección (el mismo id en otra sección sí vale)', () => {
+  const obj = sampleExport();
+  obj.data.bodyweight.push({ ...obj.data.bodyweight[0], kg: 99 });
+  assert.equal(validateBackup(obj).error, 'La copia tiene registros repetidos en «Pesajes» (2026-09-20).');
+  const num = sampleExport();
+  num.data.checkins = [{ id: 1 }, { id: '1' }];
+  assert.equal(validateBackup(num).ok, true, '1 y «1» son claves distintas en IndexedDB');
+  num.data.checkins.push({ id: 1 });
+  assert.match(validateBackup(num).error, /repetidos en «Check-ins»/);
+  const cross = sampleExport();
+  cross.data.plan.push({ id: '2026-09-20', kind: 'rest' });
+  assert.equal(validateBackup(cross).ok, true, 'mismo id en pesajes y calendario: almacenes distintos');
+});
+
+test('validateBackup: sesiones de fuerza con la sección de ejercicios vacía no se rechazan (es una lista válida)', () => {
+  const obj = sampleExport();
+  obj.data.exercises = [];
+  assert.equal(validateBackup(obj).ok, true);
 });
 
 // ---------------------------------------------------------------------------

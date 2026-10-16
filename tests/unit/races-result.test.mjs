@@ -16,7 +16,7 @@ import { buildAnalysis } from '../../js/analysis.js';
 import { reportText } from '../../js/analysis-report.js';
 import { addDays, tsFromDate } from '../../js/util.js';
 import { SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
-import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT } from '../../js/store.js';
+import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT, STORES } from '../../js/store.js';
 import { parseBackupText, buildBackupObject } from '../../js/backup.js';
 
 const T = '2026-10-09';
@@ -297,7 +297,7 @@ test('no participé y omitido: sin comparación ni predicción previa', () => {
 
 test('copia de seguridad: el resultado sobrevive a la ida y vuelta; una copia antigua sin él = sin responder', () => {
   const outcome = { status: 'done', activityId: 'run1', contextId: null, manual: null, place: 3, note: 'n', at: 7 };
-  const exp = { app: BACKUP_APP_ID, format: BACKUP_FORMAT, appVersion: '1.0.0', exportedAt: '2026-10-09T10:00:00Z', data: { meta: [{ id: 'settings', ...defaultSettings() }], races: [race({ id: 'r1', outcome }), race({ id: 'r0' })] } };
+  const exp = { app: BACKUP_APP_ID, format: BACKUP_FORMAT, appVersion: '1.0.0', exportedAt: '2026-10-09T10:00:00Z', data: { ...Object.fromEntries(STORES.map((s) => [s, []])), meta: [{ id: 'settings', ...defaultSettings() }], races: [race({ id: 'r1', outcome }), race({ id: 'r0' })] } };
   const r = parseBackupText(JSON.stringify(buildBackupObject(exp, 1)), validateBackup);
   assert.equal(r.ok, true, r.error);
   const back = r.backup.data.races;

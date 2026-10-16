@@ -211,6 +211,74 @@ for (const browser of browsers) {
     }
   });
 
+  test(`${browser}: si importar (o borrar) falla al escribir los datos, el punto sigue siendo el de antes`, async () => {
+    const app = await setup(browser);
+    const { page } = app;
+    try {
+      await seed(page, 'a');
+      const stateP = await state(page);
+      // Importar A: el punto guarda P.
+      await page.evaluate(async () => {
+        const st = window.__app.store;
+        const o = st.exportData();
+        o.data.sessions = o.data.sessions.slice(0, 1).map((x) => ({ ...x, id: 'act_A0', notes: 'Rodaje A' }));
+        await st.importData(o);
+      });
+      const stateA = await state(page);
+      const pointP = await rpData(page);
+      const infoP = (await idbAll(page, 'meta')).find((o) => o.id === INFO);
+      assert.deepStrictEqual(byId(pointP.backup.data.sessions).map((x) => x.id), ['act_a0', 'act_a1', 'act_a2']);
+      // Copia B válida, pero al escribirla no queda espacio (los datos, no el punto, que es más pequeño): falla.
+      const backupB = await page.evaluate(() => {
+        const o = window.__app.store.exportData();
+        o.data.sessions = [{ ...o.data.sessions[0], id: 'act_B0', notes: 'Rodaje B' }];
+        return o;
+      });
+      await page.evaluate(() => {
+        const put = IDBObjectStore.prototype.put;
+        const clear = IDBObjectStore.prototype.clear;
+        window.__failData = true;
+        IDBObjectStore.prototype.put = function (v, ...rest) {
+          if (window.__failData && v && !String(v.id).startsWith('~')) throw new DOMException('Sin espacio', 'QuotaExceededError');
+          return put.call(this, v, ...rest);
+        };
+        IDBObjectStore.prototype.clear = function (...rest) {
+          if (window.__failData) throw new DOMException('Sin espacio', 'QuotaExceededError');
+          return clear.call(this, ...rest);
+        };
+      });
+      await importViaUI(page, backupB);
+      await sheetBtn(page, 'Sustituir todo').click();
+      await page.waitForFunction(() => /No se pudo importar/.test(document.querySelector('.sheet-overlay.open .sheet-panel')?.innerText || ''), null, { timeout: 8000 });
+      await sheetBtn(page, 'Entendido').click();
+      await waitNoSheet(page);
+      assertSame(await state(page), stateA, 'importación fallida: los datos siguen siendo A');
+      const after = await rpData(page);
+      assert.deepStrictEqual(after, pointP, 'el punto sigue siendo P (el de antes de importar A), no A');
+      assert.deepStrictEqual((await idbAll(page, 'meta')).find((o) => o.id === INFO), infoP);
+      const info = await page.evaluate(() => window.__app.store.restorePointInfo());
+      assert.strictEqual(info.counts.sessions, 3, 'el resumen en memoria también es el de P');
+      await page.locator('.cfg-rp').waitFor();
+
+      // Borrar todo que falla al vaciar: tampoco cambia el punto.
+      const res = await page.evaluate(async () => {
+        try { await window.__app.store.wipeAll(); return 'borrado'; } catch (e) { return e.name; }
+      });
+      assert.strictEqual(res, 'QuotaExceededError');
+      assertSame(await state(page), stateA, 'borrado fallido: los datos siguen siendo A');
+      assert.deepStrictEqual(await rpData(page), pointP, 'borrado fallido: el punto sigue siendo P');
+      assert.strictEqual((await page.evaluate(() => window.__app.store.restorePointInfo())).counts.sessions, 3);
+
+      // Y P se puede recuperar.
+      await page.evaluate(() => { window.__failData = false; });
+      await page.evaluate(() => window.__app.store.recoverRestorePoint());
+      assertSame(await state(page), stateP, 'recuperado P');
+      assert.deepStrictEqual(app.errors.filter((e) => !/Sin espacio|QuotaExceeded|reintentando/.test(e)), []);
+    } finally {
+      await app.close();
+    }
+  });
+
   test(`${browser}: si el punto no se puede guardar (sin espacio) o no coincide al releerlo, NO se borra ni se importa nada`, async () => {
     const app = await setup(browser);
     const { page } = app;

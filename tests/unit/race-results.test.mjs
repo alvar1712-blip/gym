@@ -14,7 +14,7 @@ import { reportText } from '../../js/analysis-report.js';
 import { RACE_DISTANCES } from '../../js/stats.js';
 import { addDays, tsFromDate, fmtRaceTime } from '../../js/util.js';
 import { SEED_EXERCISES, defaultSettings } from '../../js/seed.js';
-import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT } from '../../js/store.js';
+import { validateBackup, BACKUP_APP_ID, BACKUP_FORMAT, STORES } from '../../js/store.js';
 
 const T = '2026-10-07';
 const ago = (n) => addDays(T, -n);
@@ -105,7 +105,7 @@ test('un resultado no es un «cambio reciente» (es una referencia, como el peso
 
 test('copia de seguridad: el resultado viaja estructurado y la copia se valida', () => {
   const ctx = [result('2026-05-01', 'month', 10, 3600, { notes: 'Con calor' })];
-  const backup = { app: BACKUP_APP_ID, format: BACKUP_FORMAT, exportedAt: 1, data: { meta: [{ id: 'settings', ...defaultSettings() }], context: JSON.parse(JSON.stringify(ctx)) } };
+  const backup = { app: BACKUP_APP_ID, format: BACKUP_FORMAT, exportedAt: 1, data: { ...Object.fromEntries(STORES.map((s) => [s, []])), meta: [{ id: 'settings', ...defaultSettings() }], context: JSON.parse(JSON.stringify(ctx)) } };
   const v = validateBackup(backup);
   assert.equal(v.ok, true, JSON.stringify(v));
   assert.equal(v.counts.context, 1);

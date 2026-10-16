@@ -218,7 +218,10 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 - Perfil (`settings.profile`, `js/profile.js`): campos opcionales `birthDate`, `secondaryGoals`, `sports`, `limitations`,
   `weeklyFrequency`, `onboardedAt`; `getProfile` los completa al leer (no se reescriben perfiles antiguos). `ageGroup`:
   `minor` (< 18) · `adult` · `senior` (≥ 65) · `unknown` (sin fecha).
-- Copia JSON: `format: 2` (acepta 1 y 2; una de formato 1 deja vacíos los almacenes nuevos).
+- Copia JSON: `format: 2` (acepta 1 y 2; una de formato 1 deja vacíos los almacenes nuevos). `validateBackup` exige
+  `format` entero ≥ 1, todas las secciones como listas (formato 1: solo las 8 de la primera versión; `cycle` y las de
+  la ronda 6 pueden faltar), ids de texto no vacío o número finito y sin repetir en una sección. Si importar o
+  borrar falla al escribir los datos, el punto de restauración vuelve a ser el anterior.
 ### bodyweight (`id` = fecha): `{ id:'YYYY-MM-DD', kg, createdAt, updatedAt }` (un valor por día; el último manda)
 ### checkins: `{ id:'ci_…', date, timing:'pre'|'post', sessionId|null, sleep:1|2|3|null, energy:1|2|3|null, stress?:1|2|3|null, soreness:1|2|3|null, areas?:Area[], createdAt, updatedAt }` (1 bajo, 2 normal, 3 alto)
 Ronda 6 (fase B): `stress` y `areas` son opcionales (los check-ins antiguos no los tienen y no se reescriben).

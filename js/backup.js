@@ -28,6 +28,13 @@ export function csvFileName(kind, date = new Date()) {
 // Copia JSON
 // ---------------------------------------------------------------------------
 
+/** Nombre de cada sección (almacén) de la copia en los mensajes de error al validarla. */
+export const SECTION_LABELS = {
+  meta: 'Ajustes', exercises: 'Ejercicios', templates: 'Plantillas', sessions: 'Sesiones', plan: 'Calendario',
+  bodyweight: 'Pesajes', checkins: 'Check-ins', goals: 'Objetivos', cycle: 'Ciclo', context: 'Contexto',
+  pastRecords: 'Marcas históricas', races: 'Eventos deportivos',
+};
+
 /**
  * Prepara el objeto que se guarda en el archivo a partir de store.exportData():
  * exportedAt = now y settings.lastBackupAt = now DENTRO de la copia, para que al restaurarla la fecha de la última

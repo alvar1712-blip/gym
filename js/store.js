@@ -3,7 +3,7 @@
 import * as db from './db.js';
 import { SEED_VERSION, defaultSettings, exampleWeekPatterns, SEED_EXERCISES, SEED_TEMPLATES } from './seed.js';
 import { deepClone, fillDefaults, sortBy, todayStr } from './util.js';
-import { dataCounts } from './backup.js';
+import { dataCounts, SECTION_LABELS } from './backup.js';
 
 export const STORES = db.STORES;
 export const APP_VERSION = '1.0.0';
@@ -11,6 +11,13 @@ export const APP_VERSION = '1.0.0';
 // (en una de formato 1 esos almacenes llegan vacíos); una app antigua rechaza la 2 en vez de perderlos en silencio.
 export const BACKUP_FORMAT = 2;
 export const BACKUP_APP_ID = 'entreno-pwa';
+// Secciones que trae TODA copia de cada formato (exportData escribe siempre todos los almacenes de su versión). La
+// primera versión (formato 1) tenía 8; 'cycle' llegó en la ronda 5 sin cambiar el formato, así que una copia de
+// formato 1 puede no traerla. Las secciones opcionales que falten llegan vacías.
+const FORMAT_SECTIONS = {
+  1: ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals'],
+  2: STORES,
+};
 
 const maps = Object.fromEntries(STORES.map((s) => [s, new Map()]));
 const listeners = new Map();
@@ -276,20 +283,40 @@ export function exportData({ clone = true } = {}) {
   };
 }
 
-/** Valida una copia. Devuelve { ok, error?, counts? }. */
+/** Clave válida (y estable) para IndexedDB en una copia: texto no vacío o número finito. */
+const validId = (id) => (typeof id === 'string' ? id !== '' : typeof id === 'number' && Number.isFinite(id));
+
+/**
+ * Valida una copia. Devuelve { ok, error?, counts? }. Antes de escribir nada: una sección que falta, un registro sin
+ * clave válida o dos con el mismo id harían que «sustituir todo» fallara a medias en IndexedDB (con un mensaje técnico)
+ * o que se perdieran datos sin decirlo (secciones vacías, repetidos que se pisan).
+ */
 export function validateBackup(obj) {
   if (!obj || typeof obj !== 'object') return { ok: false, error: 'El archivo no es una copia válida.' };
   if (obj.app !== BACKUP_APP_ID) return { ok: false, error: 'El archivo no es una copia de esta app.' };
-  if (typeof obj.format !== 'number' || obj.format > BACKUP_FORMAT) return { ok: false, error: 'La copia es de una versión más nueva de la app.' };
+  if (!Number.isInteger(obj.format) || obj.format < 1) return { ok: false, error: 'La copia no indica un formato válido.' };
+  if (obj.format > BACKUP_FORMAT) return { ok: false, error: 'La copia es de una versión más nueva de la app.' };
   if (!obj.data || typeof obj.data !== 'object') return { ok: false, error: 'La copia no contiene datos.' };
+  const required = FORMAT_SECTIONS[obj.format] || STORES;
   const counts = {};
   for (const s of STORES) {
-    const arr = obj.data[s] ?? [];
-    if (!Array.isArray(arr)) return { ok: false, error: `Sección «${s}» dañada.` };
-    if (arr.some((x) => !x || typeof x !== 'object' || x.id == null)) return { ok: false, error: `Registros sin id en «${s}».` };
+    const label = SECTION_LABELS[s] || s;
+    const arr = obj.data[s];
+    if (arr == null) {
+      if (required.includes(s)) return { ok: false, error: `La copia está incompleta: falta «${label}».` };
+      counts[s] = 0;
+      continue;
+    }
+    if (!Array.isArray(arr)) return { ok: false, error: `Sección «${label}» dañada.` };
+    const seen = new Set();
+    for (const x of arr) {
+      if (!x || typeof x !== 'object' || !validId(x.id)) return { ok: false, error: `La copia tiene registros sin identificador válido en «${label}».` };
+      if (seen.has(x.id)) return { ok: false, error: `La copia tiene registros repetidos en «${label}» (${x.id}).` };
+      seen.add(x.id);
+    }
     counts[s] = arr.length;
   }
-  if (!obj.data.meta?.some((m) => m.id === 'settings')) return { ok: false, error: 'La copia no contiene ajustes.' };
+  if (!obj.data.meta.some((m) => m.id === 'settings')) return { ok: false, error: 'La copia no contiene ajustes.' };
   return { ok: true, counts };
 }
 
@@ -422,9 +449,54 @@ async function createRestorePoint(reason) {
   return { kept: false };
 }
 
-/** Pone en memoria (y en disco, en UNA transacción) los datos de `data`; `reserved` como en db.replaceAll. */
-async function replaceEverything(data, reason, { reserved = null } = {}) {
-  await db.replaceAll(data, { reserved });
+/**
+ * Guarda el punto de restauración (createRestorePoint) y devuelve cómo deshacerlo: si después la sustitución no llega
+ * a escribirse (sin espacio, un registro que IndexedDB rechaza…), los datos siguen intactos y el punto nuevo no sirve
+ * de nada, pero ha pisado al anterior, que era la única forma de volver a lo de antes. `undo()` vuelve a dejar el
+ * anterior (o ninguno, si no había); si tampoco se puede, se queda el nuevo, que también es válido (son los datos de
+ * ahora). Solo para fallos ANTES de escribir los datos: si ya se han sustituido, el punto nuevo es lo que los protege.
+ */
+async function guardRestorePoint(reason) {
+  let prev = null;
+  try {
+    prev = await Promise.all([db.get('meta', RESTORE_INFO_ID), db.get('meta', RESTORE_DATA_ID)]);
+  } catch (err) {
+    console.warn('[store] punto de restauración anterior', err); // sin él no se puede deshacer: se queda el nuevo
+  }
+  const made = await createRestorePoint(reason);
+  const undo = async () => {
+    if (!prev || !made || made.kept) return; // no se ha tocado el punto anterior
+    try {
+      if (prev[0] && prev[1]) {
+        await db.putStores({ meta: prev });
+        restoreInfo = infoOf(prev[0]);
+        emit('restorepoint', restoreInfo);
+      } else {
+        await discardRestorePoint();
+      }
+    } catch (err) {
+      console.warn('[store] no se pudo volver al punto de restauración anterior', err);
+    }
+  };
+  return undo;
+}
+
+/** Escribe `write()` (sustituir los datos en disco); si falla, deshace el punto nuevo y relanza el error original. */
+async function writeOrUndo(write, undo) {
+  try {
+    await write();
+  } catch (err) {
+    if (undo) await undo();
+    throw err;
+  }
+}
+
+/**
+ * Pone en memoria (y en disco, en UNA transacción) los datos de `data`; `reserved` como en db.replaceAll. `undo`: si
+ * la escritura falla (no ha cambiado nada), deja el punto de restauración como estaba (guardRestorePoint).
+ */
+async function replaceEverything(data, reason, { reserved = null, undo = null } = {}) {
+  await writeOrUndo(() => db.replaceAll(data, { reserved }), undo);
   STORES.forEach((s) => {
     maps[s].clear();
     for (const o of data[s]) maps[s].set(o.id, o);
@@ -457,15 +529,16 @@ export function backupData(obj, { owned = false } = {}) {
 
 /**
  * Sustituye TODOS los datos por los de la copia (atómico). Antes guarda y comprueba el punto de restauración: si
- * falla, lanza RestorePointError sin tocar nada. `owned`: la copia es del llamador y no la vuelve a usar (recién
+ * falla, lanza RestorePointError sin tocar nada. Si después falla la escritura de la copia, el punto vuelve a ser el
+ * anterior (guardRestorePoint). `owned`: la copia es del llamador y no la vuelve a usar (recién
  * leída del archivo con parseBackupText): sus registros pasan a la memoria sin clonarse (ver backupData).
  */
 export async function importData(obj, { owned = false } = {}) {
   const v = validateBackup(obj);
   if (!v.ok) throw new Error(v.error);
   const data = backupData(obj, { owned });
-  await createRestorePoint('import');
-  await replaceEverything(data, 'import');
+  const undo = await guardRestorePoint('import');
+  await replaceEverything(data, 'import', { undo });
 }
 
 /**
@@ -494,11 +567,11 @@ export async function discardRestorePoint() {
 
 /**
  * Borra todo y vuelve a cargar los datos iniciales. Antes guarda y comprueba el punto de restauración: si falla,
- * lanza RestorePointError sin tocar nada.
+ * lanza RestorePointError sin tocar nada; si falla el borrado, el punto vuelve a ser el anterior.
  */
 export async function wipeAll() {
-  await createRestorePoint('wipe');
-  await db.replaceAll({});
+  const undo = await guardRestorePoint('wipe');
+  await writeOrUndo(() => db.replaceAll({}), undo);
   STORES.forEach((s) => maps[s].clear());
   epoch++;
   await seedAll();
