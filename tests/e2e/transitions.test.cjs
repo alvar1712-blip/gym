@@ -518,3 +518,93 @@ for (const engine of ['chromium', 'webkit']) {
     }
   });
 }
+
+// Regresión (WebKit, acceptance CRITERIO 1): un toque cuya pulsación empezó en la pantalla viva no puede partirlo una
+// transición que arranca entre «dedo abajo» y «dedo arriba». Mientras se pinta la transición el navegador da los
+// toques a <html> (pese a `::view-transition { pointer-events: none }`): el «arriba» caía en <html>, el clic iba al
+// ancestro común (<html>) y la pestaña no se enteraba. Se reproduce sin depender del ritmo de fotogramas:
+//   · pulsación ANTES de que empiece la transición (montaje en curso): la pantalla nueva entra sin animación;
+//   · pulsación con la transición ya pedida pero aún sin pintar (WebKit da ese toque a la pantalla viva; Chromium ya
+//     a <html>, así que ahí no hay pulsación «de la pantalla viva» que proteger): la pulsación la salta.
+// La animación se congela al pintarse (sin el arreglo seguiría pintada para siempre) y el «arriba» se suelta cuando
+// el punto ya es de <html> o ya no hay transición: la condición que decide el resultado, sin pausas.
+async function pressCalendarTab(page) {
+  const box = await page.locator('#tabbar .tab[data-tab="calendar"]').boundingBox();
+  const pt = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(pt.x, pt.y);
+  return pt;
+}
+
+/**
+ * La próxima transición «atrás» (pop; solo esa) se congela en cuanto se pinta y, con `hold`, retiene su actualización
+ * hasta window.__release(). Las demás (p. ej. la de la pestaña pulsada) son normales.
+ */
+async function freezeNextPop(page, { hold = false } = {}) {
+  await page.evaluate((hold) => {
+    const orig = document.startViewTransition;
+    const gate = hold ? new Promise((r) => { window.__release = r; }) : null;
+    document.startViewTransition = (cb) => {
+      if (document.documentElement.dataset.nav !== 'pop') return orig.call(document, cb);
+      document.startViewTransition = orig;
+      const vt = orig.call(document, gate ? async () => { await gate; return cb(); } : cb);
+      vt.ready.then(() => document.getAnimations().filter((a) => a.effect && a.effect.pseudoElement).forEach((a) => a.pause()), () => {});
+      return vt;
+    };
+  }, hold);
+}
+
+async function releaseAndExpectCalendar(page, pt) {
+  await page.waitForFunction(({ x, y }) => document.elementFromPoint(x, y) === document.documentElement || !document.documentElement.dataset.nav, pt, { timeout: 5000 });
+  await page.mouse.up();
+  await page.waitForFunction(() => location.hash.startsWith('#/calendar'), null, { timeout: 3000 }).catch(() => {});
+  return page.evaluate(() => location.hash);
+}
+
+for (const engine of ['chromium', 'webkit']) {
+  const skip = engine === 'webkit' && !engineAvailable('webkit') ? 'WebKit no instalado: ejecuta scripts/setup-webkit.sh' : false;
+  test(`${engine}: una pulsación en una pestaña que empezó antes de la transición llega a la pestaña`, { skip }, async () => {
+    const app = await openApp({ browser: engine });
+    const { page } = app;
+    try {
+      await go(page, '#/settings');
+      await freezeNextPop(page);
+      const pt = await pressCalendarTab(page);
+      await page.mouse.down();
+      // Volver a Hoy (como la sesión al terminar) con la pulsación aún abajo: carga de la vista → ¿transición?
+      await page.evaluate(async () => {
+        const r = await import('./js/router.js');
+        r.navigate('#/today', { transition: 'pop' });
+        for (let i = 0; i < 400 && !(location.hash === '#/today' && r.navInfo().path === '/today'); i++) await new Promise((res) => setTimeout(res, 5));
+      });
+      assert.match(await releaseAndExpectCalendar(page, pt), /^#\/calendar/, 'el toque llega a la pestaña Calendario');
+      await settledState(page);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
+{
+  const skip = !engineAvailable('webkit') ? 'WebKit no instalado: ejecuta scripts/setup-webkit.sh' : false;
+  test('webkit: una pulsación con la transición pedida pero sin pintar la salta y el toque llega a la pestaña', { skip }, async () => {
+    const app = await openApp({ browser: 'webkit' });
+    const { page } = app;
+    try {
+      await go(page, '#/settings');
+      await freezeNextPop(page, { hold: true });
+      const pt = await pressCalendarTab(page);
+      await page.evaluate(async () => (await import('./js/router.js')).navigate('#/today', { transition: 'pop' }));
+      await page.waitForFunction(() => document.documentElement.dataset.nav === 'pop');
+      const under = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('#tabbar .tab[data-tab="calendar"]'), pt);
+      assert.ok(under, 'antes de pintarse la transición, el punto es de la pestaña (pantalla viva)');
+      await page.mouse.down();
+      await page.evaluate(() => window.__release());
+      assert.match(await releaseAndExpectCalendar(page, pt), /^#\/calendar/, 'el toque llega a la pestaña Calendario');
+      await settledState(page);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+}

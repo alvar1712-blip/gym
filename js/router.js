@@ -45,6 +45,7 @@ let navPending = false; // se pidió navegar (navigate/back) y aún no ha llegad
 let pendingNav = null; // { kind, replace } de la navegación pedida, hasta su hashchange
 let histIdx = 0; // posición en el historial (history.state.__idx): distingue atrás/adelante del navegador
 let activeVT = null; // ViewTransition en curso
+let pressing = false; // hay un dedo (o botón) abajo: una transición no puede partir esa pulsación
 let entering = null; // { el, timer } animación de entrada sin View Transitions
 let staggerTimer = null;
 let rendering = 0; // montajes en curso (para settled())
@@ -269,6 +270,7 @@ export function start(el, onChange) {
   window.addEventListener('pagehide', persist);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persist(); });
   watchEdgeGesture();
+  watchPress();
   // Un enlace (#/…) pulsado dentro de una hoja pasa por navigate(): así se quitan antes las entradas de las hojas.
   document.addEventListener('click', (e) => {
     if (!overlays.length || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -278,6 +280,25 @@ export function start(el, onChange) {
     navigate(a.getAttribute('href'));
   });
   return render('none', { nav: true });
+}
+
+/**
+ * Mientras se pinta una View Transition el navegador da los toques a <html> (también con
+ * `::view-transition { pointer-events: none }`, en WebKit y en Chromium). Si la transición empieza entre «dedo
+ * abajo» y «dedo arriba», el «arriba» cae en <html>, el clic va al ancestro común (<html>) y el botón pulsado no se
+ * entera: el toque se pierde. Por eso una pulsación salta la transición en curso (como en iOS: tocar la pantalla
+ * corta la animación) y, mientras dura, una pantalla nueva entra sin animar (transitionMode).
+ */
+function watchPress() {
+  const opts = { capture: true, passive: true };
+  window.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary) return;
+    pressing = true;
+    if (activeVT) skipActiveTransition();
+  }, opts);
+  const release = (e) => { if (e.isPrimary) pressing = false; };
+  window.addEventListener('pointerup', release, opts);
+  window.addEventListener('pointercancel', release, opts);
 }
 
 function onHashChange(e) {
@@ -638,6 +659,7 @@ function transitionMode(kind) {
   if (kind === 'none' || !NAV_KINDS.has(kind)) return 'none';
   if (typeof document === 'undefined' || document.visibilityState === 'hidden') return 'none';
   if (!viewEl || !viewEl.isConnected) return 'none';
+  if (pressing) return 'none'; // una transición ahora partiría la pulsación en curso (watchPress)
   return typeof document.startViewTransition === 'function' ? 'vt' : 'css';
 }
 

@@ -1001,7 +1001,7 @@ body:has(.update-bar:not([hidden])) .view { padding-bottom: calc(var(--tabbar-h)
    Con View Transitions (Safari 18+, Chromium) el navegador anima una imagen de la pantalla anterior
    (::view-transition-old) y la nueva en vivo (::view-transition-new); el tipo va en <html data-nav>.
    La cabecera y la barra de pestañas tienen nombre propio: no se desplazan con la pantalla. */
-::view-transition { pointer-events: none; } /* los toques llegan a la pantalla nueva durante la animación */
+::view-transition { pointer-events: none; } /* no basta: mientras se pinta, WebKit y Chromium dan los toques a <html>; una pulsación salta la transición (router.js watchPress) */
 .tabbar { view-transition-name: tabbar; }
 .view-inner > .topbar { view-transition-name: topbar; }
 .toast.show { view-transition-name: toast; }
