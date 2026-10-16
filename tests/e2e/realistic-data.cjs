@@ -3,6 +3,8 @@
 // pide, una sesión de fuerza en curso. Semilla fija: nada personal.
 // `recovery: true` (ronda 8, F): además, estrés en los check-ins y una zona que se repite (rodilla izquierda, con una
 // nota) y unas agujetas en cuádriceps; sin la opción, los datos son exactamente los de siempre (no toca el generador).
+const { waitReady } = require('./helpers.cjs');
+
 async function seedRealistic(page, { months = 6, female = true, activeSession = false, recovery = false } = {}) {
   return page.evaluate(async ({ months, female, recovery }) => {
     const db = await import('./js/db.js');
@@ -23,7 +25,8 @@ async function seedRealistic(page, { months = 6, female = true, activeSession = 
     return stores.sessions.length;
   }, { months, female, recovery }).then(async (count) => {
     await page.reload();
-    await page.waitForFunction(() => document.documentElement.classList.contains('ready'), null, { timeout: 30000 });
+    // Montada y sin el splash encima (con solo `ready`, los primeros toques caían en #splash y no llegaban a la app)
+    await waitReady(page, { timeout: 30000 });
     let activeId = null;
     if (activeSession) {
       activeId = await page.evaluate(async () => {

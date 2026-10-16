@@ -204,7 +204,7 @@ test('scroll por entrada: montaje asíncrono (Hoy), adelante/atrás y sin iOS 17
     const { page } = app2;
     await page.addInitScript(() => { delete Document.prototype.startViewTransition; });
     await page.reload();
-    await page.waitForFunction(() => document.documentElement.classList.contains('ready'));
+    await waitReady(page);
     const ts = await touchscreen(page);
     await go(page, '#/settings');
     await page.evaluate(() => window.scrollTo(0, 300));

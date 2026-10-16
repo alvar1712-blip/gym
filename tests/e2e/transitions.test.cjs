@@ -3,7 +3,7 @@
 // transición en curso, hojas con cierre animado, «reducir movimiento» y alternativa sin View Transitions.
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, shot, engineAvailable } = require('./helpers.cjs');
+const { openApp, go, shot, waitReady, engineAvailable } = require('./helpers.cjs');
 
 const wait = (page, ms) => page.waitForTimeout(ms);
 
@@ -450,7 +450,7 @@ test('sin View Transitions (iOS 17): solo entra la vista nueva, sin clonar la an
   try {
     await page.addInitScript(() => { delete Document.prototype.startViewTransition; });
     await page.reload();
-    await page.waitForFunction(() => document.documentElement.classList.contains('ready'));
+    await waitReady(page);
     assert.strictEqual(await page.evaluate(() => typeof document.startViewTransition), 'undefined');
     await go(page, '#/settings');
     const res = await page.evaluate(async () => {

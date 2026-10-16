@@ -4,7 +4,7 @@
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/deltas-neutral.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, shot, engineAvailable } = require('./helpers.cjs');
+const { openApp, go, shot, waitReady, engineAvailable } = require('./helpers.cjs');
 
 const TODAY = '2026-10-08'; // jueves
 const madrid = (date, hh = 12) => new Date(`${date}T${String(hh).padStart(2, '0')}:00:00+02:00`).getTime();
@@ -29,7 +29,7 @@ async function openSeeded(browser, acts) {
     await db.putStores({ sessions, meta: [settings] });
   }, { acts });
   await app.page.reload();
-  await app.page.waitForFunction(() => document.documentElement.classList.contains('ready'), null, { timeout: 15000 });
+  await waitReady(app.page);
   await go(app.page, '#/weekly');
   await app.page.locator('.wk-recap').waitFor();
   return app;

@@ -54,9 +54,14 @@ async function openApp({ serviceWorkers = 'block', hash = '', browser: name = BR
   };
 }
 
-async function waitReady(page) {
-  // Montada y sin la pantalla de arranque encima (index.html #splash: se retira a los ~800 ms o cuando Hoy está listo)
-  await page.waitForFunction(() => document.documentElement.classList.contains('ready') && !document.getElementById('splash'), null, { timeout: 15000 });
+/**
+ * Espera a que la app esté montada y SIN la pantalla de arranque encima (index.html #splash: se retira a los ~800 ms o
+ * cuando Hoy está listo; mientras está, #app es inerte y los toques caen en el splash). Toda prueba que recargue o abra
+ * la app debe esperar por aquí, no solo por la clase `ready` (que llega antes de retirar el splash).
+ * @param {{timeout?:number}} [opts] timeout: más margen para recargas con muchos datos (p. ej. meses sembrados).
+ */
+async function waitReady(page, { timeout = 15000 } = {}) {
+  await page.waitForFunction(() => document.documentElement.classList.contains('ready') && !document.getElementById('splash'), null, { timeout });
 }
 
 /** Pone la semana de ejemplo como semana tipo (como un usuario que ya la tenía) y recarga la pantalla actual. */
