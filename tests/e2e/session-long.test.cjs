@@ -407,3 +407,35 @@ async function smoothIgnored(browser) {
 }
 test('«Siguiente pendiente» llega aunque el motor ignore el desplazamiento suave (Chromium)', () => smoothIgnored('chromium'));
 test('WebKit: «Siguiente pendiente» llega aunque el motor ignore el desplazamiento suave', { skip: skipWebkit }, () => smoothIgnored('webkit'));
+
+/**
+ * 10) Un desplazamiento DURANTE el toque en «Siguiente pendiente» no se lo come. Cada fotograma de desplazamiento
+ * actualiza la barra, y antes sustituía los nodos de «n/N series» (replaceChildren): si caía entre pointerdown y
+ * pointerup —la corrección tardía de ui.scrollPageTo del salto anterior, la inercia en un móvil—, el nodo pulsado
+ * quedaba fuera del DOM y Chromium no lanzaba `click` (WebKit lo lanza al antecesor común; se prueba igual). En la
+ * batería completa el salto no ocurría y la tarjeta no llegaba a la vista. Se reproduce sin depender del tiempo: botón abajo, desplazamiento y fotogramas, botón arriba.
+ */
+async function tapDuringScroll(browser) {
+  const app = await openApp({ browser, beforeLoad: beforeLoad() });
+  const { page } = app;
+  try {
+    await seedRealistic(page, { months: 2 });
+    const s = await build(page, { n: 12, done: [0], cursor: 0 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForFunction((t) => document.querySelector('#tabbar .fb-next .sr-only').textContent.includes(t), `Siguiente pendiente: ${s.names[1]}.`, { timeout: 5000 });
+    const b = await page.locator('#tabbar .fb-next').boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.evaluate(() => window.scrollBy(0, 1));
+    await settle(page); // el fotograma que actualiza la barra cae entre el botón abajo y arriba
+    await page.mouse.up();
+    await page.waitForFunction((id) => window.__app.store.get('sessions', id).cursor === 1, s.id, { timeout: 5000 })
+      .catch(() => assert.fail('el toque en «Siguiente pendiente» se perdió al desplazarse la página durante el toque'));
+    await page.waitForFunction(registerVisible, s.se[1], { timeout: 5000 });
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+}
+test('un desplazamiento durante el toque no se come «Siguiente pendiente» (Chromium)', () => tapDuringScroll('chromium'));
+test('WebKit: un desplazamiento durante el toque no se come «Siguiente pendiente»', { skip: skipWebkit }, () => tapDuringScroll('webkit'));

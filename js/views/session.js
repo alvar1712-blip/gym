@@ -462,7 +462,13 @@ export function mountSession(root, params = {}) {
   // fuera de esta pantalla vuelven las pestañas. Sin cronómetro de descanso (el de la sesión va en la cabecera).
   // Ronda 8 (H): el centro de la barra es además el salto al «Siguiente pendiente» (⌄ junto a «En sesión»: a 375 px
   // no cabe junto a «n/N series» sin partirlo; sin sitio nuevo).
-  const fbCount = h('span.fb-count.tnum', { 'aria-hidden': 'true' });
+  // Nodos fijos: updateFocusBar corre en cada fotograma de desplazamiento y antes sustituía la cuenta entera
+  // (replaceChildren). Si eso caía entre pointerdown y pointerup de un toque en el botón —p. ej. con la cola de un
+  // desplazamiento anterior—, el nodo bajo el dedo quedaba fuera del DOM y el navegador no lanzaba `click`: el toque
+  // en «Siguiente pendiente» se perdía. Ahora solo cambia el texto, y solo si cambia.
+  const fbCountNum = document.createTextNode('');
+  const fbCountUnit = h('span.fb-count-unit', ' series');
+  const fbCount = h('span.fb-count.tnum', { 'aria-hidden': 'true' }, fbCountNum);
   // Dos ⌄ y se ve uno: junto a «En sesión» (texto normal) o junto a «n/N» con texto grande (ahí «series» se oculta y
   // queda sitio; «En sesión ⌄» se partiría en dos líneas)
   const fbChev = h('span.fb-next-chev', { 'aria-hidden': 'true' }, icon('chevron-down', 16));
@@ -490,8 +496,9 @@ export function mountSession(root, params = {}) {
   function updateFocusBar(measure = false) {
     const { done, total } = setProgress(session);
     // Con texto grande la palabra «series» cede sitio (css: .fb-count-unit); VoiceOver lee fbCountSr.
-    if (total) fbCount.replaceChildren(`${done}/${total}`, h('span.fb-count-unit', ' series'));
-    else fbCount.replaceChildren('Sin series');
+    setText(fbCountNum, total ? `${done}/${total}` : 'Sin series');
+    if (!total) fbCountUnit.remove();
+    else if (fbCountUnit.parentNode !== fbCount) fbCount.append(fbCountUnit);
     if (session.status !== 'active') return; // sin barra (sesión terminada): no hace falta medir nada
     const count = total ? `${done} de ${total} series hechas.` : 'Sin series.';
     const c = cursorIndex();
@@ -504,12 +511,16 @@ export function mountSession(root, params = {}) {
     fbChevL.hidden = !target;
     if (target) {
       const name = store.exercise(target.exerciseId)?.name || target.exName || 'Ejercicio';
-      fbCountSr.textContent = `En sesión. Siguiente pendiente: ${name}. ${count}`;
-      fbNext.title = 'Ir al siguiente pendiente';
+      setText(fbCountSr, `En sesión. Siguiente pendiente: ${name}. ${count}`);
+      if (fbNext.title !== 'Ir al siguiente pendiente') fbNext.title = 'Ir al siguiente pendiente';
     } else {
-      fbCountSr.textContent = `En sesión. ${count} No queda ningún ejercicio pendiente.`;
+      setText(fbCountSr, `En sesión. ${count} No queda ningún ejercicio pendiente.`);
       fbNext.removeAttribute('title');
     }
+  }
+  /** Cambia el texto de un nodo solo si cambia (sin rehacer nodos en cada fotograma de desplazamiento). */
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
   // El destino puede depender de si se ve la tarjeta del cursor: la etiqueta se actualiza al desplazar y tras cada
   // cambio (una vez por fotograma como mucho, solo en curso), midiendo cuando el layout del fotograma ya toca.
