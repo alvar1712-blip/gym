@@ -492,6 +492,22 @@ Ahora (index.html `#splash`, js/app.js `hideSplash`):
 - Tiempos en `window.__boot` (t0, storeReady, mounted, appReady, fadeStart, interactive, relativos a t0) y en
   `npm run perf` (columnas «funde» y «toque»). Pruebas: tests/e2e/splash.test.cjs.
 
+## 28. Formularios con «Guardar»: borrador y check-in a medias (auditoría final)
+
+- **Borrador** (ui.js `formDraft`): los formularios que solo guardan al pulsar «Guardar» (eventos deportivos, marcas
+  históricas y contexto, nuevos y en edición) guardan lo tecleado en localStorage a cada cambio
+  (`entreno.raceDraft:<id|new>`, `entreno.pastRecordDraft:…`, `entreno.contextDraft:…`). Al volver (recarga de iOS,
+  «atrás») sale arriba «Borrador recuperado · Vaciar» (`.form-draft`), como en actividad, objetivo y ejercicio nuevos;
+  «Vaciar» se deshace. Guardar o borrar lo quita; si el registro cambió por otro lado (otra pantalla, una copia
+  restaurada) el borrador viejo se descarta y nunca lo pisa. El de un evento no lleva su resultado (lo guarda su
+  tarjeta). Fuera de IndexedDB y de la copia; «Borrar todos los datos» e importar lo quitan.
+- **Check-in a medias en Hoy**: la tarjeta sigue saliendo (con lo contestado, `data-state="partial"`) hasta que se
+  completa. «Omitir» solo aparece sin nada contestado (no guarda nada); a medias, «Listo» la cierra por hoy y conserva
+  lo contestado (con «Deshacer»). Completo, omitido o cerrado: Hoy no lo vuelve a ofrecer ese día; con un «después»
+  ya contestado (ya entrenó), tampoco.
+- **Evento con su objetivo borrado**: el enlace roto no bloquea; la ficha avisa «El objetivo enlazado se borró» y el
+  evento se guarda sin objetivo. Borrar un objetivo avisa «Hay N eventos enlazados; quedarán sin objetivo».
+
 ## 29. Icono + etiqueta (auditoría final)
 
 Un icono (SVG de `ui.icon` o emoji en su span) delante de su texto en un botón, una baldosa, una fila de lista o una

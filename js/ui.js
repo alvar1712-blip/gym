@@ -931,6 +931,64 @@ export function discardDraftUndo(key, hash) {
   });
 }
 
+/**
+ * Borrador de un formulario con «Guardar» (eventos, marcas históricas y contexto; auditoría final, states-3): iOS
+ * descarga la PWA en segundo plano y al volver la recarga, así que lo tecleado se guarda en localStorage a cada cambio
+ * y se recupera con el aviso «Borrador recuperado · Vaciar». Como en activity/goals/exercises; aquí, compartido.
+ *   key  'entreno.<tipo>Draft:<id|new>': fuera de IndexedDB y de la copia; «Borrar todos los datos» e importar lo
+ *        quitan (backup.js LOCAL_KEY_PREFIXES).
+ *   ctx  la versión de lo que se edita ({ id, base: lo editable del registro al abrir }, o los parámetros de la pantalla
+ *        nueva). Un borrador de otra versión no se recupera; si el registro cambió por otro lado (otra pantalla, una
+ *        copia restaurada), se descarta: nunca lo pisa.
+ * → { data: lo recuperado o null, track(el, read, pristine), clear(), banner(text, hash) }
+ *   track: guarda read() tras cada input/change/click dentro de `el` (y al llamar a la función que devuelve, p. ej.
+ *   al repintar); si vuelve a ser igual que `pristine`, quita el borrador. clear: al guardar o borrar (ya no guarda).
+ */
+export function formDraft(key, ctx = null) {
+  const sig = JSON.stringify(ctx ?? null);
+  let data = null;
+  try {
+    const d = JSON.parse(localStorage.getItem(key) || 'null');
+    if (d && typeof d === 'object' && d.data && typeof d.data === 'object') {
+      if (JSON.stringify(d.ctx ?? null) === sig) data = d.data;
+      else if (ctx?.id != null) localStorage.removeItem(key); // el registro cambió o se borró y volvió: obsoleto
+    }
+  } catch { /* borrador ilegible o sin almacenamiento */ }
+  let closed = false;
+  // Solo se quita el borrador propio: el de otra pantalla nueva (otros parámetros) sigue ahí hasta que se teclee aquí
+  let owned = !!data;
+  return {
+    data,
+    track(el, read, pristine) {
+      const base = JSON.stringify(pristine);
+      const sync = () => {
+        if (closed) return;
+        const v = read();
+        try {
+          if (JSON.stringify(v) !== base) {
+            localStorage.setItem(key, JSON.stringify({ ctx: ctx ?? null, data: v, savedAt: Date.now() }));
+            owned = true;
+          } else if (owned) {
+            localStorage.removeItem(key);
+            owned = false;
+          }
+        } catch { /* modo privado o almacenamiento lleno: el formulario sigue funcionando */ }
+      };
+      for (const t of ['input', 'change', 'click']) el.addEventListener(t, sync);
+      return sync;
+    },
+    clear() {
+      closed = true;
+      try { localStorage.removeItem(key); } catch { /* sin almacenamiento */ }
+    },
+    banner(text, hash) {
+      return h('div.banner.banner-info.form-draft',
+        h('div.banner-main', h('div.banner-title', 'Borrador recuperado'), h('div.banner-text', text)),
+        h('button.btn.btn-ghost.form-draft-discard', { type: 'button', onClick: () => discardDraftUndo(key, hash) }, 'Vaciar'));
+    },
+  };
+}
+
 // Pantallas montadas desde que arrancó la app: «Deshacer» sabe si la pantalla visible ya no es la que borró.
 let mounts = 0;
 onMount(() => { mounts++; });

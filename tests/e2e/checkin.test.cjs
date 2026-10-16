@@ -63,6 +63,8 @@ async function openSession(page, opts = { templateId: 'tpl_d1' }) {
 }
 
 const getSession = (page, id) => page.evaluate((i) => JSON.parse(JSON.stringify(window.__app.store.get('sessions', i))), id);
+// Hoy rellena sus tarjetas (el check-in, entre ellas) tarea a tarea: listo cuando el hueco lleva data-ready
+const todayReady = (page) => page.locator('.today-extra[data-ready="1"]').waitFor({ state: 'attached' });
 const diskCheckins = async (page) => (await idbAll(page, 'checkins')).sort((a, b) => (a.timing < b.timing ? 1 : -1));
 const values = (c) => c && [c.date, c.timing, c.sleep, c.energy, c.stress ?? null, c.soreness];
 const pick = (root, field, label) => root.locator(`.ci-row[data-field="${field}"] .seg-btn`, { hasText: new RegExp(`^${label}$`) });
@@ -327,6 +329,69 @@ test('«Omitir»: oculta el check-in de esa sesión y día sin guardar nada (con
     await page.waitForTimeout(200);
     assert.strictEqual(await page.locator('.ci-sum').count(), 0, 'sin check-in, el resumen no lo muestra');
     assert.deepStrictEqual(await idbAll(page, 'checkins'), []);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+// Regresión (auditoría final, states-4): con un solo valor contestado, la tarjeta de Hoy desaparecía al volver y no
+// había forma de terminar el check-in desde ahí. Ahora sigue a medias hasta completarlo; «Listo» la cierra por hoy
+// conservando lo contestado («Omitir» sigue siendo solo para cuando no hay nada).
+test('Hoy: un check-in a medias sigue ofrecido al volver; «Listo» lo cierra por hoy sin borrar lo contestado', async () => {
+  const app = await launch();
+  const { page } = app;
+  try {
+    await go(page, '#/today');
+    let ci = page.locator('.today-checkin');
+    await ci.waitFor();
+    assert.strictEqual(await ci.locator('.ci-done').isHidden(), true, 'sin nada contestado, solo «Omitir»');
+    await pick(ci, 'sleep', 'Alto').click();
+    await page.waitForFunction(() => window.__app.store.all('checkins').length === 1);
+    assert.strictEqual(await ci.getAttribute('data-state'), 'partial');
+    // Ir a otra pestaña y volver: la tarjeta sigue, a medias, con lo contestado
+    await go(page, '#/calendar');
+    await go(page, '#/today');
+    await todayReady(page);
+    ci = page.locator('.today-checkin[data-state="partial"]');
+    assert.strictEqual(await ci.count(), 1, 'el check-in a medias sigue en Hoy');
+    assert.deepStrictEqual(await ci.locator('.seg-btn.active').allInnerTexts(), ['Alto']);
+    assert.strictEqual(await ci.locator('.ci-skip').isHidden(), true, 'con algo contestado, nada que omitir');
+    // «Listo»: se cierra por hoy (con deshacer) y lo contestado se queda
+    await ci.locator('.ci-done').click();
+    assert.strictEqual(await ci.isHidden(), true);
+    const t = page.locator('.toast');
+    await t.waitFor();
+    assert.match(await t.innerText(), /Check-in guardado a medias/);
+    await t.locator('.toast-action').click();
+    assert.strictEqual(await ci.isVisible(), true, '«Deshacer» la vuelve a mostrar');
+    await ci.locator('.ci-done').click();
+    await go(page, '#/calendar');
+    await go(page, '#/today');
+    await todayReady(page);
+    assert.strictEqual(await page.locator('.today-checkin').count(), 0, 'cerrado: no vuelve a salir hoy');
+    assert.deepStrictEqual(values((await diskCheckins(page))[0]), [TODAY, 'pre', 3, null, null, null], 'lo contestado se conserva');
+    // Completo: Hoy ya no lo ofrece
+    await page.evaluate(async (d) => {
+      (await import('./js/checkin.js')).setDismissed({ date: d, timing: 'pre' }, false);
+      const { store } = window.__app;
+      const c = store.all('checkins')[0];
+      await store.save('checkins', { ...c, energy: 2, stress: 2, soreness: 1 });
+    }, TODAY);
+    await go(page, '#/calendar');
+    await go(page, '#/today');
+    await todayReady(page);
+    assert.strictEqual(await page.locator('.today-checkin').count(), 0, 'completo: Hoy no lo vuelve a ofrecer');
+    // Solo un «después» a medias (ya entrenó): Hoy no ofrece «¿cómo llegas?»
+    await page.evaluate(async (d) => {
+      const { store } = window.__app;
+      for (const c of store.all('checkins')) await store.remove('checkins', c.id);
+      await store.save('checkins', { id: 'ci_post', date: d, timing: 'post', sessionId: null, sleep: null, energy: 2, stress: null, soreness: null, createdAt: 1 });
+    }, TODAY);
+    await go(page, '#/calendar');
+    await go(page, '#/today');
+    await todayReady(page);
+    assert.strictEqual(await page.locator('.today-checkin').count(), 0, 'con un «después» contestado, Hoy no ofrece el «antes»');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

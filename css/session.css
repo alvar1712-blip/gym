@@ -421,7 +421,8 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ci-mini-v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-inline: 2px; margin-inline: -2px; }
 .ci-mini-k { padding-top: 3px; font-size: var(--fs-xs); font-weight: 800; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .ci-mini-v { font-size: calc(14px * var(--ts)); font-weight: 750; line-height: 1.25; color: var(--text); }
-.ci-skip {
+.ci-skip,
+.ci-done {
   flex: none;
   min-width: 44px;
   min-height: 44px;
@@ -434,7 +435,8 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
   font-size: calc(15px * var(--ts));
   font-weight: 700;
 }
-.ci-skip.is-pressed { background: var(--surface-2); }
+.ci-skip.is-pressed,
+.ci-done.is-pressed { background: var(--surface-2); }
 .ci-body { display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 12px; }
 .ci-rows { display: flex; flex-direction: column; gap: 8px; }
 .ci-row { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); align-items: center; gap: 8px; }
@@ -449,7 +451,8 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ci-chead { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -6px 0 -4px; }
 .ci-chead-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .ci-copt { font-size: calc(13px * var(--ts)); color: var(--muted); }
-.ci-compact .ci-skip { border: 1px solid var(--border); border-radius: 10px; }
+.ci-compact .ci-skip,
+.ci-compact .ci-done { border: 1px solid var(--border); border-radius: 10px; }
 /* Dos seguidas (antes y después: hoja «Editar check-in» o «Terminar» de una sesión a posteriori), con separador. */
 .ci-compact + .ci-compact { padding-top: 12px; border-top: 1px solid var(--border); }
 

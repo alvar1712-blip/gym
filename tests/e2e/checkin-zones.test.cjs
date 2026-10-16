@@ -191,7 +191,8 @@ test('zonas en el check-in de Hoy: músculo en el mapa, articulación, sustituir
   const { page } = app;
   try {
     await zonesFlow(page, { shots: true });
-    // Apuntar una y cerrar y volver a abrir la app: sigue ahí (Hoy ya no lo ofrece, y el día lo muestra)
+    // Apuntar una y cerrar y volver a abrir la app: sigue ahí (Hoy lo ofrece a medias para terminarlo, y el día lo
+    // muestra). Auditoría final (states-4): antes, cualquier valor lo daba por hecho y Hoy ya no lo ofrecía.
     const ci = page.locator('.today-checkin');
     const sh = await openAreaSheet(page, ci);
     await tapMuscle(sh, 'quads');
@@ -201,7 +202,10 @@ test('zonas en el check-in de Hoy: músculo en el mapa, articulación, sustituir
     await closeSheet(page);
     await reload(page);
     await settle(page);
-    assert.strictEqual(await page.locator('.today-checkin').count(), 0, 'ya hecho hoy: Hoy no lo vuelve a ofrecer');
+    await page.locator('.today-extra[data-ready="1"]').waitFor({ state: 'attached' });
+    const again = page.locator('.today-checkin[data-state="partial"]');
+    assert.strictEqual(await again.count(), 1, 'a medias (solo una zona): Hoy lo sigue ofreciendo para terminarlo');
+    assert.deepStrictEqual(await chipsOf(again), ['Cuádriceps ambos lados · 6']);
     await go(page, `#/day/${TODAY}`);
     const sum = page.locator('.cal-dayview .ci-sum');
     await sum.waitFor();

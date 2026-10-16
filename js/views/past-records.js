@@ -7,7 +7,7 @@
 // La lógica (validación, 1RM estimado, porcentaje) está en ../past-records-logic.js.
 import * as store from '../store.js';
 import { navigate, screenToken, backFrom } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, numInput, confirmDialog, undoToast, emptyState, whyBox } from '../ui.js';
+import { h, icon, screen, segmented, chips, textInput, numInput, confirmDialog, undoToast, emptyState, whyBox, formDraft } from '../ui.js';
 import { uid, todayStr, fmtNum, plural } from '../util.js';
 import { approxInput } from '../approx-input.js';
 import * as P from '../past-records-logic.js';
@@ -18,6 +18,7 @@ import { dataFromStore } from '../progress-ui.js';
 
 const LIST = '#/records/past';
 const kg1 = (v) => `${fmtNum(v, 1)} kg`;
+const draftKey = (id) => `entreno.pastRecordDraft:${id || 'new'}`;
 
 /** Lo que necesita la comparación, leído una vez por pantalla (`data`: el de la pantalla que la pinta, si ya lo tiene). */
 function recoveryCtx(today = todayStr(), data = dataFromStore(today)) {
@@ -178,6 +179,7 @@ export function mountPastRecordEdit(root, params = {}) {
   const today = todayStr();
   const editing = params.id ? P.normalizePastRecord(store.get('pastRecords', params.id)) : null;
   if (params.id && !editing) {
+    formDraft(draftKey(params.id)).clear(); // la marca se borró: su borrador ya no sirve
     const c = screen(root, { title: 'Marca histórica', back: LIST });
     c.appendChild(emptyState({ emoji: '🔍', title: 'No encontrada', text: 'Puede que se haya borrado.', action: { label: 'Ver marcas históricas', onClick: () => navigate(LIST, { replace: true }) } }));
     return undefined;
@@ -192,11 +194,29 @@ export function mountPastRecordEdit(root, params = {}) {
   let absWeight = draft.weight != null ? Math.abs(draft.weight) : null;
   let hasDate = !!draft.date;
   let lastDate = draft.date || { date: `${today.slice(0, 4)}-01-01`, precision: 'year' };
+  // Borrador (una recarga de iOS no pierde lo tecleado): el formulario tal cual, también el signo y «Sé cuándo fue».
+  // Vale mientras la marca siga como al abrirla.
+  const formFields = () => ({
+    exerciseId: draft.exerciseId, sign, absWeight, reps: draft.reps, rir: draft.rir, hasDate, date: draft.date, lastDate,
+    beforeApp: draft.beforeApp, bodyweightKg: draft.bodyweightKg, note: draft.note,
+  });
+  const pristine = formFields();
+  const fd = formDraft(draftKey(editing?.id), editing ? { id: editing.id, base: pristine } : { exercise: params.exercise || null });
+  if (fd.data) {
+    const d = fd.data;
+    for (const k of ['exerciseId', 'reps', 'rir', 'date', 'beforeApp', 'bodyweightKg', 'note']) if (k in d) draft[k] = d[k];
+    if (d.sign === 1 || d.sign === -1) sign = d.sign;
+    if ('absWeight' in d) absWeight = d.absWeight;
+    if ('hasDate' in d) hasDate = !!d.hasDate;
+    if (d.lastDate) lastDate = d.lastDate;
+  }
 
   const c = screen(root, { title: editing ? 'Editar marca' : 'Añadir marca', back: LIST });
   c.classList.add('pr', 'pr-edit');
+  if (fd.data) c.appendChild(fd.banner(editing ? 'Tenías cambios sin guardar en esta marca.' : 'Tenías una marca a medias.', editing ? `${LIST}/${encodeURIComponent(editing.id)}` : `${LIST}/new${params.exercise ? `?exercise=${encodeURIComponent(params.exercise)}` : ''}`));
   const form = h('div.pr-form');
   c.appendChild(form);
+  const syncDraft = fd.track(form, formFields, pristine);
   const errEls = {};
   const errEl = (key) => (errEls[key] = h('p.form-error', { hidden: true, role: 'alert', dataset: { err: key } }));
   const preview = h('p.pr-preview', { 'aria-live': 'polite' });
@@ -294,6 +314,7 @@ export function mountPastRecordEdit(root, params = {}) {
       editing ? h('button.btn.btn-danger-ghost.btn-block.pr-delete', { type: 'button', onClick: onDelete }, icon('trash', 20), 'Borrar') : null));
     form.replaceChildren(...blocks);
     paintPreview();
+    syncDraft();
   }
 
   async function onPick() {
@@ -322,6 +343,7 @@ export function mountPastRecordEdit(root, params = {}) {
     const rec = P.pastRecordFrom(draft, ex, { id: editing?.id || uid('pr_'), createdAt: editing?.createdAt ?? null });
     const tok = screenToken();
     await store.save('pastRecords', rec);
+    fd.clear();
     backFrom(tok, LIST);
   }
 
@@ -333,6 +355,7 @@ export function mountPastRecordEdit(root, params = {}) {
     if (!ok) return;
     const tok = screenToken();
     const removed = await store.remove('pastRecords', editing.id);
+    fd.clear();
     backFrom(tok, LIST);
     undoToast('Marca borrada', () => { if (removed) store.restore('pastRecords', removed); });
   }

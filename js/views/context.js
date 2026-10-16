@@ -6,7 +6,7 @@
 // La lógica (tipos, fechas aproximadas, validación) está en ../context-logic.js.
 import * as store from '../store.js';
 import { navigate, screenToken, backFrom } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState } from '../ui.js';
+import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState, formDraft } from '../ui.js';
 import { uid, todayStr, fmtNum, parseNum } from '../util.js';
 import { linkedWarning } from '../races-logic.js';
 import * as C from '../context-logic.js';
@@ -16,6 +16,9 @@ import { SPORTS } from '../profile.js';
 
 const FALLBACK = '#/settings';
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const draftKey = (id) => `entreno.contextDraft:${id || 'new'}`;
+/** Lo que guarda el borrador: lo editable de la entrada (y la distancia elegida, que con «Otra» vacía no se deduce). */
+const DRAFT_FIELDS = ['kind', 'type', 'start', 'end', 'date', 'text', 'notes', 'kg', 'sports', 'goalIds', 'result'];
 
 // ===========================================================================
 // #/context
@@ -100,6 +103,7 @@ export function mountContextEdit(root, params = {}) {
   const today = todayStr();
   const editing = params.id ? C.normalizeEntry(store.get('context', params.id)) : null;
   if (params.id && !editing) {
+    formDraft(draftKey(params.id)).clear(); // se borró: su borrador ya no sirve
     const c = screen(root, { title: 'Contexto', back: '#/context' });
     c.appendChild(emptyState({ emoji: '🔍', title: 'No encontrado', text: 'Puede que se haya borrado.', action: { label: 'Ver tu contexto', onClick: () => navigate('#/context', { replace: true }) } }));
     return undefined;
@@ -117,12 +121,26 @@ export function mountContextEdit(root, params = {}) {
   // Resultado de carrera: los números en draft.result (distancia, tiempo y detalles opcionales)
   draft.result = { km: null, sec: null, effort: null, elevationM: null, surface: null, ...(draft.result || {}) };
   let distChoice = C.RESULT_DISTANCES.find((x) => Math.abs(x.km - draft.result.km) < 0.001)?.id ?? (draft.result.km != null ? 'custom' : null);
+  // Borrador (una recarga de iOS no pierde lo tecleado). Vale mientras la entrada siga como al abrirla.
+  const formFields = () => ({ ...Object.fromEntries(DRAFT_FIELDS.map((k) => [k, draft[k] ?? null])), distChoice });
+  const pristine = formFields();
+  const fd = formDraft(draftKey(editing?.id), editing ? { id: editing.id, base: pristine } : { kind: params.kind || null, type: params.type || null });
+  if (fd.data) {
+    for (const k of DRAFT_FIELDS) if (k in fd.data) draft[k] = fd.data[k];
+    draft.result = { km: null, sec: null, effort: null, elevationM: null, surface: null, ...(draft.result || {}) };
+    if ('distChoice' in fd.data) distChoice = fd.data.distChoice;
+  }
   let moreOpen = !!(draft.result.effort || draft.result.surface || draft.result.elevationM != null);
 
   const c = screen(root, { title: editing ? 'Editar contexto' : 'Añadir contexto', back: '#/context' });
   c.classList.add('ctx', 'ctx-edit');
+  if (fd.data) {
+    const q = new URLSearchParams(Object.entries({ kind: params.kind, type: params.type }).filter(([, v]) => v)).toString();
+    c.appendChild(fd.banner(editing ? 'Tenías cambios sin guardar aquí.' : 'Tenías algo a medias.', editing ? `#/context/${encodeURIComponent(editing.id)}` : `#/context/new${q ? `?${q}` : ''}`));
+  }
   const form = h('div.ctx-form');
   c.appendChild(form);
+  const syncDraft = fd.track(form, formFields, pristine);
   const errEls = {};
   const errEl = (key) => (errEls[key] = h('p.form-error', { hidden: true, role: 'alert', dataset: { err: key } }));
 
@@ -200,6 +218,7 @@ export function mountContextEdit(root, params = {}) {
       h('button.btn.btn-primary.btn-lg.btn-block.ctx-save', { type: 'button', onClick: onSave }, editing ? 'Guardar cambios' : 'Guardar'),
       editing ? h('button.btn.btn-danger-ghost.btn-block.ctx-delete', { type: 'button', onClick: onDelete }, icon('trash', 20), 'Borrar') : null));
     form.replaceChildren(...blocks);
+    syncDraft();
   }
 
   /** Distancia (rápida u otra en km), tiempo (el mismo control de duración de toda la app) y el ritmo en vivo. */
@@ -275,6 +294,7 @@ export function mountContextEdit(root, params = {}) {
     const rec = C.entryRecord(draft, { id: editing?.id || uid('ctx_') });
     const tok = screenToken();
     await store.save('context', rec);
+    fd.clear();
     backFrom(tok, '#/context');
   }
 
@@ -285,6 +305,7 @@ export function mountContextEdit(root, params = {}) {
     if (!ok) return;
     const tok = screenToken();
     const removed = await store.remove('context', editing.id);
+    fd.clear();
     backFrom(tok, '#/context');
     undoToast('Borrado de tu contexto', () => { if (removed) store.restore('context', removed); });
   }

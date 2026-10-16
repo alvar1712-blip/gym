@@ -99,7 +99,11 @@ export function validateRace(draft, { goals = [], today = null } = {}) {
   }
   if (d.targetSec != null && (!isNum(d.targetSec) || !(d.targetSec > 0) || d.targetSec > 7 * 86400)) e.targetSec = 'Tiempo objetivo no válido.';
   if (!PRIORITY_IDS.includes(d.priority)) e.priority = 'Elige la prioridad.';
-  if (d.goalId && !linkableGoals(goals, d).some((g) => g.id === d.goalId)) e.goalId = 'Ese objetivo ya no se puede enlazar (borrado, archivado o de otro deporte).';
+  // Un objetivo borrado es un enlace roto, no un error: el evento se guarda sin objetivo (races.js lo quita al guardar).
+  // Solo bloquea uno que existe y no se puede enlazar.
+  if (d.goalId && toArr(goals).some((g) => g?.id === d.goalId) && !linkableGoals(goals, d).some((g) => g.id === d.goalId)) {
+    e.goalId = 'Ese objetivo ya no se puede enlazar (archivado, conseguido o de otro deporte).';
+  }
   if (String(d.note || '').length > NOTE_MAX) e.note = `Como mucho ${NOTE_MAX} caracteres.`;
   return e;
 }
@@ -222,6 +226,13 @@ export function raceLinkedTo(list, { activityId = null, contextId = null } = {})
 export function linkedWarning(list, ref) {
   const r = raceLinkedTo(list, ref);
   return r ? `Es el resultado de «${r.name || typeInfo(r.type).label}»; el evento quedará sin resultado.` : null;
+}
+
+/** Aviso al borrar un objetivo con eventos enlazados: «Hay 2 eventos enlazados; quedarán sin objetivo.», o null. */
+export function goalLinkedWarning(list, goalId) {
+  const n = goalId ? normalizeRaces(list).filter((r) => r.goalId === String(goalId)).length : 0;
+  if (!n) return null;
+  return n === 1 ? 'Hay 1 evento enlazado; quedará sin objetivo.' : `Hay ${n} eventos enlazados; quedarán sin objetivo.`;
 }
 
 const ARTICLE = { '5k': 'el 5K', '10k': 'el 10K', half: 'la media maratón', marathon: 'el maratón', cycling: 'la marcha en bici', hiking: 'la ruta', triathlon: 'el triatlón', custom: 'el evento' };

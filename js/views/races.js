@@ -8,7 +8,7 @@
 // apuntar un evento no cambia tu semana tipo.
 import * as store from '../store.js';
 import { navigate, screenToken, backFrom } from '../router.js';
-import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState, whyBox, stateTag } from '../ui.js';
+import { h, icon, screen, segmented, chips, textInput, numInput, durationInput, confirmDialog, undoToast, emptyState, whyBox, stateTag, formDraft } from '../ui.js';
 import { uid, todayStr, fmtDate, addDays } from '../util.js';
 import * as R from '../races-logic.js';
 import { racePrediction, linkedGoalProgress } from '../races-progress.js';
@@ -21,6 +21,9 @@ import { resultCard } from './race-result.js';
 const LIST = '#/races';
 // context: tus resultados de carrera y parones cambian el tiempo previsto
 const RACE_STORES = new Set(['races', 'sessions', 'goals', 'context']);
+/** Lo que guarda el borrador de la ficha: lo editable, nunca el resultado (lo guarda su tarjeta; ronda 8, bug 7). */
+const DRAFT_FIELDS = ['name', 'type', 'date', 'distanceKm', 'targetSec', 'priority', 'note', 'goalId'];
+const draftKey = (id) => `entreno.raceDraft:${id || 'new'}`;
 const VERDICT_CLASS = { probable: 'ok', ajustado: 'warn', hoy_no: 'danger', insuficiente: 'info', prevision: 'info' };
 
 /** Línea del tiempo previsto bajo el evento (solo carreras a pie): «Objetivo <50:00 · previsto 48:30–51:10 · Ajustado». */
@@ -120,6 +123,7 @@ export function mountRaceEdit(root, params = {}) {
   const today = todayStr();
   const editing = params.id ? R.normalizeRace(store.get('races', params.id)) : null;
   if (params.id && !editing) {
+    formDraft(draftKey(params.id)).clear(); // el evento se borró: su borrador ya no sirve
     const c = screen(root, { title: 'Evento', back: LIST });
     c.appendChild(emptyState({ emoji: '🔍', title: 'No encontrado', text: 'Puede que se haya borrado.', action: { label: 'Ver eventos', onClick: () => navigate(LIST, { replace: true }) } }));
     return undefined;
@@ -127,14 +131,22 @@ export function mountRaceEdit(root, params = {}) {
   const draft = editing ? { ...editing } : {
     name: '', type: '10k', date: addDays(today, 56), distanceKm: null, targetSec: null, priority: 'A', note: '', goalId: null,
   };
+  // Borrador (una recarga de iOS no pierde lo tecleado), sin el resultado. Vale mientras lo editable del evento siga
+  // igual (no su updatedAt: responder «¿Cómo te fue?» en esta misma pantalla no lo invalida).
+  const formFields = () => Object.fromEntries(DRAFT_FIELDS.map((k) => [k, draft[k] ?? null]));
+  const pristine = formFields();
+  const fd = formDraft(draftKey(editing?.id), editing ? { id: editing.id, base: pristine } : null);
+  if (fd.data) for (const k of DRAFT_FIELDS) if (k in fd.data) draft[k] = fd.data[k];
   const goals = store.all('goals');
   const data = dataFromStore(today); // los registros no cambian mientras se edita
   // Evento pasado o de hoy: la tarjeta del resultado (lee el evento del almacén, nunca del borrador)
   const result = editing && editing.date <= today ? resultCard(editing.id, { today }) : null;
   const c = screen(root, { title: editing ? 'Editar evento' : 'Añadir evento', back: LIST });
   c.classList.add('rc', 'rc-edit');
+  if (fd.data) c.appendChild(fd.banner(editing ? 'Tenías cambios sin guardar en este evento.' : 'Tenías un evento a medias.', editing ? `${LIST}/${encodeURIComponent(editing.id)}` : `${LIST}/new`));
   const form = h('div.rc-form');
   c.appendChild(form);
+  const syncDraft = fd.track(form, formFields, pristine);
   const errEls = {};
   const errEl = (key) => (errEls[key] = h('p.form-error', { hidden: true, role: 'alert', dataset: { err: key } }));
   const how = h('div.rc-how-slot');
@@ -168,10 +180,12 @@ export function mountRaceEdit(root, params = {}) {
     const t = R.typeInfo(draft.type);
     const fixed = R.fixedKm(draft.type);
     const linkable = R.linkableGoals(goals, draft);
-    if (draft.goalId && !linkable.some((g) => g.id === draft.goalId)) {
+    // El objetivo enlazado se borró: el evento se guardará sin objetivo (se quita al guardar, no aquí: si se deshace el
+    // borrado del objetivo antes, el enlace sigue).
+    const goalGone = !!draft.goalId && !goals.some((g) => g.id === draft.goalId);
+    if (draft.goalId && !goalGone && !linkable.some((g) => g.id === draft.goalId)) {
       // El objetivo enlazado ya no encaja (otro deporte, archivado…): se muestra para poder quitarlo.
-      const g = goals.find((x) => x.id === draft.goalId);
-      if (g) linkable.push(g);
+      linkable.push(goals.find((x) => x.id === draft.goalId));
     }
     const blocks = [];
     if (result) blocks.push(result.el);
@@ -211,6 +225,7 @@ export function mountRaceEdit(root, params = {}) {
       errEl('priority'),
       h('div.field.rc-field', { dataset: { field: 'goal' } },
         h('span.field-label', 'Objetivo enlazado (opcional)'),
+        goalGone ? h('p.field-hint.rc-goal-gone', 'El objetivo enlazado se borró: el evento se guardará sin objetivo.') : null,
         linkable.length
           ? chips({ options: linkable.map((g) => ({ value: g.id, label: g.title || fmtTimeWords(g.timeSec) })), value: draft.goalId, allowNone: true, className: 'rc-goals', onChange: (v) => { draft.goalId = v || null; paintHow(); } })
           : h('p.field-hint.rc-no-goals', t.sport ? 'No tienes objetivos de resistencia activos de este deporte.' : 'Este tipo de evento no se enlaza con un objetivo.'),
@@ -228,6 +243,7 @@ export function mountRaceEdit(root, params = {}) {
       editing ? h('button.btn.btn-danger-ghost.btn-block.rc-delete', { type: 'button', onClick: onDelete }, icon('trash', 20), 'Borrar') : null));
     form.replaceChildren(...blocks);
     paintHow();
+    syncDraft();
   }
 
   async function onSave() {
@@ -244,9 +260,12 @@ export function mountRaceEdit(root, params = {}) {
       form.querySelector('.form-error:not([hidden])')?.scrollIntoView({ block: 'center' });
       return;
     }
-    const rec = R.raceRecord({ ...draft, outcome }, { id: editing?.id || uid('race_'), createdAt: editing?.createdAt ?? null });
+    // Enlace roto (el objetivo se borró): se guarda sin objetivo
+    const goalId = draft.goalId && goals.some((g) => g.id === draft.goalId) ? draft.goalId : null;
+    const rec = R.raceRecord({ ...draft, goalId, outcome }, { id: editing?.id || uid('race_'), createdAt: editing?.createdAt ?? null });
     const tok = screenToken();
     await store.save('races', rec);
+    fd.clear();
     backFrom(tok, LIST);
   }
 
@@ -257,6 +276,7 @@ export function mountRaceEdit(root, params = {}) {
     if (!ok) return;
     const tok = screenToken();
     const removed = await store.remove('races', editing.id);
+    fd.clear();
     backFrom(tok, LIST);
     undoToast('Evento borrado', () => { if (removed) store.restore('races', removed); });
   }

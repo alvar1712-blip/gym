@@ -337,7 +337,8 @@ export const LOCAL_KEY_PREFIXES = ['draft:', 'entreno.'];
 
 /**
  * Claves de localStorage que se eliminan al borrar todo o al importar una copia: los borradores
- * ('draft:activity:<tipo>', 'entreno.exercise.draft') y el estado de pantallas ('entreno.…'). Viven fuera de
+ * ('draft:activity:<tipo>', 'entreno.exercise.draft', 'entreno.raceDraft:…', 'entreno.pastRecordDraft:…',
+ * 'entreno.contextDraft:…') y el estado de pantallas ('entreno.…'). Viven fuera de
  * IndexedDB, así que store.wipeAll/importData no los tocan. No se usa localStorage.clear(): el origen puede
  * ser compartido.
  * @param {string[]} keys  todas las claves (localStorage.key(i))

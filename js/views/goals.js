@@ -13,6 +13,7 @@ import { uid, todayStr, fmtNum, numToInput, fmtPace, fmtSigned, round, diffDays,
 import * as G from '../goals-logic.js';
 import { predictionDataset } from '../race-predict.js';
 import { racesLink } from './races.js';
+import { goalLinkedWarning } from '../races-logic.js';
 
 const DRAFT_KEY = 'entreno.goalDraft';
 const KINDS = G.GOAL_KINDS.map((k) => k.value);
@@ -438,9 +439,11 @@ export function mountGoalEdit(root, params = {}) {
     }
     async function onDelete() {
       const title = saved.title || 'Objetivo';
+      // Los eventos enlazados no se tocan (con «Deshacer» siguen enlazados); al guardarlos se quedan sin objetivo
+      const linked = goalLinkedWarning(store.all('races'), saved.id);
       const ok = await confirmDialog({
         title: `¿Borrar «${title}»?`,
-        message: 'Se borra el objetivo, no tus sesiones ni tus pesajes. Podrás deshacerlo justo después.',
+        message: `Se borra el objetivo, no tus sesiones ni tus pesajes.${linked ? ` ${linked}` : ''} Podrás deshacerlo justo después.`,
         confirmText: 'Borrar objetivo', danger: true,
       });
       if (!ok) return;

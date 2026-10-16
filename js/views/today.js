@@ -187,18 +187,21 @@ async function fillExtra(slot, today, active) {
 }
 
 /**
- * Check-in de hoy (antes de entrenar), con las tres filas a la vista (3 toques). Solo si hoy no se ha hecho
- * ninguno (ni antes ni después) ni se ha omitido, y si hoy no hay ya una sesión de fuerza terminada (su
- * pantalla ya lo ofreció antes y después). Con una sesión de fuerza de hoy en curso, se enlaza a ella.
+ * Check-in de hoy (antes de entrenar), con las cuatro filas a la vista (4 toques). Solo si hoy no se ha completado
+ * ninguno (ni antes ni después) ni se ha omitido o cerrado, y si hoy no hay ya una sesión de fuerza terminada (su
+ * pantalla ya lo ofreció antes y después). A medias sigue saliendo (con lo contestado) hasta completarlo o pulsar
+ * «Listo». Con una sesión de fuerza de hoy en curso, se enlaza a ella.
  */
 function todayCheckin(ci, today, active) {
   const all = store.all('checkins');
-  if (ci.TIMINGS.some((t) => ci.hasValues(ci.checkinFor(all, today, t)))) return null;
+  // Ya hecho: uno completo o, después de entrenar, con algo contestado («¿cómo llegas?» ya no toca)
+  if (ci.TIMINGS.some((t) => ci.isComplete(ci.checkinFor(all, today, t)))) return null;
+  if (ci.hasValues(ci.checkinFor(all, today, 'post'))) return null;
   const sessionId = active && active.date === today ? active.id : null;
   if (ci.TIMINGS.some((t) => ci.isDismissed({ date: today, timing: t, sessionId }))) return null;
   const trained = store.all('sessions').some((s) => s.kind === 'strength' && s.status === 'done' && s.date === today);
   if (trained) return null;
-  const el = ci.checkinCard({ date: today, timing: 'pre', sessionId, compact: true });
+  const el = ci.checkinCard({ date: today, timing: 'pre', sessionId, compact: true, closable: true });
   if (el) el.classList.add('card', 'today-checkin');
   return el;
 }

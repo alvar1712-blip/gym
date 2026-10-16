@@ -46,6 +46,13 @@ test('validación y registro', () => {
   assert.deepEqual(R.linkableGoals(goals, race({ type: 'cycling' })).map((g) => g.id), ['g2']);
   assert.ok(R.validateRace(race({ goalId: 'g2' }), { goals }).goalId, 'un objetivo de bici no se enlaza a un 10K');
   assert.deepEqual(R.validateRace(race({ goalId: 'g1' }), { goals }), {});
+  // Auditoría final (data-1): un objetivo borrado es un enlace roto, no un error (el evento se guarda sin objetivo)
+  assert.deepEqual(R.validateRace(race({ goalId: 'borrado' }), { goals }), {}, 'el objetivo borrado no bloquea el evento');
+  assert.ok(R.validateRace(race({ goalId: 'g1' }), { goals: goals.map((g) => ({ ...g, archived: true })) }).goalId, 'uno archivado sí da error');
+  const linked = [race({ goalId: 'g1' }), race({ goalId: 'g1' }), race({ goalId: 'g2' })];
+  assert.equal(R.goalLinkedWarning(linked, 'g1'), 'Hay 2 eventos enlazados; quedarán sin objetivo.');
+  assert.equal(R.goalLinkedWarning(linked, 'g2'), 'Hay 1 evento enlazado; quedará sin objetivo.');
+  assert.equal(R.goalLinkedWarning(linked, 'g3'), null);
   const rec = R.raceRecord({ ...race({ name: '  San Silvestre  ', type: '10k', distanceKm: 3, targetSec: 2999.6, goalId: 'g1' }) }, { id: 'race_1', now: 5 });
   assert.deepEqual(rec, { id: 'race_1', name: 'San Silvestre', type: '10k', date: addDays(TODAY, 73), distanceKm: 10, targetSec: 3000, priority: 'A', note: '', goalId: 'g1', createdAt: 5, updatedAt: 5, outcome: null });
   assert.equal(R.raceRecord({ ...rec }, { id: 'race_1', createdAt: 2, now: 9 }).createdAt, 2, 'al editar se conserva createdAt');

@@ -148,6 +148,41 @@ test('«Borrar todos los datos» cuenta también las marcas históricas y los ev
   }
 });
 
+// Regresión (auditoría final, data-1): borrar un objetivo enlazado a un evento dejaba el evento bloqueado (el enlace
+// roto daba error al guardar y no había chip que quitar). Ahora borrar el objetivo avisa de los eventos enlazados y el
+// evento se guarda sin objetivo, con una pista.
+test('evento con su objetivo enlazado borrado: se avisa al borrar y el evento se guarda sin objetivo', async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await seed(page);
+    await page.evaluate(async () => {
+      const u = await import('./js/util.js');
+      await window.__app.store.save('races', { id: 'r1', name: 'San Silvestre', type: '10k', date: u.addDays(u.todayStr(), 30), distanceKm: 10, targetSec: 2700, priority: 'A', note: '', goalId: 'goal_10k', createdAt: 1, updatedAt: 1, outcome: null });
+    });
+    // Borrar el objetivo: la confirmación dice que el evento se queda sin objetivo
+    await go(page, '#/goal/goal_10k');
+    await page.locator('.goal-delete').click();
+    const dlg = page.locator('.sheet-panel').last();
+    await dlg.waitFor();
+    assert.match(await dlg.innerText(), /Hay 1 evento enlazado; quedará sin objetivo\./);
+    await dlg.locator('.btn-danger', { hasText: 'Borrar objetivo' }).click();
+    await page.waitForFunction(() => !window.__app.store.get('goals', 'goal_10k'));
+    // El evento: pista de que el objetivo se borró; cambiar la nota y guardar funciona
+    await go(page, '#/races/r1');
+    assert.match(await page.locator('[data-field="goal"] .rc-goal-gone').innerText(), /El objetivo enlazado se borró/);
+    await page.locator('[data-block="note"] textarea').fill('cambio de nota');
+    await page.locator('.rc-save').click();
+    // Guardado: sale de la ficha (vuelve atrás en el historial) sin errores en el formulario
+    await page.waitForFunction(() => location.hash !== '#/races/r1');
+    const saved = (await idbAll(page, 'races')).find((r) => r.id === 'r1');
+    assert.deepStrictEqual({ note: saved.note, goalId: saved.goalId }, { note: 'cambio de nota', goalId: null });
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('WebKit: eventos deportivos', { skip: skipWebkit }, async () => {
   const app = await openApp({ browser: 'webkit' });
   try {

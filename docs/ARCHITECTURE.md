@@ -540,7 +540,8 @@ tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿C�
   ≥ 16 px en inputs (si no, iOS hace zoom).
 - Todo en español; unidades kg, km, min/km, km/h, min/100 m. Fechas con `fmtDate`.
 - Guardado automático: cada cambio se guarda ya (`store.save`) o con `saveSoon` mientras se teclea. No hay botones
-  «Guardar» salvo al crear algo nuevo en un formulario (e incluso ahí, conviene guardar borrador).
+  «Guardar» salvo al crear algo nuevo en un formulario (e incluso ahí, conviene guardar borrador). Los formularios
+  con «Guardar» (eventos, marcas históricas, contexto) guardan borrador con `formDraft` (ui.js; docs/PULIDO.md §28).
 - Borrados: siempre con confirmación (`confirmDialog`) **o** con deshacer (`undoToast` + `store.restore`); para
   series, ejercicios de sesión y sesiones: deshacer obligatorio. Borrar todo: doble confirmación (`requireText:'BORRAR'`).
 - Mensajes informativos, directos, sin alarmismo ni frases motivacionales vacías.

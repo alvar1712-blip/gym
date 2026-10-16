@@ -493,6 +493,9 @@ test('localKeysToClear: borradores y estado de la app, nada ajeno', () => {
   assert.deepEqual(localKeysToClear(keys), ['draft:activity:run', 'draft:activity:swim', 'entreno.exercise.draft', 'entreno.exercises.seg']);
   assert.deepEqual(localKeysToClear([]), []);
   assert.deepEqual(localKeysToClear(undefined), []);
+  // Auditoría final (states-3): los borradores de eventos, marcas históricas y contexto también se van
+  const forms = ['entreno.raceDraft:new', 'entreno.raceDraft:race_1', 'entreno.pastRecordDraft:pr_1', 'entreno.contextDraft:new'];
+  assert.deepEqual(localKeysToClear([...forms, 'otra-app']), forms);
 });
 
 // ---------------------------------------------------------------------------

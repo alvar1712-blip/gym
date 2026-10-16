@@ -16,6 +16,8 @@
 //     una hoja (mapa corporal o articulación, lado, 0–10 y nota).
 //   Opciones extra: open (empieza desplegada), title (otro título), ignoreDismissed (mostrar aunque se
 //   omitiera), skippable (false = sin «Omitir»), onChange(record|null) tras cada guardado.
+//   closable (Hoy): a medias, «Listo» la cierra por ese día conservando lo contestado (la misma marca que «Omitir»;
+//   «Omitir» solo sale sin nada contestado porque no guarda nada).
 // checkinSummary({ date, sessionId }) → HTMLElement | null — bloque de solo lectura (antes / después; sin sesión,
 //   «Ese día») con «Editar check-in»; null si ese día no hay ninguno.
 // moveSessionCheckins(sessionId, from, to) — al cambiar la fecha de una sesión, sus check-ins van con ella.
@@ -242,7 +244,7 @@ function zonesBlock({ date, timing, sessionId, onChange }) {
 // ---------------------------------------------------------------------------
 export function checkinCard({
   date = todayStr(), timing = 'pre', sessionId = null, compact = false,
-  open = false, title = null, ignoreDismissed = false, skippable = true, onChange = null,
+  open = false, title = null, ignoreDismissed = false, skippable = true, closable = false, onChange = null,
 } = {}) {
   if (!isDateStr(date)) return null;
   if (!TIMINGS.includes(timing)) timing = 'pre';
@@ -293,6 +295,7 @@ export function checkinCard({
   const hint = h('p.ci-hint', CHECKIN_HINT);
 
   const skipBtn = skippable ? h('button.ci-skip', { type: 'button', onClick: () => skip() }, 'Omitir') : null;
+  const doneBtn = closable ? h('button.ci-done', { type: 'button', onClick: () => skip({ partial: true }) }, 'Listo') : null;
   let el;
   let toggle = null;
   let stateEl = null;
@@ -302,7 +305,7 @@ export function checkinCard({
     el = h('div.ci-compact', { dataset: { checkin: timing }, role: 'group', 'aria-label': `${ttl} Check-in ${TIMING_LABEL[timing].toLowerCase()}` },
       h('div.ci-chead',
         h('div.ci-chead-main', h('span.field-label.ci-ctitle', ttl), h('span.ci-copt', 'Opcional')),
-        skipBtn),
+        skipBtn, doneBtn),
       rowsEl,
       zones,
       hint);
@@ -315,7 +318,7 @@ export function checkinCard({
       icon('chevron-down', 20, 'ci-chev'));
     body = h('div.ci-body', { hidden: !isOpen }, rowsEl, zones, hint);
     el = h('section.ci-card', { dataset: { checkin: timing }, 'aria-label': `Check-in ${TIMING_LABEL[timing].toLowerCase()}` },
-      h('div.ci-bar', toggle, skipBtn),
+      h('div.ci-bar', toggle, skipBtn, doneBtn),
       body);
   }
 
@@ -333,6 +336,7 @@ export function checkinCard({
     el.classList.toggle('ci-open', isOpen);
     el.dataset.state = has ? (isComplete(rec) ? 'complete' : 'partial') : 'empty';
     if (skipBtn) skipBtn.hidden = has;
+    if (doneBtn) doneBtn.hidden = !has || isComplete(rec);
     if (!compact) {
       body.hidden = !isOpen;
       toggle.setAttribute('aria-expanded', String(isOpen));
@@ -343,10 +347,10 @@ export function checkinCard({
     }
   }
 
-  function skip() {
+  function skip({ partial = false } = {}) {
     setDismissed(key, true);
     el.hidden = true;
-    toast('Check-in omitido: no se guarda nada.', {
+    toast(partial ? 'Check-in guardado a medias: hoy no vuelve a salir aquí.' : 'Check-in omitido: no se guarda nada.', {
       actionLabel: 'Deshacer',
       duration: 5000,
       onAction: () => { setDismissed(key, false); el.hidden = false; },
