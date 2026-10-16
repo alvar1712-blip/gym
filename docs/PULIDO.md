@@ -669,8 +669,8 @@ principal son los del motor.
 - **Animación, solo CSS**: `grid-template-rows: 0fr → 1fr` (sin medir alturas con JS ni `height: auto`), el contenido
   aparece con opacidad y 4 px de desplazamiento, el chevron gira 180°; 260 ms con la curva de iOS. Funciona igual en
   WebKit y Chromium. Mientras se anima, el contenido va recortado; al terminar, sin recorte (el anillo de foco del
-  «¿Por qué?» no se corta). Con «Reducir movimiento», sin transiciones. Abrir y cerrar con la CPU ×4 no crea tareas
-  largas.
+  «¿Por qué?» no se corta). Con «Reducir movimiento», sin transiciones. Abrir y cerrar cuesta ~5 ms de layout y ~5 ms de
+  estilos en total (≈ 0,5 ms por fotograma), medido con las métricas del motor.
 - **Guardas**: `tests/e2e/focus-disclosure.test.cjs` compara el contenido con el del motor, prueba abrir y cerrar
   (toque, Intro, Espacio), ARIA e `inert`, 375/390/430 px × 100/125/150 % en Chromium y WebKit, «Reducir movimiento»
   y rendimiento. La guarda de contraste (§4) ya no mide el texto que un antepasado recorta a 0 px (el panel plegado

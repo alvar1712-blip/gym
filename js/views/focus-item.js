@@ -9,9 +9,11 @@
 // CSS: grid-template-rows 0fr → 1fr (sin medir alturas con JS), el contenido aparece con opacidad y el chevron gira;
 // con «Reducir movimiento», sin transiciones. Lo abierto se recuerda mientras dura la app (un repintado de Hoy no lo
 // cierra), nunca en los datos.
-import { h, icon, stateTag, whyBox } from '../ui.js';
+import { h, icon, stateTag, whyBox, scrollBehavior } from '../ui.js';
 import { whyContent } from './weekly.js';
 import { shortParagraphs } from '../focus.js';
+
+const reducedMotion = () => scrollBehavior() === 'auto';
 
 /** Icono del nivel (nunca solo color: cada nivel tiene su forma) y su nombre para VoiceOver. */
 const LEVEL = {
@@ -69,19 +71,26 @@ export function focusItem(it, { main = false, scope, dataset = {}, className = '
     dataset: { key: it.key, id: it.id, topic: it.topic, level: it.level, step: it.step, source: it.source, ...dataset },
   }, h(main ? 'h3.focus-h' : 'h4.focus-h', toggle), panel);
 
+  // «Asentada» = abierta y con la animación terminada: entonces, sin recorte (el anillo de foco del «¿Por qué?» no se
+  // corta); mientras se anima, recortada. Se asienta con el fin REAL de la transición del panel (transitionend), no con
+  // un temporizador: con la máquina cargada los fotogramas se espacian y el temporizador llegaba antes. El temporizador
+  // queda de respaldo por si la transición no llega a ocurrir (sin movimiento, sin cambio de altura, pestaña oculta).
   let settle = 0;
+  const settleNow = () => {
+    clearTimeout(settle);
+    if (li.dataset.open === '1') li.classList.add('is-settled');
+  };
+  panel.addEventListener('transitionend', (e) => { if (e.target === panel && e.propertyName === 'grid-template-rows') settleNow(); });
   function set(open, { animate = true } = {}) {
     li.dataset.open = open ? '1' : '';
     toggle.setAttribute('aria-expanded', String(open));
     panel.inert = !open;
     if (open) openKeys.add(memo); else openKeys.delete(memo);
-    // Abierta y quieta: sin recorte (el anillo de foco del «¿Por qué?» no se corta); durante la animación, recortada
     clearTimeout(settle);
     li.classList.remove('is-settled');
-    if (open) {
-      if (animate) settle = setTimeout(() => li.classList.add('is-settled'), OPEN_MS + 40);
-      else li.classList.add('is-settled');
-    }
+    if (!open) return;
+    if (animate && !reducedMotion()) settle = setTimeout(settleNow, OPEN_MS * 4);
+    else settleNow();
   }
   toggle.addEventListener('click', () => set(li.dataset.open !== '1'));
   set(openKeys.has(memo), { animate: false });
