@@ -135,6 +135,8 @@
 .bw-kpi-na { font-size: calc(17px * var(--ts)); font-weight: 750; color: var(--text-2); white-space: normal; line-height: 1.25; padding: 4px 0 2px; }
 .bw-unit { font-size: calc(13px * var(--ts)); font-weight: 650; color: var(--text-2); white-space: nowrap; }
 .bw-kpi-sub { font-size: calc(12px * var(--ts)); color: var(--muted); line-height: 1.3; }
+/* Sobre el verde suave de la tarjeta principal, --muted se queda en 4,48:1: un gris más claro */
+.bw-kpi-main .bw-kpi-sub { color: var(--text-2); }
 /* 320 px: «+0,09 kg/sem» no cabe en la mitad de la pantalla; el valor encoge y la unidad baja de línea si hace falta */
 @media (max-width: 359px) {
   .bw-kpi { padding: 10px; }

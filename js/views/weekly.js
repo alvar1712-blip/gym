@@ -166,7 +166,7 @@ function weekRecap(data, ws, today, suggestions = []) {
         const info = kindInfo(k);
         const d = cmp.kinds[k] && cmp.kinds[k].km;
         return h('li.wk-recap-km-row', { dataset: { kind: k }, style: kindColorStyle(k) },
-          h('span.wk-recap-km-name', h('span', { 'aria-hidden': 'true' }, `${info.emoji} `), info.label),
+          h('span.wk-recap-km-name', h('span', { 'aria-hidden': 'true' }, `${info.emoji}\u00a0`), info.label),
           h('span.wk-recap-km-right',
             h('span.wk-recap-km-val', fmtKm(k, sum.byKind[k].km)),
             ok && d ? deltaChip(d, (v) => fmtKm(k, v), kmRule[k]) : null));

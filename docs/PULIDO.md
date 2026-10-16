@@ -42,7 +42,8 @@ y la app vacía a 375 px, en Chromium y en WebKit. Comprueba invariantes que no 
 - sin scroll horizontal ni nada que se salga por un lado (salvo dentro de un carrusel);
 - la cabecera no tapa el principio y lo último queda por encima de la barra de pestañas;
 - ningún texto de menos de 12 px y ningún objetivo táctil de menos de 44 px;
-- cada icono junto a su texto y sin encogerse (§29);
+- cada icono junto a su texto y sin encogerse; ningún emoji solo en su línea (§29);
+- el texto atenuado con opacidad, ≥ 4,5:1 (≥ 3:1 si es grande) sobre su fondo (§17);
 - ningún error en la consola.
 
 Deja una captura de cada pantalla en `test-results/visual/` para revisarlas a ojo (no se comparan píxel a píxel:
@@ -267,6 +268,16 @@ Auditoría (31 problemas confirmados por verificación independiente, 1 descarta
 - **Contraste**: rosa de la regla #c94564 (texto blanco ≥ 4,5:1), gris de «Descanso» #858d9b, placeholders en
   `--muted`, días de otro mes con el número en `--muted` (sin opacidad). Con «Aumentar contraste» (prefers-contrast)
   bordes y textos secundarios más marcados.
+- **Atenuar con color, nunca con `opacity` sobre texto** (auditoría final): la opacidad mezcla el texto con el fondo
+  y lo deja por debajo de 4,5:1 aunque su color pase. Lo «apagado» va en `--muted` / `--st-pending` (≥ 4,5:1 sobre
+  `--surface`, `--surface-2` y `--surface-3`, y más claro con «Aumentar contraste»); la `opacity` queda para lo que no
+  es texto (puntos, muestras, barras) y para los controles `:disabled`. Así: días por llegar del calendario del
+  Resumen (`--muted`, frente a `--text-2` de los pasados; antes 2,07:1), series pendientes (borde discontinuo, número
+  y valor en `--st-pending`; antes 4,06:1), leyenda del mapa corporal sin zonas (texto en `--muted`, solo la muestra
+  atenuada; antes 2,81:1). Sobre el verde suave de una ficha principal, `--muted` no llega (4,48:1): ahí, `--text-2`.
+  La guarda visual (§4, `contrastIssues`) mide todo texto con opacidad acumulada < 1 —la suya o la de un antepasado—:
+  su color mezclado sobre la pila de fondos debe dar ≥ 4,5:1 (≥ 3:1 si es texto grande); no cuentan `:disabled`,
+  lo `aria-hidden` ni una opacidad en plena animación.
 - **Movimiento y transparencia**: todo el desplazamiento por código usa `scrollBehavior()` (instantáneo con
   «Reducir movimiento»); con «Reducir transparencia» la cabecera compacta, el pie de importar, la barra del
   periodo y el pie de la actividad son opacos.
@@ -535,6 +546,15 @@ las cabeceras `*-head` en fila con el icono como primer hijo: primer glifo − i
 Range; un emoji sobre baldosa se mide desde la baldosa) e `iconShrinkIssues` (ningún `svg.icon` más estrecho que su
 `width`). No cuentan los iconos detrás del texto («Ver progreso ›») ni la salida del modo foco (§18). Su prueba propia
 monta un caso roto y su arreglo de cada regla.
+
+5. **El emoji que encabeza una etiqueta va oculto a VoiceOver y pegado a su primera palabra**:
+   `h('span', { 'aria-hidden': 'true' }, '🎯\u00a0')` + el texto. El espacio no separable impide que al 150 % el emoji
+   se quede solo en una línea y el título baje a la siguiente («🎯 Objetivos» en Hoy y Progreso, «🏃 Carrera ·
+   distancia» en el Resumen); `aria-hidden` evita que VoiceOver lea «diana Objetivos». Si la columna es estrecha, lo
+   que cede es lo de al lado (la comparación del Resumen parte la diferencia entre la cifra y el %), nunca la palabra.
+   La guarda `emojiOrphanIssues` lo mide con Range en cada pantalla (centro del emoji y del primer glifo siguiente del
+   mismo bloque a más de 0,6 líneas → huérfano). Pendiente para otra ronda: el resto de emoji interpolados en cadenas
+   (calendario, hoja de acciones, `<option>`), que necesitan separar el emoji en su propio campo.
 
 ## 30. Sesión de fuerza: olvidada abierta, fichas de RIR y «Aplicar a la plantilla» (ronda 9)
 

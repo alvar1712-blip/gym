@@ -539,6 +539,20 @@ test('peso corporal: guardar 75,4 (con coma), media móvil, tendencia, editar y 
     assert.match(summary, /\+0,3\d kg\/sem/, summary);
     assert.match(summary, /subiendo/);
     assert.strictEqual(await page.locator('.bw-row').count(), 28);
+    // El pie de las dos fichas (12 px) se lee: ≥ 4,5:1 sobre su fondo, también sobre el verde suave de «Media 7 días»
+    // (con --muted se quedaba en 4,48:1). Fondo = capas translúcidas compuestas hasta la primera opaca.
+    const subRatios = await page.locator('.bw-kpi-sub').evaluateAll((els) => els.map((el) => {
+      const rgba = (c) => { const p = c.match(/[\d.]+/g).map(Number); return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 }; };
+      const over = (t, b) => ({ r: t.r * t.a + b.r * (1 - t.a), g: t.g * t.a + b.g * (1 - t.a), b: t.b * t.a + b.b * (1 - t.a), a: 1 });
+      const lum = ({ r, g, b }) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const layers = [];
+      for (let e = el; e; e = e.parentElement) { const c = rgba(getComputedStyle(e).backgroundColor); if (c.a > 0) layers.push(c); if (c.a >= 1) break; }
+      const bg = layers.reverse().reduce((b, c) => over(c, b), { r: 0, g: 0, b: 0, a: 1 });
+      const [a, b] = [lum(over(rgba(getComputedStyle(el).color), bg)), lum(bg)];
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    }));
+    assert.strictEqual(subRatios.length, 2);
+    assert.ok(subRatios.every((r) => r >= 4.5), `contraste del pie de las fichas: ${subRatios.map((r) => r.toFixed(2)).join(', ')}`);
     assert.match((await page.locator('.bw-row').first().innerText()).trim(), /75,4 kg\s+(±0|[+−]0,\d)$/, 'variación respecto al anterior'); // .trim(): salto final de WebKit
     await shot(page, 'bodyweight');
     assert.ok(await noHScroll(page));

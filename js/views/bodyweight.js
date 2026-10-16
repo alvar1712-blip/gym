@@ -105,7 +105,7 @@ export function bodyweightQuickEntry({ onSaved } = {}) {
 
   return h('div.card.bwq',
     h('div.card-head',
-      h('div.card-title', '⚖️ Peso corporal'),
+      h('div.card-title', h('span', { 'aria-hidden': 'true' }, '⚖️\u00a0'), 'Peso corporal'),
       h('button.bwq-link', { type: 'button', onClick: () => navigate('#/bodyweight') }, 'Ver todo', icon('chevron-right', 18))),
     info,
     h('div.bwq-row', st, btn));

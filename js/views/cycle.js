@@ -388,7 +388,7 @@ export function mountCycle(root) {
       historyCard(info, (ch) => charts.push(ch)),
       effectCard(info, stats),
       tipsCard(info),
-      h('p.cyc-privacy', h('span', { 'aria-hidden': 'true' }, '🔒 '), PRIVACY),
+      h('p.cyc-privacy', h('span', { 'aria-hidden': 'true' }, '🔒\u00a0'), PRIVACY),
     ].filter(Boolean));
   }
 
@@ -700,7 +700,7 @@ function disabledState(profile) {
       ? 'Tienes el seguimiento del ciclo desactivado. Actívalo en tu perfil para registrar tu regla y ver en qué fase estás, cómo te afecta y cuándo esperar la próxima.'
       : 'El seguimiento del ciclo menstrual está disponible en modo mujer. Si quien usa la app es una mujer, indícalo en el perfil y se activará.',
     action: { label: 'Ir al perfil', onClick: () => navigate('#/settings/profile') },
-  }), h('p.cyc-privacy', h('span', { 'aria-hidden': 'true' }, '🔒 '), PRIVACY));
+  }), h('p.cyc-privacy', h('span', { 'aria-hidden': 'true' }, '🔒\u00a0'), PRIVACY));
 }
 
 // ---------------------------------------------------------------------------

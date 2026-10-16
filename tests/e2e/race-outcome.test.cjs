@@ -48,7 +48,7 @@ async function flowSkip(page, { shots = false } = {}) {
   assert.strictEqual(await row.locator('.rc-row-pred').count(), 0, 'un evento pasado no enseña tiempo previsto');
   await go(page, '#/today');
   const line = page.locator('.today-outcome');
-  assert.match((await line.innerText()).trim(), /^🏁 ¿Cómo te fue en el 10K del (lunes|martes|miércoles|jueves|viernes|sábado|domingo)\?$/);
+  assert.match((await line.innerText()).trim(), /^🏁\u00a0¿Cómo te fue en el 10K del (lunes|martes|miércoles|jueves|viernes|sábado|domingo)\?$/);
   assert.notStrictEqual(await line.evaluate((el) => getComputedStyle(el).color), await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent')), 'neutra, sin verde');
   if (shots) { await line.scrollIntoViewIfNeeded(); await settle(page); await shot(page, 'race-outcome-today'); }
   await line.click();

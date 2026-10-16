@@ -1224,7 +1224,7 @@ function enduranceRecordsView(data, today) {
     })
     : recRow({ key: 'gain', label: 'Mayor desnivel', value: 'sin datos', sub: 'Registra el desnivel positivo de una ruta.', muted: true }));
   const head = (emoji, title, count, one, many) => h('div.prg-rec-khead',
-    h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, `${emoji} `), title),
+    h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, `${emoji}\u00a0`), title),
     h('span.prg-rec-meta', count ? plural(count, one, many) : 'sin registros'));
 
   const runRows = [runLongestRow(e.run.longest)];
@@ -1246,7 +1246,7 @@ function enduranceRecordsView(data, today) {
   return h('div.prg-rec-endurance',
     h('section.card.prg-rec', { dataset: { sport: 'run' } },
       h('div.prg-rec-khead',
-        h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, '🏃 '), 'Carrera'),
+        h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, '🏃\u00a0'), 'Carrera'),
         h('span.prg-rec-meta', runMeta || 'sin registros')),
       h('div.prg-rec-rows', runRows),
       h('p.prg-hist-note', 'Tu mejor marca de siempre en cada distancia, de tus carreras (registradas o importadas) y de tus marcas históricas de «Tu contexto»; un récord no caduca (la antigüedad solo cuenta en los tiempos previstos). Si la carrera fue más larga, cuenta tu mejor tramo continuo cuando la importaste de un archivo; si no, se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),

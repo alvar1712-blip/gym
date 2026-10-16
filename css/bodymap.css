@@ -27,7 +27,9 @@
 }
 .bm-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .bm-legend-n { color: var(--muted); font-variant-numeric: tabular-nums; }
-.bm-legend-item.is-empty { opacity: 0.55; }
+/* Estado sin zonas: se atenúa el texto con color (≥ 4,5:1) y solo la muestra con opacity (con opacity el «0» quedaba en ~2,8:1) */
+.bm-legend-item.is-empty { color: var(--muted); }
+.bm-legend-item.is-empty .bm-swatch { opacity: 0.55; }
 .bm-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
 .bm-swatch-below { background: var(--bm-below); }
 .bm-swatch-in { background: var(--bm-in); }

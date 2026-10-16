@@ -240,7 +240,7 @@ function raceLine(race, today) {
     dataset: { race: race.id },
     'aria-label': `Próximo evento: ${raceTitle(race)}, ${fmtDate(race.date, 'long')}. ${line}`,
     onClick: () => navigate(`#/races/${encodeURIComponent(race.id)}`),
-  }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁 '), line), icon('chevron-right', 18));
+  }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁\u00a0'), line), icon('chevron-right', 18));
 }
 
 /** «¿Cómo te fue?» de un evento reciente → su ficha (donde se responde u omite). Neutra: no es la acción principal. */
@@ -250,7 +250,7 @@ function outcomeLine(race, today) {
     type: 'button',
     dataset: { race: race.id },
     onClick: () => navigate(`#/races/${encodeURIComponent(race.id)}`),
-  }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁 '), text), icon('chevron-right', 18));
+  }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁\u00a0'), text), icon('chevron-right', 18));
 }
 
 /** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */

@@ -203,9 +203,10 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 .ses-row-pending {
   background: transparent;
   border-style: dashed;
-  opacity: 0.6;
 }
-.ses-row-pending .ses-row-val { font-weight: 600; color: var(--text-2); }
+/* Pendiente: se atenúa con color (--st-pending, ≥ 4,5:1), no con opacity, que dejaba el número en ~4:1 (PULIDO §17) */
+.ses-row-pending .ses-row-num { background: transparent; border: 1px dashed var(--border-strong); color: var(--st-pending); }
+.ses-row-pending :is(.ses-row-val, .ses-row-rir) { font-weight: 600; color: var(--st-pending); }
 
 /* ---------- Editor grande ---------- */
 .ses-editor {

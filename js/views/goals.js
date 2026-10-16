@@ -730,7 +730,7 @@ export function goalsSummaryCard({ data = null, max = 3 } = {}) {
   });
   return h('section.card.goal-sum', { dataset: { goalsSummary: '1' } },
     h('div.card-head',
-      h('div.card-title', '🎯 Objetivos'),
+      h('div.card-title', h('span', { 'aria-hidden': 'true' }, '🎯\u00a0'), 'Objetivos'),
       h('button.goal-sum-link', { type: 'button', onClick: () => navigate('#/goals') }, 'Ver todos', icon('chevron-right', 18))),
     h('div.goal-sum-list', rows),
     more > 0 ? h('p.goal-sum-more', `${more === 1 ? 'Otro objetivo activo' : `Otros ${more} objetivos activos`} en Objetivos.`) : null);

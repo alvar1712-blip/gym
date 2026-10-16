@@ -550,9 +550,12 @@ test('conseguido: se sincroniza achievedAt y pasa a «Conseguidos»; goalsSummar
         rows: [...el.querySelectorAll('.goal-sum-row')].map((r) => ({ id: r.dataset.goal, status: r.dataset.status, text: r.innerText })),
         more: el.querySelector('.goal-sum-more')?.textContent || null,
         title: el.querySelector('.card-title').textContent,
+        emojiHidden: el.querySelector('.card-title > span[aria-hidden="true"]')?.textContent || null,
       };
     });
-    assert.strictEqual(sum.title, '🎯 Objetivos');
+    // El emoji, oculto a VoiceOver y unido a «Objetivos» con un espacio no separable (al 150 % no se queda solo)
+    assert.strictEqual(sum.title, '🎯\u00a0Objetivos');
+    assert.strictEqual(sum.emojiHidden, '🎯\u00a0');
     assert.deepStrictEqual(sum.rows.map((r) => r.id), ['g_ht', 'g_bw', 'g_run']);
     assert.match(sum.rows[0].text, /Datos insuficientes: 2 de 4 registros, 2 de 3 semanas/);
     assert.match(sum.rows[1].text, /Estimación: entre/);

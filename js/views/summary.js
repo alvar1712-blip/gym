@@ -356,8 +356,10 @@ function compareCard(sum) {
     const ck = c.kinds[k];
     if (!ck) continue;
     const info = kindInfo(k);
-    if (ck.km) rows.push(row(`km-${k}`, `${info.emoji} ${info.label} · distancia`, ck.km, (v) => fmtKm(k, v), kindColorStyle(k)));
-    else rows.push(row(`count-${k}`, `${info.emoji} ${info.label} · sesiones`, ck.count, undefined, kindColorStyle(k)));
+    // El emoji, oculto a VoiceOver y pegado a la primera palabra (espacio no separable: al 150 % no se queda solo)
+    const label = (what) => [h('span', { 'aria-hidden': 'true' }, `${info.emoji}\u00a0`), `${info.label} · ${what}`];
+    if (ck.km) rows.push(row(`km-${k}`, label('distancia'), ck.km, (v) => fmtKm(k, v), kindColorStyle(k)));
+    else rows.push(row(`count-${k}`, label('sesiones'), ck.count, undefined, kindColorStyle(k)));
   }
   const p = c.prevTotals;
   return h('section.card.sum-compare', { dataset: { card: 'compare' } }, head,

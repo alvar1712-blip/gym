@@ -12,7 +12,10 @@
 //   · el panel de la semana pasada con «Puesta a punto» y su «¿Por qué?» abierto (ronda 8, G);
 //   · una sesión larga con superserie y ejercicios plegados, uno desplegado a mano y otro en curso (ronda 8, H);
 //   · icono junto a su texto, sin encogerse (PULIDO §«Icono + etiqueta»): el primer glifo de la etiqueta, a la
-//     distancia del gap aunque parta de línea, y ningún icono SVG más estrecho que su tamaño;
+//     distancia del gap aunque parta de línea, y ningún icono SVG más estrecho que su tamaño; ningún emoji que
+//     encabeza una etiqueta solo en su línea;
+//   · el texto atenuado con opacidad (la suya o la de un antepasado) mantiene ≥ 4,5:1 (≥ 3:1 si es grande) sobre su
+//     fondo (PULIDO §17: se atenúa con color, no con opacity);
 //   · ningún error en la consola.
 // Deja una captura de cada pantalla en test-results/visual/ (para mirarlas, no se comparan píxel a píxel).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/visual-guard.test.cjs  (E2E_BROWSER=webkit para WebKit)
@@ -272,6 +275,7 @@ function inspectTop() {
   }
   issues.push(...overlapIssues(root, desc, shown));
   issues.push(...iconGapIssues(root, desc, shown), ...iconShrinkIssues(root, desc));
+  issues.push(...contrastIssues(root, desc, shown), ...emojiOrphanIssues(root, desc));
   // La cabecera (título compacto) no tapa el primer bloque del contenido
   const top = root.querySelector('.topbar');
   const content = root.querySelector('.content');
@@ -472,11 +476,132 @@ function iconShrinkIssues(root, desc) {
   return issues;
 }
 
+/**
+ * Contraste del texto atenuado (docs/PULIDO.md §17, «sin opacidad»): un texto con opacidad acumulada < 1 (la suya o la
+ * de un antepasado) se mezcla con el fondo y puede quedar ilegible aunque su color dé ≥ 4,5:1. Para esos textos (y
+ * solo esos: el resto usa los tokens ya medidos), su color mezclado sobre lo que hay debajo debe dar ≥ 4,5:1, o ≥ 3:1
+ * si es texto grande (≥ 24 px, o ≥ 18,66 px en negrita). No cuentan los controles :disabled (WCAG los exime) ni lo
+ * oculto a VoiceOver (aria-hidden, ya fuera por `shown`). La pila se compone como el navegador: cada fondo encima del
+ * anterior y cada grupo con opacidad mezclado al cerrar con lo que tenía detrás; con una imagen o un degradado de
+ * fondo no se sabe el color y no se mide. Una opacidad en plena animación es de paso y tampoco se mide.
+ */
+function contrastIssues(root, desc, shown) {
+  const issues = [];
+  const ctx = document.createElement('canvas').getContext('2d');
+  // El motor da el color como rgb(), rgba() o color(srgb …): el lienzo lo normaliza a #rrggbb o rgba()
+  const parse = (c) => {
+    ctx.fillStyle = '#000';
+    ctx.fillStyle = c;
+    const s = ctx.fillStyle;
+    if (s[0] === '#') return { r: parseInt(s.slice(1, 3), 16), g: parseInt(s.slice(3, 5), 16), b: parseInt(s.slice(5, 7), 16), a: 1 };
+    const p = s.match(/[\d.]+/g).map(Number);
+    return { r: p[0], g: p[1], b: p[2], a: p[3] ?? 1 };
+  };
+  const over = (top, bot) => ({ r: top.r * top.a + bot.r * (1 - top.a), g: top.g * top.a + bot.g * (1 - top.a), b: top.b * top.a + bot.b * (1 - top.a), a: 1 });
+  const lum = ({ r, g, b }) => {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const seen = new Set();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!n.textContent.trim() || !el || seen.has(el)) continue;
+    seen.add(el);
+    if (el.closest('svg, :disabled') || !shown(el)) continue;
+    const chain = [];
+    for (let e = el; e; e = e.parentElement) chain.unshift(e);
+    const styles = chain.map((e) => getComputedStyle(e));
+    const op = styles.reduce((a, cs) => a * Number(cs.opacity), 1);
+    if (op >= 0.999) continue;
+    if (chain.some((e, i) => Number(styles[i].opacity) < 1 && e.getAnimations().some((a) => a.playState === 'running'))) continue;
+    // Con imagen o degradado de fondo por encima del último fondo opaco, el color de debajo no se conoce
+    const lastOpaque = Math.max(0, ...styles.map((cs, i) => (parse(cs.backgroundColor).a >= 1 ? i : -1)));
+    if (styles.slice(lastOpaque).some((cs) => cs.backgroundImage !== 'none')) continue;
+    // Lo que se ve en el punto del texto, con texto (fg) y sin él (bg)
+    const paint = (withText) => {
+      let px = { r: 255, g: 255, b: 255, a: 1 };
+      const groups = [];
+      styles.forEach((cs) => {
+        if (Number(cs.opacity) < 1) groups.push({ back: px, a: Number(cs.opacity) });
+        px = over(parse(cs.backgroundColor), px);
+      });
+      if (withText) px = over(parse(styles[styles.length - 1].color), px);
+      for (let i = groups.length - 1; i >= 0; i--) px = over({ ...px, a: groups[i].a }, groups[i].back);
+      return px;
+    };
+    const L1 = lum(paint(true));
+    const L2 = lum(paint(false));
+    const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+    const cs = styles[styles.length - 1];
+    const fs = parseFloat(cs.fontSize);
+    const need = fs >= 24 || (Number(cs.fontWeight) >= 700 && fs >= 18.66) ? 3 : 4.5;
+    if (ratio < need - 0.005) issues.push(`contraste ${ratio.toFixed(2)}:1 (< ${need}) con opacidad ${op.toFixed(2)}: ${desc(el)}`);
+  }
+  return issues;
+}
+
+/**
+ * Emoji huérfano (PULIDO, «Icono + etiqueta»): un emoji que encabeza una etiqueta («🎯 Objetivos», «🏃 Carrera ·
+ * distancia») va en la misma línea que su primera palabra. Con un espacio normal, al 150 % el emoji se queda solo en
+ * una línea y el título baja a la siguiente. Se mide con Range: el centro del emoji y el del primer glifo que lo sigue
+ * dentro del mismo bloque, a más de 0,6 líneas → huérfano. (El emoji suele ir en un span aria-hidden: cuenta si se ve.)
+ */
+function emojiOrphanIssues(root, desc) {
+  const issues = [];
+  const EMO = /\p{Extended_Pictographic}/u;
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width >= 1 && r.height >= 1 && !el.closest('[hidden]') && cs.visibility !== 'hidden' && cs.display !== 'none';
+  };
+  const rect = (node, from, to) => {
+    const rg = document.createRange();
+    rg.setStart(node, from);
+    rg.setEnd(node, to);
+    return [...rg.getClientRects()].find((r) => r.width > 0.5 && r.height > 0.5) || null;
+  };
+  const blockOf = (el) => {
+    for (let e = el; e && e !== root; e = e.parentElement) if (!getComputedStyle(e).display.startsWith('inline')) return e;
+    return root;
+  };
+  const nodes = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.textContent.trim() && n.parentElement && !n.parentElement.closest('svg') && visible(n.parentElement)) nodes.push(n);
+  }
+  nodes.forEach((n, k) => {
+    const t = n.textContent;
+    const i = t.search(/\S/);
+    if (!EMO.test(t.slice(i, i + 2))) return; // solo el emoji que encabeza su texto
+    const len = t.codePointAt(i) > 0xffff ? 2 : 1;
+    const er = rect(n, i, i + len);
+    if (!er) return;
+    const block = blockOf(n.parentElement);
+    // Primer glifo que no es emoji ni espacio, en este texto o en los siguientes del mismo bloque
+    let gr = null;
+    for (let j = k, from = i + len; j < nodes.length && !gr; j++, from = 0) {
+      const m = nodes[j];
+      if (j > k && blockOf(m.parentElement) !== block) break;
+      const rest = m.textContent.slice(from);
+      const g = rest.search(/[^\s\p{Extended_Pictographic}️‍\u{1F3FB}-\u{1F3FF}]/u);
+      if (g >= 0) gr = rect(m, from + g, from + g + 1);
+    }
+    if (!gr) return;
+    const lh = parseFloat(getComputedStyle(n.parentElement).lineHeight) || er.height;
+    const dy = (gr.top + gr.bottom) / 2 - (er.top + er.bottom) / 2;
+    if (Math.abs(dy) > 0.6 * lh) issues.push(`emoji solo en su línea, separado de su texto (${Math.round(dy)} px): ${desc(block)}`);
+  });
+  return issues;
+}
+
 /** inspectTop con las guardas auxiliares a su alcance (page.evaluate solo serializa la función que recibe). */
 const measureTop = (page) => page.evaluate(`(() => {
   const overlapIssues = ${overlapIssues};
   const iconGapIssues = ${iconGapIssues};
   const iconShrinkIssues = ${iconShrinkIssues};
+  const contrastIssues = ${contrastIssues};
+  const emojiOrphanIssues = ${emojiOrphanIssues};
   return (${inspectTop})();
 })()`);
 
@@ -632,6 +757,10 @@ async function selfTest(browserName) {
         <div class="case" id="emoji-over"><div class="goal-head" style="display:flex;align-items:center;gap:4px;font-size:20px"><span style="flex:none;width:20px;font-size:40px;line-height:1;text-align:center">🏃</span><span>10K</span></div></div>
         <div class="case" id="emoji-ok"><div class="goal-head" style="display:flex;align-items:center;gap:10px;font-size:20px"><span style="flex:none;width:34px;font-size:26px;line-height:1;text-align:center">🏃</span><span>10K</span></div></div>
         <div class="case" id="word-ok" style="width:200px;font-size:20px;overflow-wrap:anywhere">Senderismo</div>
+        <div class="case" id="dim-bad" style="background:#15181d;font-size:14px"><span style="color:#929baa;opacity:0.4">12</span><span style="opacity:0.6;color:#929baa">Serie 3</span><span style="opacity:0.75;color:#929baa">Normal</span></div>
+        <div class="case" id="dim-ok" style="background:#15181d;font-size:14px"><span style="color:#929baa">12</span><span style="opacity:0.9;color:#f3f5f7">Serie 3</span><button disabled style="opacity:0.4;color:#929baa;background:none;border:0">Anterior</button><span aria-hidden="true" style="opacity:0.3">·</span><span style="opacity:0.75;color:#929baa;font-size:24px">Grande</span></div>
+        <div class="case" id="emoji-orphan" style="width:120px;font-size:30px;line-height:1.25"><div>🎯 Objetivos</div><div><span aria-hidden="true">🏃 </span>Carrera · distancia</div></div>
+        <div class="case" id="emoji-glued" style="width:120px;font-size:30px;line-height:1.25"><div>🎯\u00a0Objetivos</div><div><span aria-hidden="true">🏃\u00a0</span>Carrera · distancia</div></div>
       </div></body></html>`);
     const run = (id) => page.evaluate(`(() => {
       const overlapIssues = ${overlapIssues};
@@ -665,9 +794,29 @@ async function selfTest(browserName) {
     const over = await icons('emoji-over');
     assert.ok(over.some((x) => /encima de su icono/.test(x)), `emoji encima: ${over.join(' | ')}`);
     assert.deepStrictEqual(await icons('emoji-ok'), []);
+    // Contraste del texto atenuado con opacidad (y no los :disabled, lo oculto ni el texto grande a ≥ 3:1) y emoji huérfano
+    const more = (id) => page.evaluate(`(() => {
+      const contrastIssues = ${contrastIssues};
+      const emojiOrphanIssues = ${emojiOrphanIssues};
+      const shown = (el) => { const r = el.getBoundingClientRect(); return r.width >= 1 && r.height >= 1 && !el.closest('[aria-hidden="true"]'); };
+      const desc = (el) => el.tagName.toLowerCase() + ' «' + el.textContent.trim() + '»';
+      const root = document.getElementById(${JSON.stringify(id)});
+      return [...contrastIssues(root, desc, shown), ...emojiOrphanIssues(root, desc)];
+    })()`);
+    const dim = await more('dim-bad');
+    assert.strictEqual(dim.length, 3, `contraste: ${dim.join(' | ')}`);
+    assert.match(dim[0], /contraste 2\.\d\d:1 \(< 4\.5\) con opacidad 0\.40: span «12»/);
+    assert.match(dim[1], /contraste 3\.\d\d:1 \(< 4\.5\) con opacidad 0\.60: span «Serie 3»/);
+    // El mismo gris a 24 px (texto grande) pasa en dim-ok: ≥ 3:1
+    assert.match(dim[2], /contraste 4\.\d\d:1 \(< 4\.5\) con opacidad 0\.75: span «Normal»/);
+    assert.deepStrictEqual(await more('dim-ok'), []);
+    const orphan = await more('emoji-orphan');
+    assert.strictEqual(orphan.length, 2, `emoji: ${orphan.join(' | ')}`);
+    assert.ok(orphan.every((x) => /emoji solo en su línea/.test(x)), orphan.join(' | '));
+    assert.deepStrictEqual(await more('emoji-glued'), []);
   } finally {
     await browser.close();
   }
 }
-test('la guarda de solapes avisa de un texto sobre el anillo, un valor sobre su unidad, una palabra partida y un icono lejos, encogido o encima de su texto', () => selfTest('chromium'));
+test('la guarda de solapes avisa de un texto sobre el anillo, un valor sobre su unidad, una palabra partida, un icono lejos, encogido o encima de su texto, un emoji huérfano y un texto atenuado sin contraste', () => selfTest('chromium'));
 test('WebKit: la guarda de solapes avisa de los mismos casos', { skip: skipWebkit }, () => selfTest('webkit'));

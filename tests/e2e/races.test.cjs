@@ -68,7 +68,7 @@ async function flow(page, { shots = false } = {}) {
   await go(page, '#/today');
   const line = page.locator('.today-race');
   assert.strictEqual(await line.count(), 1);
-  assert.strictEqual(await line.locator('.today-race-text').innerText(), '🏁 10K · 73 días · objetivo <50:00');
+  assert.strictEqual(await line.locator('.today-race-text').innerText(), '🏁\u00a010K · 73 días · objetivo <50:00');
   if (shots) { await line.scrollIntoViewIfNeeded(); await settle(page); await shot(page, 'races-today'); }
   await line.click();
   await waitRoute(page, new RegExp(`^#/races/${saved.id}$`));
