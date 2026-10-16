@@ -7,7 +7,7 @@ import { navigate } from '../router.js';
 import {
   h, icon, screen, sheet, segmented, chips, rpePicker, durationInput, field, numInput, textInput, toast, confirmDialog, undoToast,
 } from '../ui.js';
-import { todayStr, fmtDate, uid, plural, isDateStr, hhmm } from '../util.js';
+import { todayStr, fmtDate, uid, plural, isDateStr, hhmm, fmtNum } from '../util.js';
 import { ACTIVITY_EMOJI } from '../seed.js';
 import { ACTIVITY_KINDS, KIND_UI, activityTitle } from '../activity-logic.js';
 import { readActivityFile } from '../import-parse.js';
@@ -129,9 +129,11 @@ export function mountImport(root) {
     const today = todayStr();
     const n = state.items.length;
     const sel = IL.selectedItems(state.items, today).length;
-    const dups = state.items.filter((it) => it.dup).length;
+    const dups = state.items.filter((it) => it.dup && !it.dup.loose).length;
+    const maybe = state.items.filter((it) => it.dup?.loose).length;
     const bits = [plural(n, 'actividad', 'actividades'), `${sel} para guardar`];
     if (dups) bits.push(dups === 1 ? '1 ya registrada' : `${dups} ya registradas`);
+    if (maybe) bits.push(maybe === 1 ? '1 posible repetida' : `${maybe} posibles repetidas`);
     return h('div.imp-head',
       h('div.imp-head-text', bits.join(' · ')),
       h('button.btn.btn-ghost.btn-sm.imp-clear', { type: 'button', onClick: clearList }, 'Vaciar'));
@@ -178,8 +180,8 @@ export function mountImport(root) {
       onClick: () => { it.selected = !it.selected; paint(); },
     }, icon('check', 20));
     const badge = it.dup
-      ? h('span.badge.badge-warn.imp-badge', it.dup.type === 'saved' ? 'Ya registrada' : 'Repetida')
-      : null;
+      ? h('span.badge.badge-warn.imp-badge', it.dup.type === 'batch' ? 'Repetida' : it.dup.loose ? 'Posible repetida' : 'Ya registrada')
+      : it.truncated ? h('span.badge.badge-warn.imp-badge', 'Incompleto') : null;
     const main = h('button.imp-item-main', { type: 'button', onClick: () => editItem(it), 'aria-label': `Revisar ${title}` },
       h('div.imp-item-top',
         h('span.imp-emoji', { 'aria-hidden': 'true' }, it.kind ? ACTIVITY_EMOJI[it.kind] : '❓'),
@@ -195,12 +197,24 @@ export function mountImport(root) {
       style: `--imp-c: ${KIND_COLOR[it.kind] || 'var(--border-strong)'}`,
     },
     h('div.imp-item-row', check, main, h('span.imp-chev', { 'aria-hidden': 'true' }, icon('chevron-right', 20))));
+    if (it.truncated) {
+      const km = it.fileKm > 0 ? `: termina a los ${fmtNum(it.fileKm, 2)} km` : '';
+      // Con aviso de duplicado, «No se importará…» lo dice ese aviso (una sola vez por tarjeta).
+      const tail = it.dup?.type === 'saved' ? '' : ' No se importará salvo que la marques.';
+      card.appendChild(h('p.imp-note.imp-note-warn.imp-note-cut', `El archivo parece incompleto${km}. Vuelve a exportarlo.${tail}`));
+    }
     if (it.dup) {
       const d = it.dup;
-      const txt = d.type === 'saved'
-        ? `Coincide con «${d.title}» del ${fmtDate(d.date, 'short')}${d.startedAt ? ` a las ${hhmm(d.startedAt)}` : ''}. No se importará salvo que la marques.`
-        : `Está repetida en esta importación (${d.label}).`;
+      const when = `«${d.title}» del ${fmtDate(d.date, 'short')}${d.startedAt ? ` a las ${hhmm(d.startedAt)}` : ''}${d.manual ? ' (apuntada a mano)' : ''}`;
+      const txt = d.type !== 'saved'
+        ? `Está repetida en esta importación (${d.label}).`
+        : d.loose
+          ? `Puede ser la misma que ${when}. No se importará salvo que la marques.`
+          : `Coincide con ${when}. No se importará salvo que la marques.`;
       card.appendChild(h('p.imp-note.imp-note-warn', txt));
+    }
+    if (it.spikeKm > 0) {
+      card.appendChild(h('p.imp-note.imp-note-spike', `Descontados ${fmtNum(it.spikeKm, 2)} km de saltos del GPS.`));
     }
     if (problems.includes('kind')) card.appendChild(kindPicker(it));
     const rest = problems.filter((p) => p !== 'kind');

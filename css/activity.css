@@ -92,6 +92,11 @@
 .act-status-error { color: var(--danger); }
 .act-delete { margin-top: 8px; }
 .act-restored .btn { flex: none; min-height: 44px; padding: 0 14px; }
+/* Posible duplicado: el texto arriba y las dos acciones debajo, a todo el ancho (caben a 320 px y con texto grande). */
+.act-dup { flex-wrap: wrap; align-items: flex-start; }
+.act-dup > .icon { color: var(--warn); flex: none; }
+.act-dup-actions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.act-dup-actions .btn { flex: 1 1 auto; min-height: 44px; padding: 0 14px; }
 
 /* ---------- Senderismo fuera del formulario ---------- */
 /* Accesos rápidos de Hoy (views/today.js): con senderismo son seis; en 3 × 2 cada botón es ancho y «Senderismo»

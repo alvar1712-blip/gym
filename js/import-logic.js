@@ -5,9 +5,12 @@
 //     (activity-logic.buildRecord), más startedAt (ms) y source:{type, fileName}. No se guardan los puntos GPS; en
 //     las carreras se añaden la serie compacta distancia–tiempo (track), las vueltas (laps) y los mejores esfuerzos
 //     (bestEfforts) de best-efforts.js, si cuadran con la distancia y el tiempo del registro (importedSplits).
-//   updateDuplicates: marca «ya registrada» (o repetida en la misma importación) y la desmarca por defecto.
+//   updateDuplicates: marca «ya registrada» (o repetida en la misma importación) y la desmarca por defecto; también
+//     la que PUEDE ser una apuntada a mano (likelyDuplicate) y la de un archivo cortado (item.truncated): avisan y
+//     quedan sin marcar, pero se pueden guardar igualmente.
 import { emptyForm, buildRecord, cleanField, isActivityKind, primaryMetric, activityTitle } from './activity-logic.js';
 import { dateFromTs, isDateStr, normalize, fmtNum, fmtDuration } from './util.js';
+import { RESULT_DUP_TOL } from './context-logic.js';
 import {
   encodeTrack, lapsForRecord, computeBestEfforts, seriesProblem, MATCH_TOL_M, MATCH_TOL_SHARE, BASIS_TOL_KM, BASIS_TOL_SEC,
 } from './best-efforts.js';
@@ -124,6 +127,8 @@ export function itemFromEntry(entry, { key = '', today = null } = {}) {
     elapsedSec: intOrNull(s.elapsedSec),
     distanceKm: posOrNull(s.distanceM) != null ? s.distanceM / 1000 : null,
     fileKm: posOrNull(s.distanceM) != null ? s.distanceM / 1000 : null, // la del archivo (para saber si se ha cambiado)
+    spikeKm: posOrNull(s.spikeM) != null ? s.spikeM / 1000 : null, // saltos del GPS ya descontados de las dos
+    truncated: !!s.truncated, // el archivo se corta antes de terminar
     elevationM: mOrNull(s.ascentM),
     elevationLossM: mOrNull(s.descentM),
     altMaxM: mOrNull(s.altMaxM),
@@ -332,26 +337,56 @@ export function isSameActivity(a, b) {
   return near(ka, kb);
 }
 
+/**
+ * ¿PUEDE ser la misma? Regla amplia para avisar (nunca para bloquear ni para descartar en los análisis): mismo tipo y
+ * fecha, al menos una sin hora (p. ej. la apuntada a mano), duración a ± RESULT_DUP_TOL y distancia a ± RESULT_DUP_TOL
+ * o ausente en alguna (la misma tolerancia que «misma carrera» en contexto y eventos). Con hora en las dos manda
+ * isSameActivity (± 2 min).
+ */
+export function likelyDuplicate(a, b) {
+  if (!a || !b || a.kind !== b.kind || a.date !== b.date) return false;
+  if (Number.isFinite(a.startedAt) && a.startedAt > 0 && Number.isFinite(b.startedAt) && b.startedAt > 0) return false;
+  const sa = recSec(a);
+  const sb = recSec(b);
+  if (!sa || !sb || !near(sa, sb, RESULT_DUP_TOL)) return false;
+  const ka = a.distanceKm > 0 ? a.distanceKm : null;
+  const kb = b.distanceKm > 0 ? b.distanceKm : null;
+  return ka == null || kb == null || near(ka, kb, RESULT_DUP_TOL);
+}
+
+const savedCandidates = (rec, sessions) => (sessions || []).filter((s) => s && s.kind !== 'strength' && s.status === 'done' && s.id !== rec.id);
+
 /** Actividad guardada que coincide con el registro candidato, o null. */
 export function findDuplicate(rec, sessions) {
-  return (sessions || []).find((s) => s && s.kind !== 'strength' && s.status === 'done' && s.id !== rec.id && isSameActivity(rec, s)) || null;
+  return savedCandidates(rec, sessions).find((s) => isSameActivity(rec, s)) || null;
+}
+
+/** Actividad guardada que PUEDE ser la misma (likelyDuplicate) cuando ninguna coincide del todo, o null. */
+export function findLikelyDuplicate(rec, sessions) {
+  return savedCandidates(rec, sessions).find((s) => likelyDuplicate(rec, s)) || null;
 }
 
 /**
  * Recalcula los duplicados de toda la lista (contra lo guardado y contra los items anteriores de la misma
- * importación) y ajusta la selección: un item nuevo se marca si se puede guardar y no es duplicado; si pasa a ser
- * duplicado se desmarca, y si deja de serlo (o se completa lo que faltaba, p. ej. el deporte) se marca. Un item que
- * no se puede guardar nunca queda marcado. En los demás casos se respeta lo que haya elegido el usuario.
- * item.dup = null | { type:'saved', id, title, date, startedAt } | { type:'batch', key, label }
+ * importación) y ajusta la selección: un item nuevo se marca si se puede guardar, no es duplicado y su archivo no está
+ * cortado; si pasa a ser duplicado se desmarca, y si deja de serlo (o se completa lo que faltaba, p. ej. el deporte)
+ * se marca (salvo un archivo cortado). Un item que no se puede guardar nunca queda marcado. En los demás casos se
+ * respeta lo que haya elegido el usuario.
+ * item.dup = null | { type:'saved', id, title, date, startedAt, loose, manual } | { type:'batch', key, label }
+ *   loose: no coincide del todo, pero puede ser la misma (likelyDuplicate); manual: la guardada no viene de un archivo.
  */
 export function updateDuplicates(items, sessions, today = null) {
   const recs = items.map((it) => (isActivityKind(it.kind) ? itemRecord(it, { id: `tmp_${it.key}`, now: 0, derived: false }) : null));
   items.forEach((it, i) => {
     let dup = null;
     if (recs[i]) {
-      const s = findDuplicate(recs[i], sessions);
+      const strict = findDuplicate(recs[i], sessions);
+      const s = strict || findLikelyDuplicate(recs[i], sessions);
       if (s) {
-        dup = { type: 'saved', id: s.id, title: s.templateName || activityTitle(s), date: s.date, startedAt: s.startedAt ?? null };
+        dup = {
+          type: 'saved', id: s.id, title: s.templateName || activityTitle(s), date: s.date, startedAt: s.startedAt ?? null,
+          loose: !strict, manual: !s.source,
+        };
       } else {
         for (let j = 0; j < i; j++) {
           if (recs[j] && isSameActivity(recs[i], recs[j])) { dup = { type: 'batch', key: items[j].key, label: items[j].label }; break; }
@@ -363,8 +398,8 @@ export function updateDuplicates(items, sessions, today = null) {
     const prevValid = it.valid;
     it.dup = dup;
     it.valid = valid;
-    if (prevDup === undefined || !valid) it.selected = valid && !dup;
-    else if (!!dup !== !!prevDup || !prevValid) it.selected = !dup;
+    if (prevDup === undefined || !valid) it.selected = valid && !dup && !it.truncated;
+    else if (!!dup !== !!prevDup || !prevValid) it.selected = !dup && !it.truncated;
   });
   return items;
 }

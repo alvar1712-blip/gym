@@ -74,10 +74,14 @@ const round2 = (v) => Math.round(v * 100) / 100;
  * Limpieza: fuera los puntos sin hora o con hora ≤ la anterior (cuentan en `invalid`; los metros que traían pasan al
  * siguiente punto, porque `d` es acumulada); los tramos a más de SPIKE_SPEED (y > SPIKE_MIN_M) se conservan en `d`
  * (el total sigue cuadrando con la distancia de la actividad) y se apuntan en `spikes`.
- * @param {{ t: ArrayLike<number> (s absolutos, NaN si no hay), d: ArrayLike<number> (m acumulados), src }} raw
- * @returns {{ t0, t: Float64Array (s desde t0), d: Float64Array, src, n, total, invalid, step, spikes: number[][] } | null}
+ * Con `dropSpikes` (import-parse.summarize: carrera o senderismo con la distancia del GPS) esos tramos se quitan:
+ * cada uno resta su delta a todo lo que viene después, así que la serie acaba en la distancia sin saltos y `spikes`
+ * queda vacío; `droppedM` = metros quitados (para descontarlos también de la distancia de la actividad).
+ * @param {{ t: ArrayLike<number> (s absolutos, NaN si no hay), d: ArrayLike<number> (m acumulados), src, dropSpikes }} raw
+ * @returns {{ t0, t: Float64Array (s desde t0), d: Float64Array, src, n, total, invalid, step, spikes: number[][],
+ *   droppedM } | null}
  */
-export function buildSeries({ t, d, src = 'device' }) {
+export function buildSeries({ t, d, src = 'device', dropSpikes = false }) {
   const total = t.length;
   if (total < 2) return null;
   const tt = new Float64Array(total);
@@ -99,21 +103,27 @@ export function buildSeries({ t, d, src = 'device' }) {
   const ds = new Float64Array(n);
   const gaps = new Float64Array(n - 1);
   const spikes = [];
+  let droppedM = 0;
   for (let k = 0; k < n; k++) {
     ts[k] = tt[k] - t0;
-    ds[k] = dd[k] - d0;
+    ds[k] = dd[k] - d0 - droppedM;
     if (k) {
       const dt = ts[k] - ts[k - 1];
       const dm = ds[k] - ds[k - 1];
       gaps[k - 1] = dt;
       if (dm > SPIKE_MIN_M && dm / dt > SPIKE_SPEED) {
-        const last = spikes[spikes.length - 1];
-        if (last && last[1] >= ds[k - 1]) last[1] = ds[k];
-        else spikes.push([ds[k - 1], ds[k]]);
+        if (dropSpikes) {
+          droppedM += dm;
+          ds[k] = ds[k - 1];
+        } else {
+          const last = spikes[spikes.length - 1];
+          if (last && last[1] >= ds[k - 1]) last[1] = ds[k];
+          else spikes.push([ds[k - 1], ds[k]]);
+        }
       }
     }
   }
-  return { t0: t0 * 1000, t: ts, d: ds, src, n, total, invalid, step: medianStep(gaps), spikes };
+  return { t0: t0 * 1000, t: ts, d: ds, src, n, total, invalid, step: medianStep(gaps), spikes, droppedM };
 }
 
 /** Intervalo de muestreo típico (mediana, segundos enteros ≥ 1). */

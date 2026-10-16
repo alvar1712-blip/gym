@@ -565,3 +565,29 @@ fichas de RIR a 100 % (≥ 40) y las celdas del calendario del resumen (7 por se
 corporal (SVG) no cuentan. Pruebas: tests/unit/session.test.mjs, tests/e2e/session.test.cjs (sesión olvidada, sin
 series con hora y hoja de plantilla segura), tests/e2e/large-text-rows.test.cjs (RIR a 100/106/125/150 %, Chromium y
 WebKit).
+
+## 31. Importación: saltos del GPS, archivos cortados, horas repetidas y duplicados con lo apuntado a mano (ronda 9)
+
+- **Saltos del GPS** (import-parse `summarize` → `pointMetrics(…, { dropSpikes })` → best-efforts `buildSeries`): un
+  tramo a más de `SPIKE_SPEED` (10 m/s) y de más de 5 m se quita de la serie (cada uno resta su delta a lo que viene
+  después) y de la distancia a la vez, así que la distancia propuesta, la «del archivo» (`fileKm`) y los parciales
+  salen de la misma cifra y la serie sigue acabando en la distancia. Solo en **carrera y senderismo** (deporte del
+  archivo) y solo con la distancia **de los puntos GPS**; con la del dispositivo (FIT, TCX) o un total del archivo,
+  nunca, y en bici nunca (36 km/h es normal). La tarjeta lo dice: «Descontados 0,99 km de saltos del GPS».
+- **Archivos cortados**: GPX/TCX si el texto se acaba con elementos abiertos o a mitad de una etiqueta (`walkXml` lo
+  marca antes del cierre forzado); FIT si la cabecera declara más datos de los que hay (sin contar el CRC final; con
+  tamaño 0, no se sabe). La tarjeta avisa («El archivo parece incompleto: termina a los 5,49 km. Vuelve a
+  exportarlo.»), lleva la insignia «Incompleto» y queda sin marcar (se puede marcar). Un FIT cortado sin ningún dato
+  de actividad da «El archivo FIT está incompleto (la descarga se cortó). Vuelve a exportarlo.».
+- **Horas repetidas**: un punto con la misma hora que el anterior que sí avanza cuenta (distancia y serie) si el tramo
+  anterior o el siguiente es de movimiento y, junto con el siguiente, no supera `SPIKE_SPEED`. No se fusionan puntos.
+- **Duplicados manual ↔ importada** (import-logic `likelyDuplicate`): además de la regla estricta (`isSameActivity`,
+  que no cambia), una regla amplia para avisar: mismo tipo y fecha, alguna sin hora, duración a ± `RESULT_DUP_TOL`
+  (5 %, la de «misma carrera» en contexto y eventos) y distancia a ± 5 % o ausente en alguna. En la importación: «Puede
+  ser la misma que «Carrera» del 4 oct (apuntada a mano)», insignia «Posible repetida» y sin marcar. En el formulario
+  de actividad nueva: aviso «Parece la misma actividad que…» con «Guardar igualmente» y «Ver la existente». Nunca
+  bloquea ni descarta nada, y no hay filtro de duplicados en los análisis (una sesión doble real se perdería).
+
+Las actividades ya guardadas no se migran (ni distancias ni parciales); una copia restaurada conserva lo que trae.
+Pruebas: tests/unit/import.test.mjs (saltos, cortados, horas repetidas, likelyDuplicate), tests/e2e/import.test.cjs
+(tarjetas de cortado y de salto; posible repetida y aviso en el formulario).

@@ -13,6 +13,7 @@ import { SWIM_STROKES } from '../seed.js';
 import * as L from '../activity-logic.js';
 import { syncLinkedDuration } from '../session-logic.js';
 import { checkActivity, split } from '../sanity.js';
+import { findDuplicate, findLikelyDuplicate } from '../import-logic.js';
 
 const DRAFT_PREFIX = 'draft:activity:';
 const DRAFT_TTL = 48 * 3600 * 1000; // un borrador de hace más de 2 días ya no se ofrece
@@ -199,13 +200,18 @@ function mountForm(root, ctx) {
       h('button.btn.btn-secondary.act-restored-discard', { type: 'button', onClick: () => discardDraft() }, 'Descartar'));
   }
 
+  // Aviso de posible duplicado (la misma carrera importada del reloj, o apuntada ya a mano). Solo al crearla aquí;
+  // no bloquea: «Guardar igualmente» lo oculta para esa actividad y «Ver la existente» abre la otra.
+  const dupBanner = !ctx.record ? h('div.banner.banner-warn.act-dup', { hidden: true }) : null;
+  let dupDismissed = null;
+
   const body = h('div.act-body');
   const deleteBtn = h('button.btn.btn-danger-ghost.btn-block.act-delete', { type: 'button', hidden: !record, onClick: () => removeActivity() }, icon('trash', 20), 'Borrar actividad');
   const discardBtn = h('button.btn.btn-ghost.btn-block.act-discard', { type: 'button', hidden: true, onClick: () => discardDraft() }, 'Descartar borrador');
   const statusEl = h('div.act-status', { role: 'status', 'aria-live': 'polite' });
   const doneBtn = h('button.btn.btn-primary.btn-lg.act-done', { type: 'button', onClick: () => done() }, icon('check', 22), 'Listo');
   const footer = h('div.act-footer', statusEl, doneBtn);
-  content.append(...[kindSeg, importLink, restoredBanner, linkBanner, body, deleteBtn, discardBtn, footer].filter(Boolean));
+  content.append(...[kindSeg, importLink, restoredBanner, linkBanner, dupBanner, body, deleteBtn, discardBtn, footer].filter(Boolean));
 
   const saveDraftSoon = debounce(() => storeDraft(), 300);
   /** Borrador en localStorage (síncrono): lo escrito, o nada si no queda nada escrito. */
@@ -544,6 +550,35 @@ function mountForm(root, ctx) {
       refs.elapsedHint.textContent = bad ? 'El tiempo total suele ser mayor o igual que el tiempo en movimiento.' : 'Incluye paradas (opcional).';
       refs.elapsedHint.classList.toggle('warn', bad);
     }
+    updateDup();
+  }
+
+  /** Misma regla que la importación (import-logic): coincide del todo o puede ser la misma (±5 %, sin distancia…). */
+  function updateDup() {
+    if (!dupBanner) return;
+    let other = null;
+    if (L.isValid(form)) {
+      const cand = L.buildRecord(form, record, { id: record ? record.id : null, now: 0 });
+      const sessions = store.all('sessions');
+      other = findDuplicate(cand, sessions) || findLikelyDuplicate(cand, sessions);
+    }
+    if (!other || other.id === dupDismissed) {
+      dupBanner.hidden = true;
+      return;
+    }
+    if (dupBanner.dataset.id === other.id && !dupBanner.hidden) return;
+    dupBanner.dataset.id = other.id;
+    const at = Number.isFinite(other.startedAt) ? ` a las ${hhmm(other.startedAt)}` : '';
+    const from = other.source ? 'importada de un archivo' : 'apuntada a mano';
+    dupBanner.replaceChildren(
+      icon('alert', 22),
+      h('div.banner-main',
+        h('div.banner-title', `Parece la misma actividad que «${other.templateName || L.activityTitle(other)}» del ${fmtDate(other.date, 'short')}${at}`),
+        h('div.banner-text', `La otra está ${from}. Si es la misma, borra una de las dos para no contarla dos veces.`)),
+      h('div.act-dup-actions',
+        h('button.btn.btn-secondary.act-dup-keep', { type: 'button', onClick: () => { dupDismissed = other.id; dupBanner.hidden = true; } }, 'Guardar igualmente'),
+        h('button.btn.btn-ghost.act-dup-open', { type: 'button', onClick: () => navigate(`#/activity/${other.id}`) }, 'Ver la existente')));
+    dupBanner.hidden = false;
   }
 
   /**

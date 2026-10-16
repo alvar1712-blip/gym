@@ -13,7 +13,8 @@
 // summarize(parsed) las convierte en métricas (Summary), con la serie distancia–tiempo (`series`, best-efforts.js) y
 // las vueltas para los parciales de las carreras. readActivityFile(nombre, bytes) hace todo el proceso.
 import { ImportError, toU8, isGzip, isZip, gunzip, zipEntries, zipRead, baseName, isJunkEntry } from './import-zip.js';
-import { buildSeries } from './best-efforts.js';
+import { buildSeries, SPIKE_SPEED } from './best-efforts.js';
+import { sportToKind } from './import-logic.js';
 
 export { ImportError };
 
@@ -138,16 +139,20 @@ function tagEnd(xml, from) {
  * Recorre un XML: onOpen(name, rawAttrs, stack) y onClose(name, text, stack).
  * name = nombre local en minúsculas (sin prefijo). text = texto directo del elemento (sin espacios a los lados).
  * stack = elementos abiertos que lo contienen (el último es el padre). Tolera cierres que no casan.
+ * Si el texto se acaba con elementos abiertos (o a mitad de una etiqueta), el archivo está cortado: se cierran igual
+ * (onClose recibe `cut` = true en esos cierres) y devuelve { truncated: true }.
+ * @returns {{ truncated: boolean }}
  */
 export function walkXml(xml, { onOpen = () => {}, onClose = () => {} } = {}) {
   const stack = [];
   const texts = [];
   const n = xml.length;
   let i = 0;
-  const close = () => {
+  let cutTag = false;
+  const close = (cut = false) => {
     const name = stack.pop();
     const text = texts.pop();
-    onClose(name, decodeEntities(text).trim(), stack);
+    onClose(name, decodeEntities(text).trim(), stack, cut);
   };
   while (i < n) {
     const lt = xml.indexOf('<', i);
@@ -174,7 +179,7 @@ export function walkXml(xml, { onOpen = () => {}, onClose = () => {} } = {}) {
       continue;
     }
     const gt = tagEnd(xml, lt + 1);
-    if (gt < 0) break;
+    if (gt < 0) { cutTag = true; break; }
     i = gt + 1;
     if (c === 47) { // </
       const name = localName(xml.slice(lt + 2, gt).trim());
@@ -194,7 +199,10 @@ export function walkXml(xml, { onOpen = () => {}, onClose = () => {} } = {}) {
     texts.push('');
     if (selfClosing) close();
   }
-  while (stack.length) close();
+  // Se marca antes de cerrar lo que quede abierto (ese cierre forzado ejecuta también el onClose del raíz).
+  const truncated = cutTag || stack.length > 0;
+  while (stack.length) close(true);
+  return { truncated };
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +217,7 @@ export function parseGPX(xml) {
   let trkType = '';
   let metaName = '';
   let metaTime = null;
-  walkXml(xml, {
+  const { truncated } = walkXml(xml, {
     onOpen(name, raw) {
       if (name === 'trkpt' || name === 'rtept') {
         cur = { lat: num(getAttr(raw, 'lat')), lon: num(getAttr(raw, 'lon')) };
@@ -247,7 +255,7 @@ export function parseGPX(xml) {
   const first = pts.find((p) => fin(p.t));
   return [{
     format: 'gpx', sport: trkType, subSport: '', name: trkName || metaName,
-    startTime: first ? first.t : metaTime, points: pts, totals: {}, laps: [],
+    startTime: first ? first.t : metaTime, points: pts, totals: {}, laps: [], truncated,
   }];
 }
 
@@ -272,7 +280,7 @@ export function parseTCX(xml) {
         cur = {};
       }
     },
-    onClose(name, text, stack) {
+    onClose(name, text, stack, cut) {
       if (!act) return;
       const parent = stack[stack.length - 1];
       const grand = stack[stack.length - 2];
@@ -299,7 +307,7 @@ export function parseTCX(xml) {
         else if (name === 'value' && grand === 'lap' && parent === 'maximumheartratebpm') lap.hrMax = num(text);
         return;
       }
-      if (name === 'activity') { acts.push(act); act = null; } else if (name === 'id' && parent === 'activity') act.id = parseTime(text);
+      if (name === 'activity') { act.truncated = !!cut; acts.push(act); act = null; } else if (name === 'id' && parent === 'activity') act.id = parseTime(text);
       else if (name === 'notes' && parent === 'activity') act.notes = text;
     },
   });
@@ -332,6 +340,7 @@ export function parseTCX(xml) {
       points: a.points,
       totals: { timerSec, distanceM, hrAvg, hrMax: hrMaxes.length ? Math.max(...hrMaxes) : null },
       laps: lapList,
+      truncated: a.truncated,
     });
   }
   if (!out.length) throw new ImportError('El TCX no tiene actividades.');
@@ -471,16 +480,23 @@ function decodeFitBlock(u8, dv, p, end, out) {
   return true;
 }
 
-/** FIT binario (actividades de Garmin, Wahoo, Coros, Suunto, Zwift…): una actividad por sesión. */
+/**
+ * FIT binario (actividades de Garmin, Wahoo, Coros, Suunto, Zwift…): una actividad por sesión.
+ * Cortado (truncated): la cabecera declara más datos de los que hay (sin contar el CRC final, que algunos archivos no
+ * traen; con un tamaño declarado 0 no se sabe). Si además no queda ningún dato de actividad, es una descarga cortada,
+ * no un archivo de otro tipo.
+ */
 export function parseFIT(input) {
   const u8 = toU8(input);
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   const out = { fileIds: [], sports: [], sessions: [], laps: [], records: [] };
   let pos = 0;
   let blocks = 0;
+  let truncated = false;
   while (pos + 12 <= u8.length && isFitAt(u8, pos)) {
     const hsize = u8[pos];
     const dataSize = dv.getUint32(pos + 4, true);
+    if (dataSize > 0 && pos + hsize + dataSize > u8.length) truncated = true;
     const ok = decodeFitBlock(u8, dv, pos + hsize, Math.min(u8.length, pos + hsize + dataSize), out);
     blocks++;
     if (!ok) break;
@@ -488,9 +504,12 @@ export function parseFIT(input) {
   }
   if (!blocks) throw new ImportError('El archivo FIT no es válido.');
   if (!out.records.length && !out.sessions.length && !out.laps.length) {
+    if (truncated) throw new ImportError('El archivo FIT está incompleto (la descarga se cortó). Vuelve a exportarlo.');
     throw new ImportError('El archivo FIT no tiene datos de actividad (¿es un archivo de ajustes o de salud?).');
   }
-  return fitActivities(out);
+  const acts = fitActivities(out);
+  if (truncated) for (const a of acts) a.truncated = true;
+  return acts;
 }
 
 function fitActivities(msgs) {
@@ -613,11 +632,15 @@ export function elevationStats(elevations, { threshold = ELEV_THRESHOLD_M, smoot
  *   o, si no la trae, la media en una ventana de ± SPEED_WINDOW_SEC, con desplazamiento en línea recta para no
  *   sumar el zigzag del GPS parado); un hueco de más de MAX_GAP_SEC solo cuenta si hubo avance (≥ 0,5 m/s de
  *   media en el hueco).
- * - Distancia: la acumulada del dispositivo si la trae; si no, haversine de los tramos en movimiento.
- * @returns {{points, gpsPoints, startT, endT, elapsedSec, movingSec, distanceM, distanceSource, ascentM, descentM,
- *   altMaxM, hrAvg, hrMax, cadence, powerAvg, series}}
+ * - Distancia: la acumulada del dispositivo si la trae; si no, haversine de los tramos en movimiento. Un tramo con la
+ *   hora repetida (dt = 0, exportaciones redondeadas al segundo) también cuenta si el anterior o el siguiente es de
+ *   movimiento y, junto con el siguiente, no va a más de SPIKE_SPEED (así un salto con la hora repetida no entra).
+ * - dropSpikes (summarize: carrera o senderismo): con la distancia del GPS, los saltos imposibles (best-efforts
+ *   SPIKE_SPEED) se quitan de la serie y de la distancia (spikeM = metros quitados). Con la del dispositivo, nunca.
+ * @returns {{points, gpsPoints, startT, endT, elapsedSec, movingSec, distanceM, distanceSource, spikeM, ascentM,
+ *   descentM, altMaxM, hrAvg, hrMax, cadence, powerAvg, series}}
  */
-export function pointMetrics(points = []) {
+export function pointMetrics(points = [], { dropSpikes = false } = {}) {
   const pts = (points || []).filter((p) => p && typeof p === 'object');
   const n = pts.length;
   const t = pts.map((p) => (fin(p.t) ? p.t / 1000 : NaN));
@@ -684,6 +707,17 @@ export function pointMetrics(points = []) {
       if (fin(s)) { movingDist += s; moved[i] = 1; }
     }
   }
+  // Hora repetida (dt = 0): el punto avanzó aunque el archivo le ponga la misma hora que al anterior. Sus metros
+  // cuentan si se movía (tramo anterior o siguiente en movimiento) y el avance hasta el siguiente punto es posible.
+  for (let i = 1; i < n; i++) {
+    const s = seg[i];
+    if (moved[i] || !fin(s) || !(t[i] - t[i - 1] === 0) || i + 1 >= n) continue;
+    const dtNext = t[i + 1] - t[i];
+    if (!(dtNext > 0 && dtNext <= MAX_GAP_SEC) || !(moved[i - 1] || moved[i + 1])) continue;
+    if ((s + (fin(seg[i + 1]) ? seg[i + 1] : 0)) / dtNext > SPIKE_SPEED) continue;
+    movingDist += s;
+    moved[i] = 1;
+  }
 
   const times = t.filter(fin);
   const startT = minOf(times);
@@ -709,8 +743,11 @@ export function pointMetrics(points = []) {
       sd[k] = acc;
       k++;
     }
-    series = buildSeries({ t: st.subarray(0, k), d: sd.subarray(0, k), src: distanceSource });
+    series = buildSeries({ t: st.subarray(0, k), d: sd.subarray(0, k), src: distanceSource, dropSpikes: dropSpikes && useGps });
   }
+  // Saltos quitados de la serie: también de la distancia (la serie sigue acabando en distanceM).
+  const spikeM = series && series.droppedM > 0 ? series.droppedM : 0;
+  if (spikeM && distanceM != null) distanceM = Math.max(0, distanceM - spikeM);
 
   const elev = elevationStats(pts.map((p) => p.ele));
   const hrs = pts.map((p) => p.hr).filter((v) => fin(v) && v > 0 && v < 255);
@@ -725,6 +762,7 @@ export function pointMetrics(points = []) {
     movingSec: known ? movingSec : null,
     distanceM,
     distanceSource,
+    spikeM,
     ...elev,
     hrAvg: mean(hrs),
     hrMax: maxOf(hrs),
@@ -740,14 +778,20 @@ const pos = (v) => (fin(v) && v > 0 ? v : null);
  * Resumen de una actividad leída: prefiere los totales del propio archivo (sesión FIT, vueltas TCX) para
  * distancia, tiempo total, desnivel (altímetro del reloj), FC, cadencia y potencia; el tiempo en movimiento
  * sale de los puntos (si no se puede, el tiempo del cronómetro o el total).
- * @returns {{format, sport, subSport, name, startedAt, elapsedSec, timerSec, movingSec, distanceM, ascentM,
- *   descentM, altMaxM, hrAvg, hrMax, cadence, powerAvg, powerNp, poolLengthM, points, gpsPoints, hasTime,
+ * Saltos del GPS: en carrera y senderismo (deporte del archivo, import-logic.sportToKind) y solo si la distancia sale
+ * de los puntos GPS (sin total del archivo ni distancia del dispositivo), se descuentan de la distancia y de la serie
+ * a la vez (spikeM), para que la distancia propuesta, la «del archivo» y los parciales salgan de la misma cifra. En
+ * bici nunca: 10 m/s es una velocidad normal. truncated: el archivo se corta antes de terminar (parsers).
+ * @returns {{format, sport, subSport, name, startedAt, elapsedSec, timerSec, movingSec, distanceM, spikeM, ascentM,
+ *   descentM, altMaxM, hrAvg, hrMax, cadence, powerAvg, powerNp, poolLengthM, points, gpsPoints, hasTime, truncated,
  *   series (best-efforts.buildSeries | null), laps}}  series y laps solo viven en memoria: se guardan compactados
  *   (import-logic.itemRecord) y únicamente en carreras.
  */
 export function summarize(parsed) {
-  const m = pointMetrics(parsed.points || []);
   const T = parsed.totals || {};
+  const kind = sportToKind(parsed.sport, parsed.subSport, parsed.name).kind;
+  const dropSpikes = (kind === 'run' || kind === 'hike') && pos(T.distanceM) == null;
+  const m = pointMetrics(parsed.points || [], { dropSpikes });
   const timerSec = pos(T.timerSec);
   let elapsedSec = pos(T.elapsedSec) ?? pos(m.elapsedSec);
   // Sin total en el archivo, el tiempo total no puede ser menor que el del cronómetro (puntos escasos).
@@ -765,6 +809,7 @@ export function summarize(parsed) {
     timerSec,
     movingSec,
     distanceM: pos(T.distanceM) ?? pos(m.distanceM),
+    spikeM: m.spikeM,
     ascentM: fin(T.ascentM) ? T.ascentM : m.ascentM,
     descentM: fin(T.descentM) ? T.descentM : m.descentM,
     altMaxM: fin(T.altMaxM) ? T.altMaxM : m.altMaxM,
@@ -777,6 +822,7 @@ export function summarize(parsed) {
     points: m.points,
     gpsPoints: m.gpsPoints,
     hasTime: fin(startedAt),
+    truncated: !!parsed.truncated,
     series: m.series,
     laps: Array.isArray(parsed.laps) ? parsed.laps : [],
   };

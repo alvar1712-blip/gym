@@ -554,3 +554,139 @@ test('itemFacts: datos principales y secundarios de la tarjeta', async () => {
   assert.deepEqual(itemFacts(bike).main.slice(0, 3), ['20 km', '45:00', '26,7 km/h']);
   assert.match(itemFacts(bike).extra.join(' · '), /rpm · \d+ W/);
 });
+
+// ---------------------------------------------------------------------------
+// Archivos con problemas: saltos del GPS, archivos cortados, horas repetidas y duplicados con lo apuntado a mano
+// ---------------------------------------------------------------------------
+/** 12 km a 5:00 /km con una parada de 2 min en el km 6, un punto por segundo (como un GPX de móvil). */
+const run12 = () => makeTrack({
+  start: Date.UTC(2026, 9, 4, 7, 0, 0), stepSec: 1, seed: 3, phases: [
+    { sec: 1800, speed: 1000 / 300, hr: 150, cad: 85 },
+    { sec: 120, speed: 0, hr: 120, jitter: 1 },
+    { sec: 1800, speed: 1000 / 300, hr: 155, cad: 86 },
+  ],
+});
+const itemFromBytes = async (name, bytes, key = 'i1') => {
+  const [e] = await readActivityFile(name, bytes);
+  assert.ok(!e.error, e.error);
+  return itemFromEntry(e, { key, today: '2026-10-15' });
+};
+
+test('saltos del GPS: en carrera y senderismo con distancia del GPS se descuentan (distancia, serie y parciales); en bici o con la del dispositivo, no', async () => {
+  const run = run12();
+  const spiked = run.points.map((p, i) => (i === 1000 ? { ...p, lat: p.lat + 0.0045 } : p)); // un punto a 500 m
+  const it = await itemFromBytes('pico.gpx', enc(gpxFromPoints(spiked)));
+  near(it.distanceKm, run.distanceM / 1000, 0.02, 'distancia sin el salto');
+  assert.equal(it.fileKm, it.distanceKm, 'la del archivo es la misma: no cuenta como editada');
+  near(it.spikeKm, 0.99, 0.02, 'metros descontados');
+  near(it.series.d[it.series.n - 1], it.distanceKm * 1000, 1e-6, 'la serie acaba en la distancia');
+  assert.deepEqual(it.series.spikes, [], 'sin metros imposibles en la serie');
+  const rec = itemRecord(it, { id: 'a_p', now: 1 });
+  assert.ok(rec.bestEfforts && rec.bestEfforts.items['5k'] && rec.bestEfforts.items['10k'], `parciales de 5 y 10 km: ${JSON.stringify(rec.bestEfforts?.items)}`);
+  near(rec.bestEfforts.items['10k'].sec, 3000 + 120, 3, '10 km con la parada');
+  // Senderismo: igual
+  const hike = await itemFromBytes('pico-monte.gpx', enc(gpxFromPoints(spiked, { type: 'hiking' })));
+  assert.equal(hike.kind, 'hike');
+  near(hike.distanceKm, run.distanceM / 1000, 0.02, 'senderismo sin el salto');
+  // Bici: 10 m/s es una velocidad normal, nada se descuenta
+  const bike = await itemFromBytes('pico-bici.gpx', enc(gpxFromPoints(spiked, { type: 'cycling' })));
+  assert.equal(bike.kind, 'bike');
+  near(bike.distanceKm, run.distanceM / 1000 + 0.99, 0.03, 'bici: tal cual');
+  assert.ok(!(bike.spikeKm > 0));
+  // TCX con la distancia del dispositivo: tal cual
+  const tcx = await itemFromBytes('pico.tcx', enc(tcxFromPoints(spiked, { sport: 'Running' })));
+  near(tcx.distanceKm, run.distanceM / 1000, 0.01, 'dispositivo: tal cual');
+  assert.ok(!(tcx.spikeKm > 0));
+  // Sin saltos: nada cambia
+  const ok = await itemFromBytes('ok.gpx', enc(gpxFromPoints(run.points)));
+  near(ok.distanceKm, run.distanceM / 1000, 0.02, 'sin saltos');
+  assert.ok(!(ok.spikeKm > 0));
+});
+
+test('archivos cortados: GPX, TCX y FIT incompletos se marcan (y quedan sin marcar); los completos no; FIT cortado en la cabecera', async () => {
+  const run = run12();
+  const gpx = gpxFromPoints(run.points);
+  const fullGpx = await readActivityFile('ok.gpx', enc(gpx));
+  assert.equal(fullGpx[0].summary.truncated, false, 'GPX completo');
+  const cut = gpx.slice(0, Math.floor(gpx.length * 0.6));
+  for (const [name, text] of [['cortado.gpx', cut], ['cortado2.gpx', `${cut}<trkpt lat="40.4`]]) {
+    const [e] = await readActivityFile(name, enc(text));
+    assert.equal(e.summary.truncated, true, name);
+  }
+  const tcx = tcxFromPoints(run.points, { sport: 'Running' });
+  assert.equal((await readActivityFile('ok.tcx', enc(tcx)))[0].summary.truncated, false, 'TCX completo');
+  assert.equal((await readActivityFile('c.tcx', enc(tcx.slice(0, Math.floor(tcx.length * 0.6)))))[0].summary.truncated, true, 'TCX cortado');
+  const fit = buildFitActivity({ points: run.points, sport: 1 });
+  assert.equal((await readActivityFile('ok.fit', fit))[0].summary.truncated, false, 'FIT completo');
+  assert.equal((await readActivityFile('sincrc.fit', fit.slice(0, fit.length - 2)))[0].summary.truncated, false, 'FIT sin el CRC final');
+  assert.equal((await readActivityFile('c.fit', fit.slice(0, Math.floor(fit.length * 0.6))))[0].summary.truncated, true, 'FIT cortado');
+  assert.throws(() => parseFIT(fit.slice(0, 20)), /incompleto/);
+  const [e20] = await readActivityFile('c20.fit', fit.slice(0, 20));
+  assert.match(e20.error, /El archivo FIT está incompleto \(la descarga se cortó\)\. Vuelve a exportarlo\./);
+  // En la vista previa: avisa y no se marca
+  const it = await itemFromBytes('cortado.gpx', enc(cut));
+  assert.equal(it.truncated, true);
+  const full = await itemFromBytes('ok.gpx', enc(gpx), 'i2');
+  assert.equal(full.truncated, false);
+  updateDuplicates([it, full], [], '2026-10-15');
+  assert.equal(it.selected, false, 'el cortado no se marca');
+  assert.equal(full.selected, false, 'el completo coincide con el cortado (misma hora)');
+  updateDuplicates([full], [], '2026-10-15');
+  assert.equal(full.selected, true);
+  // Si el usuario lo marca, se respeta
+  it.selected = true;
+  updateDuplicates([it], [], '2026-10-15');
+  assert.equal(it.selected, true);
+});
+
+test('horas repetidas: los puntos que avanzan con la hora repetida no restan distancia (y un salto con la hora repetida no suma)', async () => {
+  const run = run12();
+  const rep = (every) => run.points.map((p, i) => (i % every === 0 && i > 0 ? { ...p, t: run.points[i - 1].t } : p));
+  const it5 = await itemFromBytes('rep5.gpx', enc(gpxFromPoints(rep(20))));
+  near(it5.distanceKm, run.distanceM / 1000, 0.01 * run.distanceM / 1000, '5 % de horas repetidas');
+  const rec = itemRecord(it5, { id: 'a_r', now: 1 });
+  assert.ok(rec.bestEfforts && rec.bestEfforts.items['10k'], 'parciales');
+  near(rec.bestEfforts.items['5k'].sec, 1500, 5, '5 km al ritmo real');
+  // Un salto de 500 m con la hora repetida no entra por esta vía (solo GPS: sin distancia ni velocidad del reloj).
+  // La vuelta (con hora) sí es un tramo normal: sin descontar saltos (bici) suma ≈ 500 m, no ≈ 1000.
+  const pts = run.points.map(({ speed, dist, ...p }, i) => (i === 1001 ? { ...p, t: run.points[1000].t, lat: p.lat + 0.0045 } : p));
+  const m = pointMetrics(pts);
+  assert.ok(m.distanceM < run.distanceM + 600, `la ida del salto no suma: ${m.distanceM}`);
+  near(pointMetrics(pts, { dropSpikes: true }).distanceM, run.distanceM, 20, 'descontando saltos, nada');
+});
+
+const IL = await import('../../js/import-logic.js');
+
+test('likelyDuplicate: la misma carrera apuntada a mano (sin hora) e importada, a ±5 % o sin distancia en una', () => {
+  assert.equal(typeof IL.likelyDuplicate, 'function');
+  const imp = { kind: 'run', date: '2026-10-04', startedAt: Date.UTC(2026, 9, 4, 7), movingSec: 2990, distanceKm: 10.32 };
+  const man = (o) => ({ id: 'm', kind: 'run', status: 'done', date: '2026-10-04', startedAt: null, movingSec: 3000, distanceKm: 10, ...o });
+  assert.equal(IL.isSameActivity(imp, man({})), false, 'la regla estricta (±3 %) no cambia');
+  assert.equal(IL.likelyDuplicate(imp, man({})), true, '10 km (chip) frente a 10,32 del GPS');
+  assert.equal(IL.likelyDuplicate(imp, man({ distanceKm: null })), true, 'manual sin distancia');
+  assert.equal(IL.likelyDuplicate(imp, man({ distanceKm: 10.3 })), true);
+  assert.equal(IL.likelyDuplicate(imp, man({ movingSec: 3300 })), false, 'duración a más del 5 %');
+  assert.equal(IL.likelyDuplicate(imp, man({ distanceKm: 9.5 })), false, 'distancia a más del 5 %');
+  assert.equal(IL.likelyDuplicate(imp, man({ date: '2026-10-05' })), false, 'otra fecha');
+  assert.equal(IL.likelyDuplicate(imp, man({ kind: 'bike' })), false, 'otro tipo');
+  assert.equal(IL.likelyDuplicate(imp, man({ startedAt: Date.UTC(2026, 9, 4, 18) })), false, 'las dos con hora: manda la hora');
+  assert.equal(IL.likelyDuplicate(man({ distanceKm: null }), man({ id: 'n', distanceKm: null })), true, 'sin distancia en ninguna');
+});
+
+test('updateDuplicates: una importada que puede ser la apuntada a mano se avisa (loose) y queda sin marcar, sin bloquear', async () => {
+  const run = run12();
+  const it = await itemFromBytes('carrera.gpx', enc(gpxFromPoints(run.points)));
+  const km = Math.round(it.distanceKm * 0.966 * 100) / 100; // 3,4 % menos: el GPS mide de más
+  const manual = { id: 'm1', kind: 'run', status: 'done', date: it.date, startedAt: null, movingSec: it.movingSec + 30, durationMin: (it.movingSec + 30) / 60, distanceKm: km, templateName: 'Carrera' };
+  assert.equal(isSameActivity(itemRecord(it, { derived: false }), manual), false, 'fuera del ±3 %');
+  updateDuplicates([it], [manual], '2026-10-15');
+  assert.equal(it.dup?.type, 'saved');
+  assert.equal(it.dup.loose, true);
+  assert.equal(it.dup.id, 'm1');
+  assert.equal(it.dup.manual, true, 'apuntada a mano (sin archivo)');
+  assert.equal(it.selected, false);
+  it.selected = true;
+  updateDuplicates([it], [manual], '2026-10-15');
+  assert.equal(it.selected, true, 'se puede guardar igualmente');
+  assert.equal(selectedItems([it], '2026-10-15').length, 1);
+});

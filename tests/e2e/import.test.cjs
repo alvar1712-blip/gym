@@ -197,3 +197,103 @@ test('duplicados: la carrera ya registrada sale «Ya registrada» y desmarcada; 
     await app.close();
   }
 });
+
+/** Archivos generados en la prueba con los mismos constructores que las pruebas unitarias (fixtures/import/builders). */
+async function genFiles() {
+  const B = await import(require('url').pathToFileURL(f('builders.mjs')).href);
+  const mk = (d, sec, km, seed) => B.makeTrack({ start: Date.UTC(2026, 8, d, 6, 0, 0), stepSec: 1, seed, phases: [{ sec, speed: (km * 1000) / sec, hr: 150 }] });
+  // 12 km a 5:15 con UN punto del GPS desplazado 500 m (ida y vuelta: ≈ 0,99 km de más)
+  const C = mk(11, 3780, 12, 5);
+  const spiked = C.points.map((p, i) => (i === 1800 ? { ...p, lat: p.lat + 0.0045 } : p));
+  // 10 km cuyo archivo se cortó al 55 %
+  const D = mk(13, 3000, 10, 6);
+  const gD = B.gpxFromPoints(D.points, { name: 'Carrera 10k (archivo cortado)' });
+  return [
+    { name: 'C-12k-pico.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(B.gpxFromPoints(spiked, { name: 'Rodaje con pico GPS' })) },
+    { name: 'D-10k-cortado.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(gD.slice(0, Math.floor(gD.length * 0.55))) },
+  ];
+}
+
+test('archivos con problemas: el cortado avisa y queda sin marcar; el salto del GPS se descuenta y se dice', async () => {
+  const app = await setup();
+  const { page } = app;
+  try {
+    await go(page, '#/import');
+    await page.waitForSelector('.imp-intro');
+    await page.setInputFiles('input.imp-file', await genFiles());
+    await waitItems(page, 2);
+    const cards = page.locator('.imp-item');
+    // Salto del GPS: los ≈ 12 km del recorrido (no 12,97) y una nota con lo descontado; se marca
+    assert.match(await cards.nth(0).locator('.imp-item-facts').innerText(), /^(11,9\d|12) km · 1:03:00 · 5:1\d \/km/);
+    assert.match(await cards.nth(0).locator('.imp-note-spike').innerText(), /^Descontados (0,99|1) km de saltos del GPS\.$/);
+    // Cortado: aviso con dónde termina, insignia y sin marcar (se puede marcar igualmente)
+    assert.match(await cards.nth(1).locator('.imp-note-cut').innerText(), /^El archivo parece incompleto: termina a los 5,49 km\. Vuelve a exportarlo\./);
+    assert.strictEqual(await cards.nth(1).locator('.imp-badge').innerText(), 'Incompleto');
+    assert.deepStrictEqual(await checks(page), ['true', 'false']);
+    assert.strictEqual(await page.locator('.imp-save').innerText(), 'Guardar 1 actividad');
+    assert.ok(await noHScroll(page));
+    await cards.nth(1).locator('.imp-check').click();
+    assert.strictEqual(await page.locator('.imp-save').innerText(), 'Guardar 2 actividades');
+    await cards.nth(1).locator('.imp-check').click();
+    await page.locator('.imp-save').click();
+    await page.waitForSelector('.imp-done');
+    const [run] = await idbAll(page, 'sessions');
+    assert.ok(Math.abs(run.distanceKm - 12) <= 0.03, `distancia guardada ${run.distanceKm}`);
+    assert.ok(run.bestEfforts && run.bestEfforts.items['10k'], 'con su parcial de 10 km');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('manual ↔ importada: la apuntada a mano a ±5 % sale «Posible repetida»; y el formulario avisa al apuntar una ya importada', async () => {
+  const app = await setup();
+  const { page } = app;
+  try {
+    // Apuntada a mano (sin hora): 4,8 km (el GPS mide un 4 % más) en 25:30
+    await page.evaluate(async () => {
+      await window.__app.store.save('sessions', {
+        id: 'a_manual', kind: 'run', date: '2026-09-20', planDate: '2026-09-20', templateId: null, templateName: 'Carrera',
+        status: 'done', startedAt: null, endedAt: null, movingSec: 1530, durationMin: 25.5, rpe: 5,
+        notes: '', parentId: null, parentItemId: null, templateItemId: null, distanceKm: 4.8,
+      });
+    });
+    await go(page, '#/import');
+    await page.waitForSelector('.imp-intro');
+    await page.setInputFiles('input.imp-file', [f('carrera.gpx')]);
+    await waitItems(page, 1);
+    const card = page.locator('.imp-item').first();
+    assert.strictEqual(await card.locator('.imp-badge').innerText(), 'Posible repetida');
+    assert.match(await card.locator('.imp-note-warn').innerText(), /^Puede ser la misma que «Carrera» del dom 20 sep \(apuntada a mano\)\. No se importará salvo que la marques\.$/);
+    assert.deepStrictEqual(await checks(page), ['false']);
+    assert.match(await page.locator('.imp-head-text').innerText(), /1 actividad · 0 para guardar · 1 posible repetida/);
+    // No bloquea: se marca y se guarda
+    await card.locator('.imp-check').click();
+    await page.locator('.imp-save').click();
+    await page.waitForSelector('.imp-done');
+    const imported = (await idbAll(page, 'sessions')).find((s) => s.id !== 'a_manual');
+    assert.ok(imported && imported.source);
+
+    // Apuntar a mano la misma carrera ya importada: aviso que no bloquea
+    await page.evaluate(() => window.__app.store.remove('sessions', 'a_manual'));
+    await go(page, '#/activity/new?kind=run&date=2026-09-20');
+    await page.fill('[aria-label="Distancia (km)"]', '5');
+    await page.locator('[aria-label="Tiempo en movimiento: min"]').fill('25');
+    const banner = page.locator('.act-dup');
+    await banner.waitFor();
+    assert.match(await banner.innerText(), /Parece la misma actividad que «Carrera» del dom 20 sep a las 08:00[\s\S]*La otra está importada de un archivo/);
+    assert.ok(await noHScroll(page));
+    assert.strictEqual((await storeAll(page, 'sessions')).length, 2, 'se guarda igualmente (no bloquea)');
+    await banner.locator('.act-dup-keep').click();
+    await banner.waitFor({ state: 'hidden' });
+    // «Ver la existente» abre la importada
+    await go(page, '#/activity/new?kind=run&date=2026-09-20');
+    await page.fill('[aria-label="Distancia (km)"]', '5,05');
+    await page.locator('[aria-label="Tiempo en movimiento: min"]').fill('25');
+    await page.locator('.act-dup .act-dup-open').click();
+    await page.waitForFunction((id) => location.hash === `#/activity/${id}`, imported.id);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
