@@ -537,9 +537,10 @@ cabecera sigue cuatro reglas de sistema, no de cada pantalla:
    (`justify-content`); la etiqueta va `text-align: start` (`.btn:has(> svg.icon)`, `.prg-link-wide .prg-link-label`,
    `.imp-settings-label`). Una etiqueta centrada que parte de línea ocupa todo el ancho y cada línea centrada aleja
    el primer glifo 30–50 px del icono («⏱️ Tiempos previstos» en Progreso a 375–430 px, «Registrar síntomas» al
-   125 %). Los botones sin icono siguen centrados. Contrapartida aceptada: si la etiqueta parte de línea, su caja
-   ocupa todo el ancho libre (CSS no ajusta una caja al ancho de sus líneas) y el conjunto queda algo cargado al
-   inicio; mejor eso que un icono suelto a 30 px de su texto.
+   125 %). Los botones sin icono siguen centrados. Si la etiqueta parte de línea, su caja ocupa todo el ancho libre
+   (CSS no ajusta una caja al ancho de sus líneas): en un grupo de baldosas iguales, todas van al inicio
+   (`.prg-link-wide`, como «Análisis»), así los emojis forman columna y ninguna queda cargada a un lado; en un botón
+   suelto se acepta que el conjunto quede algo cargado al inicio, mejor que un icono a 30 px de su texto.
 3. **El emoji en caja fija no escala** (o la caja escala con él): `.goal-emoji` va a 26 px (22 px por debajo de
    380 px), como las baldosas. Antes crecía con el texto y al 150 % se montaba en el título (−3 px).
 4. **Distancia entre el icono y el primer glifo**: la del `gap`, de 4 a 8 px en línea y de 10 a 14 px con baldosa, igual

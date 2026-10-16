@@ -174,8 +174,10 @@ html.text-large .chart-ctx-toggle { margin: -6px 0 -8px -8px; }
 .prg-link.is-pressed { background: var(--surface-2); transform: scale(0.98); }
 .prg-link-emoji { flex: none; font-size: calc(20px * var(--ts)); line-height: 1; }
 .prg-link-label { max-width: 100%; font-size: calc(14px * var(--ts)); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.prg-link-wide { grid-column: span 3; flex-direction: row; gap: 6px; min-height: 52px; padding: 6px 4px; }
-.prg-link-wide .prg-link-label { min-width: 0; font-size: calc(15px * var(--ts)); white-space: normal; overflow-wrap: anywhere; text-align: start; } /* «Tiempos previstos» en dos líneas antes que «…», junto a su emoji (centrada, cada línea se alejaba 30–50 px) */
+.prg-link-wide { grid-column: span 3; flex-direction: row; justify-content: flex-start; gap: 8px; min-height: 52px; padding: 6px 10px 6px 12px; }
+/* Al inicio, como «Análisis»: una etiqueta partida en dos líneas ocupa todo el ancho libre (CSS no ajusta la caja a
+   sus líneas), así que centrada quedaba cargada a un lado; al inicio, los emojis forman columna en todas */
+.prg-link-wide .prg-link-label { min-width: 0; font-size: calc(15px * var(--ts)); white-space: normal; overflow-wrap: anywhere; text-align: start; } /* «Tiempos previstos» en dos líneas antes que «…» */
 /* «Análisis» (ronda 5): a lo ancho, arriba, con subtítulo y flecha */
 .prg-link-full {
   grid-column: 1 / -1;
@@ -195,8 +197,8 @@ html.text-large .chart-ctx-toggle { margin: -6px 0 -8px -8px; }
 .prg-link-chev { flex: none; color: var(--muted); }
 /* 320 px: como las demás (emoji encima), para que «Panel semanal» quepa entero */
 @media (max-width: 359px) {
-  .prg-link-wide { flex-direction: column; gap: 5px; min-height: 62px; }
-  .prg-link-wide .prg-link-label { font-size: calc(14px * var(--ts)); }
+  .prg-link-wide { flex-direction: column; justify-content: center; gap: 5px; min-height: 62px; padding: 6px 4px; }
+  .prg-link-wide .prg-link-label { font-size: calc(14px * var(--ts)); text-align: center; }
 }
 
 /* Gráficas que dependen del periodo, con su selector: el selector solo se pega mientras se ven (sticky dentro
