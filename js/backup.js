@@ -1,7 +1,7 @@
 // backup.js — lógica PURA de copias de seguridad (JSON) y exportación CSV.
 // PROPIETARIO: módulo de ajustes. Sin DOM ni store: recibe los datos por parámetro y se prueba
 // en Node (tests/unit/backup.test.mjs). La vista (views/settings.js) lee del store y comparte los archivos.
-import { deepClone, round, sortBy, isDateStr, fmtNum } from './util.js';
+import { round, sortBy, isDateStr, fmtNum } from './util.js';
 import { isWorkSet, setMetrics, makeBodyweightFn, sessionDurationMin, sessionLoad, pace, speed, pace100 } from './calc.js';
 import { MUSCLE_LABEL, ACTIVITY_LABEL, SET_TYPE_LABEL, RUN_TYPES, BIKE_TYPES, OTHER_TYPES, SWIM_STROKES } from './seed.js';
 
@@ -30,14 +30,19 @@ export function csvFileName(kind, date = new Date()) {
 
 /**
  * Prepara el objeto que se guarda en el archivo a partir de store.exportData():
- * copia profunda con exportedAt = now y settings.lastBackupAt = now DENTRO de la copia,
- * para que al restaurarla la fecha de la última copia sea coherente.
+ * exportedAt = now y settings.lastBackupAt = now DENTRO de la copia, para que al restaurarla la fecha de la última
+ * copia sea coherente. Sin copia profunda (con 5 años costaba ~260 ms en el toque de «Exportar», y la entrada pueden
+ * ser los registros vivos de la memoria que se serializan en el acto): objetos nuevos solo en el camino que cambia
+ * (raíz → data → meta → ajustes), el resto se comparte y la entrada no se modifica. El JSON resultante es idéntico al de una copia completa (mismas claves en el mismo orden).
  */
 export function buildBackupObject(exported, now = Date.now()) {
-  const obj = deepClone(exported) || {};
-  obj.exportedAt = new Date(now).toISOString();
-  const settings = (obj.data?.meta || []).find((m) => m && m.id === 'settings');
-  if (settings) settings.lastBackupAt = now;
+  const obj = { ...exported, exportedAt: new Date(now).toISOString() };
+  const meta = exported?.data?.meta;
+  const i = Array.isArray(meta) ? meta.findIndex((m) => m && m.id === 'settings') : -1;
+  if (i >= 0) {
+    obj.data = { ...exported.data, meta: meta.slice() };
+    obj.data.meta[i] = { ...meta[i], lastBackupAt: now };
+  }
   return obj;
 }
 

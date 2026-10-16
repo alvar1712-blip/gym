@@ -271,7 +271,10 @@ async function boot() {
     toast(`No se pudo guardar: ${error?.message || error}. Vuelve a intentarlo.`, { kind: 'error', duration: 6000 });
   });
   store.on('change', (d) => { if (d.store === 'meta' || d.store === 'sessions' || d.store === 'bodyweight') updateBadges(); });
-  store.on('reset', () => { updateBadges(); navigate('#/today', { replace: true }); refresh({ keepScroll: false }); });
+  // Tras sustituir o borrar todo, a Hoy con UN solo montaje: si la URL ya es #/today, navigate() la vuelve a montar
+  // (refresh, arriba del todo); si no, la monta su hashchange. (Con navigate + refresh, Hoy se montaba dos veces:
+  // ~600 ms más al restaurar una copia de años; M20.)
+  store.on('reset', () => { updateBadges(); navigate('#/today', { replace: true }); });
 
   renderTabbar();
   defineRoutes(ROUTES);

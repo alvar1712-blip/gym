@@ -209,3 +209,18 @@
 .cfg-contra { min-height: 56px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
 .cfg-contra .list-item-title { white-space: normal; }
 .cfg-cycle-link { margin-top: 2px; }
+
+/* ---------- Restaurando una copia (settings.js restoringIndicator; M20) ---------- */
+/* Encima de todo (también de las hojas y los avisos) y fuera de #app, que queda inert mientras dura. */
+.cfg-busy {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px calc(16px + var(--sar)) 16px calc(16px + var(--sal));
+  background: rgba(0, 0, 0, 0.55);
+}
+.cfg-busy-box { width: 100%; max-width: 420px; background: var(--surface); color: var(--text); }
+.cfg-busy-box .icon { flex: none; color: var(--info); }

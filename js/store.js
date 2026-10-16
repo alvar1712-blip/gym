@@ -259,9 +259,14 @@ export function saveSettings(patch = {}) {
 }
 
 // ---------- copias / borrado ----------
-export function exportData() {
+/**
+ * Todos los datos con el sobre de la copia. Por defecto, copia profunda (independiente de la memoria). Con
+ * `clone: false`, las listas son nuevas pero los registros son los vivos de la memoria: solo para serializarlos en el
+ * acto, sin await por medio (JSON.stringify ya es la instantánea; Exportar se ahorra ~280 ms con 5 años, M20).
+ */
+export function exportData({ clone = true } = {}) {
   const data = {};
-  for (const s of STORES) data[s] = deepClone(all(s));
+  for (const s of STORES) data[s] = clone ? deepClone(all(s)) : all(s);
   return {
     app: BACKUP_APP_ID,
     format: BACKUP_FORMAT,
@@ -435,21 +440,30 @@ async function replaceEverything(data, reason, { reserved = null } = {}) {
   emit('reset', { reason });
 }
 
-/** Copia profunda de los datos de una copia, sin registros reservados (una copia no puede traer un punto). */
-function backupData(obj) {
+/**
+ * Datos de una copia listos para sustituir los actuales, sin registros reservados (una copia no puede traer un punto).
+ * Los registros pasan a ser los de la memoria, así que se clonan, salvo con `owned`: un objeto que nadie más conserva
+ * (el que acaba de crear JSON.parse en parseBackupText, o el que devuelve IndexedDB) se usa tal cual; volver a
+ * clonarlo costaba ~250 ms con 5 años de historial (M20). La entrada nunca se modifica (las listas son nuevas).
+ */
+export function backupData(obj, { owned = false } = {}) {
   const data = {};
-  for (const s of STORES) data[s] = deepClone(obj.data[s] || []).filter((o) => !(s === 'meta' && isReserved(o.id)));
+  for (const s of STORES) {
+    const list = (obj.data[s] || []).filter((o) => !(s === 'meta' && isReserved(o.id)));
+    data[s] = owned ? list : deepClone(list);
+  }
   return data;
 }
 
 /**
  * Sustituye TODOS los datos por los de la copia (atómico). Antes guarda y comprueba el punto de restauración: si
- * falla, lanza RestorePointError sin tocar nada.
+ * falla, lanza RestorePointError sin tocar nada. `owned`: la copia es del llamador y no la vuelve a usar (recién
+ * leída del archivo con parseBackupText): sus registros pasan a la memoria sin clonarse (ver backupData).
  */
-export async function importData(obj) {
+export async function importData(obj, { owned = false } = {}) {
   const v = validateBackup(obj);
   if (!v.ok) throw new Error(v.error);
-  const data = backupData(obj);
+  const data = backupData(obj, { owned });
   await createRestorePoint('import');
   await replaceEverything(data, 'import');
 }
@@ -464,7 +478,7 @@ export async function recoverRestorePoint() {
   const v = rec?.backup ? validateBackup(rec.backup) : { ok: false, error: 'No hay ningún punto de restauración.' };
   if (!v.ok) throw new Error(v.error);
   const reserved = hasDataToProtect() ? restoreRecords(exportData(), 'recover') : [];
-  await replaceEverything(backupData(rec.backup), 'recover', { reserved });
+  await replaceEverything(backupData(rec.backup, { owned: true }), 'recover', { reserved }); // recién leído del disco
   restoreInfo = reserved.length ? infoOf(reserved[0]) : null;
   emit('restorepoint', restoreInfo);
 }

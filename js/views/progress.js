@@ -22,9 +22,10 @@ import { progressOverview } from '../overview.js';
 import { levelSummary, weeklySummary } from '../chart-summary.js';
 
 // Estado de la interfaz mientras la app está abierta (al volver de una ficha se conserva).
-const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null };
+const ui = { muscle: 'back', q: '', km: 'all', recSeg: 'strength', recQ: '', scroll: null, hist: null };
 
 const LOAD_TYPES = ['weight_reps', 'bodyweight', 'unilateral'];
+const HIST_PAGE = 30; // filas del «Historial completo» de un ejercicio por lote (el resto con «Ver más (N)»)
 // Orden de apilado de la carga (de abajo arriba) y de la leyenda.
 const LOAD_KINDS = [
   { key: 'strength', label: 'Fuerza', color: COLORS.strength },
@@ -1004,16 +1005,18 @@ export function mountExerciseProgress(root, params = {}) {
     update(period);
   }
 
-  // Historial completo (más reciente primero): todas las sesiones y series de trabajo, récords marcados.
+  // Historial completo (más reciente primero): todas las sesiones y series de trabajo, récords marcados. Se pinta por
+  // lotes (HIST_PAGE) con «Ver más (N)»: con años de historial eran cientos de filas y medio segundo de bloqueo (M20).
+  // Los 🏆 se calculan con TODO el historial (prMarks), así que una fila marca lo mismo esté en el lote que esté.
   const marks = prMarks(hist, ex);
   const listEl = h('div.list.prg-hist');
-  for (let i = hist.length - 1; i >= 0; i--) {
+  const histRow = (i) => {
     const e = hist[i];
     const mk = marks[i];
     const key = histKey(e, lt);
     const anyPr = mk.some((m) => m.length);
-    listEl.appendChild(h('button.list-item.prg-hrow', {
-      type: 'button', dataset: { session: e.sessionId, pr: anyPr ? '1' : '' }, onClick: () => navigate(`#/session/${e.sessionId}`),
+    return h('button.list-item.prg-hrow', {
+      type: 'button', dataset: { session: e.sessionId, pr: anyPr ? '1' : '' }, onClick: () => { ui.hist = { id: ex.id, n: shown, at: Date.now() }; navigate(`#/session/${e.sessionId}`); },
     },
     h('span.list-item-main',
       h('span.prg-hrow-title', h('span', fmtDate(e.date, 'full')), anyPr ? stateTag('pr', 'Récord', { small: true }) : null),
@@ -1023,12 +1026,32 @@ export function mountExerciseProgress(root, params = {}) {
         h(`span.prg-set${mk[j].length ? '.prg-set-pr' : ''}`, formatSet(set, lt), mk[j].length ? h('span.prg-pr-mark', { 'aria-label': 'récord', role: 'img' }, ' 🏆') : null),
       ]))),
     key ? h('span.prg-best', h('span.prg-best-v', key.v), h('span.prg-best-l', key.l)) : null,
-    icon('chevron-right', 18, 'chev')));
-  }
+    icon('chevron-right', 18, 'chev'));
+  };
+  const moreBtn = h('button.btn.btn-ghost.btn-block.prg-hist-more', { type: 'button' });
+  let shown = 0; // filas pintadas (desde la más reciente)
+  const more = (n = HIST_PAGE) => {
+    const rows = [];
+    for (let i = hist.length - 1 - shown; i >= 0 && rows.length < n; i--) rows.push(histRow(i));
+    listEl.append(...rows);
+    shown += rows.length;
+    const left = hist.length - shown;
+    const hadFocus = moreBtn === document.activeElement;
+    moreBtn.textContent = `Ver más (${left})`;
+    moreBtn.hidden = left <= 0;
+    // Con el último lote el botón desaparece: el foco no cae a <body>, pasa a la primera fila nueva.
+    if (moreBtn.hidden && hadFocus) rows[0]?.focus({ preventScroll: true });
+  };
+  moreBtn.addEventListener('click', () => more());
+  // Al volver de una sesión abierta desde aquí, las mismas filas que había: si no, el router no podría devolver el
+  // scroll a una fila de un lote ampliado (la lista sería más corta).
+  const kept = ui.hist && ui.hist.id === ex.id && Date.now() - ui.hist.at < 30 * 60 * 1000 ? ui.hist.n : 0;
+  more(Math.max(HIST_PAGE, kept));
   c.append(
     h('div.row-between.prg-hist-head', h('h2.section-title', 'Historial completo'), h('span.muted.small', plural(hist.length, 'sesión', 'sesiones'))),
     h('p.prg-hist-note', '🏆 = récord en ese momento (más peso, más 1RM estimado, más reps a un peso, más tiempo o altura). Solo series de trabajo: sin calentamientos. Toca una sesión para abrirla.'),
     listEl,
+    moreBtn,
     ...[past && !pastCard ? past : null, fichaLink(ex)].filter(Boolean));
   return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
 }

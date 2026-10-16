@@ -89,6 +89,26 @@ function clearLocalDrafts() {
 }
 
 /**
+ * Indicador bloqueante mientras se restaura una copia (con años de historial tarda varios segundos; sin él, la app
+ * parecía colgada y se podía volver a tocar). Va fuera de #app, que queda inert: ni toques ni foco detrás. Devuelve
+ * una promesa que se resuelve cuando ya se ha pintado (antes del trabajo síncrono de importData) con la función
+ * que lo quita. Con la página oculta no hay fotogramas: no se espera.
+ */
+function restoringIndicator() {
+  const app = document.getElementById('app');
+  const el = h('div.cfg-busy', { role: 'status' },
+    h('div.banner.banner-info.cfg-busy-box', icon('upload', 22),
+      h('div.banner-main',
+        h('div.banner-title', 'Restaurando copia…'),
+        h('div.banner-text', 'Puede tardar unos segundos. No cierres la app.'))));
+  if (app) app.inert = true;
+  document.body.appendChild(el);
+  const remove = () => { el.remove(); if (app) app.inert = false; };
+  if (document.visibilityState === 'hidden') return Promise.resolve(remove);
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(() => resolve(remove), 0)));
+}
+
+/**
  * Anota la copia recién guardada. Si los ajustes no han cambiado desde que se generó el archivo, se guardan
  * tal cual van en él (mismo updatedAt): así exportar → borrar → importar deja los ajustes idénticos a los del
  * disco. Se anota DESPUÉS de compartir, nunca antes: si la app se cierra con la hoja abierta, la copia no consta.
@@ -503,10 +523,12 @@ export function mountData(root) {
 
   // ---------- exportar / importar ----------
   async function onExport() {
-    // Sin await antes de compartir: iOS exige que la hoja de compartir salga del propio toque.
+    // Sin await antes de compartir: iOS exige que la hoja de compartir salga del propio toque. Sin copiar los datos:
+    // se serializan aquí mismo, sin await por medio (el JSON es la instantánea). Los ajustes del archivo sí se copian:
+    // markBackup los compara DESPUÉS de compartir con los de ese momento.
     const now = Date.now();
-    const obj = buildBackupObject(store.exportData(), now);
-    const fileSettings = obj.data?.meta?.find((m) => m && m.id === 'settings');
+    const obj = buildBackupObject(store.exportData({ clone: false }), now);
+    const fileSettings = deepClone(obj.data?.meta?.find((m) => m && m.id === 'settings'));
     const file = new File([JSON.stringify(obj)], backupFileName(new Date(now)), { type: 'application/json' });
     const res = await shareFile(file, { title: 'Copia de Entreno' });
     if (res === 'cancelled') return res;
@@ -612,13 +634,17 @@ export function mountData(root) {
       confirmText: 'Sustituir todo',
       danger: true,
     }))) return;
+    const done = await restoringIndicator();
     try {
-      await store.importData(res.backup);
+      // `owned`: res.backup acaba de salir de JSON.parse y no se vuelve a usar: sus registros pasan sin clonarse.
+      await store.importData(res.backup, { owned: true });
     } catch (err) {
+      done();
       if (err instanceof store.RestorePointError) restoreError(err, 'importado');
       else importError(`No se pudo importar: ${err?.message || err}. Tus datos actuales no se han tocado.`);
       return;
     }
+    done();
     clearLocalDrafts();
     toast(`Copia importada: ${plural(sum.strength, 'sesión de fuerza', 'sesiones de fuerza')} y ${plural(sum.activities, 'actividad', 'actividades')}.`, { kind: 'success', duration: 5000 });
   }

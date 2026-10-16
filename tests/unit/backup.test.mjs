@@ -137,6 +137,49 @@ test('buildBackupObject: lastBackupAt = ahora DENTRO de la copia, sin mutar el o
   assert.ok(validateBackup(obj).ok);
 });
 
+test('buildBackupObject sin copia profunda (perf, M20): mismo JSON que con copia completa, comparte lo que no cambia', () => {
+  const src = sampleExport();
+  const before = JSON.stringify(src);
+  const now = 1_790_000_000_000;
+  // Lo que se escribía antes: copia profunda completa + exportedAt + lastBackupAt dentro de los ajustes.
+  const old = deepClone(src);
+  old.exportedAt = new Date(now).toISOString();
+  old.data.meta.find((m) => m.id === 'settings').lastBackupAt = now;
+  const obj = buildBackupObject(src, now);
+  assert.equal(JSON.stringify(obj), JSON.stringify(old), 'el archivo es idéntico, byte a byte');
+  assert.equal(JSON.stringify(src), before, 'la entrada queda intacta');
+  assert.notEqual(obj, src);
+  assert.notEqual(obj.data, src.data);
+  // Sin clonar: exportData ya es una copia; solo el registro de ajustes es nuevo (lleva lastBackupAt).
+  for (const s of ['exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals']) assert.equal(obj.data[s], src.data[s], `«${s}» compartido`);
+  assert.equal(obj.data.meta[0], src.data.meta[0], 'el registro «app» compartido');
+  assert.notEqual(obj.data.meta[1], src.data.meta[1], 'los ajustes, copiados');
+  // Sin ajustes o sin datos, como antes
+  const noSettings = { app: BACKUP_APP_ID, data: { meta: [{ id: 'app' }] } };
+  assert.equal(JSON.stringify(buildBackupObject(noSettings, now)), JSON.stringify({ app: BACKUP_APP_ID, data: { meta: [{ id: 'app' }] }, exportedAt: new Date(now).toISOString() }));
+  assert.deepEqual(buildBackupObject(null, now), { exportedAt: new Date(now).toISOString() });
+});
+
+test('store.backupData (perf, M20): sin registros reservados; una copia recién leída pasa sin volver a clonarse', async () => {
+  const { backupData, RESTORE_INFO_ID } = await import('../../js/store.js');
+  const obj = sampleExport();
+  obj.data.meta.push({ id: RESTORE_INFO_ID, createdAt: 1 }); // una copia nunca trae un punto de restauración
+  const before = JSON.stringify(obj);
+  const owned = backupData(obj, { owned: true });
+  const cloned = backupData(obj);
+  assert.equal(JSON.stringify(obj), before, 'la entrada queda intacta');
+  for (const data of [owned, cloned]) {
+    assert.deepEqual(data.meta.map((m) => m.id), ['app', 'settings'], 'sin el registro reservado');
+    assert.deepEqual(data.sessions, obj.data.sessions);
+    assert.deepEqual(data.context, [], 'una sección que falta queda vacía');
+  }
+  // Recién parseada (parseBackupText): nadie más la tiene, los registros pasan tal cual (sin 230-264 ms con 5 años).
+  assert.equal(owned.sessions[0], obj.data.sessions[0]);
+  assert.notEqual(owned.sessions, obj.data.sessions, 'listas nuevas');
+  // Sin `owned` (p. ej. un objeto que el llamador conserva), copia profunda como siempre.
+  assert.notEqual(cloned.sessions[0], obj.data.sessions[0]);
+});
+
 test('dataCounts / backupSummary: recuento por tipo y fecha de la copia', () => {
   const obj = buildBackupObject(sampleExport(), Date.UTC(2026, 8, 23, 8, 0));
   const c = dataCounts(obj.data);

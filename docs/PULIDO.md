@@ -611,3 +611,32 @@ WebKit).
 Las actividades ya guardadas no se migran (ni distancias ni parciales); una copia restaurada conserva lo que trae.
 Pruebas: tests/unit/import.test.mjs (saltos, cortados, horas repetidas, likelyDuplicate), tests/e2e/import.test.cjs
 (tarjetas de cortado y de salto; posible repetida y aviso en el formulario).
+
+## 32. Historiales largos: listas por lotes, copias sin clones de más y un solo montaje al restaurar (ronda 9, M20)
+
+- **Listas por lotes**: una lista que crece con los años (historial de un ejercicio, pesajes, historial de sesiones)
+  no se pinta entera. El «Historial completo» de Progreso de un ejercicio pinta las 30 sesiones más recientes
+  (`HIST_PAGE`) y «Ver más (N)» añade lotes de 30 al final (con 5 años eran ~480 filas, 7.500 nodos y 50.000 px). Lo
+  que marca cada fila (🏆) se calcula con el historial **entero** antes de pintar: una fila marca lo mismo en el lote
+  que esté. Al pintar el último lote el botón se oculta y, si tenía el foco, este pasa a la primera fila nueva.
+  Al volver de una sesión abierta desde la lista se pintan las mismas filas que había (`ui.hist`, 30 min): si no, el
+  router no podría devolver el scroll a una fila de un lote ampliado.
+- **Copias sin clones de más**: un objeto solo se clona si alguien más lo conserva y podría cambiarlo.
+  `buildBackupObject` crea objetos nuevos solo en el camino que cambia (raíz → `data` → `meta` → ajustes con
+  `lastBackupAt`) y comparte el resto, sin modificar la entrada. Exportar usa `store.exportData({ clone: false })`
+  (registros vivos) y lo serializa **en el mismo toque, sin await por medio**: el JSON es la instantánea; los ajustes
+  del archivo sí se copian, porque `markBackup` los compara después de compartir. Restaurar pasa
+  `importData(res.backup, { owned: true })`: la copia acaba de salir de `JSON.parse` y no se vuelve a usar, así que
+  sus registros pasan a la memoria sin clonarse (también al recuperar el punto, que sale recién leído de IndexedDB).
+  `exportData()` sin opciones sigue clonando (el punto de restauración y quien guarde el resultado). El archivo
+  exportado es idéntico, byte a byte, al de antes; el formato no cambia.
+- **Un solo montaje tras `reset`**: `navigate('#/today', { replace: true })` basta (con la URL ya en Hoy, navigate hace
+  `refresh`; si no, monta su hashchange). Con navigate + refresh, WebKit montaba Hoy dos veces. Para contar montajes,
+  los contenedores `.view-inner` nuevos en `#view`, no `router.onMount`: con una vista asíncrona como Hoy, los
+  ganchos se llaman dos veces en cada montaje.
+- **Indicador al restaurar**: mientras dura `importData`, un aviso bloqueante «Restaurando copia…» (`.cfg-busy`, fuera
+  de `#app`, que queda `inert`), pintado antes del trabajo síncrono y quitado al terminar o al fallar.
+
+Pruebas: tests/unit/backup.test.mjs (buildBackupObject comparte y da el mismo JSON; backupData con y sin `owned`),
+tests/e2e/long-history.test.cjs (5 años: 30 filas, «Ver más (N)», 🏆, foco y vuelta desde una sesión; 12 meses: exportar sin clonar da el
+mismo JSON, indicador, un montaje en Chromium y WebKit, datos idénticos).
