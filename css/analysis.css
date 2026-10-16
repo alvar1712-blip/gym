@@ -95,46 +95,8 @@
 .an-source b { color: var(--text); }
 
 /* ---------- Resumen ---------- */
-.an-keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.an-key-btn {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border-strong);
-  background: var(--surface-2);
-  color: var(--text);
-  text-align: left;
-}
-.an-key[data-level="good"] .an-key-btn { border-left-color: var(--ok); }
-.an-key[data-level="warn"] .an-key-btn { border-left-color: var(--warn); }
-.an-key[data-level="info"] .an-key-btn { border-left-color: var(--info); }
-.an-key-btn.is-pressed { background: var(--surface-3); }
-.an-key-top { display: flex; align-items: center; gap: 8px; }
-.an-key-title { font-size: calc(16px * var(--ts)); font-weight: 750; line-height: 1.3; overflow-wrap: anywhere; }
-/* El texto entero está en su tarjeta («Ver detalle»): aquí, 3 líneas. */
-.an-key-text {
-  font-size: calc(14px * var(--ts));
-  line-height: 1.4;
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-.an-key-more { display: inline-flex; align-items: center; gap: 3px; min-height: 24px; font-size: calc(13px * var(--ts)); font-weight: 700; color: var(--accent); }
-.an-key-top { flex-wrap: wrap; row-gap: 4px; }
-/* El principal, más grande; los secundarios, en dos líneas */
-.an-key-main .an-key-title { font-size: calc(18px * var(--ts)); }
-.an-key-main .an-key-text { font-size: var(--fs-md); -webkit-line-clamp: 4; }
-.an-key:not(.an-key-main) .an-key-text { -webkit-line-clamp: 2; }
-.an-key-step { font-size: calc(14px * var(--ts)); line-height: 1.35; color: var(--text-2); }
-.an-key-step b { color: var(--text); }
+/* Las conclusiones del resumen son las de Hoy, plegables (views/focus-item.js; estilos en css/weekly.css) */
+.an-card-summary .focus-list { margin-top: 2px; }
 .an-allgood { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); line-height: 1.4; }
 .an-allgood .icon { flex: none; margin-top: 1px; color: var(--ok); }
 /* Ronda 9: «Aún pocos datos…» no es un «Bien»: reloj en gris, no el check verde */

@@ -78,8 +78,12 @@ async function flow(page, { shots = false } = {}) {
   await go(page, '#/today');
   const sum = page.locator('.focus');
   await sum.waitFor();
-  const confs = await sum.locator('.focus-item[data-source="analysis"]').evaluateAll((els) => els.map((e) => e.querySelector('.state[class*="state-conf-"]')?.textContent ?? 'sin confianza'));
-  assert.ok(confs.length >= 1 && confs.every((t) => /^(Confianza (alta|media|baja)|Datos insuficientes)$/.test(t)), confs.join(' | '));
+  // (la baja o insuficiente va en la cabecera, «· confianza baja», a la vista plegada; la media o alta, dentro)
+  const confs = await sum.locator('.focus-item[data-source="analysis"]').evaluateAll((els) => els.map((e) =>
+    e.querySelector('.state[class*="state-conf-"]')?.textContent
+    ?? e.querySelector('.focus-low')?.textContent.replace(/^\s*·\s*/, '')
+    ?? 'sin confianza'));
+  assert.ok(confs.length >= 1 && confs.every((t) => /^(Confianza (alta|media)|confianza baja|datos insuficientes)$/.test(t)), confs.join(' | '));
   if (shots) { await sum.scrollIntoViewIfNeeded(); await settle(page); await shot(page, 'analysis-context-today'); }
 }
 

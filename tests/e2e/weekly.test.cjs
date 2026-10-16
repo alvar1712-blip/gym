@@ -519,11 +519,17 @@ test('#/weekly a 375×667 y «Lo importante esta semana» en Hoy (1–3 puntos, 
     const items = await card.locator('.focus-item').count();
     assert.ok(items >= 1 && items <= 3, `1–3 puntos (${items})`);
     assert.match(await card.locator('.focus-sub').innerText(), /21–27 sep · quedan 4 días/);
-    assert.ok(await card.locator('.focus-item .state').first().innerText(), 'cada punto con su estado (icono + texto)');
+    // Cada punto con su estado (icono con forma propia + su nombre para VoiceOver, nunca solo color)
+    assert.deepStrictEqual(await card.locator('.focus-item').evaluateAll((els) => els.filter((e) => !e.querySelector('.focus-ico .icon')
+      || !/^(Atención|Bien|Subir peso|Info): $/.test(e.querySelector('.focus-toggle .sr-only')?.textContent || '')).map((e) => e.dataset.id)), [], 'cada punto con su estado (icono + texto)');
     const topics = await card.locator('.focus-item').evaluateAll((els) => els.map((e) => e.dataset.topic));
     assert.strictEqual(new Set(topics).size, topics.length, `un punto por tema: ${topics}`);
     assert.strictEqual(await card.locator('.focus-main').count() + await card.locator('.focus-allgood').count(), 1);
-    // Cada punto con su texto completo (sin recortar), un «Qué hacer» y su «¿Por qué?» con la regla y datos concretos
+    // Plegados (PULIDO §33): título y «Qué hacer» a la vista; el resto, al desplegar. Desplegados todos: cada punto con
+    // su texto completo (sin recortar), un «Qué hacer» y su «¿Por qué?» con la regla y datos concretos
+    assert.deepStrictEqual(await clipped(page, '.focus-title, .focus-step'), []);
+    for (const t of await card.locator('.focus-toggle').all()) await t.click();
+    await page.waitForFunction(() => [...document.querySelectorAll('.focus .focus-item')].every((e) => e.classList.contains('is-settled')));
     assert.deepStrictEqual(await clipped(page, '.focus-text, .focus-title, .focus-step'), []);
     assert.strictEqual(await card.locator('.focus-item .focus-step').count(), items, 'un «Qué hacer» por punto');
     assert.strictEqual(await card.locator('.focus-item .why-btn').count(), items, 'un «¿Por qué?» por punto');

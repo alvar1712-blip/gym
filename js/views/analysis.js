@@ -23,6 +23,7 @@ import { rateText, exerciseRateText } from '../analysis-training.js';
 import { predictionDataset } from '../race-predict.js';
 import { getProfile, profileExtrasMissing } from '../profile.js';
 import { weekFocus } from '../focus.js';
+import { focusItem } from './focus-item.js';
 
 const STATUS_TAG = { fast: 'Rápido', good: 'Bien', stalled: 'Estancado', down: 'Bajando' };
 /** Estado de un ejercicio con el componente de estados (ui.stateTag): icono + texto, igual en toda la app. */
@@ -304,14 +305,17 @@ function summaryCard(a, content) {
   return card('summary',
     cardHead('bolt', 'Resumen', f.allGood && pts.length ? 'Nada que cambiar ahora' : f.fewData && pts.length ? 'Aún pocos datos' : 'Lo más importante ahora'),
     (f.allGood || f.fewData) && pts.length ? h(`p.an-allgood${f.fewData ? '.an-fewdata' : ''}`, icon(f.fewData ? 'clock' : 'check', 18), h('span', f.message)) : null,
+    // Plegados como en Hoy (views/focus-item.js, PULIDO §33): título + qué hacer; al tocar, el texto, la confianza,
+    // el «¿Por qué?» y el salto a su tarjeta
     items.length
-      ? h('ul.an-keys', items.map(({ ins: i, step, stepLabel, text }, idx) => h(`li.an-key${idx === 0 && !f.allGood && !f.fewData ? '.an-key-main' : ''}`, { dataset: { insight: i.id, level: i.level, step } },
-        h('button.an-key-btn', { type: 'button', 'aria-label': `${i.title}. Qué hacer: ${stepLabel}. Ver el detalle en ${AREA_LABEL[i.area]}`, onClick: () => go(i.id) },
-          h('span.an-key-top', levelBadge(i.level, true), h('span.an-area', AREA_LABEL[i.area]), confBadge(i.confidence, true)),
-          h('span.an-key-title', i.title),
-          h('span.an-key-text', { dataset: { preview: '' } }, text),
-          h('span.an-key-step', h('b', 'Qué hacer: '), stepLabel),
-          h('span.an-key-more', 'Ver detalle', icon('chevron-down', 16))))))
+      ? h('ul.focus-list.an-keys', items.map(({ ins: i, ...it }, idx) => focusItem(it, {
+        main: idx === 0 && !f.allGood && !f.fewData,
+        scope: 'analysis',
+        className: `an-key${idx === 0 && !f.allGood && !f.fewData ? ' an-key-main' : ''}`,
+        stepClass: 'an-key-step',
+        dataset: { insight: i.id, area: i.area },
+        more: h('button.cal-link-btn.focus-more', { type: 'button', onClick: () => go(i.id) }, `Ver detalle en ${AREA_LABEL[i.area]}`, icon('chevron-right', 18)),
+      })))
       : pts.length ? null : note('Aún no hay nada destacado: con unas semanas de registros, aquí verás lo más importante y qué hacer.'));
 }
 

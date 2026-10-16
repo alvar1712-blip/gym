@@ -502,13 +502,28 @@ function contrastIssues(root, desc, shown) {
     const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
+  // Recortado del todo por un antepasado con overflow (p. ej. el panel plegado de una conclusión, PULIDO §33, a 0 px):
+  // no se ve, así que su contraste no cuenta. Lo que asoma aunque sea un poco, sí.
+  const clippedAway = (el) => {
+    let r = el.getBoundingClientRect();
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      const c = a.getBoundingClientRect();
+      const w = Math.min(r.right, c.right) - Math.max(r.left, c.left);
+      const hgt = Math.min(r.bottom, c.bottom) - Math.max(r.top, c.top);
+      if (w < 1 || hgt < 1) return true;
+      r = { left: Math.max(r.left, c.left), right: Math.min(r.right, c.right), top: Math.max(r.top, c.top), bottom: Math.min(r.bottom, c.bottom) };
+    }
+    return false;
+  };
   const seen = new Set();
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const el = n.parentElement;
     if (!n.textContent.trim() || !el || seen.has(el)) continue;
     seen.add(el);
-    if (el.closest('svg, :disabled') || !shown(el)) continue;
+    if (el.closest('svg, :disabled') || !shown(el) || clippedAway(el)) continue;
     const chain = [];
     for (let e = el; e; e = e.parentElement) chain.unshift(e);
     const styles = chain.map((e) => getComputedStyle(e));
@@ -759,6 +774,8 @@ async function selfTest(browserName) {
         <div class="case" id="word-ok" style="width:200px;font-size:20px;overflow-wrap:anywhere">Senderismo</div>
         <div class="case" id="dim-bad" style="background:#15181d;font-size:14px"><span style="color:#929baa;opacity:0.4">12</span><span style="opacity:0.6;color:#929baa">Serie 3</span><span style="opacity:0.75;color:#929baa">Normal</span></div>
         <div class="case" id="dim-ok" style="background:#15181d;font-size:14px"><span style="color:#929baa">12</span><span style="opacity:0.9;color:#f3f5f7">Serie 3</span><button disabled style="opacity:0.4;color:#929baa;background:none;border:0">Anterior</button><span aria-hidden="true" style="opacity:0.3">·</span><span style="opacity:0.75;color:#929baa;font-size:24px">Grande</span></div>
+        <div class="case" id="dim-clipped" style="background:#15181d;font-size:14px"><div style="height:0;overflow:hidden"><p style="opacity:0;color:#929baa">Panel plegado</p></div></div>
+        <div class="case" id="dim-peek" style="background:#15181d;font-size:14px"><div style="height:6px;overflow:hidden"><p style="margin:0;opacity:0.4;color:#929baa">Asoma un poco</p></div></div>
         <div class="case" id="emoji-orphan" style="width:120px;font-size:30px;line-height:1.25"><div>🎯 Objetivos</div><div><span aria-hidden="true">🏃 </span>Carrera · distancia</div></div>
         <div class="case" id="emoji-glued" style="width:120px;font-size:30px;line-height:1.25"><div>🎯\u00a0Objetivos</div><div><span aria-hidden="true">🏃\u00a0</span>Carrera · distancia</div></div>
       </div></body></html>`);
@@ -810,6 +827,10 @@ async function selfTest(browserName) {
     // El mismo gris a 24 px (texto grande) pasa en dim-ok: ≥ 3:1
     assert.match(dim[2], /contraste 4\.\d\d:1 \(< 4\.5\) con opacidad 0\.75: span «Normal»/);
     assert.deepStrictEqual(await more('dim-ok'), []);
+    // Recortado del todo por un antepasado (un panel plegado a 0 px) no se ve: no cuenta; si asoma, sí
+    assert.deepStrictEqual(await more('dim-clipped'), []);
+    const peek = await more('dim-peek');
+    assert.ok(peek.length === 1 && /con opacidad 0\.40: p «Asoma un poco»/.test(peek[0]), `asoma: ${peek.join(' | ')}`);
     const orphan = await more('emoji-orphan');
     assert.strictEqual(orphan.length, 2, `emoji: ${orphan.join(' | ')}`);
     assert.ok(orphan.every((x) => /emoji solo en su línea/.test(x)), orphan.join(' | '));

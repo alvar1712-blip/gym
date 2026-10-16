@@ -460,19 +460,89 @@ html.text-large .wk-recap-kpi .sum-delta-part:first-child { white-space: normal;
 /* Ronda 9: «Aún pocos datos…» no es un «Bien»: reloj en gris, no el check verde */
 .focus-fewdata .icon { color: var(--muted); }
 .focus-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
-.focus-item { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+/* ---------- Una conclusión, plegable (views/focus-item.js · PULIDO §33) ----------
+   Plegada: icono del nivel + título (protagonista) + una línea con qué hacer. La cabecera entera es el botón (≥ 44 px).
+   Animación solo de CSS y robusta en WebKit y Chromium: grid-template-rows 0fr → 1fr (sin medir alturas), el contenido
+   aparece con opacidad y un desplazamiento mínimo, el chevron gira; 260 ms, curva de iOS. Nada de height: auto. */
+.focus-item { border-bottom: 1px solid var(--border); }
 .focus-item:last-child { border-bottom: 0; }
-.focus-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.focus-h { margin: 0; font: inherit; }
+.focus-toggle {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.focus-toggle:focus-visible { outline-offset: -2px; border-radius: 10px; }
+.focus-toggle:active .focus-title { opacity: 0.72; }
+.focus-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.focus-ico-warn { background: var(--warn-soft); color: var(--warn); }
+.focus-ico-good { background: var(--ok-soft); color: var(--ok); }
+.focus-ico-up { background: var(--ok-soft); color: var(--ok); } /* «Sube el peso»: estado positivo, como su antiguo state-progress (el acento es de la acción principal) */
+.focus-main .focus-ico { width: 36px; height: 36px; border-radius: 10px; }
+.focus-hd { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 4px; }
+.focus-main .focus-hd { padding-top: 5px; }
 .focus-title { font-size: var(--fs-md); font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
-.focus-main .focus-title { font-size: calc(18px * var(--ts)); font-weight: 750; }
-.focus-text { font-size: calc(14px * var(--ts)); line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; }
-/* Texto completo (sin recortar): son las cifras que justifican el mensaje. */
+.focus-main .focus-title { font-size: calc(18px * var(--ts)); font-weight: 750; line-height: 1.25; }
+.focus-step { font-size: calc(14px * var(--ts)); font-weight: 500; line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
+.focus-low { color: var(--muted); }
+.focus-chev { flex: none; display: grid; place-items: center; width: 24px; height: 30px; color: var(--muted); }
+.focus-main .focus-chev { height: 36px; }
+.focus-chev .icon { transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1); }
+.focus-item[data-open="1"] .focus-chev .icon { transform: rotate(180deg); }
+
+.focus-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.focus-item[data-open="1"] .focus-panel { grid-template-rows: 1fr; }
+.focus-body {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  /* alineado con el título, no con el icono */
+  padding-inline-start: 42px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 160ms ease-out, transform 260ms cubic-bezier(0.32, 0.72, 0, 1), padding-bottom 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.focus-main .focus-body { padding-inline-start: 48px; }
+.focus-item[data-open="1"] .focus-body { opacity: 1; transform: none; padding-bottom: 14px; transition-delay: 60ms, 0ms, 0ms; }
+/* Abierta y quieta: sin recorte (el anillo de foco del «¿Por qué?» no se corta) */
+.focus-item.is-settled .focus-body { overflow: visible; }
+.focus-text { display: flex; flex-direction: column; gap: 8px; font-size: calc(14px * var(--ts)); line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.focus-text p { margin: 0; }
 .focus-main .focus-text { font-size: var(--fs-md); }
-.focus-step { display: flex; align-items: flex-start; gap: 6px; font-size: calc(14px * var(--ts)); line-height: 1.35; color: var(--text-2); }
-.focus-step .icon { flex: none; margin-top: 1px; color: var(--muted); }
-.focus-step b { color: var(--text); font-weight: 700; }
-.focus-item > .why { align-self: stretch; }
-.focus .why-body { padding: 10px 12px 8px; }
+.focus-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.focus-body > .why { align-self: stretch; }
+.focus .why-body, .an-card-summary .why-body { padding: 10px 12px 8px; }
+.focus-more { margin-top: -4px; }
+@media (prefers-reduced-motion: reduce) {
+  .focus-panel, .focus-body, .focus-chev .icon { transition: none !important; }
+  .focus-body { transform: none; }
+}
 .focus-links { display: flex; flex-wrap: wrap; column-gap: 18px; border-top: 1px solid var(--border); padding-top: 2px; }
 /* Veredicto del tiempo previsto (objetivo de carrera con tiempo; mismas clases que Eventos) */
 .goal-verdict { margin-top: -4px; font-size: calc(14px * var(--ts)); line-height: 1.35; color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }

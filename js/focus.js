@@ -124,3 +124,18 @@ export function weekFocus({ weekly = [], analysis = [] } = {}, max = 3) {
   });
   return { items, allGood, fewData, message: allGood ? ALL_GOOD : fewData ? FEW_DATA : null };
 }
+
+/**
+ * Párrafos cortos para el texto desplegado (views/focus-item.js): una frase por párrafo; una frase muy corta se queda
+ * con la anterior. Solo corta tras «.», «!» o «?» seguidos de espacio y mayúscula o cifra («1RM est. baja» no se
+ * corta). Une los párrafos con un espacio y sale el texto original: no se pierde nada.
+ */
+export function shortParagraphs(text) {
+  const sentences = String(text || '').trim().split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡0-9])/u).filter(Boolean);
+  const out = [];
+  for (const s of sentences) {
+    if (out.length && (s.length < 50 || out[out.length - 1].length < 50)) out[out.length - 1] += ` ${s}`;
+    else out.push(s);
+  }
+  return out;
+}

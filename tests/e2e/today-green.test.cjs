@@ -20,6 +20,7 @@ const ALLOWED = [
   '.btn-primary', // la acción principal (y su icono)
   '.today-week-day.is-today', '.today-week-day.is-today *', // hoy, en la mini semana (selección)
   '.state-ok', '.state-ok *', '.state-progress', '.state-progress *', '.state-pr', '.state-pr *', // estados positivos
+  '.focus-ico-good', '.focus-ico-good *', '.focus-ico-up', '.focus-ico-up *', // el icono de una conclusión positiva (PULIDO §33)
   '.seg-btn.active', '.seg-btn.active *', '[aria-pressed="true"]', '[aria-pressed="true"] *', '[aria-checked="true"]', '[aria-checked="true"] *', // selección
   '.today-active.card-accent', // el borde de «Sesión en curso» (manda en Hoy)
 ];

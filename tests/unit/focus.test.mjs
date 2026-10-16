@@ -3,7 +3,7 @@
 // nada». Mensajes sintéticos con la forma de insights.js y analysis.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { weekFocus, nextStep, topicOf, STEPS, ALL_GOOD, FEW_DATA } from '../../js/focus.js';
+import { weekFocus, nextStep, topicOf, STEPS, ALL_GOOD, FEW_DATA, shortParagraphs } from '../../js/focus.js';
 
 const why = { rule: 'regla', data: [{ label: 'x', value: '1' }] };
 const wk = (id, level, extra = {}) => ({ id, section: 'info', level, title: `wk ${id}`, text: 't', why, ...extra });
@@ -109,4 +109,19 @@ test('si el analista ya dice qué hacer, esa es la acción (no una genérica que
 test('el destino de cada uno: su acción si la tiene; si no, su pantalla', () => {
   const r = weekFocus({ weekly: [wk('muscles-above', 'warn')], analysis: [an('recovery-sleep', 'warn', 'recovery', 60, { action: { label: 'x', href: '#/cycle' } })] });
   assert.deepEqual(r.items.map((i) => i.href).sort(), ['#/cycle', '#/weekly']);
+});
+
+// Tarjeta plegable (PULIDO §33): el texto desplegado va en párrafos cortos sin perder nada
+test('shortParagraphs: una frase por párrafo, las cortas se juntan y no se pierde ni un carácter', () => {
+  const t = 'Vas mejorando en 2 de 12 ejercicios principales; el que más, Press banca +2,6 %/sem. Tu ritmo típico es −0,38 %/sem, por debajo de lo habitual para tu nivel (intermedia: +0,25 % a +0,75 %/sem). 3 estancados y 6 bajando: en cada uno tienes qué probar. En 1 ejercicio sigues por debajo de tu mejor marca anterior: es compatible con recuperar rendimiento que ya tenías.';
+  const p = shortParagraphs(t);
+  assert.strictEqual(p.join(' '), t, 'unidos, el texto original');
+  assert.strictEqual(p.length, 4);
+  assert.match(p[2], /^3 estancados/, 'corta también antes de una cifra');
+  // «1RM est. baja»: no se corta tras una abreviatura seguida de minúscula
+  assert.deepStrictEqual(shortParagraphs('Su 1RM est. baja un 2,8 % por semana: de ~65,8 kg a ~57,8 kg en 5 semanas.'), ['Su 1RM est. baja un 2,8 % por semana: de ~65,8 kg a ~57,8 kg en 5 semanas.']);
+  // Una frase corta se queda con su vecina (nada de párrafos de tres palabras)
+  assert.deepStrictEqual(shortParagraphs('Bien hecho. Sigue así con la misma carga durante las próximas dos semanas, sin cambios.'), ['Bien hecho. Sigue así con la misma carga durante las próximas dos semanas, sin cambios.']);
+  assert.deepStrictEqual(shortParagraphs(''), []);
+  assert.deepStrictEqual(shortParagraphs(null), []);
 });

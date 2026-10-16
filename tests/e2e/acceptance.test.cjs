@@ -1004,6 +1004,12 @@ const blockCards = (page, section) => page.locator(`.wk-block[data-section="${se
 /** Toca «¿Por qué?» de una tarjeta y devuelve lo que se ve: { rule, rows:[{label, value, sub}] }. */
 async function tapWhy(page, root, id) {
   const cardEl = page.locator(`${root}[data-id="${id}"]`);
+  // Un punto plegado de «Lo importante esta semana» (PULIDO §33) se despliega antes: plegado, su porqué no se puede tocar
+  const toggle = cardEl.locator('.focus-toggle');
+  if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'false') {
+    await toggle.click();
+    await page.waitForFunction((k) => document.querySelector(k)?.classList.contains('is-settled'), `${root}[data-id="${id}"]`);
+  }
   const btn = cardEl.locator('.why-btn');
   await btn.scrollIntoViewIfNeeded();
   await btn.click();

@@ -275,9 +275,11 @@ test('Hombre (390×844): Hoy y panel con «Tu análisis», #/analysis completo, 
     assert.match(await rate.locator('.an-fold-body[data-fold="sources"]').innerText(), /Iraki et al\., 2019 · Sports/);
     await shotAt(page, '.an-ins[data-insight="weight-rate"]', 'analysis-why-male', 90);
 
-    // Resumen → toca un punto y baja a su detalle
+    // Resumen → despliega un punto (PULIDO §33) y «Ver detalle en …» baja a su tarjeta
     const firstKey = await keys.first().getAttribute('data-insight');
-    await keys.first().locator('button').click();
+    await keys.first().locator('.focus-toggle').click();
+    await page.waitForFunction(() => document.querySelector('.an-card-summary .an-key')?.classList.contains('is-settled'));
+    await keys.first().locator('.focus-more').click();
     await page.waitForTimeout(700);
     const inView = await page.evaluate((id) => {
       const el = [...document.querySelectorAll('.an-card:not(.an-card-summary) [data-insight]')].find((x) => x.dataset.insight === id);

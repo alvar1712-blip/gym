@@ -646,3 +646,32 @@ Pruebas: tests/unit/import.test.mjs (saltos, cortados, horas repetidas, likelyDu
 Pruebas: tests/unit/backup.test.mjs (buildBackupObject comparte y da el mismo JSON; backupData con y sin `owned`),
 tests/e2e/long-history.test.cjs (5 años: 30 filas, «Ver más (N)», 🏆, foco y vuelta desde una sesión; 12 meses: exportar sin clonar da el
 mismo JSON, indicador, un montaje en Chromium y WebKit, datos idénticos).
+
+## 33. Conclusiones plegables: «Lo importante esta semana» y el Resumen de Análisis
+
+Antes, la tarjeta de Hoy con 6 meses de datos medía 990 px de párrafos, insignias y «¿Por qué?» repetidos; el Resumen
+de Análisis recortaba el texto con «…». Ahora cada conclusión es una fila plegable (`views/focus-item.js`, la misma en
+las dos pantallas) que se entiende en dos segundos y se abre si se quiere profundizar. **No decide nada**: pinta el
+`FocusItem` de `weekFocus` (js/focus.js) con su mismo título, paso siguiente, texto, confianza y porqué; el orden y el
+principal son los del motor.
+
+- **Plegada** (lo que se ve siempre): un icono discreto del nivel (forma propia: aviso, check, flecha, info; nunca solo
+  color, y su nombre para VoiceOver), el **título** como protagonista y **una línea con qué hacer** (y «· confianza
+  baja» si lo es: la incertidumbre se ve sin abrir). Un aviso importante se entiende plegado: el título dice qué pasa
+  y la línea qué hacer. El principal, más grande (título 18 px e icono 36 px).
+- **Desplegada**: el texto en párrafos cortos (`shortParagraphs`: una frase por párrafo, las cortas con su vecina,
+  sin perder un carácter), la confianza, el «¿Por qué?» y, en Análisis, «Ver detalle en Fuerza». El «Qué hacer» no se
+  repite dentro, ni la confianza baja o insuficiente (ya está en la cabecera; dentro solo aparece la media o la alta).
+- **Interacción** (patrón *disclosure* de WAI-ARIA): toda la cabecera es un `<button>` dentro del encabezado (≥ 44 px,
+  a todo el ancho) con `aria-expanded` y `aria-controls`; el panel es una región con nombre y, plegado, `inert` (ni se
+  tabula ni lo lee VoiceOver). Intro y Espacio abren y cierran. Lo abierto se recuerda mientras dura la app (volver a
+  Hoy no lo cierra), nunca en los datos.
+- **Animación, solo CSS**: `grid-template-rows: 0fr → 1fr` (sin medir alturas con JS ni `height: auto`), el contenido
+  aparece con opacidad y 4 px de desplazamiento, el chevron gira 180°; 260 ms con la curva de iOS. Funciona igual en
+  WebKit y Chromium. Mientras se anima, el contenido va recortado; al terminar, sin recorte (el anillo de foco del
+  «¿Por qué?» no se corta). Con «Reducir movimiento», sin transiciones. Abrir y cerrar con la CPU ×4 no crea tareas
+  largas.
+- **Guardas**: `tests/e2e/focus-disclosure.test.cjs` compara el contenido con el del motor, prueba abrir y cerrar
+  (toque, Intro, Espacio), ARIA e `inert`, 375/390/430 px × 100/125/150 % en Chromium y WebKit, «Reducir movimiento»
+  y rendimiento. La guarda de contraste (§4) ya no mide el texto que un antepasado recorta a 0 px (el panel plegado
+  no se ve); lo que asoma, sí.
