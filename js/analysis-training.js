@@ -206,6 +206,17 @@ export function rateText(pct) {
   const sign = r === 0 ? '±' : pct > 0 ? '+' : '−';
   return `${sign}${fmtNum(r, a < 1 ? 2 : 1)} %/sem`;
 }
+/**
+ * Lo que enseña la fila de un ejercicio junto a su estado (lista de Fuerza): el ritmo; estancado con la pendiente al
+ * alza, las sesiones sin nueva marca (stallEval), para no enseñar «+1,2 %/sem · Estancado».
+ */
+export function exerciseRateText(x) {
+  if (x?.status === 'stalled' && x.ratePctPerWeek > 0) {
+    const n = x.stall?.sinceBest;
+    return n > 0 ? `sin nueva marca en ${plural(n, 'sesión', 'sesiones')}` : 'sin nueva marca';
+  }
+  return rateText(x?.ratePctPerWeek);
+}
 const dayTxt = (d, today) => fmtDate(d, d.slice(0, 4) === today.slice(0, 4) ? 'day' : 'full');
 const plural = (n, one, many) => `${fmtNum(n, 0)} ${n === 1 ? one : many}`;
 function joinList(xs) {
@@ -352,7 +363,8 @@ export function exerciseTrend(points, { today } = {}) {
  * Estancamiento con los umbrales del panel semanal (settings.stall): sin mejora en las últimas S sesiones frente a las
  * S anteriores, o en las últimas W semanas frente a las W anteriores (con ≥ 2 sesiones en el tramo). Una sesión mejora
  * si supera a la referencia y a las anteriores del tramo. `era` = puntos desde el último parón, en orden.
- * @returns {{ stalled, bySessions, byWeeks, S, W, best:{date, e1rm}|null }}
+ * @returns {{ stalled, bySessions, byWeeks, S, W, best:{date, e1rm}|null, sinceBest:number }}  sinceBest = sesiones
+ *   después de la mejor (sin nueva marca).
  */
 export function stallState(era, today, stall = {}) {
   // La regla es la del panel y del «Siguiente paso» de la sesión (progression.stallEval): una sola fuente.
@@ -360,26 +372,32 @@ export function stallState(era, today, stall = {}) {
   const { S, W, bySessions, byWeeks, stalled } = stallEval(pts, today, stall);
   let best = null;
   for (const p of pts) if (!best || p.e1rm > best.e1rm + EPS) best = { date: p.date, e1rm: p.e1rm };
-  return { stalled, bySessions, byWeeks, S, W, best };
+  const sinceBest = best ? pts.filter((p) => p.date > best.date).length : 0;
+  return { stalled, bySessions, byWeeks, S, W, best, sinceBest };
 }
 
 /**
  * Estado según el ritmo y la experiencia: bajando (≤ −0,25 %/sem y caída ≥ 1,5 % en la ventana) → down; estancado
- * (settings.stall) o sin tendencia al alza (≤ 0) → stalled; ≥ fast → fast; ≥ good → good; por debajo de good pero
- * subiendo y sin estancamiento → good con slow:true (mejora, despacio para tu nivel).
+ * (settings.stall) → stalled; ≥ fast → fast; ≥ good → good; por debajo de good y sin estancamiento → good con
+ * slow:true (despacio para tu nivel). `stalled` es el veredicto de progression.stallEval (la regla del panel y de la
+ * sesión: una sola fuente): si lo da por NO estancado, una tendencia plana (≤ 0) no lo convierte en «estancado», es
+ * «despacio». Solo sin ese veredicto (null) la tendencia ≤ 0 cuenta como estancado (byTrend).
  * @returns {{ status:'fast'|'good'|'stalled'|'down', slow:boolean, byTrend:boolean }}
  */
-export function strengthStatus({ ratePctPerWeek, totalChangePct = null, stalled = false }, experience = 'intermediate') {
+export function strengthStatus({ ratePctPerWeek, totalChangePct = null, stalled = null }, experience = 'intermediate') {
   const t = THRESHOLDS[experience] || THRESHOLDS.intermediate;
   const r = ratePctPerWeek;
   const drop = totalChangePct == null ? r * 4 : totalChangePct;
   if (r <= -DOWN_PCT + EPS && drop <= -DOWN_TOTAL_PCT + EPS) return { status: 'down', slow: false, byTrend: false };
   if (stalled) return { status: 'stalled', slow: false, byTrend: false };
-  if (r <= 0) return { status: 'stalled', slow: false, byTrend: true };
+  if (stalled == null && r <= 0) return { status: 'stalled', slow: false, byTrend: true };
   if (r >= t.fast - EPS) return { status: 'fast', slow: false, byTrend: false };
   if (r >= t.good - EPS) return { status: 'good', slow: false, byTrend: false };
   return { status: 'good', slow: true, byTrend: false };
 }
+
+/** Mejora: rápido o bien con el ritmo al alza (sin estancar y plano es «despacio», no cuenta como mejora). */
+const improvingRow = (x) => (x.status === 'fast' || x.status === 'good') && x.ratePctPerWeek > 0;
 
 /**
  * Previsión del 1RM estimado a `weeks` semanas desde hoy con rendimientos decrecientes:
@@ -520,7 +538,7 @@ export function volumeReview(d, today, { strength = null, age = 'unknown' } = {}
     const avg = mus.avg[m] || 0;
     const exs = rows.filter((x) => (exMap.get(x.exerciseId)?.primary || []).includes(m));
     if (!exs.length && avg < 1) continue;
-    const progressing = exs.some((x) => x.status === 'fast' || x.status === 'good') && !exs.some((x) => x.status === 'down');
+    const progressing = exs.some(improvingRow) && !exs.some((x) => x.status === 'down');
     const struggling = exs.some((x) => x.status === 'stalled' || x.status === 'down');
     const sore = (strong.get(m) || 0) >= DOMS_HIGH_TIMES;
     const below = t[0] > 0 && avg < t[0] - EPS;
@@ -673,7 +691,7 @@ export function analyzeStrength(data, opts = {}) {
     row.ratePctPerWeek = round(trend.ratePctPerWeek, 0.01);
     row.status = st.status;
     row.slow = st.slow;
-    row.stall = { bySessions: stall.bySessions, byWeeks: stall.byWeeks, byTrend: st.byTrend, best: stall.best, S: stall.S, W: stall.W };
+    row.stall = { stalled: stall.stalled, bySessions: stall.bySessions, byWeeks: stall.byWeeks, best: stall.best, sinceBest: stall.sinceBest, S: stall.S, W: stall.W };
     row.kind = progressKind({ trend, status: st.status, recovery, firstDate: row.firstDate, today });
     // Previsión: sin cifras para menores; con el tope prudente de «avanzado» a partir de 65; recuperando, hasta tu referencia.
     if (age !== 'minor') {
@@ -699,7 +717,7 @@ export function analyzeStrength(data, opts = {}) {
   const analyzed = exercises.filter((x) => x.status !== 'insufficient');
   const mains = analyzed.filter((x) => x.main);
   const base = mains.length ? mains : analyzed;
-  const improvingBase = base.filter((x) => x.status === 'fast' || x.status === 'good');
+  const improvingBase = base.filter(improvingRow);
   const summary = {
     trendPctPerWeek: base.length ? round(median(base.map((x) => x.ratePctPerWeek)), 0.01) : null,
     improving: improvingBase.length,
@@ -724,11 +742,11 @@ export function analyzeStrength(data, opts = {}) {
 
 function strengthRule(p, exp, th) {
   const lvl = expLabel(p, exp.id);
-  return `Para cada ejercicio se toma el mejor 1RM estimado de cada sesión (Epley con repeticiones + RIR, series de 1 a 12 repeticiones; en peso corporal, todas las sesiones con tu peso corporal más reciente) y se calcula su pendiente robusta (Theil–Sen: la mediana de las pendientes entre cada par de sesiones, así un día raro apenas cuenta) en la ventana más corta de ${WINDOW_STEPS[0]} a ${WINDOW_STEPS[WINDOW_STEPS.length - 1]} semanas con al menos ${MIN_WINDOW_POINTS} sesiones (si no, ${WINDOW_STEPS[WINDOW_STEPS.length - 1]}; tras un parón de ${GAP_DAYS / 7} semanas o más, desde el parón). Hacen falta al menos ${MIN_SESSIONS} sesiones en ${MIN_WEEKS} semanas distintas y alguna en las últimas ${RECENT_DAYS / 7}. El ritmo es la pendiente semanal en % de tu nivel actual. Umbrales orientativos para tu nivel (${lvl}${exp.assumed ? g(p, '; sin experiencia en el perfil se usa intermedio', '; sin experiencia en el perfil se usa intermedia') : ''}): bien desde ${rateText(th.good)}, rápido desde ${rateText(th.fast)} (principiante 0,75 / 1,5; ${g(p, 'intermedio', 'intermedia')} 0,25 / 0,75; ${g(p, 'avanzado', 'avanzada')} 0,1 / 0,4). Estancado: sin mejora en las últimas sesiones o semanas (Ajustes › Umbrales › Estancamiento) o sin tendencia al alza. Bajando: ${rateText(-DOWN_PCT)} o menos y una caída de ${fmtNum(DOWN_TOTAL_PCT, 1)} % o más en la ventana. Los ejercicios principales son los compuestos.${isFemale(p) ? ' Las mujeres progresan en términos relativos de forma parecida a los hombres, así que los umbrales en % son los mismos.' : ''}`;
+  return `Para cada ejercicio se toma el mejor 1RM estimado de cada sesión (Epley con repeticiones + RIR, series de 1 a 12 repeticiones; en peso corporal, todas las sesiones con tu peso corporal más reciente) y se calcula su pendiente robusta (Theil–Sen: la mediana de las pendientes entre cada par de sesiones, así un día raro apenas cuenta) en la ventana más corta de ${WINDOW_STEPS[0]} a ${WINDOW_STEPS[WINDOW_STEPS.length - 1]} semanas con al menos ${MIN_WINDOW_POINTS} sesiones (si no, ${WINDOW_STEPS[WINDOW_STEPS.length - 1]}; tras un parón de ${GAP_DAYS / 7} semanas o más, desde el parón). Hacen falta al menos ${MIN_SESSIONS} sesiones en ${MIN_WEEKS} semanas distintas y alguna en las últimas ${RECENT_DAYS / 7}. El ritmo es la pendiente semanal en % de tu nivel actual. Umbrales orientativos para tu nivel (${lvl}${exp.assumed ? g(p, '; sin experiencia en el perfil se usa intermedio', '; sin experiencia en el perfil se usa intermedia') : ''}): bien desde ${rateText(th.good)}, rápido desde ${rateText(th.fast)} (principiante 0,75 / 1,5; ${g(p, 'intermedio', 'intermedia')} 0,25 / 0,75; ${g(p, 'avanzado', 'avanzada')} 0,1 / 0,4). Estancado: sin mejora en las últimas sesiones o semanas (Ajustes › Umbrales › Estancamiento), la misma regla del panel semanal; sin estancamiento y con un ritmo por debajo de «bien» (también plano), despacio. Bajando: ${rateText(-DOWN_PCT)} o menos y una caída de ${fmtNum(DOWN_TOTAL_PCT, 1)} % o más en la ventana. Los ejercicios principales son los compuestos.${isFemale(p) ? ' Las mujeres progresan en términos relativos de forma parecida a los hombres, así que los umbrales en % son los mismos.' : ''}`;
 }
 
 function exRow(x, p) {
-  const tag = x.status === 'good' && x.slow ? 'bien, despacio para tu nivel' : STATUS_LABEL[x.status];
+  const tag = x.status === 'good' && x.slow ? (x.ratePctPerWeek > 0 ? 'bien, despacio para tu nivel' : 'despacio: sin subir, pero sin estancarse') : STATUS_LABEL[x.status];
   return { label: x.name, value: `${rateText(x.ratePctPerWeek)} · 1RM est. ${kg(x.e1rmNow)} · ${plural(x.sessions, 'sesión', 'sesiones')} en ${weeksTxt(x.windowWeeks)} · ${tag}` };
 }
 
@@ -784,7 +802,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
   }
 
   // --- Resumen global ------------------------------------------------------
-  const improving = base.filter((x) => x.status === 'fast' || x.status === 'good');
+  const improving = base.filter(improvingRow);
   const top = [...improving].sort((a, b) => b.ratePctPerWeek - a.ratePctPerWeek)[0] || null;
   const M = base.length;
   const noun = summary.mainOnly ? (M === 1 ? 'ejercicio principal' : 'ejercicios principales') : (M === 1 ? 'ejercicio' : 'ejercicios');
@@ -888,7 +906,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
   }
 
   // --- Estancados: qué probar ---------------------------------------------------
-  const stalledList = analyzed.filter((x) => x.status === 'stalled').sort((a, b) => (b.main - a.main) || a.ratePctPerWeek - b.ratePctPerWeek);
+  const stalledList = analyzed.filter((x) => x.status === 'stalled' && x.stall?.stalled).sort((a, b) => (b.main - a.main) || a.ratePctPerWeek - b.ratePctPerWeek);
   if (stalledList.length) {
     const mus = muscleAverages(d, today);
     const targets = targetsOf(d.settings);
@@ -958,8 +976,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
       const best = x.stall.best;
       const since = best ? diffDays(best.date, today) : 0;
       let ruleTxt;
-      if (x.stall.byTrend) ruleTxt = `Sin tendencia al alza en ${weeksTxt(x.windowWeeks)} (${rateText(x.ratePctPerWeek)}).`;
-      else if (since >= 14) ruleTxt = `Lleva ${weeksTxt(Math.round(since / 7))} sin superar su mejor 1RM est. (${kg(best.e1rm)}, el ${dayTxt(best.date, today)}).`;
+      if (since >= 14) ruleTxt = `Lleva ${weeksTxt(Math.round(since / 7))} sin superar su mejor 1RM est. (${kg(best.e1rm)}, el ${dayTxt(best.date, today)}).`;
       else ruleTxt = `${x.stall.bySessions ? `Sus últimas ${plural(x.stall.S, 'sesión', 'sesiones')} no superan` : `En ${lastWeeks(x.stall.W)} no supera`} su mejor 1RM est. (${kg(best.e1rm)}, el ${dayTxt(best.date, today)}).`;
       out.push(insight({
         id: `strength-stalled-${x.exerciseId}`, area: 'strength', level: 'warn', priority: (x.main ? 64 : 52) - i * 2,
@@ -1025,7 +1042,7 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
   }
 
   // --- Próximas semanas (previsión) ----------------------------------------------
-  const fc = analyzed.filter((x) => (x.status === 'fast' || x.status === 'good') && x.forecast.length)
+  const fc = analyzed.filter((x) => improvingRow(x) && x.forecast.length)
     .sort((a, b) => (b.main - a.main) || (a.logType === 'bodyweight') - (b.logType === 'bodyweight') || b.ratePctPerWeek - a.ratePctPerWeek).slice(0, 3);
   fc.forEach((x, i) => {
     const c = byId.get(x.exerciseId);

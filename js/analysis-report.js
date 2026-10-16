@@ -165,7 +165,7 @@ function strengthSection(a) {
     }
     for (const x of analyzed.slice(0, MAX_EXERCISES)) {
       const tag = KIND_TAG[x.kind] ? ` · ${KIND_TAG[x.kind]}` : '';
-      out.push(`- ${x.name}: 1RM est. ${kg(x.e1rmNow)} · ${rate(x.ratePctPerWeek)} · ${x.status === 'good' && x.slow ? 'bien, despacio para mi nivel' : STATUS[x.status]}${tag} · ${x.sessions} sesiones en ${x.windowWeeks} semanas${x.confidence ? ` · ${confTxt(x.confidence)}` : ''}`);
+      out.push(`- ${x.name}: 1RM est. ${kg(x.e1rmNow)} · ${rate(x.ratePctPerWeek)} · ${x.status === 'good' && x.slow ? (x.ratePctPerWeek > 0 ? 'bien, despacio para mi nivel' : 'despacio: sin subir, pero sin estancarse') : STATUS[x.status]}${tag} · ${x.sessions} sesiones en ${x.windowWeeks} semanas${x.confidence ? ` · ${confTxt(x.confidence)}` : ''}`);
     }
     if (analyzed.length > MAX_EXERCISES) out.push(`- (${analyzed.length - MAX_EXERCISES} ejercicios más con datos)`);
   }

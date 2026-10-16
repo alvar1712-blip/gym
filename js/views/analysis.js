@@ -19,7 +19,7 @@ import { lineChart, COLORS } from '../charts.js';
 import { buildAnalysis, areaInsights, isPlaceholder, AREA_LABEL, LEVEL_LABEL, DISCLAIMER } from '../analysis.js';
 import { reportText } from '../analysis-report.js';
 import { createAnalysisCache } from '../analysis-cache.js';
-import { rateText } from '../analysis-training.js';
+import { rateText, exerciseRateText } from '../analysis-training.js';
 import { predictionDataset } from '../race-predict.js';
 import { getProfile, profileExtrasMissing } from '../profile.js';
 import { weekFocus } from '../focus.js';
@@ -466,7 +466,7 @@ function exerciseList(rows) {
     h('span.list-item-title', x.name),
     h('span.list-item-sub', [`1RM est. ${kgTxt(x.e1rmNow)}`, `${x.sessions}${NB}sesiones`, KIND_SUB(x)].filter(Boolean).join(' · '))),
   h('span.an-ex-right',
-    h('span.an-ex-rate.tnum', rateText(x.ratePctPerWeek)),
+    h(x.status === 'stalled' && x.ratePctPerWeek > 0 ? 'span.an-ex-rate.an-ex-norec' : 'span.an-ex-rate.tnum', exerciseRateText(x)),
     stateTag(STATUS_STATE[x.status] || 'info', x.status === 'good' && x.slow ? 'Despacio' : STATUS_TAG[x.status], { small: true, className: 'an-ex-status' })),
   icon('chevron-right', 18, 'chev')));
   const list = h('div.list.an-ex-list', items);
