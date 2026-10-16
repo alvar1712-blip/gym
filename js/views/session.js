@@ -4,7 +4,7 @@
 import * as store from '../store.js';
 import {
   h, icon, header, sheet, confirmDialog, promptDialog, actionSheet, toast, undoToast,
-  rpePicker, field, textInput, numInput, emptyState, scrollBehavior, focusBar,
+  rpePicker, field, textInput, numInput, emptyState, scrollPageTo, focusBar,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress } from '../calc.js';
@@ -274,7 +274,7 @@ export function mountSession(root, params = {}) {
     let d = 0;
     if (r.bottom > limit) d = Math.min(r.bottom - limit, r.top - top); // sin esconderlo bajo la cabecera
     else if (r.top < top) d = r.top - top;
-    if (d) window.scrollBy({ top: d, behavior: scrollBehavior() });
+    if (d) scrollPageTo(window.scrollY + d);
   }
 
   // --- cabecera con cronómetro ---
@@ -397,7 +397,7 @@ export function mountSession(root, params = {}) {
       const over = btn.getBoundingClientRect().bottom + window.scrollY - top - visibleBottom();
       if (over > 0) top += over;
     }
-    window.scrollTo({ top: Math.max(0, top), behavior: scrollBehavior() });
+    scrollPageTo(top);
     if (focus) focusInCard(se);
   }
   /** ¿Se ve la tarjeta del ejercicio (su «Registrar», o la cabecera si no tiene editor) entre la cabecera y la barra? */
@@ -437,7 +437,8 @@ export function mountSession(root, params = {}) {
   }
   function scrollToEl(el, smooth) {
     const top = el.getBoundingClientRect().top + window.scrollY - (headerEl?.offsetHeight || 0) - 8;
-    window.scrollTo({ top: Math.max(0, top), behavior: smooth ? scrollBehavior() : 'auto' });
+    if (smooth) scrollPageTo(top);
+    else window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
   }
 
   // --- pie: añadir ejercicio, nota general, terminar ---

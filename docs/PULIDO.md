@@ -281,6 +281,11 @@ Auditoría (31 problemas confirmados por verificación independiente, 1 descarta
 - **Movimiento y transparencia**: todo el desplazamiento por código usa `scrollBehavior()` (instantáneo con
   «Reducir movimiento»); con «Reducir transparencia» la cabecera compacta, el pie de importar, la barra del
   periodo y el pie de la actividad son opacos.
+- **Desplazar la página por código: `ui.scrollPageTo(top)`**, no `window.scrollTo` suelto. El desplazamiento suave
+  lo puede cancelar el motor (WebKit al sustituir contenido) o arrastrar una animación anterior pendiente
+  (Chromium: «Siguiente pendiente» a veces no movía la página). `scrollPageTo` comprueba a los dos fotogramas que
+  se acerca y, al acabar el tiempo de la animación, que ha llegado; si no, coloca la página. Si el usuario toca,
+  arrastra o pulsa una tecla entretanto, manda él. Con «Reducir movimiento», colocación instantánea.
 - **Foco visible** con teclado: anillo verde (dentro de las filas de lista, para que no lo recorte la lista).
 
 Guardas: tests/e2e/visual-guard.test.cjs recorre todas las pantallas también con el texto al 125 % y al 150 % y,

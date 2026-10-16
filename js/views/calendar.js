@@ -3,7 +3,7 @@
 // Los cambios de un día (cambiar, mover, marcar) van al store 'plan' y NUNCA a la semana tipo.
 import * as store from '../store.js';
 import { navigate } from '../router.js';
-import { h, icon, header, screen, segmented, sheet, actionSheet, undoToast, emptyState, scrollBehavior } from '../ui.js';
+import { h, icon, header, screen, segmented, sheet, actionSheet, undoToast, emptyState, scrollPageTo } from '../ui.js';
 import {
   todayStr, fmtDate, fmtWeekRange, weekStart, addDays, addMonths, parseDate, isDateStr, weekDates, diffDays, dow,
   DAY_SHORT, DAY_LONG, DAY_LETTER, MONTH_LONG, MONTH_SHORT,
@@ -412,7 +412,7 @@ function showTop() {
   planFocusPending = true;
   setTimeout(() => {
     focusPlan(document.querySelector('.cal-dayview'));
-    window.scrollTo({ top: 0, behavior: scrollBehavior() });
+    scrollPageTo(0);
   }, 0);
 }
 

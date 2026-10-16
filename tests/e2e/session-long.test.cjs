@@ -377,3 +377,33 @@ test('sesiones largas: plegado, desplegar, superserie, circuito y «Siguiente pe
 test('WebKit: sesiones largas: plegado, desplegar, superserie, circuito y «Siguiente pendiente»', { skip: skipWebkit }, () => run('webkit'));
 test('sesiones largas a 375 × 667 con el texto al 150 % (Chromium)', () => bigText('chromium'));
 test('WebKit: sesiones largas a 375 × 667 con el texto al 150 %', { skip: skipWebkit }, () => bigText('webkit'));
+
+/**
+ * El motor ignora o cancela el desplazamiento suave (WebKit al sustituir contenido; Chromium con una animación
+ * anterior pendiente: en la batería completa «Siguiente pendiente» se quedaba a veces sin mover la página). Se simula
+ * un motor que no hace nada con behavior:'smooth': ui.scrollPageTo debe llevar igualmente la tarjeta a la vista.
+ */
+async function smoothIgnored(browser) {
+  const app = await openApp({ browser, beforeLoad: beforeLoad() });
+  const { page } = app;
+  try {
+    await seedRealistic(page, { months: 2 });
+    const s = await build(page, { n: 12, done: [0], cursor: 0 });
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      const orig = window.scrollTo.bind(window);
+      window.scrollTo = (a, b) => (a && typeof a === 'object' && a.behavior === 'smooth' ? undefined : orig(a, b));
+    });
+    for (const want of [1, 2, 3]) {
+      await page.waitForFunction((t) => document.querySelector('#tabbar .fb-next .sr-only').textContent.includes(t), `Siguiente pendiente: ${s.names[want]}.`, { timeout: 5000 });
+      await page.locator('#tabbar .fb-next').click();
+      await page.waitForFunction(registerVisible, s.se[want], { timeout: 5000 })
+        .catch(() => assert.fail(`«Siguiente pendiente» no llevó a la ${want + 1} con el desplazamiento suave ignorado`));
+    }
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+}
+test('«Siguiente pendiente» llega aunque el motor ignore el desplazamiento suave (Chromium)', () => smoothIgnored('chromium'));
+test('WebKit: «Siguiente pendiente» llega aunque el motor ignore el desplazamiento suave', { skip: skipWebkit }, () => smoothIgnored('webkit'));

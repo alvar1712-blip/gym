@@ -451,6 +451,39 @@ export function scrollBehavior() {
 const reducedMotion = () => scrollBehavior() === 'auto';
 
 /**
+ * Desplaza la página hasta `top` (suave salvo con «Reducir movimiento») y GARANTIZA que llega. El desplazamiento
+ * suave por código lo puede cancelar el motor (WebKit al sustituir contenido) o arrastrar una animación anterior
+ * que seguía pendiente (Chromium), y el usuario se quedaba sin ir a ningún sitio o en otro. Dos comprobaciones: a los
+ * dos fotogramas, si la página no se ha acercado al destino, salta; y al acabar el tiempo de la animación, si no ha
+ * llegado, se coloca. Si entretanto el usuario toca, arrastra o pulsa una tecla, o llega otra orden, manda eso.
+ */
+const PAGE_SCROLL_SETTLE_MS = 1000;
+let pageScrollGen = 0;
+let pageScrollInputAt = 0;
+if (typeof window !== 'undefined') {
+  const mark = () => { pageScrollInputAt = performance.now(); };
+  for (const ev of ['touchstart', 'wheel', 'keydown', 'pointerdown']) window.addEventListener(ev, mark, { capture: true, passive: true });
+}
+export function scrollPageTo(top) {
+  const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  const target = Math.min(Math.max(0, Math.round(top)), max);
+  const from = window.scrollY;
+  const gen = ++pageScrollGen;
+  const startedAt = performance.now();
+  // Asignar scrollTop es instantáneo y cancela una animación atascada; un scrollTo({behavior:'auto'}) se quedaba
+  // esperando detrás de ella
+  const place = () => { (document.scrollingElement || document.documentElement).scrollTop = target; };
+  if (reducedMotion()) { place(); return; }
+  window.scrollTo({ top: target, behavior: 'smooth' });
+  if (Math.abs(target - from) < 2) return;
+  const mine = () => gen === pageScrollGen && pageScrollInputAt <= startedAt + 50; // el toque que lo pidió, no otro
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (mine() && Math.abs(target - window.scrollY) >= Math.abs(target - from)) place();
+  }));
+  setTimeout(() => { if (mine() && Math.abs(target - window.scrollY) > 2) place(); }, PAGE_SCROLL_SETTLE_MS);
+}
+
+/**
  * Último control pulsado: iOS no da el foco a un <button> al tocarlo, así que document.activeElement suele ser
  * <body>. Con esto la hoja sabe a qué botón devolver el foco al cerrarse (VoiceOver).
  */
