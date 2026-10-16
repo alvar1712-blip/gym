@@ -196,8 +196,8 @@ Con 5 años de datos, CPU ×4 y mediana de 5:
 | Batería | Al empezar la ronda | Ahora |
 |---|---|---|
 | Unitarias | 723 | **762/762** |
-| E2E Chromium | 309 | **— (ver abajo)** |
-| E2E WebKit | 298 + 11 solo de Chromium | **— (ver abajo)** |
+| E2E Chromium | 309 | **329/329** |
+| E2E WebKit | 298 + 11 solo de Chromium | **318/318** + 11 solo de Chromium, 0 fallos |
 
 Cada bloque se cerró con su test que fallaba antes, la revisión adversarial y sus E2E en los dos motores.
 `session-long` se pasó 8 veces seguidas en paralelo con carga: 8/8; antes fallaba 1 de cada 6.
