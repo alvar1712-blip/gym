@@ -211,7 +211,22 @@ async function flow(browser) {
     assert.ok(aitems.every((i) => i.expanded === 'false' && i.inert), 'plegados por defecto');
     assert.strictEqual(await page.locator(`${sum} .an-key-step`).count(), aitems.length, 'un «Qué hacer» por punto');
     assert.deepStrictEqual(await confTwice(page, sum), [], 'la confianza, una sola vez (Análisis)');
-    assert.ok(await page.locator(`${sum} .focus-low`).count() >= 1, 'el escenario cubre una conclusión de confianza baja');
+    // Cada nivel de confianza se dice UNA vez, sin depender de que los datos sintéticos de hoy den una conclusión de
+    // confianza baja (cambian con la fecha): baja o insuficiente, en la cabecera; media o alta, dentro del panel
+    const once = await page.evaluate(async () => {
+      const { focusItem } = await import('./js/views/focus-item.js');
+      const ul = document.createElement('ul');
+      document.body.append(ul);
+      const labels = { low: 'Confianza baja', insufficient: 'Datos insuficientes', medium: 'Confianza media', high: 'Confianza alta' };
+      const out = Object.entries(labels).map(([level, label]) => {
+        const li = focusItem({ key: `t-${level}`, id: `t-${level}`, level: 'warn', title: 'Prueba', text: 'Texto de prueba.', step: 'recheck', stepLabel: 'Reevalúa en una semana', confidence: { level, label } }, { scope: 'test' });
+        ul.append(li);
+        return [level, !!li.querySelector('.focus-low'), !!li.querySelector('.focus-panel [class*="state-conf-"]')];
+      });
+      ul.remove();
+      return out;
+    });
+    assert.deepStrictEqual(once, [['low', true, false], ['insufficient', true, false], ['medium', false, true], ['high', false, true]], 'la confianza, una sola vez y en su sitio');
     const afirst = `${sum} .focus-item:first-child`;
     await page.locator(`${afirst} .focus-toggle`).click();
     await settled(page, afirst);
