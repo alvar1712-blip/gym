@@ -164,6 +164,45 @@ for (const browser of browsers) {
     }
   });
 
+  test(`${browser}: restaurar en un iPhone sin datos (recién instalada): sin «Exportar copia antes» y «Sustituir todo» como acción principal`, async () => {
+    // Ronda 10 (copias-1): en un móvil nuevo o tras borrar los datos de Safari, la hoja proponía como botón principal
+    // exportar la app vacía (una «copia» vacía con la fecha de hoy junto a la buena) y decía «Solo vive en este
+    // iPhone: … también se pierde» sin sujeto (no hay punto de restauración del que hablar).
+    const app = await openApp({ browser });
+    const { page } = app;
+    try {
+      await page.clock.setFixedTime(NOW);
+      await reload(page);
+      assert.strictEqual(await page.evaluate(() => window.__app.store.hasDataToProtect()), false, 'recién instalada');
+      const file = await page.evaluate(() => {
+        const o = window.__app.store.exportData();
+        o.data.bodyweight = [{ id: '2026-09-20', kg: 75.4 }];
+        return o;
+      });
+      await importViaUI(page, file);
+      const msg = await sheetPanel(page).innerText();
+      assert.match(msg, /SUSTITUYE todos los datos de este iPhone/);
+      assert.doesNotMatch(msg, /Solo vive en este iPhone|también se pierde/, 'sin el párrafo del punto de restauración');
+      assert.strictEqual(await sheetPanel(page).locator('.cfg-guard-export').count(), 0, 'nada que exportar antes');
+      assert.match(await sheetPanel(page).locator('.cfg-guard-go').getAttribute('class'), /\bbtn-primary\b/, '«Sustituir todo» es la acción principal');
+      await shot(page, `restore-fresh-import-${browser}`);
+      await sheetBtn(page, 'Sustituir todo').click();
+      await page.waitForFunction(() => window.__app.store.count('bodyweight') === 1, null, { timeout: 5000 });
+      assert.deepStrictEqual(await reservedOnDisk(page), [], 'sin datos, no hay punto de restauración');
+      // «Borrar todo» sin nada que proteger (tras borrar lo importado): tampoco ofrece exportar antes.
+      await page.evaluate(async () => { await window.__app.store.wipeAll(); await window.__app.store.discardRestorePoint(); });
+      await go(page, '#/settings/data');
+      await page.locator('.cfg-wipe').click();
+      assert.strictEqual(await sheetPanel(page).locator('.cfg-guard-export').count(), 0);
+      assert.doesNotMatch(await sheetPanel(page).innerText(), /Solo vive en este iPhone/);
+      await sheetBtn(page, 'Cancelar').click();
+      await waitNoSheet(page);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+
   test(`${browser}: importar — punto de restauración, recuperar y volver (intercambio)`, async () => {
     const app = await setup(browser);
     const { page } = app;

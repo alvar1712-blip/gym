@@ -95,11 +95,14 @@
   color: var(--text);
   font: inherit;
 }
-.today-backup .icon.warn { color: var(--warn); flex: none; }
-.today-backup .chev { color: var(--muted); flex: none; }
 .today-backup .banner-main { display: flex; flex-direction: column; gap: 1px; }
-/* Compacto (≈ 60 px): no debe empujar «Empezar» bajo la barra de pestañas en un iPhone SE. */
-.today-backup { padding: 9px 12px; gap: 10px; }
+/* Compacto (≈ 60 px): no debe empujar «Empezar» bajo la barra de pestañas en un iPhone SE. Dos botones (ronda 10):
+   el aviso, que lleva a Copias y datos, y «Ahora no» (sin icono ni flecha: el fondo de aviso ya lo señala y así el
+   título, «Última copia: hace 21 días», cabe entero a 375 px). */
+.today-backup { padding: 6px 6px 6px 12px; gap: 8px; }
+.today-backup-go { flex: 1; min-width: 0; display: flex; align-items: center; padding: 3px 0; min-height: 44px;
+  background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.today-backup-later { flex: none; padding: 0 8px; font-size: calc(14px * var(--ts)); }
 .today-backup .banner-title { font-size: calc(15px * var(--ts)); line-height: 1.3; }
 .today-backup .banner-text { font-size: calc(13px * var(--ts)); line-height: 1.3; }
 .today-backup .banner-title, .today-backup .banner-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

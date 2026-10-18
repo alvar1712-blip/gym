@@ -139,15 +139,15 @@ test('índice de Ajustes: secciones, semana tipo resumida, aviso de copia, insta
     await page.locator('.cfg-about').scrollIntoViewIfNeeded();
     await shot(page, 'settings-index-bottom');
 
-    // Con datos y sin copia: aviso destacado + insignia.
+    // Con datos y sin copia: aviso destacado arriba; la fila no lo repite (ronda 10: una sola señal, sin insignia).
     await seedData(page);
     await go(page, '#/today');
     await go(page, '#/settings');
     assert.strictEqual(await page.locator('.cfg-banner').count(), 1);
     assert.match(await page.locator('.cfg-banner').innerText(), /Aún no has hecho ninguna copia/);
-    assert.match(await page.locator('.cfg-data-row').innerText(), /Copia pendiente/);
-    // La insignia va junto al título, dentro del texto: en 375 y 390 px el título se lee entero y el
-    // subtítulo no se queda en una columna estrecha (antes: «Copias y…» y 6–7 líneas).
+    assert.doesNotMatch(await page.locator('.cfg-data-row').innerText(), /Copia pendiente/);
+    // En 375 y 390 px el título de la fila se lee entero y el subtítulo no se queda en una columna estrecha
+    // (antes: «Copias y…» y 6–7 líneas).
     const vp = page.viewportSize();
     for (const width of [375, 390]) {
       await page.setViewportSize({ width, height: vp.height });
@@ -155,12 +155,12 @@ test('índice de Ajustes: secciones, semana tipo resumida, aviso de copia, insta
         const row = document.querySelector('.cfg-data-row');
         const title = row.querySelector('.list-item-title');
         return {
-          inMain: !!row.querySelector('.list-item-main .cfg-badge'),
+          badge: !!row.querySelector('.cfg-badge'),
           clipped: title.scrollWidth > title.clientWidth,
           mainW: row.querySelector('.list-item-main').offsetWidth,
         };
       });
-      assert.ok(fit.inMain, 'insignia dentro del bloque de texto');
+      assert.ok(!fit.badge, 'sin insignia repetida');
       assert.ok(!fit.clipped, `${width} px: título «Copias y datos» sin cortar`);
       assert.ok(fit.mainW > 200, `${width} px: el texto tiene ancho (${fit.mainW} px)`);
       assert.ok(await noHScroll(page));
@@ -202,6 +202,59 @@ test('índice de Ajustes: secciones, semana tipo resumida, aviso de copia, insta
       await go(page, r);
       assert.strictEqual(await page.locator('.topbar .back-btn').count(), 1, `${r} sin botón atrás`);
     }
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('aviso de copia (ronda 10): el primer aviso respeta el mismo margen desde la instalación; una sola señal por pantalla', async () => {
+  const app = await setup();
+  const { page } = app;
+  try {
+    const overdue = () => page.evaluate(() => window.__app.store.backupOverdue());
+    const installedDaysAgo = (d) => page.evaluate(async (days) => {
+      const st = window.__app.store;
+      await st.save('meta', { ...st.get('meta', 'app'), createdAt: Date.now() - days * 86400000 });
+    }, d);
+    // copias-3: instalada ayer, primer pesaje y nunca una copia → aún no avisa (el umbral es de 7 días, como con copia).
+    await installedDaysAgo(1);
+    await page.evaluate(() => window.__app.store.save('bodyweight', { id: '2026-09-23', kg: 75.4 }));
+    assert.strictEqual(await overdue(), false, 'instalada hace 1 día: sin aviso');
+    await go(page, '#/today');
+    assert.strictEqual(await page.locator('.today-backup').count(), 0, 'Hoy sin aviso');
+    assert.ok(await page.locator('#tabbar [data-tab="settings"] .tab-dot').isHidden(), 'sin punto en la pestaña Ajustes');
+    await go(page, '#/settings');
+    assert.strictEqual(await page.locator('.cfg-banner').count(), 0);
+    assert.match(await page.locator('.cfg-data-row').innerText(), /Todavía no has hecho ninguna copia/);
+    await installedDaysAgo(7);
+    assert.strictEqual(await overdue(), false, 'justo 7 días: aún no («más de»)');
+    await installedDaysAgo(8);
+    assert.strictEqual(await overdue(), true, 'instalada hace 8 días sin copia: avisa');
+    // Un reloj que va hacia atrás (instalación «en el futuro») no silencia el aviso.
+    await installedDaysAgo(-30);
+    assert.strictEqual(await overdue(), true, 'fecha de instalación no fiable: avisa como antes');
+    await installedDaysAgo(8);
+
+    // copias-4: una sola señal en Ajustes (el aviso de arriba; la fila «Copias y datos» solo dice la fecha).
+    await go(page, '#/today');
+    await go(page, '#/settings');
+    assert.strictEqual(await page.locator('.cfg-banner').count(), 1);
+    assert.strictEqual(await page.locator('.cfg-data-row .cfg-badge').count(), 0, 'sin insignia «Copia pendiente» repetida');
+    assert.strictEqual(await page.locator('.cfg-data-row .cfg-ico-warn').count(), 0, 'sin icono de aviso repetido');
+    assert.match(await page.locator('.cfg-data-row').innerText(), /Todavía no has hecho ninguna copia/);
+    // … y una sola en Copias y datos: el bloque «Última copia» avisa; no hay además un banner que lo repita.
+    await page.evaluate(() => window.__app.store.saveSettings({ lastBackupAt: Date.now() - 21 * 86400000 }));
+    await go(page, '#/settings/data');
+    const block = page.locator('.cfg-block[data-block="backup"]');
+    assert.strictEqual(await block.locator('.banner').count(), 0, 'sin banner bajo «Última copia»');
+    assert.strictEqual(await page.locator('.cfg-overdue').count(), 1, 'una señal de aviso');
+    const txt = await block.innerText();
+    assert.strictEqual((txt.match(/días/g) || []).length, 1, `los días se dicen una vez: ${JSON.stringify(txt)}`);
+    assert.match(txt, /Hace 21 días/);
+    assert.match(await page.locator('.cfg-overdue').innerText(), /Si pierdes el iPhone/);
+    assert.ok(await noHScroll(page));
+    await shot(page, 'settings-data-overdue');
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

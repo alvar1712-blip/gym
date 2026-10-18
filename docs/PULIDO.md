@@ -745,3 +745,37 @@ nombres que no dicen cuál se muestra. Reglas:
   (`analysisWeightTrend` = la tendencia de `analyzeWeight` con ciclo natural, hormonal y hombre; con `trend` dado se
   usa ese mismo objeto), `tests/unit/overview.test.mjs` (texto de la fila) y `tests/e2e/analysis.test.cjs` (etiqueta
   del KPI).
+
+### 34.3 Copias: avisar sin repetir y restaurar en un iPhone vacío
+
+- **Restaurar o borrar sin nada tuyo que proteger** (`store.hasDataToProtect()` falso: iPhone nuevo, datos de Safari
+  borrados): la primera confirmación no ofrece «Exportar copia antes» (exportaría la app vacía y dejaría en Archivos
+  una «copia» vacía con la fecha de hoy, la más reciente de la carpeta) y «Sustituir todo»/«Continuar» pasa a ser el
+  botón principal. Sin datos ni punto de restauración previo no se añade el párrafo «Solo vive en este iPhone…», que
+  hablaba de un punto que no existe. Con datos, todo sigue igual (§22).
+- **Mismo margen sin ninguna copia**: `store.backupOverdue` cuenta los `backupReminderDays` desde la instalación
+  (`meta.app.createdAt`, que ya viaja en la copia) cuando no hay `lastBackupAt`: el primer pesaje ya no avisa al
+  instante. Si `createdAt` falta o es posterior a ahora (reloj cambiado), no es fiable y se avisa como antes. Con copia
+  no cambia nada.
+- **«Ahora no» en el aviso de Hoy**: lo oculta **solo en Hoy** durante 3 días, sin pasar del umbral del recordatorio
+  (con 1 día, 1). Es una comodidad de este dispositivo: `localStorage['entreno.backupSnoozeUntil']` (fecha límite en
+  ms), leído y escrito con try/catch; un valor ilegible o más largo que el plazo (reloj cambiado) no cuenta. No viaja en
+  la copia ni toca los ajustes; importar o borrar todo lo quita con las demás claves `entreno.…`. Como el plazo nunca
+  pasa del umbral, tras exportar caduca antes de que la copia vuelva a vencer. El punto de la pestaña Ajustes y el aviso
+  de Ajustes siguen igual. Con una sesión en curso, Hoy no pinta el aviso (no empuja «Continuar»).
+- **El aviso de Hoy no promete exportar**: lleva a Copias y datos y lo dice («Ir a Copias y datos»). Son dos botones
+  (el aviso y «Ahora no») en un contenedor `div.today-backup`, sin icono ni flecha para que «Última copia: hace 21 días»
+  quepa entero a 375 px (≤ 72 px de alto, como antes).
+- **Una sola señal por pantalla**: en Ajustes avisa el banner de arriba; la fila «Copias y datos» solo dice la fecha
+  (sin insignia «Copia pendiente» ni icono de aviso). En Copias y datos avisa el propio bloque «Última copia» (la
+  antigüedad en color de aviso y una línea `.cfg-overdue` con el porqué), sin el banner «Hace más de 7 días…» que
+  repetía «Hace 21 días».
+- **Sin verificar (copias-6)**: en un iPhone real, si en la hoja de compartir se elige «Guardar en Archivos» y se
+  cancela en el selector de carpetas, ¿`navigator.share` se resuelve (y la app anotaría una copia que no existe)? No se
+  cambia código sin comprobarlo en un dispositivo (PWA instalada y Safari: Exportar → Guardar en Archivos → Cancelar →
+  mirar si «Última copia» cambia). Si cambia, la única mitigación honesta es un texto («Comprueba en Archivos que se ha
+  guardado»): la API no da más información.
+- **Sin cambio (copias-7)**: tras restaurar una copia antigua el aviso reaparece con sus días; es correcto.
+- **Guardas**: `tests/e2e/restore-point.test.cjs` («restaurar en un iPhone sin datos», Chromium y WebKit),
+  `tests/e2e/settings.test.cjs` («aviso de copia (ronda 10)») y `tests/e2e/calendar.test.cjs` («aviso de copia en Hoy
+  (ronda 10)»).

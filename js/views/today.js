@@ -46,8 +46,10 @@ export async function mountToday(root) {
   //  · Antes de entrenar → «Te toca hoy» con «Empezar»; «Lo importante esta semana» y el check-in, al final.
   //  · Hecho o descanso → no queda nada que empezar: «Lo importante esta semana» sube por encima de «Registrar».
   //  · Evento en las próximas 2 semanas → tarjeta justo debajo de «Te toca hoy»; más lejos, una línea.
-  if (store.backupOverdue()) content.appendChild(backupBanner());
   const active = store.activeSession();
+  // Aviso de copia (ronda 10): no encima de una sesión en curso, ni si se pospuso con «Ahora no» (la pestaña Ajustes
+  // y Ajustes siguen avisando).
+  if (!active && store.backupOverdue() && !backupSnoozed()) content.appendChild(backupBanner());
   const st = dayStatus(today, ctx);
   const live = !!active && (active.planDate ?? active.date) === today && !st.sessions.length && !st.manual;
   if (active) content.appendChild(activeCard(active, timers, live ? st.plan : null));
@@ -253,23 +255,49 @@ function outcomeLine(race, today) {
   }, h('span.today-race-text', h('span.today-race-emoji', { 'aria-hidden': 'true' }, '🏁\u00a0'), text), icon('chevron-right', 18));
 }
 
-/** Aviso de copia de seguridad pendiente → Ajustes › Datos. Compacto: no debe empujar «Empezar». */
+// «Ahora no» del aviso de copia (ronda 10): oculta el aviso SOLO en Hoy unos días. Es una comodidad de este
+// dispositivo (localStorage, no viaja en la copia; importar o borrar todo la quita con los demás 'entreno.…').
+const BACKUP_SNOOZE_KEY = 'entreno.backupSnoozeUntil';
+const BACKUP_SNOOZE_DAYS = 3;
+/** Días que pospone «Ahora no»: 3, sin pasar del umbral del recordatorio (con 1 día, 1). */
+const snoozeMs = () => Math.min(BACKUP_SNOOZE_DAYS, store.settings()?.backupReminderDays ?? 7) * 86400000;
+
+/** true mientras dura el aplazamiento. Un valor ilegible o más largo que el plazo (reloj cambiado) no cuenta. */
+function backupSnoozed(now = Date.now()) {
+  let until;
+  try { until = Number(localStorage.getItem(BACKUP_SNOOZE_KEY)); } catch { return false; }
+  return Number.isFinite(until) && until > now && until - now <= snoozeMs();
+}
+
+function snoozeBackup(now = Date.now()) {
+  try { localStorage.setItem(BACKUP_SNOOZE_KEY, String(now + snoozeMs())); } catch { /* sin almacenamiento: solo esta vez */ }
+}
+
+/**
+ * Aviso de copia de seguridad pendiente → Ajustes › Copias y datos (allí se exporta; el texto no promete exportar
+ * desde aquí). Compacto: no debe empujar «Empezar». «Ahora no» lo pospone en Hoy (backupSnoozed).
+ */
 function backupBanner() {
   const last = store.settings()?.lastBackupAt;
   const days = last ? Math.max(0, Math.floor((Date.now() - last) / 86400000)) : null;
   const title = days == null
     ? 'Sin copia de seguridad'
     : `Última copia: hace ${days} ${days === 1 ? 'día' : 'días'}`;
-  return h('button.banner.banner-warn.today-backup', {
-    type: 'button',
-    'aria-label': `${title}. Tus datos solo están en este iPhone. Toca para exportar una copia.`,
-    onClick: () => navigate('#/settings/data'),
-  },
-  icon('alert', 20, 'warn'),
-  h('span.banner-main',
-    h('span.banner-title', title),
-    h('span.banner-text', 'Toca para exportar una copia')),
-  icon('chevron-right', 20, 'chev'));
+  const banner = h('div.banner.banner-warn.today-backup',
+    h('button.today-backup-go', {
+      type: 'button',
+      'aria-label': `${title}. Tus datos solo están en este iPhone. Abre Copias y datos para hacer una copia.`,
+      onClick: () => navigate('#/settings/data'),
+    },
+    h('span.banner-main',
+      h('span.banner-title', title),
+      h('span.banner-text', 'Ir a Copias y datos'))),
+    h('button.btn.btn-ghost.btn-sm.today-backup-later', {
+      type: 'button',
+      'aria-label': 'Ahora no: ocultar este aviso en Hoy unos días',
+      onClick: () => { snoozeBackup(); banner.remove(); },
+    }, 'Ahora no'));
+  return banner;
 }
 
 /**

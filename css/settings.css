@@ -12,9 +12,7 @@
   background: var(--surface-3);
   color: var(--accent);
 }
-.cfg-ico-warn { background: var(--warn-soft); color: var(--warn); }
-.cfg-item-warn .list-item-sub { color: var(--warn); }
-/* Título + insignia («Copia pendiente»): en la misma línea si caben; si no, la insignia pasa debajo. */
+/* Título + insignia («Completar» en Perfil): en la misma línea si caben; si no, la insignia pasa debajo. */
 .cfg-title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .cfg-title-line .list-item-title { min-width: 0; max-width: 100%; }
 .cfg-badge { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -151,7 +149,9 @@
 .cfg-last-label { font-size: calc(13px * var(--ts)); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .cfg-last-value { font-size: calc(20px * var(--ts)); font-weight: 800; font-variant-numeric: tabular-nums; }
 .cfg-last-ago { font-size: calc(14px * var(--ts)); color: var(--text-2); }
-.cfg-overdue .icon { color: var(--warn); flex: none; }
+.cfg-last-overdue .cfg-last-ago { color: var(--warn); font-weight: 650; }
+.cfg-overdue { display: flex; align-items: flex-start; gap: 6px; margin: 4px 0 0; font-size: calc(14px * var(--ts)); color: var(--text-2); line-height: 1.35; }
+.cfg-overdue .icon { color: var(--warn); flex: none; margin-top: 1px; }
 .cfg-export { margin-top: 4px; }
 .cfg-csv-btn { justify-content: flex-start; gap: 10px; }
 .cfg-csv-label { flex: 1; text-align: left; }

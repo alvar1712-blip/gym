@@ -585,14 +585,20 @@ export async function requestPersist() {
   return persistInfo;
 }
 
-/** true si hay datos del usuario (sesiones, peso…) y no hay copia en `days` días. */
+/**
+ * true si hay datos del usuario (sesiones, peso…) y no hay copia en `days` días. Sin ninguna copia, el mismo margen
+ * cuenta desde la instalación (meta.app.createdAt, ronda 10): el primer pesaje no avisa al instante. Si esa fecha
+ * falta o es posterior a ahora (reloj cambiado), no es fiable y se avisa como antes.
+ */
 export function backupOverdue(now = Date.now()) {
   const s = settings();
   const hasUserData = ['sessions', 'bodyweight', 'goals', 'checkins', 'context', 'pastRecords', 'races'].some((st) => count(st) > 0);
   if (!hasUserData) return false;
   const days = s.backupReminderDays ?? 7;
-  if (!s.lastBackupAt) return true;
-  return now - s.lastBackupAt > days * 86400000;
+  if (s.lastBackupAt) return now - s.lastBackupAt > days * 86400000;
+  const installed = maps.meta.get('app')?.createdAt;
+  if (!(installed > 0) || installed > now) return true;
+  return now - installed > days * 86400000;
 }
 
 export function today() {

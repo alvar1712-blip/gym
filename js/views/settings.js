@@ -51,17 +51,16 @@ function countsText(c, { all = false, sep = ', ' } = {}) {
  * Fila de lista que navega. La insignia va junto al título, dentro del bloque de texto (pasa debajo
  * si no cabe): al lado de la fila le quitaría el ancho al título y al subtítulo en pantallas de 375 px.
  */
-function navRow({ ico, title, sub = null, href, warn = false, extra = null, badge = null, aria = null, className = '' }) {
-  const titleEl = h('span.list-item-title', title);
-  return h(`button.list-item.cfg-item${warn ? '.cfg-item-warn' : ''}`, {
+function navRow({ ico, title, sub = null, href, extra = null, aria = null, className = '' }) {
+  return h('button.list-item.cfg-item', {
     type: 'button',
     class: className || null,
     'aria-label': aria,
     onClick: () => navigate(href),
   },
-  h(`span.cfg-ico${warn ? '.cfg-ico-warn' : ''}`, icon(ico, 20)),
+  h('span.cfg-ico', icon(ico, 20)),
   h('span.list-item-main',
-    badge ? h('span.cfg-title-line', titleEl, badge) : titleEl,
+    h('span.list-item-title', title),
     sub ? h('span.list-item-sub.wrap', sub) : null,
     extra),
   icon('chevron-right', 20, 'chev'));
@@ -170,9 +169,9 @@ export function mountSettings(root) {
     h('div.section-title', 'Datos'),
     h('div.list',
       navRow({
-        ico: 'download', title: 'Copias y datos', href: '#/settings/data', warn: overdue, className: 'cfg-data-row',
+        // Ronda 10: sin insignia ni icono de aviso; el aviso de arriba ya lo dice (una sola señal por pantalla).
+        ico: 'download', title: 'Copias y datos', href: '#/settings/data', className: 'cfg-data-row',
         sub: `${lastBackupShort(s)} · exportar, importar, CSV, borrar`,
-        badge: overdue ? h('span.badge.badge-warn.cfg-badge', 'Copia pendiente') : null,
       })),
     h('div.section-title', 'Instalación'),
     installCard(),
@@ -503,22 +502,21 @@ export function mountThresholds(root) {
 export function mountData(root) {
   const c = screen(root, { title: 'Copias y datos', back: '#/settings' });
   const lastBox = h('div.cfg-last');
-  const warnBox = h('div.cfg-warnbox');
 
   function paintLast() {
     const s = store.settings();
     const ts = s.lastBackupAt;
+    // Ronda 10: el aviso va en el propio bloque (la antigüedad en color de aviso y una línea con el porqué), sin un
+    // banner debajo que repita «Hace más de 7 días…» junto a «Hace 21 días».
+    const overdue = store.backupOverdue();
+    lastBox.classList.toggle('cfg-last-overdue', overdue);
     lastBox.replaceChildren(
       h('span.cfg-last-label', 'Última copia'),
       h('span.cfg-last-value', ts ? fmtStamp(ts) : 'Nunca'),
-      h('span.cfg-last-ago', ts ? cap(relDay(dateFromTs(ts), todayStr())) : 'Exporta la primera ahora.'));
-    warnBox.replaceChildren(...(store.backupOverdue()
-      ? [h('div.banner.banner-warn.cfg-overdue', icon('alert', 22),
-        h('div.banner-main',
-          h('div.banner-title', overdueTitle(s)),
-          h('div.banner-text', 'Si pierdes el iPhone o se borran los datos del navegador, solo podrás recuperarlos con una copia.')))]
-      : []));
-    warnBox.hidden = !warnBox.childElementCount;
+      h('span.cfg-last-ago', ts ? cap(relDay(dateFromTs(ts), todayStr())) : 'Exporta la primera ahora.'),
+      ...(overdue
+        ? [h('p.cfg-overdue', icon('alert', 18), h('span', 'Si pierdes el iPhone o se borran los datos del navegador, solo podrás recuperarlos con una copia.'))]
+        : []));
   }
 
   // ---------- exportar / importar ----------
@@ -545,6 +543,9 @@ export function mountData(root) {
    * la copia se exporta DESDE el propio toque (iOS solo abre la hoja de compartir así).
    */
   function guardSheet({ title, message, confirmText }) {
+    // Ronda 10: sin nada tuyo que proteger (iPhone nuevo, datos del sitio borrados) no se ofrece «Exportar copia antes»
+    // (dejaría en Archivos una copia vacía con la fecha de hoy junto a la buena) y continuar pasa a ser lo principal.
+    const canExport = store.hasDataToProtect();
     return new Promise((resolve) => {
       sheet({
         title,
@@ -553,9 +554,11 @@ export function mountData(root) {
         body: (close) => h('div.stack',
           String(message).split('\n\n').filter(Boolean).map((p) => h('p.sheet-msg', p)),
           h('div.sheet-actions.sheet-actions-inline',
-            h('button.btn.btn-block.btn-primary.cfg-guard-export', { type: 'button', onClick: () => close({ exported: onExport() }) },
-              icon('share', 20), 'Exportar copia antes'),
-            h('button.btn.btn-block.btn-danger-ghost.cfg-guard-go', { type: 'button', onClick: () => close({ go: true }) }, confirmText),
+            canExport
+              ? h('button.btn.btn-block.btn-primary.cfg-guard-export', { type: 'button', onClick: () => close({ exported: onExport() }) },
+                icon('share', 20), 'Exportar copia antes')
+              : null,
+            h(`button.btn.btn-block.${canExport ? 'btn-danger-ghost' : 'btn-primary'}.cfg-guard-go`, { type: 'button', onClick: () => close({ go: true }) }, confirmText),
             h('button.btn.btn-block.btn-secondary', { type: 'button', onClick: () => close(null) }, 'Cancelar'))),
       });
     });
@@ -568,7 +571,8 @@ export function mountData(root) {
     if (store.hasDataToProtect()) {
       return `Antes se guardará en este iPhone un punto de restauración con lo de ahora${info ? ` (sustituye al ${when})` : ''}, para poder recuperarlo aquí. ${where}`;
     }
-    return info ? `Ahora no hay registros tuyos que guardar: se conserva el punto de restauración ${when}. ${where}` : where;
+    // Sin datos ni punto previo no hay nada de lo que hablar (antes: «Solo vive en este iPhone…» sin sujeto).
+    return info ? `Ahora no hay registros tuyos que guardar: se conserva el punto de restauración ${when}. ${where}` : '';
   }
 
   /** No se pudo crear el punto de restauración: no se ha destruido nada. */
@@ -853,7 +857,6 @@ export function mountData(root) {
     h('section.card.cfg-block', { dataset: { block: 'backup' } },
       h('h2.card-title', 'Copia de seguridad'),
       lastBox,
-      warnBox,
       h('button.btn.btn-primary.btn-lg.btn-block.cfg-export', { type: 'button', onClick: onExport }, icon('share', 22), 'Exportar copia'),
       h('p.cfg-hint', 'Se abre la hoja de compartir: elige «Guardar en Archivos» (o Google Drive) y guárdala en una carpeta que recuerdes.'),
       h('button.btn.btn-secondary.btn-block.cfg-import', { type: 'button', onClick: onImport }, icon('upload', 20), 'Importar copia'),

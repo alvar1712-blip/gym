@@ -543,6 +543,78 @@ test('iPhone SE con aviso de copia: «Empezar» se ve sin desplazar; el Día 3 l
   }
 });
 
+test('aviso de copia en Hoy (ronda 10): «Ahora no» lo oculta en Hoy unos días; Ajustes sigue avisando; no tapa la sesión en curso', async () => {
+  const app = await setup(MON);
+  const { page } = app;
+  const KEY = 'entreno.backupSnoozeUntil';
+  const dotHidden = () => page.locator('#tabbar [data-tab="settings"] .tab-dot').isHidden();
+  try {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.evaluate(async () => {
+      const st = window.__app.store;
+      await st.save('bodyweight', { id: '2026-09-20', kg: 75.4 });
+      await st.saveSettings({ lastBackupAt: Date.now() - 9 * 86400000 });
+    });
+    await go(page, '#/today');
+    const banner = page.locator('.today-backup');
+    assert.match(await banner.innerText(), /Última copia: hace 9 días/);
+    // copias-5: lleva a Copias y datos; no promete exportar desde aquí.
+    assert.doesNotMatch(await banner.innerText(), /exportar/i);
+    assert.match(await banner.innerText(), /Copias y datos/);
+    const fit = await page.evaluate(() => {
+      const b = document.querySelector('.today-backup');
+      const t = b.querySelector('.banner-title');
+      return { h: b.getBoundingClientRect().height, clipped: t.scrollWidth > t.clientWidth };
+    });
+    assert.ok(fit.h <= 72 && !fit.clipped, `compacto y sin cortar a 375 px (${JSON.stringify(fit)})`);
+    assert.ok(await noHScroll(page));
+    await shot(page, 'calendar-today-backup-later');
+    // copias-2: «Ahora no» lo quita de Hoy (y no reaparece al volver), pero la pestaña y Ajustes siguen avisando.
+    await page.locator('.today-backup-later').click();
+    assert.strictEqual(await banner.count(), 0, 'se quita al momento');
+    await go(page, '#/progress');
+    await go(page, '#/today');
+    assert.strictEqual(await banner.count(), 0, 'no reaparece al volver a Hoy');
+    assert.strictEqual(await dotHidden(), false, 'el punto de la pestaña Ajustes sigue');
+    await go(page, '#/settings');
+    assert.strictEqual(await page.locator('.cfg-banner').count(), 1, 'Ajustes sigue avisando');
+    const until = await page.evaluate((k) => Number(localStorage.getItem(k)), KEY);
+    assert.strictEqual(until, new Date(`${MON}T10:00:00`).getTime() + 3 * 86400000, '3 días (umbral de 7)');
+    // Dentro del plazo sigue oculto; pasado, vuelve.
+    await setClock(app, WED);
+    assert.strictEqual(await banner.count(), 0, 'miércoles: aún pospuesto');
+    await setClock(app, FRI);
+    assert.match(await banner.innerText(), /Última copia: hace 13 días/, 'viernes: vuelve');
+    // Nunca más que el umbral: con un recordatorio de 1 día, «Ahora no» lo pospone 1 día.
+    await page.evaluate(() => window.__app.store.saveSettings({ backupReminderDays: 1 }));
+    await go(page, '#/progress');
+    await go(page, '#/today');
+    await page.locator('.today-backup-later').click();
+    assert.strictEqual(await page.evaluate((k) => Number(localStorage.getItem(k)), KEY), new Date(`${FRI}T10:00:00`).getTime() + 86400000);
+    // Un valor ilegible o que pasa del umbral (reloj cambiado) no lo silencia.
+    await page.evaluate((k) => localStorage.setItem(k, 'basura'), KEY);
+    await go(page, '#/progress');
+    await go(page, '#/today');
+    assert.strictEqual(await banner.count(), 1, 'valor ilegible: avisa');
+    await page.evaluate((k) => localStorage.setItem(k, String(Date.now() + 30 * 86400000)), KEY);
+    await go(page, '#/progress');
+    await go(page, '#/today');
+    assert.strictEqual(await banner.count(), 1, 'más allá del umbral: avisa');
+    // Con una sesión en curso, el aviso no empuja «Continuar» (la pestaña Ajustes sigue avisando).
+    await setClock(app, SAT);
+    assert.strictEqual(await banner.count(), 1);
+    await page.locator('.today-start').click();
+    await waitHash(page, /^#\/session\/s_/);
+    await go(page, '#/today');
+    assert.strictEqual(await page.locator('.today-active').count(), 1);
+    assert.strictEqual(await banner.count(), 0, 'sin aviso encima de la sesión en curso');
+    assert.strictEqual(await dotHidden(), false);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('Día 3: la carrera registrada con el acceso rápido de Hoy cuenta para la rutina (parcial, no «sustituido»)', async () => {
   const app = await setup(WED);
   const { page } = app;

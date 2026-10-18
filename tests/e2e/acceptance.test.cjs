@@ -488,6 +488,12 @@ test('CRITERIO 2: exporto una copia, borro los datos, importo la copia y todo qu
   let { page } = app;
   try {
     await seedEverything(page);
+    // Instalada hace un mes (los datos sembrados abarcan semanas): sin ninguna copia, el aviso cuenta el umbral desde
+    // la instalación (ronda 10, docs/PULIDO.md §34.3), así que ya está vencida.
+    await page.evaluate(async (t) => {
+      const st = window.__app.store;
+      await st.save('meta', { ...st.get('meta', 'app'), createdAt: t });
+    }, madrid(WED, '12:00').getTime() - 30 * 86400000);
     await reload(page); // hay una sesión en curso: la app la abre
     assert.strictEqual(await hashOf(page), '#/session/ses_live');
 
