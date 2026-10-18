@@ -838,6 +838,19 @@ test('dataRange e índice: se reutiliza con el mismo objeto y se reconstruye si 
   assert.deepEqual(dataRange(mk()), { first: null, last: null, firstSession: null, lastSession: null, firstBodyweight: null, lastBodyweight: null });
 });
 
+// Ronda 10 (docs/PULIDO.md §34.1): un `data` nuevo con los mismos arrays reutiliza el último índice. buildIndex() sigue
+// sirviendo para forzar la reconstrucción si mutaste `data`: el índice forzado es el que se reutiliza después, no el viejo.
+test('índice compartido: tras forzar buildIndex(), otro objeto con los mismos arrays usa el índice nuevo', () => {
+  const data = weekData();
+  const best = (d) => strengthRecords(d).find((r) => r.exerciseId === 'bench').bestWeight.value;
+  const before = best(data);
+  const st = data.sessions.flatMap((s) => s.exercises || []).find((e) => e.exerciseId === 'bench').sets.find((x) => x.type !== 'warmup');
+  st.weight = 200; // mutación en sitio (misma longitud): la caché no lo ve sola
+  buildIndex(data);
+  assert.equal(best(data), 200);
+  assert.equal(best({ ...data }), 200, `un objeto nuevo con los mismos arrays: ${best({ ...data })} (antes ${before})`);
+});
+
 /** ≈ 2 años: 500 sesiones de fuerza × 25 series (5 de calentamiento), 300 actividades y 730 pesajes. */
 function bigData() {
   const start = '2024-09-23';

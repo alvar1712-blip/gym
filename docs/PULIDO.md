@@ -693,11 +693,28 @@ quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio),
   adelante del navegador, recarga o `refresh()` con el scroll de ahora: `navInfo().y > 0`) se monta todo de una vez,
   como antes: montada a medias la página aún es corta y el scroll se quedaría recortado (salto arriba y vuelta). Si se
   sale a mitad, lo montado se destruye y no queda nada vivo. Sin transición (`viewShown()` sin una en curso) no hace
-  nada. En WebKit, `requestAnimationFrame` se pausa durante la transición: las
-  gráficas llegan al acabar la animación (un respaldo con temporizador empeoraba Chromium; descartado).
+  nada. En WebKit, `requestAnimationFrame` se pausa durante la transición: las gráficas llegan al acabar la animación
+  (un respaldo con temporizador empeoraba Chromium; descartado).
 - **`chartHeight()` no lee `window.innerHeight` en cada tarjeta** (`progress-ui.js`): leerlo obliga a maquetar lo
   pendiente (una maquetación forzada por gráfica). Se lee una vez y otra tras cada `resize`; la altura es la misma.
 - **Objetivos de la tarjeta resumen en caché** (`views/goals.js`, `createAnalysisCache`, la misma clave que el
   analista: fecha + versión + epoch + revisión de cada almacén): Hoy→Progreso no repite `goalProgress()` (con un
   objetivo de 10 km, la serie de tiempos previstos). Solo con un `data` tomado con las revisiones actuales; cualquier
   escritura (también `syncAchieved`) recalcula. La pantalla de Objetivos no usa la caché.
+- **Datos e índice compartidos** (`progress-ui.dataFromStore`, `stats.getIndex`): mientras no cambie ninguna revisión
+  ni la fecha, `dataFromStore()` devuelve un objeto nuevo con **los mismos** arrays y Maps, y stats.js reutiliza el
+  último índice si sus fuentes son las mismas (`isFresh`, por referencia). **Esos arrays y Maps no se modifican en
+  sitio** (ya era la regla: «no mutes los objetos devueltos»): añadir campos al objeto `data` sí se puede. Quien mute
+  `data` a propósito llama a `buildIndex(data)`, y ese índice nuevo pasa a ser el compartido (nunca vuelve el viejo).
+- **Medido** (Chromium, iPhone 13, toque con transición `tab`, mediana de 5 aperturas tras recargar; «visible» = hasta
+  que empieza la animación con Progreso): CPU ×4, 6m/1a/2a/5a: 875/924/1087/1598 → 306/321/301/307 ms; CPU ×1:
+  211/238/292/362 → 101/100/134/128 ms. Tarea larga máxima ×4: 743/760/938/1471 → 396/351/374/481 ms. WebKit (Linux),
+  1a/5a: 390/581 → 147/168 ms. El texto de la pantalla, la descripción de las 8 gráficas y `weeklySeries` salen
+  idénticos con 6m/1a/2a/5a.
+- **Guardas**: `tests/unit/chart-height.test.mjs` (8 tarjetas = 1 lectura; tras `resize`, otra) y, en
+  `tests/e2e/long-history.test.cjs` con 12 meses, que al empezar la transición ya están «Cómo vas» y los accesos pero
+  ninguna gráfica ni la lista, y que tras `settled()` la pantalla es igual que montada de una vez (Chromium y WebKit);
+  salir a mitad sin restos ni errores; `refresh()` con scroll sin pasar por un scroll recortado (Chromium y WebKit);
+  `tests/unit/stats.test.mjs` (tras forzar `buildIndex`, otro `data` con los mismos arrays usa el índice nuevo); y,
+  con la cobertura de V8 por CDP, 0 llamadas a `goalProgress` y 0 reconstrucciones del índice de stats.js en
+  Hoy→Progreso sin cambios (y recálculo tras una escritura).

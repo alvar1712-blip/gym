@@ -12,22 +12,34 @@ import { todayStr, fmtNum, weekStart } from './util.js';
 /**
  * Entrada común de stats.js con los datos actuales del store. Constrúyela UNA vez por render: stats.js
  * cachea su índice por objeto `data` (un objeto nuevo = datos nuevos).
+ * Ronda 10 (PULIDO §34.1): mientras no cambie ninguna revisión del store ni la fecha, los arrays y Maps son LOS MISMOS
+ * de la llamada anterior (Hoy y Progreso comparten el índice de stats.js en vez de reconstruirlo). Cada llamada devuelve
+ * un objeto nuevo (se le pueden añadir campos), pero sus arrays y Maps no se modifican: son compartidos.
  */
+let memo = null; // { key, base }
 export function dataFromStore(today = todayStr()) {
-  return {
-    // Ronda 6 (fase G): las revisiones del store al tomar estos datos (para la caché del análisis)
-    revisions: store.revisions(),
-    sessions: store.all('sessions'),
-    exercises: new Map(store.all('exercises').map((e) => [e.id, e])),
-    templates: new Map(store.all('templates').map((t) => [t.id, t])),
-    plan: new Map(store.all('plan').map((p) => [p.id, p])),
-    settings: store.settings(),
-    bodyweight: store.bodyweightList(),
-    // Tu contexto: resultados de carrera y parones para los tiempos previstos (race-predict)
-    context: store.all('context'),
-    today,
-    createdAt: store.get('meta', 'app')?.createdAt ?? null,
-  };
+  // Ronda 6 (fase G): las revisiones del store al tomar estos datos (para la caché del análisis)
+  const revisions = store.revisions();
+  const key = `${today}|${JSON.stringify(revisions)}`;
+  if (!memo || memo.key !== key) {
+    memo = {
+      key,
+      base: {
+        revisions,
+        sessions: store.all('sessions'),
+        exercises: new Map(store.all('exercises').map((e) => [e.id, e])),
+        templates: new Map(store.all('templates').map((t) => [t.id, t])),
+        plan: new Map(store.all('plan').map((p) => [p.id, p])),
+        settings: store.settings(),
+        bodyweight: store.bodyweightList(),
+        // Tu contexto: resultados de carrera y parones para los tiempos previstos (race-predict)
+        context: store.all('context'),
+        today,
+        createdAt: store.get('meta', 'app')?.createdAt ?? null,
+      },
+    };
+  }
+  return { ...memo.base, revisions: { ...memo.base.revisions } };
 }
 
 /**

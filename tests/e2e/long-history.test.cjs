@@ -347,3 +347,57 @@ test('Hoy→Progreso sin cambios: los objetivos no se recalculan (tras guardar a
     await app.close();
   }
 });
+
+// Ronda 10 (docs/PULIDO.md §34.1): Hoy y Progreso comparten los datos del store y el índice de stats.js mientras no
+// cambie nada. Antes, cada pantalla creaba arrays nuevos (dataFromStore) y stats.js reconstruía su índice y las semanas
+// (100-335 ms con 5 años y CPU ×4). Tras cualquier escritura, datos e índice nuevos. Recuento de llamadas por CDP.
+test('Hoy→Progreso sin cambios: stats.js no reconstruye su índice (tras guardar algo, sí) y Progreso dice lo mismo', { timeout: 180000, skip: chromiumOnly('recuento de llamadas con la cobertura de CDP') }, async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await seedRealistic(page, { months: 12, female: false });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.startPreciseCoverage', { callCount: true, detailed: false });
+    await reload(page); // los módulos se compilan ya con la cobertura activa
+    const builds = async () => {
+      const { result } = await cdp.send('Profiler.takePreciseCoverage');
+      let n = 0;
+      for (const sc of result) {
+        if (!sc.url.endsWith('/js/stats.js')) continue;
+        for (const fn of sc.functions) if (fn.functionName === 'buildIndex') n += fn.ranges[0].count;
+      }
+      return n;
+    };
+    const text = () => page.locator('.view-inner .prg').innerText();
+    await go(page, '#/progress');
+    await go(page, '#/today');
+    await page.locator('.goal-sum').waitFor();
+    await page.evaluate(() => window.__app.store.saveSettings({ weekPatterns: window.__app.store.settings().weekPatterns }));
+    await go(page, '#/progress');
+    assert.ok(await builds() >= 1, 'tras una escritura, índice nuevo');
+    const ref = await text();
+
+    await go(page, '#/today');
+    await page.locator('.goal-sum').waitFor();
+    await builds();
+    await go(page, '#/progress');
+    const n = await builds();
+    assert.strictEqual(n, 0, `Hoy→Progreso sin cambios: ${n} reconstrucciones del índice de stats.js`);
+    assert.strictEqual(await text(), ref, 'Progreso dice lo mismo');
+
+    await page.evaluate(async () => {
+      const { store } = window.__app;
+      const util = await import('./js/util.js');
+      const last = store.bodyweightList().at(-1);
+      await store.save('bodyweight', { ...last, id: util.todayStr(), kg: last.kg + 0.4 });
+    });
+    await go(page, '#/today');
+    await go(page, '#/progress');
+    assert.ok(await builds() >= 1, 'tras guardar un pesaje, índice nuevo');
+    assert.notStrictEqual(await text(), ref, 'y Progreso lo refleja');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});

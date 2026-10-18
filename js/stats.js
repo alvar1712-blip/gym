@@ -143,6 +143,9 @@ export function fmtMetric(metric, v) {
 // ===========================================================================
 
 const CACHE = new WeakMap();
+// Ronda 10 (PULIDO §34.1): el último índice construido. Un `data` nuevo con las MISMAS fuentes (mismos arrays y Maps:
+// dataFromStore los comparte mientras no cambie nada) lo reutiliza en vez de reconstruirlo.
+let LAST = null;
 const SRC_KEYS = ['sessions', 'exercises', 'templates', 'plan', 'settings', 'bodyweight', 'today', 'createdAt', 'since', 'planCtx'];
 
 const toMap = (x) => {
@@ -236,13 +239,19 @@ export function buildIndex(data) {
     setTxt: new Map(), // SetEntry → texto (por índice: si los datos cambian, el índice es otro)
   };
   if (data && typeof data === 'object') CACHE.set(data, idx);
+  LAST = idx; // forzar la reconstrucción (datos mutados) también sustituye al índice compartido
   return idx;
 }
 
 function getIndex(data) {
   if (!data || typeof data !== 'object') return buildIndex({});
   const idx = CACHE.get(data);
-  return idx && isFresh(idx, data) ? idx : buildIndex(data);
+  if (idx && isFresh(idx, data)) return idx;
+  if (LAST && isFresh(LAST, data)) {
+    CACHE.set(data, LAST);
+    return LAST;
+  }
+  return buildIndex(data);
 }
 
 /** Texto de una serie con unidades («80 kg × 6 @2»), memorizado en el índice. */
