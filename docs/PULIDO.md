@@ -697,3 +697,7 @@ quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio),
   gráficas llegan al acabar la animación (un respaldo con temporizador empeoraba Chromium; descartado).
 - **`chartHeight()` no lee `window.innerHeight` en cada tarjeta** (`progress-ui.js`): leerlo obliga a maquetar lo
   pendiente (una maquetación forzada por gráfica). Se lee una vez y otra tras cada `resize`; la altura es la misma.
+- **Objetivos de la tarjeta resumen en caché** (`views/goals.js`, `createAnalysisCache`, la misma clave que el
+  analista: fecha + versión + epoch + revisión de cada almacén): Hoy→Progreso no repite `goalProgress()` (con un
+  objetivo de 10 km, la serie de tiempos previstos). Solo con un `data` tomado con las revisiones actuales; cualquier
+  escritura (también `syncAchieved`) recalcula. La pantalla de Objetivos no usa la caché.

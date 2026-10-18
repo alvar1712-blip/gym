@@ -2,6 +2,7 @@
 // (crear, editar, archivar y borrar con deshacer) y goalsSummaryCard() para Hoy y Progreso.
 // PROPIETARIO: módulo de objetivos. Los cálculos salen de js/goals-logic.js (puro); aquí solo DOM y store.
 import * as store from '../store.js';
+import { createAnalysisCache, cacheKey } from '../analysis-cache.js';
 import { navigate, screenToken, backFrom } from '../router.js';
 import { h, icon, screen, segmented, chips, stepper, durationInput, textInput, numInput, confirmDialog, undoToast, discardDraftUndo, toast, emptyState, whyBox } from '../ui.js';
 import { pickExercise } from '../pickers.js';
@@ -60,6 +61,16 @@ function syncAchieved(goals, progress) {
 
 function progressAll(data, goals) {
   return new Map(goals.map((g) => [g.id, G.goalProgress(data, g)]));
+}
+
+// Ronda 10 (PULIDO §34.1): el progreso de la tarjeta resumen (Hoy y Progreso) se guarda mientras no cambie ningún
+// almacén ni la fecha: Hoy→Progreso no repite la serie de tiempos previstos de un objetivo de carrera. Solo con un
+// `data` tomado con las revisiones actuales (si es anterior a una escritura, se calcula sin guardar).
+const summaryCache = createAnalysisCache({ revisions: store.revisions, appVersion: store.APP_VERSION });
+function summaryProgress(data, goals, today) {
+  const now = store.revisions();
+  const fresh = !!data.revisions && cacheKey({ today, revisions: data.revisions }) === cacheKey({ today, revisions: now });
+  return fresh ? summaryCache.get(today, () => progressAll(data, goals), now) : progressAll(data, goals);
 }
 
 // ---------------------------------------------------------------------------
@@ -709,7 +720,7 @@ export function goalsSummaryCard({ data = null, max = 3 } = {}) {
   if (!goals.length) return null;
   const today = (data && data.today) || todayStr();
   const d = data || dataFromStore(today);
-  const prog = progressAll(d, goals);
+  const prog = summaryProgress(d, goals, today);
   syncAchieved(goals, prog);
   const { active, achieved } = G.splitGoals(goals);
   const recent = achieved.filter((g) => g.achievedAt && diffDays(g.achievedAt, today) <= 7);

@@ -5,7 +5,7 @@
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/long-history.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, settle, waitRoute, engineAvailable } = require('./helpers.cjs');
+const { openApp, go, settle, waitRoute, reload, engineAvailable, chromiumOnly } = require('./helpers.cjs');
 const { seedRealistic } = require('./realistic-data.cjs');
 
 const skipWebkit = engineAvailable('webkit') ? false : 'WebKit no instalado: ejecuta scripts/setup-webkit.sh';
@@ -284,3 +284,66 @@ for (const browser of ['chromium', 'webkit']) {
     }
   });
 }
+
+// Ronda 10 (docs/PULIDO.md §34.1): la tarjeta de objetivos de Progreso no recalcula lo que Hoy acaba de calcular. Con un
+// objetivo de 10 km, goalProgress() saca la serie de tiempos previstos (decenas de reconstrucciones de carreras: 250 ms
+// con 5 años y CPU ×4, en la parte que se ve al entrar). Mientras no cambie ningún almacén ni la fecha, el resultado es
+// el mismo; tras cualquier escritura se recalcula. Se cuentan las llamadas de verdad (cobertura precisa de V8 por CDP).
+test('Hoy→Progreso sin cambios: los objetivos no se recalculan (tras guardar algo, sí) y la tarjeta dice lo mismo', { timeout: 180000, skip: chromiumOnly('recuento de llamadas con la cobertura de CDP') }, async () => {
+  const app = await openApp();
+  const { page } = app;
+  try {
+    await seedRealistic(page, { months: 12, female: false });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.startPreciseCoverage', { callCount: true, detailed: false });
+    await reload(page); // los módulos se compilan ya con la cobertura activa
+    // Llamadas a goalProgress desde la toma anterior (takePreciseCoverage pone los contadores a cero)
+    const calls = async () => {
+      const { result } = await cdp.send('Profiler.takePreciseCoverage');
+      let n = 0;
+      for (const sc of result) {
+        if (!sc.url.endsWith('/js/goals-logic.js')) continue;
+        for (const fn of sc.functions) if (fn.functionName === 'goalProgress') n += fn.ranges[0].count;
+      }
+      return n;
+    };
+    const card = (sel) => page.locator(`${sel} .goal-sum`).innerText();
+    const nGoals = await page.evaluate(() => window.__app.store.all('goals').length);
+    assert.ok(nGoals >= 2, `objetivos sembrados: ${nGoals}`);
+    // Calentar: módulos cargados y los «conseguido» ya sincronizados (syncAchieved escribe la primera vez)
+    await go(page, '#/progress');
+    await go(page, '#/today');
+    await page.locator('.goal-sum').waitFor();
+    await calls();
+
+    // 1) Después de guardar algo: Progreso calcula con sus datos (referencia)
+    await page.evaluate(() => window.__app.store.saveSettings({ weekPatterns: window.__app.store.settings().weekPatterns }));
+    await go(page, '#/progress');
+    assert.ok(await calls() >= nGoals, 'tras una escritura, se recalcula');
+    const ref = await card('.prg');
+
+    // 2) Hoy (calcula: la caché es de Progreso o de Hoy, la que sea la última) y Progreso sin escrituras entre medias
+    await go(page, '#/today');
+    await page.locator('.goal-sum').waitFor();
+    await calls();
+    await go(page, '#/progress');
+    const again = await calls();
+    assert.strictEqual(again, 0, `Hoy→Progreso sin cambios: ${again} llamadas a goalProgress (lo mismo que acaba de calcular Hoy)`);
+    assert.strictEqual(await card('.prg'), ref, 'la tarjeta de objetivos dice lo mismo');
+
+    // 3) Una escritura cualquiera (un pesaje) invalida: Hoy vuelve a calcular
+    await page.evaluate(async () => {
+      const { store } = window.__app;
+      const util = await import('./js/util.js');
+      const last = store.bodyweightList().at(-1);
+      await store.save('bodyweight', { ...last, id: util.todayStr(), kg: last.kg });
+    });
+    await go(page, '#/today');
+    await page.locator('.goal-sum').waitFor();
+    assert.ok(await calls() >= nGoals, 'tras guardar un pesaje, se recalcula');
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
