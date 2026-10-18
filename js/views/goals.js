@@ -1,5 +1,5 @@
 // goals.js — Fase 3: objetivos. #/goals (lista con progreso, rango de fechas y «¿Por qué?»), #/goal/new y #/goal/:id
-// (crear, editar, archivar y borrar con deshacer) y goalsSummaryCard() para Hoy y Progreso.
+// (crear, editar, archivar y borrar con deshacer) y goalsSummaryCard() para Hoy.
 // PROPIETARIO: módulo de objetivos. Los cálculos salen de js/goals-logic.js (puro); aquí solo DOM y store.
 import * as store from '../store.js';
 import { createAnalysisCache, cacheKey } from '../analysis-cache.js';

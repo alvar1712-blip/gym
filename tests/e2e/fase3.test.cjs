@@ -225,9 +225,9 @@ async function seed(page, { goals = true } = {}) {
   return s;
 }
 
-/** Hijos del hueco de la Fase 3 en Hoy, en orden (pulido: el panel semanal y «Tu análisis» van juntos en «Lo
- * importante esta semana» → 'focus'). */
-const extraKinds = (page) => page.locator('.today-extra > *').evaluateAll((els) => els.filter((e) => !e.hidden).map((e) => (
+/** Hijos de los huecos de la Fase 3 en Hoy, en el orden de la página (pulido: el panel semanal y «Tu análisis» van
+ * juntos en «Lo importante esta semana» → 'focus'; ronda 10: los objetivos, en su hueco del final, .today-goals). */
+const extraKinds = (page) => page.locator('.today-extra > *, .today-goals > *').evaluateAll((els) => els.filter((e) => !e.hidden).map((e) => (
   e.classList.contains('today-checkin') ? `checkin:${e.dataset.checkin}` : e.classList.contains('focus') ? 'focus' : e.classList.contains('goal-sum') ? 'goals'
     : e.className)));
 const pick = (root, field, label) => root.locator(`.ci-row[data-field="${field}"] .seg-btn`, { hasText: new RegExp(`^${label}$`) });
@@ -273,10 +273,10 @@ test('Hoy con datos (390×844): check-in de hoy, «Lo importante esta semana» y
     assert.ok(n >= 1 && n <= 3, `1–3 puntos (${n})`);
     assert.strictEqual(await wk.locator('.focus-step').count(), n);
     // Objetivos: los dos activos
-    assert.deepStrictEqual(await page.locator('.today-extra .goal-sum .goal-sum-row').evaluateAll((els) => els.map((e) => e.dataset.goal)), ['g_bw', 'g_press']);
+    assert.deepStrictEqual(await page.locator('.today-goals .goal-sum .goal-sum-row').evaluateAll((els) => els.map((e) => e.dataset.goal)), ['g_bw', 'g_press']);
     // La cifra «actual / objetivo» dice qué mide (sin la ficha al lado, «107,7 kg / 105 kg» no se entiende)
-    assert.match(await page.locator('.today-extra .goal-sum-row[data-goal="g_press"] .goal-sum-eta').innerText(), /1RM est\.\s\d/);
-    assert.match(await page.locator('.today-extra .goal-sum-row[data-goal="g_bw"] .goal-sum-eta').innerText(), /Media 7 días\s\d/);
+    assert.match(await page.locator('.today-goals .goal-sum-row[data-goal="g_press"] .goal-sum-eta').innerText(), /1RM est\.\s\d/);
+    assert.match(await page.locator('.today-goals .goal-sum-row[data-goal="g_bw"] .goal-sum-eta').innerText(), /Media 7 días\s\d/);
     assert.ok(await noHScroll(page), 'sin desbordamiento horizontal');
     await scrollShots(page, 'fase3-today-390');
     await shotAt(page, '.today-extra', 'fase3-today-390-extra');
@@ -363,14 +363,20 @@ test('Progreso con datos (390×844): accesos y tarjetas; #/weekly, #/goals, #/go
   try {
     await seed(page);
     await open(page, '#/progress');
-    // Arriba «Cómo vas» (fuerza, resistencia, cuerpo, recuperación); debajo, accesos y objetivos; después, las gráficas
-    const y = await page.evaluate(() => ['.prg-ov', '.prg-links', '.progress-extra .goal-sum', '.prg-charts']
+    // Arriba «Cómo vas» (fuerza, resistencia, cuerpo, recuperación); debajo, los accesos; después, las gráficas
+    const y = await page.evaluate(() => ['.prg-ov', '.prg-links', '.prg-charts']
       .map((s) => document.querySelector(s)?.getBoundingClientRect().top ?? null));
     assert.ok(y.every((v) => v != null), `todo presente: ${y}`);
-    assert.deepStrictEqual([...y].sort((a, b) => a - b), y, 'cómo vas → accesos → objetivos → gráficas');
+    assert.deepStrictEqual([...y].sort((a, b) => a - b), y, 'cómo vas → accesos → gráficas');
+    // Ronda 10 (UX-2): con objetivos activos, Progreso no repite la tarjeta de Hoy (el acceso «Objetivos» lleva a
+    // ellos) y la primera gráfica llega antes (a 390 px, antes de 1100 px de página; con la tarjeta, ~1215)
+    assert.strictEqual(await page.locator('.prg .goal-sum').count(), 0, 'sin la tarjeta de objetivos duplicada');
+    assert.strictEqual(await page.locator('.prg-links [data-link="goals"]').count(), 1, 'el acceso «Objetivos» sigue');
+    const chart1 = await page.evaluate(() => Math.round(document.querySelector('.prg-charts .prg-card').getBoundingClientRect().top + scrollY));
+    assert.ok(chart1 < 1100, `primera gráfica a ${chart1} px`);
     assert.strictEqual(await page.locator('.prg-ov-title').innerText(), 'Cómo vas');
     assert.deepStrictEqual(await page.locator('.prg-ov-row').evaluateAll((els) => els.map((e) => e.dataset.area)), ['strength', 'endurance', 'body', 'recovery']);
-    assert.strictEqual(await page.locator('.progress-extra .wk-summary').count(), 0, 'el resumen del panel ya no se repite aquí');
+    assert.strictEqual(await page.locator('.prg .wk-summary').count(), 0, 'el resumen del panel ya no se repite aquí');
     assert.ok(await noHScroll(page));
     await scrollShots(page, 'fase3-progress-390', 3);
 
@@ -409,9 +415,6 @@ test('Progreso con datos (390×844): accesos y tarjetas; #/weekly, #/goals, #/go
     assert.strictEqual(await hashOf(page), '#/goals');
     await clickAndWait(page, page.locator('.back-btn'));
     assert.strictEqual(await hashOf(page), '#/progress');
-    // Una fila de la tarjeta de objetivos también abre #/goals
-    await clickAndWait(page, page.locator('.progress-extra .goal-sum-row').first());
-    assert.strictEqual(await hashOf(page), '#/goals');
     // Entrada directa (recarga en esa ruta): el botón atrás lleva a su pantalla de origen
     await open(page, '#/goal/g_bw');
     await page.reload();
@@ -435,8 +438,7 @@ test('Sin datos: Hoy solo ofrece el check-in; Progreso sin tarjetas pero con acc
     assert.ok(await startVisible(page));
     await open(page, '#/progress');
     assert.strictEqual(await page.locator('.prg-ov').count(), 0, 'sin datos, sin «Cómo vas» (el estado vacío lo explica)');
-    assert.strictEqual(await page.locator('.progress-extra > *').count(), 0);
-    assert.ok(await page.locator('.progress-extra').isHidden(), 'hueco vacío oculto (sin hueco en blanco)');
+    assert.strictEqual(await page.locator('.prg .goal-sum, .prg .wk-summary').count(), 0);
     assert.strictEqual(await page.locator('.prg-links [data-link="weekly"]').count(), 1);
     assert.strictEqual(await page.locator('.prg-links [data-link="goals"]').count(), 1);
     await shot(page, 'fase3-progress-390-empty');
@@ -450,7 +452,7 @@ test('Sin datos: Hoy solo ofrece el check-in; Progreso sin tarjetas pero con acc
     await seed(page, { goals: false });
     await open(page, '#/progress');
     assert.strictEqual(await page.locator('.prg-ov').count(), 1);
-    assert.strictEqual(await page.locator('.progress-extra .goal-sum').count(), 0);
+    assert.strictEqual(await page.locator('.prg .goal-sum').count(), 0);
     await open(page, '#/today');
     assert.deepStrictEqual(await extraKinds(page), ['checkin:pre', 'focus']);
     assert.deepStrictEqual(app.errors, []);

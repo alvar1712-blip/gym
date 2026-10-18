@@ -127,7 +127,38 @@ async function rirChips(browser) {
   }
 }
 
+/**
+ * Ronda 10 (UX-7): en Hoy, «Ver todo» de la tarjeta Peso corporal se partía en «Ver / todo» (53 px de alto al 125 %,
+ * 63 al 150 %) con texto grande a 375 px. El enlace va en una línea; el título sí puede partirse.
+ */
+async function bwqLink(browser) {
+  for (const scale of [1.25, 1.5]) {
+    const app = await openApp({ browser, beforeLoad: async (p) => { await p.evaluate((t) => localStorage.setItem('entreno.textScale', String(t)), scale); } });
+    const { page } = app;
+    try {
+      await page.setViewportSize({ width: 375, height: 812 });
+      await go(page, '#/today');
+      const link = page.locator('.bwq .bwq-link');
+      await link.waitFor();
+      const m = await link.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const card = el.closest('.bwq').getBoundingClientRect();
+        return { h: r.height, text: el.textContent.trim(), right: r.right, cardRight: card.right };
+      });
+      assert.strictEqual(m.text, 'Ver todo');
+      assert.ok(m.h <= 44.5, `al ${scale * 100} %: «Ver todo» en una línea (${m.h} px de alto)`);
+      assert.ok(m.right <= m.cardRight + 0.5, `al ${scale * 100} %: dentro de la tarjeta`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'sin scroll horizontal');
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  }
+}
+
 test('texto al 150 %: una palabra más ancha que la fila no saca el texto de la fila', () => run('chromium'));
+test('Hoy a 375 px con texto al 125 y 150 %: «Ver todo» del peso en una línea', () => bwqLink('chromium'));
+test('WebKit: «Ver todo» del peso en una línea con texto grande', { skip: skipWebkit }, () => bwqLink('webkit'));
 test('fichas de RIR a 375 px con texto al 100, 106, 125 y 150 %: ≥ 44 px de área táctil cada una', () => rirChips('chromium'));
 test('WebKit: fichas de RIR táctiles con cualquier tamaño de texto', { skip: skipWebkit }, () => rirChips('webkit'));
 test('WebKit: texto al 150 %, palabra más ancha que la fila', { skip: skipWebkit }, () => run('webkit'));

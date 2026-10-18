@@ -392,7 +392,9 @@ test('día pasado: registrar la sesión de fuerza de ese día (pasada) y hoy «h
     await go(page, '#/today');
     assert.strictEqual(await page.locator('.today-plan .status').getAttribute('data-status'), 'done');
     assert.strictEqual(await page.locator('.today-plan .cal-ses-row').count(), 1);
-    assert.match(await page.locator('.today-plan .cal-ses-row').innerText(), /Día 3 — Cardio[\s\S]*1 h 00 min · carga 420/);
+    // El nombre de la rutina ya es el título de la tarjeta: la fila no lo repite (ronda 10)
+    assert.match(await page.locator('.today-plan .today-plan-name').innerText(), /^Día 3 — Cardio$/);
+    assert.match(await page.locator('.today-plan .cal-ses-row').innerText(), /^🏋️\nFuerza\n1 h 00 min · carga 420/);
     assert.ok(await page.getByRole('button', { name: 'Otra sesión' }).isVisible());
     assert.deepStrictEqual(await strayText(page, '.today-plan'), [], 'sin «null» sueltos en la tarjeta');
     assert.doesNotMatch(await page.locator('.today-plan').innerText(), /\bnull\b/);

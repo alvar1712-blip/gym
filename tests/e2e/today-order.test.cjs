@@ -87,7 +87,58 @@ async function restDay(browser) {
   }
 }
 
+/**
+ * Ronda 10 (UX-3, §8): con el día resuelto (descanso o la rutina de hoy hecha) solo sube lo de hoy (check-in y «Lo
+ * importante»); los objetivos, que son de consulta, siguen al final, debajo de «Registrar», el peso y «Esta semana».
+ */
+async function settledGoals(browser) {
+  const app = await openApp({ browser, exampleWeek: true, beforeLoad: async (page) => { await page.context().clock.install({ time: madrid(FRI) }); } });
+  const { page } = app;
+  try {
+    await page.evaluate(async () => {
+      await window.__app.store.save('goals', { id: 'g10k', kind: 'endurance', title: '10 km en menos de 45 min', sport: 'run', distanceKm: 10, timeSec: 2700, achievedAt: null, archived: false });
+    });
+    const check = async (label) => {
+      await go(page, '#/calendar');
+      await go(page, '#/today');
+      await ready(page);
+      assert.strictEqual(await page.locator('.goal-sum').count(), 1, `${label}: hay tarjeta de objetivos`);
+      const y = { extra: await top(page, '.today-extra'), quick: await top(page, '.today-quick'), bwq: await top(page, '.bwq'), week: await top(page, '.today-weekcard'), goals: await top(page, '.goal-sum') };
+      assert.ok(y.extra < y.quick, `${label}: lo de hoy sigue por encima de «Registrar» (${JSON.stringify(y)})`);
+      assert.ok(y.goals > y.bwq && y.goals > y.week, `${label}: los objetivos, al final (${JSON.stringify(y)})`);
+    };
+    await check('descanso');
+    assert.strictEqual(await page.locator('.today-plan').getAttribute('data-kind'), 'rest');
+    // Jueves (Día 4) con su rutina terminada
+    await page.context().clock.setSystemTime(madrid('2026-10-08'));
+    await page.evaluate(async () => {
+      const sl = await import('./js/session-logic.js');
+      const u = await import('./js/util.js');
+      const st = window.__app.store;
+      const d = u.todayStr();
+      const tpl = st.settings().weekPatterns[0].days[3].templateId;
+      const s = await sl.createStrengthSession({ templateId: tpl, date: d, planDate: d });
+      for (const se of s.exercises) for (const x of se.sets) Object.assign(x, { weight: 40, reps: 8, rir: 2, done: true, doneAt: Date.now() });
+      sl.finishSession(s, { durationMin: 60, rpe: 7 });
+      await st.save('sessions', s);
+    });
+    await check('hecho');
+    assert.strictEqual(await page.locator('.today-plan').getAttribute('data-status'), 'done');
+    // UX-6: el nombre de la rutina sale una vez (en el título); la fila de la sesión dice qué fue y cuánto
+    const name = (await page.locator('.today-plan .today-plan-name').innerText()).trim();
+    assert.match(name, /^Día \d/);
+    const rows = await page.locator('.today-plan .cal-ses-row .list-item-title').allInnerTexts();
+    assert.deepStrictEqual(rows.map((t) => t.trim()), ['Fuerza'], `la fila no repite «${name}»`);
+    assert.match(await page.locator('.today-plan .cal-ses-row').innerText(), /series · [\d.]+ kg/);
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+}
+
 test('Hoy adaptativo: antes de entrenar, evento cercano y lejano, sesión abierta que sustituye a lo planificado', () => weekday('chromium'));
 test('Hoy adaptativo: en un día de descanso, «Lo importante» sube por encima de «Registrar»', () => restDay('chromium'));
 test('WebKit: Hoy adaptativo (entre semana)', { skip: skipWebkit }, () => weekday('webkit'));
 test('WebKit: Hoy adaptativo (descanso)', { skip: skipWebkit }, () => restDay('webkit'));
+test('Hoy resuelto (descanso y hecho): los objetivos, al final; hecho sin repetir el nombre de la rutina', () => settledGoals('chromium'));
+test('WebKit: Hoy resuelto, los objetivos al final', { skip: skipWebkit }, () => settledGoals('webkit'));

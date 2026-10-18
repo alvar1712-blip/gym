@@ -29,8 +29,11 @@ export function summaryOpts() {
   };
 }
 
-/** Fila de sesión (emoji, nombre, fecha/duración/carga y dato clave) → abre la sesión. */
-export function sessionRow(s, opts, { showDate = false, note = '' } = {}) {
+/**
+ * Fila de sesión (emoji, nombre, fecha/duración/carga y dato clave) → abre la sesión. `title` sustituye al nombre
+ * cuando ya lo dice el título de la tarjeta (Hoy, ronda 10: «Día 6 — …» no se repite debajo).
+ */
+export function sessionRow(s, opts, { showDate = false, note = '', title = null } = {}) {
   const sum = sessionSummary(s, opts);
   // En curso: la insignia va en la línea de detalle (no dentro del título, donde el «…» la escondía) y sin repetir
   // «en curso» en texto. El nombre de la rutina ocupa hasta dos líneas en vez de cortarse.
@@ -39,7 +42,7 @@ export function sessionRow(s, opts, { showDate = false, note = '' } = {}) {
   return h('button.list-item.cal-ses-row', { type: 'button', dataset: { id: s.id, kind: s.kind }, onClick: () => navigate(sum.href) },
     h(`span.cal-emoji.cal-emoji-${s.kind}`, { 'aria-hidden': 'true' }, sum.emoji),
     h('span.list-item-main',
-      h('span.list-item-title.lines-2', sum.title),
+      h('span.list-item-title.lines-2', title || sum.title),
       sub || live ? h('span.list-item-sub', sub, live) : null,
       sum.key ? h('span.cal-ses-key.tnum', sum.key) : null,
       note ? h('span.cal-ses-note', note) : null),

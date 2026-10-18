@@ -283,7 +283,7 @@ test('#/progress con datos: se pinta cada gráfica, periodo global, globo con el
     const exp = expected(s);
     await open(page, '#/progress');
     assert.strictEqual(await page.locator('.topbar h1').innerText(), 'Progreso');
-    assert.strictEqual(await page.locator('.progress-extra').count(), 1, 'hueco de la Fase 3');
+    assert.strictEqual(await page.locator('.prg .goal-sum').count(), 0, 'los objetivos no se repiten aquí (ronda 10: están en Hoy y en «Objetivos»)');
     assert.strictEqual(await page.locator('.prg-nodata').count(), 0);
     assert.strictEqual(await page.locator('.prg-links [data-link="records"]').count(), 1);
     assert.strictEqual(await page.locator('.prg-links [data-link="bodyweight"]').count(), 1);

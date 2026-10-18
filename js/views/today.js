@@ -16,6 +16,7 @@ import {
   activityMenu, activityHref, freeActionLabel, freeSubtype,
 } from '../plan-ui.js';
 import { bodyweightQuickEntry } from './bodyweight.js';
+import { ACTIVITY_LABEL } from '../seed.js';
 import { setProgress } from '../calc.js';
 import { proposedDuration, linkedActivities } from '../session-logic.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
@@ -76,6 +77,8 @@ export async function mountToday(root) {
 
   // Fase 3 (check-in, «Lo importante esta semana» y objetivos): se rellena después del montaje.
   const extra = h('div.today-extra');
+  // Ronda 10 (§8): los objetivos son de consulta, en su propio hueco y siempre al final (no suben con «Lo importante»).
+  const goalsSlot = h('div.today-goals');
   // Nada que empezar: hecho, saltado, descanso o la rutina de hoy ya terminada (aunque quede «parcial»)
   const ownDone = st.plan.kind === 'template' && st.sessions.some((s) => s.kind === 'strength' && s.status === 'done' && s.templateId === st.plan.templateId);
   // Sin semana planificada (ronda 8, B2) no es un descanso: «Empezar sesión libre» sigue mandando.
@@ -90,6 +93,7 @@ export async function mountToday(root) {
   content.appendChild(weekCard(today, ctx));
   // Antes de entrenar, al final: no empuja «Te toca hoy» ni «Empezar».
   if (!settled) content.appendChild(extra);
+  content.appendChild(goalsSlot);
 
   // Si la app se queda abierta y cambia el día, se vuelve a montar al volver.
   const onVisible = () => { if (document.visibilityState === 'visible' && todayStr() !== today) refresh({ keepScroll: false }); };
@@ -100,7 +104,7 @@ export async function mountToday(root) {
   };
   // Lo principal ya está pintado; los módulos de la Fase 3 se cargan después (el router espera a que termine
   // para restaurar el scroll).
-  await Promise.all([fillExtra(extra, today, active), cycleSlot ? fillCycle(cycleSlot, today) : null]);
+  await Promise.all([fillExtra(extra, today, active, goalsSlot), cycleSlot ? fillCycle(cycleSlot, today) : null]);
   return cleanup;
 }
 
@@ -158,7 +162,7 @@ const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
  * Rellena el hueco y lo marca con data-ready="1" al terminar (haya tarjetas o no). Cada tarjeta se calcula en su
  * propia tarea (con meses de datos, todas juntas bloqueaban la pantalla casi un segundo al abrir la app).
  */
-async function fillExtra(slot, today, active) {
+async function fillExtra(slot, today, active, goalsSlot = slot) {
   const [mods, focus] = await Promise.all([
     loadExtraModules().catch((err) => { console.error('[hoy] módulos de la Fase 3', err); return null; }),
     loadFocusModule().catch((err) => { console.error('[hoy] módulo de «Lo importante»', err); return null; }),
@@ -178,11 +182,12 @@ async function fillExtra(slot, today, active) {
       data ? () => goals.goalsSummaryCard({ data }) : null,
     ];
     const labels = ['check-in', 'panel semanal', 'lo importante', 'objetivos'];
+    const slots = [slot, slot, slot, goalsSlot]; // los objetivos, en su hueco del final
     for (let i = 0; i < cards.length; i++) {
       if (!slot.isConnected) break;
       if (!cards[i]) continue;
       const el = safely(labels[i], cards[i]);
-      if (el) slot.append(el);
+      if (el) slots[i].append(el);
       if (i < cards.length - 1) await nextTask();
     }
   }
@@ -386,7 +391,10 @@ function planCard(today, ctx, active, st = dayStatus(today, ctx)) {
     // Element.append(null) escribiría el texto «null»: se filtran los huecos vacíos.
     card.append(...[
       st.status === 'done' && !st.extra ? null : h('p.small.text-2', st.reason),
-      h('div.list.today-sessions', st.sessions.map((s) => sessionRow(s, opts))),
+      // La rutina del plan ya es el título de la tarjeta: su fila dice «Fuerza» en vez de repetirlo (ronda 10)
+      h('div.list.today-sessions', st.sessions.map((s) => sessionRow(s, opts, {
+        title: s.kind === 'strength' && s.templateName && s.templateName === eff.label ? ACTIVITY_LABEL.strength : null,
+      }))),
       offerStart ? (active ? busy() : startBtn('Empezar la rutina', startPlan)) : null,
       h('button.btn.btn-secondary.btn-lg.btn-block', { type: 'button', onClick: () => otherSessionMenu({ date: today }) }, icon('plus', 20), 'Otra sesión'),
     ].filter(Boolean));

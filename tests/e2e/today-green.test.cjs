@@ -4,7 +4,7 @@
 // «Calendario», «Panel semanal»…) y los datos neutros (el cronómetro, «Ahora: …», el próximo evento) van en texto
 // normal o secundario. Antes había once textos verdes y dos botones verdes («Empezar» y «Guardar» del peso).
 // Con datos realistas, antes de entrenar y con una sesión abierta; Chromium y WebKit. Fuera de Hoy, los mismos
-// componentes no cambian (el resumen de objetivos de Progreso sigue con su enlace en verde).
+// componentes no cambian («Editar semana tipo» en el día del calendario, también .cal-link-btn, sigue en verde).
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/today-green.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
@@ -72,19 +72,21 @@ async function run(browser) {
       for (const h of await page.locator('.today .cal-link-btn, .today .bwq-link, .today .goal-sum-link').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) {
         assert.ok(h >= 43.5, `enlace de ${h} px`);
       }
-      // Fuera de Hoy no cambia: el resumen de objetivos de Progreso conserva su enlace en verde
+      // Fuera de Hoy no cambia: el mismo enlace (.cal-link-btn) en el día del calendario conserva su verde. (Antes se
+      // miraba el resumen de objetivos de Progreso; la ronda 10 lo deja solo en Hoy.)
       if (!activeSession) {
-        await go(page, '#/progress');
-        await page.waitForSelector('.goal-sum-link');
+        await go(page, `#/day/${TODAY}`);
+        await page.locator('.cal-link-btn', { hasText: 'Editar semana tipo' }).waitFor();
         const [c, acc] = await page.evaluate(() => {
           const p = document.createElement('div');
           p.style.color = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
           document.body.append(p);
           const a = getComputedStyle(p).color;
           p.remove();
-          return [getComputedStyle(document.querySelector('.goal-sum-link')).color, a];
+          const link = [...document.querySelectorAll('.cal-link-btn')].find((b) => b.textContent.includes('Editar semana tipo'));
+          return [getComputedStyle(link).color, a];
         });
-        assert.strictEqual(c, acc, 'Progreso no cambia');
+        assert.strictEqual(c, acc, 'el calendario no cambia');
       }
       assert.deepStrictEqual(app.errors, []);
     } finally {

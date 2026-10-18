@@ -165,6 +165,9 @@
   color: var(--accent);
   font-weight: 700;
   font-size: calc(15px * var(--ts));
+  /* Ronda 10 (UX-7): «Ver todo» no se parte con texto grande; el que cede es el título */
+  flex: none;
+  white-space: nowrap;
 }
 .bwq-info { font-size: calc(14px * var(--ts)); color: var(--text-2); }
 .bwq-info b { color: var(--text); font-variant-numeric: tabular-nums; }

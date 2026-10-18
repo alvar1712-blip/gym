@@ -129,7 +129,10 @@ test('interruptor «Contexto»: apaga la franja, se recuerda al navegar y recarg
     assert.strictEqual(await toggle.getAttribute('aria-pressed'), 'true');
     assert.strictEqual(await toggle.getAttribute('aria-label'), 'Mostrar contexto en la gráfica');
     assert.ok((await toggle.boundingBox()).height >= 44, 'objetivo de 44 px');
-    assert.strictEqual(await bw.locator('.prg-ctx-howto').isVisible(), true, 'la frase de ayuda sale con contexto');
+    // La frase de ayuda está (la gráfica tiene contexto), pero Progreso la enseña una sola vez, en la primera gráfica
+    // con franja, más arriba (ronda 10)
+    assert.strictEqual(await bw.locator('.prg-ctx-howto').getAttribute('hidden'), null, 'la frase de ayuda sale con contexto');
+    assert.strictEqual(await page.locator('.prg-ctx-howto').evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length), 1, 'una sola vez en la pantalla');
     await toggle.click();
     assert.strictEqual(await toggle.getAttribute('aria-pressed'), 'false');
     assert.strictEqual(await bw.locator('.chart-ctx').count(), 0, 'sin franja');
@@ -174,6 +177,39 @@ test('interruptor «Contexto»: apaga la franja, se recuerda al navegar y recarg
     assert.strictEqual(await ex.locator('.chart-ctx-toggle').getAttribute('aria-pressed'), 'true');
     assert.match(await ex.locator('.chart-svg').getAttribute('aria-label'), /Contexto:/);
     await shot(page, `chart-context-${BROWSER}-exercise`);
+    assert.deepStrictEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * Ronda 10 (UX-5): «La franja de arriba es tu contexto…» salía igual en cada gráfica con franja (ritmo de carrera,
+ * velocidad en bici y peso). Se explica una vez, en la primera gráfica que la enseña; si esa se apaga, pasa a la
+ * siguiente. También en la ficha de ejercicio, cuyas gráficas comparten franja.
+ */
+test('la explicación de la franja de contexto sale una sola vez por pantalla', async () => {
+  const { page, errors, close } = await openSeeded();
+  try {
+    const shown = () => page.locator('.prg-ctx-howto').evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0)
+      .map((e) => e.closest('[data-chart]').dataset.chart));
+    const withStrip = () => page.locator('.prg-card').evaluateAll((els) => els.filter((e) => e.querySelector('.chart-ctx')).map((e) => e.dataset.chart));
+    await go(page, '#/progress');
+    const strips = await withStrip();
+    assert.ok(strips.length >= 2, `varias gráficas con franja (${strips})`);
+    assert.deepStrictEqual(await shown(), [strips[0]], 'una vez, en la primera gráfica con franja');
+    // Apagar la franja de esa gráfica: la explicación pasa a la siguiente que la enseña
+    const first = await card(page, strips[0]);
+    await first.locator('.chart-ctx-toggle').click();
+    assert.deepStrictEqual(await shown(), [strips[1]]);
+    await first.locator('.chart-ctx-toggle').click();
+    assert.deepStrictEqual(await shown(), [strips[0]]);
+    // Ficha de ejercicio: varias gráficas con la misma franja, una explicación
+    await go(page, '#/progress/exercise/press_banca');
+    await page.locator('.prg-card .chart-ctx').first().waitFor();
+    const exStrips = await withStrip();
+    assert.ok(exStrips.length >= 2, `la ficha tiene varias gráficas con franja (${exStrips})`);
+    assert.deepStrictEqual(await shown(), [exStrips[0]]);
     assert.deepStrictEqual(errors, []);
   } finally {
     await close();

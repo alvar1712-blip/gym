@@ -285,11 +285,12 @@ for (const browser of ['chromium', 'webkit']) {
   });
 }
 
-// Ronda 10 (docs/PULIDO.md §34.1): la tarjeta de objetivos de Progreso no recalcula lo que Hoy acaba de calcular. Con un
+// Ronda 10 (docs/PULIDO.md §34.1 y §34.4): la tarjeta de objetivos (ya solo en Hoy) no recalcula lo que acaba de
+// calcular al volver a Hoy desde otra pestaña. Con un
 // objetivo de 10 km, goalProgress() saca la serie de tiempos previstos (decenas de reconstrucciones de carreras: 250 ms
 // con 5 años y CPU ×4, en la parte que se ve al entrar). Mientras no cambie ningún almacén ni la fecha, el resultado es
 // el mismo; tras cualquier escritura se recalcula. Se cuentan las llamadas de verdad (cobertura precisa de V8 por CDP).
-test('Hoy→Progreso sin cambios: los objetivos no se recalculan (tras guardar algo, sí) y la tarjeta dice lo mismo', { timeout: 180000, skip: chromiumOnly('recuento de llamadas con la cobertura de CDP') }, async () => {
+test('Hoy→otra pestaña→Hoy sin cambios: los objetivos no se recalculan (tras guardar algo, sí) y la tarjeta dice lo mismo', { timeout: 180000, skip: chromiumOnly('recuento de llamadas con la cobertura de CDP') }, async () => {
   const app = await openApp();
   const { page } = app;
   try {
@@ -308,29 +309,33 @@ test('Hoy→Progreso sin cambios: los objetivos no se recalculan (tras guardar a
       }
       return n;
     };
-    const card = (sel) => page.locator(`${sel} .goal-sum`).innerText();
+    // Ronda 10 (UX-2): la tarjeta de objetivos ya solo está en Hoy; la caché evita recalcularla al volver a Hoy
+    const card = () => page.locator('#view .goal-sum').innerText();
+    const openToday = async () => {
+      await go(page, '#/today');
+      await page.locator('.today-extra[data-ready="1"]').waitFor({ state: 'attached' });
+      await page.locator('#view .goal-sum').waitFor();
+    };
     const nGoals = await page.evaluate(() => window.__app.store.all('goals').length);
     assert.ok(nGoals >= 2, `objetivos sembrados: ${nGoals}`);
     // Calentar: módulos cargados y los «conseguido» ya sincronizados (syncAchieved escribe la primera vez)
     await go(page, '#/progress');
-    await go(page, '#/today');
-    await page.locator('.goal-sum').waitFor();
+    await openToday();
     await calls();
 
-    // 1) Después de guardar algo: Progreso calcula con sus datos (referencia)
+    // 1) Después de guardar algo: Hoy calcula (referencia)
     await page.evaluate(() => window.__app.store.saveSettings({ weekPatterns: window.__app.store.settings().weekPatterns }));
     await go(page, '#/progress');
+    await openToday();
     assert.ok(await calls() >= nGoals, 'tras una escritura, se recalcula');
-    const ref = await card('.prg');
+    const ref = await card();
 
-    // 2) Hoy (calcula: la caché es de Progreso o de Hoy, la que sea la última) y Progreso sin escrituras entre medias
-    await go(page, '#/today');
-    await page.locator('.goal-sum').waitFor();
-    await calls();
+    // 2) Otra pestaña (Progreso) y vuelta a Hoy sin escrituras entre medias: nada que recalcular
     await go(page, '#/progress');
+    await openToday();
     const again = await calls();
-    assert.strictEqual(again, 0, `Hoy→Progreso sin cambios: ${again} llamadas a goalProgress (lo mismo que acaba de calcular Hoy)`);
-    assert.strictEqual(await card('.prg'), ref, 'la tarjeta de objetivos dice lo mismo');
+    assert.strictEqual(again, 0, `Hoy→Progreso→Hoy sin cambios: ${again} llamadas a goalProgress`);
+    assert.strictEqual(await card(), ref, 'la tarjeta de objetivos dice lo mismo');
 
     // 3) Una escritura cualquiera (un pesaje) invalida: Hoy vuelve a calcular
     await page.evaluate(async () => {
@@ -339,8 +344,8 @@ test('Hoy→Progreso sin cambios: los objetivos no se recalculan (tras guardar a
       const last = store.bodyweightList().at(-1);
       await store.save('bodyweight', { ...last, id: util.todayStr(), kg: last.kg });
     });
-    await go(page, '#/today');
-    await page.locator('.goal-sum').waitFor();
+    await go(page, '#/progress');
+    await openToday();
     assert.ok(await calls() >= nGoals, 'tras guardar un pesaje, se recalcula');
     assert.deepStrictEqual(app.errors, []);
   } finally {

@@ -1,6 +1,6 @@
 // progress.js — Fase 2: pestaña Progreso (#/progress), progreso de un ejercicio (#/progress/exercise/:id) y
 // récords (#/records). PROPIETARIO: módulo de progreso. Fase 3 (integración): arriba, accesos al panel semanal
-// y a los objetivos, y sus tarjetas resumen (hueco .progress-extra).
+// y a los objetivos (sus resúmenes están en Hoy; ronda 10: aquí no se repiten).
 // Los números salen de js/stats.js (puro) con un `data` construido UNA vez por pantalla; las gráficas, de
 // js/charts.js. Cambiar el periodo o un chip solo filtra lo ya calculado y actualiza las gráficas afectadas;
 // al salir de la pantalla se destruyen todas (listeners y observers).
@@ -15,7 +15,6 @@ import { emptyBests, addToBests, detectPRs } from '../calc.js';
 import { formatSet, fmtSec } from '../session-logic.js';
 import { dataFromStore, periodRange, chartHeight, cardHead, bodyweightChartOpts, chartCtxFor, CTX_HOWTO } from '../progress-ui.js';
 import { bodyMap, bodyMapData } from '../bodymap.js';
-import { goalsSummaryCard } from './goals.js';
 import { pastRecoveryCard, pastRecordsLink } from './past-records.js';
 import { analysisFor } from './analysis.js';
 import { progressOverview } from '../overview.js';
@@ -193,13 +192,13 @@ export async function mountProgress(root) {
   };
 
   const exSection = exercisesSection(ctx);
-  // Pulido: arriba, «Cómo vas» (fuerza, resistencia, cuerpo y recuperación); después, los accesos y los objetivos
+  // Pulido: arriba, «Cómo vas» (fuerza, resistencia, cuerpo y recuperación); después, los accesos. Ronda 10: sin la
+  // tarjeta de objetivos (era la misma de Hoy, con el acceso «Objetivos» justo encima, y retrasaba las gráficas).
   if (range.first) {
     const ov = safeOverview(ctx);
     if (ov) c.appendChild(ov);
   }
   c.appendChild(linksRow(ctx, exSection));
-  c.appendChild(progressExtra(data)); // Fase 3: objetivos activos
   if (!range.first) {
     c.appendChild(h('section.card.prg-nodata', emptyState({
       emoji: '📈',
@@ -280,25 +279,6 @@ function overviewCard(rows) {
         sparkline(r.spark, { width: 64, height: 26, color: COLORS.muted, label: r.sparkLabel }),
         r.state ? stateTag(r.state.kind, r.state.label, { small: true }) : null),
       icon('chevron-right', 18, 'chev'))))));
-}
-
-/**
- * Fase 3: tarjeta resumen de los objetivos activos (null sin objetivos); aislada: un fallo no deja Progreso sin
- * gráficas. (El resumen del panel semanal ya no se repite aquí: lo importante de la semana está en Hoy y en el
- * panel; aquí, «Cómo vas».)
- */
-function progressExtra(data) {
-  const slot = h('div.progress-extra');
-  const make = [['objetivos', () => goalsSummaryCard({ data })]];
-  for (const [label, fn] of make) {
-    try {
-      const el = fn();
-      if (el) slot.appendChild(el);
-    } catch (err) {
-      console.error(`[progreso] ${label}`, err);
-    }
-  }
-  return slot;
 }
 
 /** Accesos: Análisis (ronda 5, a lo ancho), Panel semanal y Objetivos (Fase 3), Resúmenes y Tiempos previstos

@@ -108,8 +108,8 @@ qué falta. Resistencia toma el deporte al que dedicas más tiempo (no más km: 
 - Sesión abierta: «Sesión en curso» manda (nombre, cronómetro, «2 de 20 series», «En lugar de Día 3 — Cardio» si
   sustituye a lo planificado) y «Te toca hoy» no la repite debajo.
 - Antes de entrenar: «Te toca hoy» con «Empezar»; el check-in, «Lo importante esta semana» y los objetivos, al final.
-- Hecho, saltado o descanso: no queda nada que empezar, así que «Lo importante esta semana» sube por encima de
-  «Registrar».
+- Hecho, saltado o descanso: no queda nada que empezar, así que «Lo importante esta semana» (y el check-in, si sigue)
+  sube por encima de «Registrar». Los objetivos no suben: van siempre al final, en su hueco `.today-goals` (ronda 10).
 - Evento a 14 días o menos: tarjeta debajo de «Te toca hoy» («10K · En 5 días»); más lejos, una línea.
 - Sin semana tipo (ronda 8, B2): un perfil nuevo ya no hereda la semana de ejemplo (`defaultSettings().weekPatterns`
   es `[]`; la de ejemplo es `seed.exampleWeekPatterns()`, solo en Ajustes › Semana tipo «Usar la semana de ejemplo» y en
@@ -685,10 +685,11 @@ músculo y la lista de ejercicios) en una sola tarea, y la View Transition no em
 quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio), con cualquier historial. Reglas:
 
 - **Montaje por partes** (`views/progress.js`, `router.viewShown()`): al entrar arriba del todo, Progreso monta primero
-  lo que se ve (cabecera, «Cómo vas», accesos y objetivos) y avisa al router con `viewShown()`; la transición empieza
+  lo que se ve (cabecera, «Cómo vas» y accesos; hasta §34.4, también los objetivos) y avisa al router con `viewShown()`; la transición empieza
   ya y las gráficas y después la tabla y la lista se montan en las tareas siguientes (`requestAnimationFrame` +
-  `setTimeout`), con la animación en marcha. Las gráficas empiezan por debajo del pliegue en cualquier iPhone (y ≈
-  1100 px), así que no se ve cómo llegan. El DOM final es el mismo. **`router.settled()` espera al montaje completo**
+  `setTimeout`), con la animación en marcha. Con objetivos, las gráficas empezaban por debajo del pliegue en cualquier iPhone
+  (y ≈ 1100 px); sin la tarjeta (§34.4, y antes ya sin objetivos) empiezan en y ≈ 730-800 px: a 390×844 justo bajo
+  las pestañas, pero en 430×932 la cabecera de la primera gráfica (≈ 145 px) puede verse llegar durante la animación. El DOM final es el mismo. **`router.settled()` espera al montaje completo**
   (las e2e cuentan con ello). Si el router va a dejar la pantalla con scroll (scroll guardado, «atrás» `pop`,
   adelante del navegador, recarga o `refresh()` con el scroll de ahora: `navInfo().y > 0`) se monta todo de una vez,
   como antes: montada a medias la página aún es corta y el scroll se quedaría recortado (salto arriba y vuelta). Si se
@@ -698,7 +699,8 @@ quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio),
 - **`chartHeight()` no lee `window.innerHeight` en cada tarjeta** (`progress-ui.js`): leerlo obliga a maquetar lo
   pendiente (una maquetación forzada por gráfica). Se lee una vez y otra tras cada `resize`; la altura es la misma.
 - **Objetivos de la tarjeta resumen en caché** (`views/goals.js`, `createAnalysisCache`, la misma clave que el
-  analista: fecha + versión + epoch + revisión de cada almacén): Hoy→Progreso no repite `goalProgress()` (con un
+  analista: fecha + versión + epoch + revisión de cada almacén): Hoy→Progreso no repetía `goalProgress()` (desde §34.4
+  la tarjeta solo está en Hoy: al volver a Hoy sin cambios no se recalcula) (con un
   objetivo de 10 km, la serie de tiempos previstos). Solo con un `data` tomado con las revisiones actuales; cualquier
   escritura (también `syncAchieved`) recalcula. La pantalla de Objetivos no usa la caché.
 - **Datos e índice compartidos** (`progress-ui.dataFromStore`, `stats.getIndex`): mientras no cambie ninguna revisión
@@ -716,8 +718,8 @@ quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio),
   ninguna gráfica ni la lista, y que tras `settled()` la pantalla es igual que montada de una vez (Chromium y WebKit);
   salir a mitad sin restos ni errores; `refresh()` con scroll sin pasar por un scroll recortado (Chromium y WebKit);
   `tests/unit/stats.test.mjs` (tras forzar `buildIndex`, otro `data` con los mismos arrays usa el índice nuevo); y,
-  con la cobertura de V8 por CDP, 0 llamadas a `goalProgress` y 0 reconstrucciones del índice de stats.js en
-  Hoy→Progreso sin cambios (y recálculo tras una escritura).
+  con la cobertura de V8 por CDP, 0 llamadas a `goalProgress` en Hoy→Progreso→Hoy y 0 reconstrucciones del índice de
+  stats.js en Hoy→Progreso sin cambios (y recálculo tras una escritura).
 
 ### 34.2 Peso: un solo «tu peso» en Análisis y etiquetas que dicen qué peso es
 
@@ -779,3 +781,37 @@ nombres que no dicen cuál se muestra. Reglas:
 - **Guardas**: `tests/e2e/restore-point.test.cjs` («restaurar en un iPhone sin datos», Chromium y WebKit),
   `tests/e2e/settings.test.cjs` («aviso de copia (ronda 10)») y `tests/e2e/calendar.test.cjs` («aviso de copia en Hoy
   (ronda 10)»).
+
+### 34.4 Hoy y Progreso: menos repetido y texto grande sin partir
+
+- **Check-in con texto grande** (UX-1, `css/session.css`): `.ci-rows` es un contenedor (`container-type: inline-size`)
+  y, si la fila mide 15 em o menos (em de la fila, así que el umbral crece con el texto), la etiqueta va encima y
+  «Bajo / Normal / Alto» sigue en una línea (`nowrap`, botones `flex: 1 1 0`). Pasa con 125 % en 375 px y con 150 % en
+  cualquier iPhone (390 y 430 px incluidos); con 100 % y con 125 % desde 390 px, igual que antes. Antes, «Alto» se quedaba
+  solo en otra línea en las cuatro filas. Vale también para la hoja «Terminar sesión» (mismas filas). Sin container
+  queries (iOS < 16) se queda como antes. Tarjeta del check-in a 375 px: 665 → 598 px al 125 % y 778 → 732 px al 150 %.
+- **«Ver todo» del peso en una línea** (UX-7, `css/activity.css`): `.bwq-link` con `white-space: nowrap; flex: none`;
+  el que se parte es el título «Peso corporal». A 375 px con texto grande medía 52-63 px de alto («Ver / todo»); ahora 44.
+- **Progreso no repite los objetivos** (UX-2, `views/progress.js`): la tarjeta resumen de objetivos era la misma que
+  cierra Hoy, con el acceso «🎯 Objetivos» justo encima (dos accesos a #/goals en menos de 300 px). Se quita (y el hueco
+  `.progress-extra`); el acceso se queda y Hoy conserva la tarjeta. Primera gráfica (datos realistas de 6 meses): a
+  390 px, 1215 → 845 px de página (su SVG, 1,66 → 1,22 pantallas); a 375 px al 125 %, 1747 → 1313 px (2,38 → 1,86).
+  La caché de la tarjeta (§34.1) sigue sirviendo al volver a Hoy.
+- **Objetivos al final de Hoy** (UX-3, `views/today.js`): ver §8. `fillExtra` rellena las mismas tarjetas en el mismo
+  orden y tareas; los objetivos van a `.today-goals` (al final, después de «Esta semana»), y `data-ready` sigue en
+  `.today-extra`, al terminar todo (el router espera a eso para el scroll). En descanso a 390 px «Registrar» sube de
+  1759 a 1389 px y el peso de 1963 a 1593; con la rutina hecha, de 1429 a 1035 y de 1633 a 1239.
+- **Hecho sin repetir la rutina** (UX-6, `plan-ui.sessionRow(…, { title })`): en «Te toca hoy», la fila de una sesión de
+  fuerza con el mismo nombre que el título de la tarjeta dice «Fuerza» (con su duración y «24 series · 9.772 kg»). Por
+  defecto `sessionRow` no cambia (calendario, historial, día).
+- **La franja de contexto se explica una vez** (UX-5, `css/progress.css`): «La franja de arriba es tu contexto…» salía en
+  cada gráfica con franja (ritmo, bici, peso). Ahora solo en la primera tarjeta que la enseña (franja encendida, con
+  datos); las siguientes (`~ .prg-card`) no. Es CSS (`:has`), así que al cambiar el periodo o apagar la franja de esa
+  gráfica la explicación pasa sola a la siguiente. También en la ficha de ejercicio.
+- **Sin hacer**: plegar las demás explicaciones de Progreso (`.prg-howto`, `.prg-note`) sería rediseño; UX-4 y UX-8
+  van en otro bloque.
+- **Guardas**: `tests/e2e/checkin.test.cjs` («texto al 125/150 % a 375 px», Chromium y WebKit, Hoy y Terminar),
+  `tests/e2e/large-text-rows.test.cjs` («Ver todo» del peso), `tests/e2e/today-order.test.cjs` («Hoy resuelto…»:
+  objetivos al final en descanso y hecho, y la fila «Fuerza»), `tests/e2e/fase3.test.cjs` (Progreso sin `.goal-sum` y
+  primera gráfica antes de 1100 px) y `tests/e2e/chart-context.test.cjs` (una explicación por pantalla, también al
+  apagar la franja y en la ficha). Todas fallaban antes del cambio.

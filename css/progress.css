@@ -150,10 +150,6 @@ html.text-large .chart-ctx-toggle { margin: -6px 0 -8px -8px; }
 /* ---------- fin charts ---------- */
 
 /* ---------- progreso (vistas: js/views/progress.js, js/progress-ui.js) ---------- */
-/* Fase 3: resumen del panel semanal y objetivos (js/views/weekly.js, js/views/goals.js) */
-.progress-extra { display: flex; flex-direction: column; gap: 12px; }
-.progress-extra:empty { display: none; }
-
 /* Accesos: Panel semanal · Objetivos (fila ancha) y Récords · Peso · Ejercicios */
 .prg-links { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .prg-link {
@@ -286,6 +282,9 @@ html.text-large .chart-ctx-toggle { margin: -6px 0 -8px -8px; }
 .prg-card:has(.chart-is-empty) .prg-howto, .prg-card:has(.chart-is-empty) .prg-ctx-howto { display: none; }
 /* Contexto apagado: la frase «La franja de arriba…» describiría algo que no se ve (el interruptor sigue) */
 .prg-card:has(.chart-ctx-toggle[aria-pressed='false']) .prg-ctx-howto { display: none; }
+/* Ronda 10 (UX-5): la explicación sale una vez por pantalla, en la primera gráfica que la enseña (con franja
+   encendida y datos); las de debajo no la repiten. Si esa se apaga o queda vacía, pasa a la siguiente. */
+.prg-card:has(.prg-ctx-howto:not([hidden])):not(:has(.chart-ctx-toggle[aria-pressed='false'], .chart-is-empty)) ~ .prg-card .prg-ctx-howto { display: none; }
 .prg-stat-na .prg-stat-value { padding-top: 3px; font-size: calc(16px * var(--ts)); font-weight: 750; color: var(--text-2); }
 
 /* Tabla «esta semana» por músculo */

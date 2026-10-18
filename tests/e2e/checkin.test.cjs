@@ -18,7 +18,7 @@ const YESTERDAY = '2026-09-23';
 const madrid = (date, hh = 18) => new Date(`${date}T${String(hh).padStart(2, '0')}:00:00+02:00`).getTime();
 const HINT = 'Solo lo ves tú. Sirve para tu análisis de recuperación y el panel semanal.';
 
-async function launch({ width = 390, height = 844, sat = null } = {}) {
+async function launch({ width = 390, height = 844, sat = null, scale = null } = {}) {
   const { startServer } = await import(pathToFileURL(path.join(__dirname, '..', 'serve.mjs')).href);
   const server = await startServer(0);
   const browser = await playwright[BROWSER].launch();
@@ -26,6 +26,7 @@ async function launch({ width = 390, height = 844, sat = null } = {}) {
     ...devices['iPhone 13'], viewport: { width, height }, locale: 'es-ES', timezoneId: 'Europe/Madrid', serviceWorkers: 'block',
   });
   await context.clock.install({ time: madrid(TODAY) });
+  if (scale != null) await context.addInitScript((t) => { try { localStorage.setItem('entreno.textScale', String(t)); } catch { /* */ } }, scale);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -501,3 +502,53 @@ test('una mano en iPhone SE: con el check-in arriba, «Registrar serie 1» sigue
     await app.close();
   }
 });
+
+/**
+ * Ronda 10 (UX-1): con texto grande en 375 px (iPhone SE/mini) la etiqueta dejaba ~210 px a los tres botones y
+ * «Bajo / Normal / Alto» se partía en dos líneas («Alto» solo debajo) en cada fila. Ahora la etiqueta va encima y la
+ * escala sigue en una fila: en Hoy y en la hoja de terminar (las mismas filas, .ci-compact).
+ */
+const segLayout = (root) => root.locator('.ci-row').evaluateAll((rows) => rows.map((row) => {
+  const btns = [...row.querySelectorAll('.ci-seg .seg-btn')];
+  const r = row.getBoundingClientRect();
+  return {
+    field: row.dataset.field,
+    tops: [...new Set(btns.map((b) => Math.round(b.getBoundingClientRect().top)))].length,
+    overflow: Math.max(...btns.map((b) => b.scrollWidth - b.clientWidth), row.scrollWidth - row.clientWidth),
+    inside: btns.every((b) => { const q = b.getBoundingClientRect(); return q.left >= r.left - 0.5 && q.right <= r.right + 0.5; }),
+    minH: Math.min(...btns.map((b) => b.getBoundingClientRect().height)),
+  };
+}));
+for (const scale of [1.25, 1.5]) {
+  test(`texto al ${scale * 100} % a 375 px: «Bajo / Normal / Alto» en una sola línea en Hoy y al terminar`, async () => {
+    const app = await launch({ width: 375, height: 812, scale });
+    const { page } = app;
+    try {
+      assert.ok(await page.evaluate(() => document.documentElement.classList.contains('text-large')));
+      await go(page, '#/today');
+      const ci = page.locator('.today-checkin');
+      await ci.waitFor();
+      const today = await segLayout(ci);
+      assert.strictEqual(today.length, 4);
+      for (const r of today) {
+        assert.strictEqual(r.tops, 1, `Hoy, ${r.field}: los tres botones en la misma fila`);
+        assert.ok(r.overflow <= 1 && r.inside, `Hoy, ${r.field}: sin recortes ni desbordamiento (${r.overflow})`);
+        assert.ok(r.minH >= 44, `Hoy, ${r.field}: 44 px de área táctil (${r.minH})`);
+      }
+      // La hoja de terminar usa las mismas filas
+      await openSession(page);
+      await page.locator('.ses-finish').click();
+      const post = page.locator('.sheet-panel.ses-finish-sheet .ci-compact[data-checkin="post"]');
+      await post.waitFor();
+      for (const r of await segLayout(post)) {
+        assert.strictEqual(r.tops, 1, `Terminar, ${r.field}: los tres botones en la misma fila`);
+        assert.ok(r.overflow <= 1 && r.inside, `Terminar, ${r.field}: sin recortes (${r.overflow})`);
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'sin scroll horizontal');
+      await shot(page, `checkin-375-text${scale * 100}-${BROWSER}`);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+}

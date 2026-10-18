@@ -448,6 +448,16 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ci-body { display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 12px; }
 .ci-rows { display: flex; flex-direction: column; gap: 8px; }
 .ci-row { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); align-items: center; gap: 8px; }
+/* Ronda 10 (UX-1): si la etiqueta y «Bajo / Normal / Alto» no caben en una fila (texto grande en 375 px, 150 % en
+   cualquier iPhone), la etiqueta va encima y la escala sigue en una sola línea, nunca «Alto» solo debajo. El umbral va
+   en em de la fila (crece con el texto): 5,4 em de etiqueta + hueco + los tres botones ≈ 15 em. Sin container
+   queries (iOS < 16) se queda como antes. */
+.ci-rows { container-type: inline-size; }
+@container (max-width: 15em) {
+  .ci-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .ci-rows .ci-seg.seg { flex-wrap: nowrap; }
+  .ci-rows .ci-seg .seg-btn { flex: 1 1 0; }
+}
 .ci-label { font-size: calc(15px * var(--ts)); font-weight: 700; color: var(--text-2); }
 .ci-seg .seg-btn { min-height: 44px; font-size: calc(15px * var(--ts)); padding: 0 2px; }
 /* Valor elegido bien visible bajo la luz del gimnasio. */

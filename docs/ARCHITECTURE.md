@@ -397,9 +397,9 @@ describe(id), emptyHint })` = modo elegir (sin leyenda ni colores de series); `r
 **Integración.** Hoy (`views/today.js`): tras pintar lo principal («Te toca hoy» y «Empezar» siguen arriba), importa los
 módulos de la Fase 3 y rellena `.today-extra` (al final) con: check-in de hoy (`compact`, `pre`; solo si hoy no hay
 ninguno ni se ha omitido y no hay ya una fuerza terminada hoy; enlazado a la sesión de hoy en curso), resumen del panel
-y de objetivos (cada tarjeta aislada con try/catch; `data-ready="1"` al terminar). Progreso (`views/progress.js`):
-accesos «Panel semanal» y «Objetivos» junto a Récords / Peso / Ejercicios y, debajo, `.progress-extra` con las dos
-tarjetas (reutilizan el `data` de la pantalla). Sesión de fuerza: franja «¿Cómo llegas hoy?» arriba (solo activa), filas
+y de objetivos (cada tarjeta aislada con try/catch; `data-ready="1"` al terminar; desde la ronda 10 los objetivos van
+en su propio hueco `.today-goals`, siempre al final). Progreso (`views/progress.js`): accesos «Panel semanal» y
+«Objetivos» junto a Récords / Peso / Ejercicios (ronda 10: sin tarjetas resumen; los objetivos se resumen en Hoy). Sesión de fuerza: franja «¿Cómo llegas hoy?» arriba (solo activa), filas
 «¿Cómo ha ido?» en la hoja «Terminar» y resumen del check-in en `#/session/:id/summary`.
 
 ---
