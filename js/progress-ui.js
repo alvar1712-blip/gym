@@ -75,10 +75,18 @@ export function periodRange(periodId, today, first) {
   return { week, from: first && week < first ? first : week };
 }
 
+// Alto de la ventana: se lee una vez y otra tras cada 'resize' (ronda 10, PULIDO §34.1). window.innerHeight obliga a
+// maquetar lo pendiente, y Progreso lo pedía al crear cada tarjeta mientras montaba (una maquetación forzada por gráfica).
+let vhCache = 0;
+try { window.addEventListener('resize', () => { vhCache = 0; }); } catch { /* sin window */ }
+
 /** Altura de una gráfica: algo más baja en pantallas bajas (iPhone SE, apaisado) para que quepa la tarjeta entera. */
 export function chartHeight(px) {
-  let vh = 0;
-  try { vh = window.innerHeight || 0; } catch { vh = 0; }
+  let vh = vhCache;
+  if (!vh) {
+    try { vh = window.innerHeight || 0; } catch { vh = 0; }
+    vhCache = vh;
+  }
   return vh && vh < 700 ? Math.round(px * 0.82) : px;
 }
 

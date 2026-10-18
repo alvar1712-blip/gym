@@ -675,3 +675,14 @@ principal son los del motor.
   (toque, Intro, Espacio), ARIA e `inert`, 375/390/430 px × 100/125/150 % en Chromium y WebKit, «Reducir movimiento»
   y rendimiento. La guarda de contraste (§4) ya no mide el texto que un antepasado recorta a 0 px (el panel plegado
   no se ve); lo que asoma, sí.
+
+## 34. Ronda 10
+
+### 34.1 Rendimiento: Hoy→Progreso sin congelar Hoy
+
+Antes, tocar «Progreso» montaba la pantalla entera (cabecera, «Cómo vas», accesos, objetivos, 8 gráficas, la tabla por
+músculo y la lista de ejercicios) en una sola tarea, y la View Transition no empezaba hasta que acababa: Hoy se quedaba
+quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio), con cualquier historial. Reglas:
+
+- **`chartHeight()` no lee `window.innerHeight` en cada tarjeta** (`progress-ui.js`): leerlo obliga a maquetar lo
+  pendiente (una maquetación forzada por gráfica). Se lee una vez y otra tras cada `resize`; la altura es la misma.
