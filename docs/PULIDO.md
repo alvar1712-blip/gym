@@ -684,5 +684,16 @@ Antes, tocar «Progreso» montaba la pantalla entera (cabecera, «Cómo vas», a
 músculo y la lista de ejercicios) en una sola tarea, y la View Transition no empezaba hasta que acababa: Hoy se quedaba
 quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio), con cualquier historial. Reglas:
 
+- **Montaje por partes** (`views/progress.js`, `router.viewShown()`): al entrar arriba del todo, Progreso monta primero
+  lo que se ve (cabecera, «Cómo vas», accesos y objetivos) y avisa al router con `viewShown()`; la transición empieza
+  ya y las gráficas y después la tabla y la lista se montan en las tareas siguientes (`requestAnimationFrame` +
+  `setTimeout`), con la animación en marcha. Las gráficas empiezan por debajo del pliegue en cualquier iPhone (y ≈
+  1100 px), así que no se ve cómo llegan. El DOM final es el mismo. **`router.settled()` espera al montaje completo**
+  (las e2e cuentan con ello). Si el router va a dejar la pantalla con scroll (scroll guardado, «atrás» `pop`,
+  adelante del navegador, recarga o `refresh()` con el scroll de ahora: `navInfo().y > 0`) se monta todo de una vez,
+  como antes: montada a medias la página aún es corta y el scroll se quedaría recortado (salto arriba y vuelta). Si se
+  sale a mitad, lo montado se destruye y no queda nada vivo. Sin transición (`viewShown()` sin una en curso) no hace
+  nada. En WebKit, `requestAnimationFrame` se pausa durante la transición: las
+  gráficas llegan al acabar la animación (un respaldo con temporizador empeoraba Chromium; descartado).
 - **`chartHeight()` no lee `window.innerHeight` en cada tarjeta** (`progress-ui.js`): leerlo obliga a maquetar lo
   pendiente (una maquetación forzada por gráfica). Se lee una vez y otra tras cada `resize`; la altura es la misma.

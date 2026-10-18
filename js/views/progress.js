@@ -5,7 +5,7 @@
 // js/charts.js. Cambiar el periodo o un chip solo filtra lo ya calculado y actualiza las gráficas afectadas;
 // al salir de la pantalla se destruyen todas (listeners y observers).
 import * as store from '../store.js';
-import { navigate } from '../router.js';
+import { navigate, navInfo, viewShown } from '../router.js';
 import { h, icon, screen, chips, segmented, emptyState, stateTag, kpiValue, scrollBehavior } from '../ui.js';
 import { fmtDate, fmtNum, fmtDuration, fmtPace, fmtWeekRange, weekStart, relDay, plural } from '../util.js';
 import { lineChart, barChart, periodSelector, getPeriod, sparkline, relativeSpan, COLORS } from '../charts.js';
@@ -167,13 +167,22 @@ const pace100Of = (sec, km) => (km > 0 && sec > 0 ? sec / (km * 10) : null);
 // #/progress
 // ===========================================================================
 
-export function mountProgress(root) {
+/** Cede el hilo hasta la tarea siguiente (el navegador pinta, anima y atiende toques entre medias). */
+const nextTask = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+export async function mountProgress(root) {
   const c = screen(root, { title: 'Progreso' });
   c.classList.add('prg');
   const data = dataFromStore();
   const today = data.today;
   const range = S.dataRange(data);
   const charts = [];
+  let gone = false;
+  const destroy = () => { gone = true; for (const ch of charts) ch.destroy(); charts.length = 0; };
+  // Ronda 10 (PULIDO §34.1): por partes solo al entrar arriba del todo. Al volver (scroll guardado, atrás, adelante,
+  // refresh() con scroll) hace falta la página entera de una vez para colocar el scroll donde estaba.
+  const nav = navInfo();
+  const progressive = !ui.scroll && nav.kind !== 'pop' && !(nav.y > 0);
   const ctx = {
     data, today, range, charts,
     settings: data.settings || {},
@@ -200,6 +209,13 @@ export function mountProgress(root) {
     })));
   }
 
+  // Lo de arriba (lo que se ve al entrar) ya está: la transición empieza; las gráficas y la lista, en las tareas siguientes.
+  if (progressive) {
+    viewShown();
+    await nextTask();
+    if (gone || !c.isConnected) return destroy;
+  }
+
   const cards = [];
   let period = getPeriod('global');
   // El selector solo se pega mientras se ven las gráficas que dependen de él: sticky dentro de .prg-charts.
@@ -215,13 +231,17 @@ export function mountProgress(root) {
     chartsBox.appendChild(card.el);
     if (card.update) { card.update(period); cards.push(card); }
   }
+  if (progressive) {
+    await nextTask();
+    if (gone || !c.isConnected) return destroy;
+  }
   // Sin periodo: la semana en curso por músculo y la lista de ejercicios.
   const table = muscleTableCard(ctx, muscle);
   if (table) c.appendChild(table.el);
   c.appendChild(exSection.el);
   exSection.paint();
   restoreScroll();
-  return () => { for (const ch of charts) ch.destroy(); charts.length = 0; };
+  return destroy;
 }
 
 /**

@@ -5,7 +5,7 @@
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/long-history.test.cjs
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, settle, engineAvailable } = require('./helpers.cjs');
+const { openApp, go, settle, waitRoute, engineAvailable } = require('./helpers.cjs');
 const { seedRealistic } = require('./realistic-data.cjs');
 
 const skipWebkit = engineAvailable('webkit') ? false : 'WebKit no instalado: ejecuta scripts/setup-webkit.sh';
@@ -143,6 +143,141 @@ for (const browser of ['chromium', 'webkit']) {
       await page.evaluate(async (t) => { await window.__app.store.importData(JSON.parse(t)); }, text);
       await settle(page);
       assert.deepStrictEqual(await page.evaluate(() => window.__mounts), ['#/today'], 'desde Hoy, también una vez');
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
+// Ronda 10 (docs/PULIDO.md §34.1): Hoy→Progreso ya no congela Hoy hasta tener montada TODA la pantalla. La View
+// Transition empezaba cuando acababa el montaje entero (cabecera, «Cómo vas», accesos, objetivos, 8 gráficas, la tabla por
+// músculo y la lista de ejercicios, en una sola tarea: 0,9 s con 1 año y CPU ×4). Ahora la vista avisa al router en cuanto
+// tiene lo de arriba (lo que se ve al entrar) y monta las gráficas y la lista en las tareas siguientes, ya con la animación
+// en marcha. Se mide por orden de eventos, no por tiempo: qué hay en la pantalla cuando el navegador empieza la
+// transición. Y al terminar (router.settled) la pantalla es la misma que montada de una vez (vuelta desde una hija).
+for (const browser of ['chromium', 'webkit']) {
+  test(`Hoy→Progreso con 12 meses: la transición empieza con lo de arriba, sin esperar a las gráficas ni a la lista, y acaba en la pantalla de siempre (${browser})`, { timeout: 180000, skip: browser === 'webkit' && skipWebkit }, async () => {
+    const app = await openApp({ browser });
+    const { page } = app;
+    try {
+      await seedRealistic(page, { months: 12, female: false });
+      // Qué hay en Progreso: bloques de primer nivel (clase y texto), las gráficas (su descripción accesible) y la lista.
+      await page.evaluate(() => {
+        window.__prgSnap = () => {
+          const c = document.querySelector('.view-inner .prg');
+          if (!c) return null;
+          return {
+            blocks: [...c.children].map((el) => `${el.tagName}.${[...el.classList].join('.')}|${el.innerText.replace(/\s+/g, ' ').trim()}`),
+            charts: [...c.querySelectorAll('.prg-card[data-chart] svg.chart-svg')].map((s) => s.getAttribute('aria-label') || ''),
+            cards: c.querySelectorAll('.prg-charts .prg-card').length,
+            list: c.querySelectorAll('.prg-ex .prg-ex-row').length,
+          };
+        };
+        // Lo que hay en el momento en que el navegador recibe la vista nueva (cuando se resuelve update()).
+        const orig = document.startViewTransition && document.startViewTransition.bind(document);
+        window.__atStart = [];
+        if (orig) {
+          document.startViewTransition = (cb) => orig(() => Promise.resolve(cb()).then(() => {
+            if (location.hash === '#/progress') window.__atStart.push(window.__prgSnap());
+          }));
+        }
+      });
+
+      // Referencia: Progreso montado de una vez (vuelta desde una hija, con el scroll arriba)
+      await go(page, '#/progress');
+      await page.locator('.prg-link[data-link="records"]').click();
+      await waitRoute(page, /#\/records$/);
+      await page.evaluate(async () => { const r = await import('./js/router.js'); r.back('#/progress'); });
+      await waitRoute(page, /#\/progress$/);
+      assert.strictEqual(await page.evaluate(async () => (await import('./js/router.js')).navInfo().kind), 'pop');
+      const ref = await page.evaluate(() => window.__prgSnap());
+      assert.ok(ref.cards >= 6 && ref.charts.length >= 6, `gráficas en la referencia: ${ref.cards}`);
+      assert.ok(ref.list > 5, `lista de ejercicios en la referencia: ${ref.list}`);
+
+      // Hoy → Progreso con el toque de la barra (View Transition 'tab')
+      await go(page, '#/today');
+      await page.evaluate(() => { window.__atStart = []; });
+      const res = await page.evaluate(async () => {
+        const r = await import('./js/router.js');
+        r.navigate('#/progress', { transition: 'tab' });
+        await new Promise((res) => setTimeout(res, 0));
+        await r.settled();
+        // router.settled() espera al montaje COMPLETO (las e2e cuentan con ello)
+        return { mode: r.navInfo().mode, snap: window.__prgSnap() };
+      });
+      await settle(page);
+      assert.strictEqual(res.mode, 'vt', 'navegación con View Transition');
+      const start = await page.evaluate(() => window.__atStart);
+      assert.strictEqual(start.length, 1, 'una transición hacia Progreso');
+      const s0 = start[0];
+      assert.ok(s0, 'Progreso ya está en la pantalla al empezar la transición');
+      assert.ok(s0.blocks.some((b) => b.startsWith('SECTION.card.prg-ov|')), `«Cómo vas» al empezar: ${s0.blocks.map((b) => b.slice(0, 40)).join(' · ')}`);
+      assert.ok(s0.blocks.some((b) => b.startsWith('NAV.prg-links|')), 'accesos al empezar');
+      assert.strictEqual(s0.cards, 0, `al empezar la transición, sin gráficas montadas todavía (había ${s0.cards})`);
+      assert.strictEqual(s0.list, 0, `al empezar la transición, sin la lista de ejercicios todavía (había ${s0.list} filas)`);
+      assert.deepStrictEqual(res.snap, ref, 'al acabar settled(), la misma pantalla que montada de una vez');
+
+      // Salir a mitad del montaje (en cuanto empieza la transición): nada de Progreso queda vivo y sin errores
+      await go(page, '#/today');
+      await page.evaluate(async () => {
+        const r = await import('./js/router.js');
+        const orig = document.startViewTransition.bind(document);
+        let once = true;
+        document.startViewTransition = (cb) => orig(() => Promise.resolve(cb()).then(() => {
+          if (once && location.hash === '#/progress') { once = false; r.navigate('#/today', { transition: 'tab' }); }
+        }));
+        r.navigate('#/progress', { transition: 'tab' });
+        await new Promise((res) => setTimeout(res, 0));
+        for (let i = 0; i < 5; i++) await r.settled();
+      });
+      await settle(page);
+      assert.strictEqual(await page.evaluate(() => location.hash), '#/today');
+      assert.strictEqual(await page.locator('.prg').count(), 0, 'sin restos de Progreso');
+      assert.strictEqual(await page.locator('.view-inner').count(), 1);
+      assert.deepStrictEqual(app.errors, []);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
+// Ronda 10 (docs/PULIDO.md §34.1): el montaje por partes es solo para entrar arriba del todo. Si el router va a dejar la
+// pantalla con scroll (refresh() con el scroll de ahora, atrás/adelante del navegador, recarga), Progreso se monta de una
+// vez: montada a medias, la página aún es corta y el router la colocaba ya en un scroll recortado (salto arriba y vuelta).
+for (const browser of ['chromium', 'webkit']) {
+  test(`Progreso con scroll que se mantiene (refresh): se monta de una vez, sin pasar por un scroll recortado (${browser})`, { timeout: 180000, skip: browser === 'webkit' && skipWebkit }, async () => {
+    const app = await openApp({ browser });
+    const { page } = app;
+    try {
+      await seedRealistic(page, { months: 12, female: false });
+      await go(page, '#/progress');
+      const y = await page.evaluate(() => {
+        const list = document.querySelector('.prg .prg-ex');
+        const target = Math.round(list.getBoundingClientRect().top + window.scrollY);
+        window.scrollTo(0, target);
+        return Math.round(window.scrollY);
+      });
+      assert.ok(y > 1000, `scroll de partida: ${y}`);
+      const res = await page.evaluate(async () => {
+        const r = await import('./js/router.js');
+        // Dónde queda el scroll tras cada scrollTo del montaje (el navegador lo recorta al alto de la página de ese momento)
+        const seen = [];
+        const orig = window.scrollTo.bind(window);
+        window.scrollTo = (...a) => { orig(...a); seen.push(Math.round(window.scrollY)); };
+        try {
+          r.refresh();
+          await new Promise((res) => setTimeout(res, 0));
+          await r.settled();
+        } finally {
+          window.scrollTo = orig;
+        }
+        return { seen, final: Math.round(window.scrollY), list: document.querySelectorAll('.prg .prg-ex-row').length };
+      });
+      await settle(page);
+      assert.ok(res.list > 5, `lista montada: ${res.list}`);
+      assert.ok(Math.abs(res.final - y) <= 1, `scroll final ${res.final} (era ${y})`);
+      assert.ok(res.seen.every((v) => Math.abs(v - y) <= 1), `scrolls durante el montaje: ${res.seen.join(', ')} (era ${y})`);
       assert.deepStrictEqual(app.errors, []);
     } finally {
       await app.close();

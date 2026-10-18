@@ -51,7 +51,7 @@ let staggerTimer = null;
 let rendering = 0; // montajes en curso (para settled())
 let started = false;
 let navReq = 0; // navegaciones pedidas (navigate/back), para screenToken()
-let lastNav = { kind: 'none', mode: 'none', path: null, transition: null, ua: false };
+let lastNav = { kind: 'none', mode: 'none', path: null, transition: null, ua: false, y: 0 };
 const mountHooks = [];
 
 const NAV_KINDS = new Set(['push', 'pop', 'tab', 'none']);
@@ -78,8 +78,9 @@ export function routeEpoch() {
 
 /**
  * Última transición entre pantallas: { kind:'push'|'pop'|'tab'|'none', mode:'vt'|'css'|'none', path,
- * transition (ViewTransition, solo con mode 'vt'), ua (vuelta por el gesto del sistema), active (sigue
- * animándose) }. Para pruebas y depuración.
+ * transition (ViewTransition, solo con mode 'vt'), ua (vuelta por el gesto del sistema), y (scroll en que se va a
+ * dejar la pantalla: 0 = arriba), active (sigue animándose) }. Para pruebas, depuración y vistas que se montan por
+ * partes (PULIDO §34.1).
  */
 export function navInfo() {
   return { ...lastNav, active: !!(activeVT || entering) };
@@ -715,7 +716,7 @@ async function renderRoute(kind, { ua = false, nav = false } = {}) {
   if (token !== mountToken) return;
 
   const mode = transitionMode(kind);
-  lastNav = { kind, mode, path, transition: null, ua };
+  lastNav = { kind, mode, path, transition: null, ua, y };
   const ctx = { kind, mode, ua, y, path, nav };
   if (mode === 'vt') return mountWithViewTransition(token, mod, route, ctx);
   return mountView(token, mod, route, mode === 'css' ? kind : null, ctx);
@@ -732,8 +733,14 @@ async function mountWithViewTransition(token, mod, route, ctx) {
   let mounted = null;
   const update = () => {
     if (token !== mountToken) return undefined; // llegó otra navegación antes de empezar: la monta ella
+    // Un montaje por partes avisa con viewShown() en cuanto tiene lo de arriba: la transición empieza ya.
+    let shownNow = null;
+    const shown = new Promise((r) => { shownNow = r; });
+    showNow = shownNow;
     mounted = mountView(token, mod, route, null, ctx);
-    return Promise.race([mounted, new Promise((r) => setTimeout(r, UPDATE_MAX_MS))]);
+    const clear = () => { if (showNow === shownNow) showNow = null; };
+    mounted.then(clear, clear);
+    return Promise.race([mounted, shown, new Promise((r) => setTimeout(r, UPDATE_MAX_MS))]);
   };
   root.dataset.nav = kind;
   let vt = null;
@@ -758,6 +765,18 @@ async function mountWithViewTransition(token, mod, route, ctx) {
   vt.finished.then(done, done);
   await vt.updateCallbackDone.catch(ignore);
   if (mounted) await mounted;
+}
+
+let showNow = null; // aviso pendiente de la View Transition en curso (lo resuelve viewShown)
+/**
+ * Para vistas que se montan por partes (Progreso; PULIDO §34.1): lo de arriba (lo que se ve al entrar) ya está, así que
+ * la transición puede empezar sin esperar al resto, que se monta con la animación en marcha. router.settled() sigue
+ * esperando al montaje completo. Sin transición en curso no hace nada.
+ */
+export function viewShown() {
+  const f = showNow;
+  showNow = null;
+  if (f) f();
 }
 
 /** Monta la vista de la ruta en un contenedor nuevo (sustituye al anterior: nunca hay dos copias vivas). */
