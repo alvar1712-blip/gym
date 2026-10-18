@@ -255,6 +255,8 @@ test('Hombre (390×844): Hoy y panel con «Tu análisis», #/analysis completo, 
     const w = page.locator('.an-card-weight');
     assert.match(await w.locator('.an-pace').innerText(), /Buen ritmo/);
     assert.match(await w.locator('[data-kpi="trend"] .kpi-value').innerText(), /^\d+(,\d)?\skg$/);
+    // Ronda 10 (peso-3): es un peso (kg), no un ritmo: «Peso de tendencia», como en el resto de Análisis
+    assert.strictEqual(await w.locator('[data-kpi="trend"] .kpi-label').innerText(), 'Peso de tendencia');
     assert.match(await w.locator('[data-kpi="rate"] .kpi-value').innerText(), /^\+0,\d+\skg$/);
     assert.strictEqual(await w.locator('.an-chart svg').count() >= 1, true, 'minigráfica');
     assert.strictEqual(await w.locator('.an-gauge .an-gauge-band').count(), 1);

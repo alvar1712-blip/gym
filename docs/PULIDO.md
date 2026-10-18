@@ -718,3 +718,30 @@ quieto 0,2-0,3 s en un móvil rápido y 0,9-1,6 s con la CPU ×4 (móvil medio),
   `tests/unit/stats.test.mjs` (tras forzar `buildIndex`, otro `data` con los mismos arrays usa el índice nuevo); y,
   con la cobertura de V8 por CDP, 0 llamadas a `goalProgress` y 0 reconstrucciones del índice de stats.js en
   Hoy→Progreso sin cambios (y recálculo tras una escritura).
+
+### 34.2 Peso: un solo «tu peso» en Análisis y etiquetas que dicen qué peso es
+
+Hay dos medidas de peso, las dos correctas y sin tocar: la **media de 7 días** con su ritmo por regresión
+(`activity-logic.bwStats`: Hoy, #/bodyweight, tarjeta Peso corporal de Progreso, Objetivos) y el **peso de tendencia**
+del analista (`analysis-weight.weightTrend`: media exponencial de ~10 días que salta los días de posible retención con
+ciclo natural, con ritmo de Theil–Sen). El problema era usar en la misma pantalla dos pesos para la misma cosa y
+nombres que no dicen cuál se muestra. Reglas:
+
+- **La proteína de Análisis sale de un único peso: el de tendencia.** `buildAnalysis` calcula la tendencia **una vez**
+  (`analysisWeightTrend`, con el mismo filtro del ciclo que `analyzeWeight`: solo mujer, con seguimiento y sin
+  anticonceptivo hormonal) y la comparte: `analyzeWeight({ …, trend })` no la recalcula y `analyzeStrength(d,
+  { …, bodyRefKg })` la usa en el consejo de los estancados («≈ X–Y g para tus Z kg»). Antes ese consejo usaba el
+  último pesaje y convivía con «Para tu peso (79,3 kg)…» frente a «para tus 78,9 kg» y rangos de gramos distintos (y el
+  informe para IA copiaba los dos). `analyzeStrength` suelto (sin `bodyRefKg`) sigue con el último pesaje. Ninguna
+  fórmula cambia: solo de qué peso parte el texto.
+- **«Cómo vas › Cuerpo» dice que es el peso de tendencia**: «Peso de tendencia · −0,2 kg/sem» (o «Peso de tendencia ·
+  aún pocos pesajes para ver tu ritmo»). El valor y el estado no cambian; ahora no se confunde con la «Media 7 días»
+  de la tarjeta Peso corporal que hay debajo.
+- **«Tendencia» a secas es un ritmo (kg/sem)** en Progreso y #/bodyweight; en Análisis el KPI de peso se llama **«Peso
+  de tendencia»** (kg), como ya decían las previsiones, el informe y «¿Por qué?».
+- **Guardas**: `tests/unit/analysis-consistency.test.mjs` (6 y 12 meses, hombre y mujer, adulto y menor: todo «para
+  tus X kg» de Análisis = `weight.proteinG.refKg` con su mismo rango de gramos y el mensaje de proteína con ese peso;
+  fallaba en los 4 casos de 12 meses con 78,9 frente a 79,3/79,5 kg), `tests/unit/analysis-weight.test.mjs`
+  (`analysisWeightTrend` = la tendencia de `analyzeWeight` con ciclo natural, hormonal y hombre; con `trend` dado se
+  usa ese mismo objeto), `tests/unit/overview.test.mjs` (texto de la fila) y `tests/e2e/analysis.test.cjs` (etiqueta
+  del KPI).

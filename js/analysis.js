@@ -27,7 +27,7 @@
 import { addDays, isDateStr, todayStr, fmtNum, fmtDate } from './util.js';
 import { sessionDurationMin } from './calc.js';
 import { getProfile, cycleEnabled, isFemale, profileIncomplete } from './profile.js';
-import { analyzeWeight } from './analysis-weight.js';
+import { analyzeWeight, analysisWeightTrend } from './analysis-weight.js';
 import { analyzeStrength, analyzeEndurance, analyzeRecovery, ENDURANCE_KINDS } from './analysis-training.js';
 import { cycleInfo, fmtRange, LIMITS as CYCLE_LIMITS } from './cycle-logic.js';
 import { analysisContext } from './analysis-context.js';
@@ -268,7 +268,10 @@ export function buildAnalysis(data = {}, today) {
   const opts = { profile, today: t, context };
 
   const info = cycleEnabled(profile) ? attempt(errors, 'cycle', () => cycleInfo(d.cycleDays || [], profile, t), null) : null;
-  const strength = attempt(errors, 'strength', () => analyzeStrength(d, opts),
+  // Ronda 10: la tendencia de peso se calcula UNA vez; su peso de tendencia es «tu peso» para la proteína tanto en el
+  // mensaje de proteína (analyzeWeight) como en los consejos de los estancados (analyzeStrength).
+  const wt = attempt(errors, 'weight', () => analysisWeightTrend({ bodyweight: d.bodyweight || [], today: t, profile, cycle: info }), null);
+  const strength = attempt(errors, 'strength', () => analyzeStrength(d, { ...opts, bodyRefKg: wt?.currentKg ?? wt?.lastKg ?? null }),
     { exercises: [], summary: { trendPctPerWeek: null, improving: 0, stalled: 0, down: 0, mainCount: 0, analyzed: 0 }, insights: [] });
   const endurance = {
     ...attempt(errors, 'endurance', () => analyzeEndurance(d, opts), { fitness: [], intensity: null, interference: [], insights: [] }),
@@ -283,6 +286,7 @@ export function buildAnalysis(data = {}, today) {
     endurance: { weeklyMinutes4w: endurance.weeklyMinutes4w },
     cycle: info,
     context,
+    trend: wt,
     // Ronda 9: tus objetivos de peso activos (ni archivados ni conseguidos), del más reciente al más antiguo
     weightGoals: splitGoals(toArr(d.goals)).active.filter((x) => x.kind === 'bodyweight'),
   }), { ok: false, trend: null, target: null, status: 'insufficient', insights: [] });

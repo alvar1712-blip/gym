@@ -1463,9 +1463,29 @@ function minorWeightInsight(ctx) {
 // Análisis
 // ===========================================================================
 
+/** El ciclo que cuenta para el peso: solo mujer, con seguimiento activo y sin anticonceptivo hormonal. */
+function weightCycle(profile, inputCycle) {
+  const female = isFemale(profile);
+  const rawCycle = female && inputCycle && inputCycle.enabled !== false ? inputCycle : null;
+  const hormonal = female && (isHormonal(profile) || !!rawCycle?.hormonal);
+  return { hormonal, cycle: rawCycle && !hormonal ? rawCycle : null };
+}
+
+/**
+ * Ronda 10: la tendencia de peso de «Tu analista» (la misma que calcula analyzeWeight, con el mismo filtro del ciclo).
+ * buildAnalysis la calcula UNA vez y la comparte: su `currentKg` es «tu peso» para la proteína en todo Análisis.
+ * @param {{bodyweight?:object[], today?:string, profile?:object, cycle?:object|null}} input
+ */
+export function analysisWeightTrend(input = {}) {
+  const today = isDateStr(input.today) ? input.today : todayStr();
+  const profile = { ...(input.profile || {}) };
+  return weightTrend(input.bodyweight, { today, profile, cycle: weightCycle(profile, input.cycle).cycle });
+}
+
 /**
  * Análisis del peso («tu analista»). PURO.
- * @param {object} input { bodyweight, today, profile, strength?, endurance?, cycle? } (ver cabecera)
+ * @param {object} input { bodyweight, today, profile, strength?, endurance?, cycle?, trend? } (ver cabecera;
+ *   trend: la de analysisWeightTrend con estos mismos datos, para no calcularla dos veces)
  * @returns {{ ok:boolean, reason?:string, reasonCode?:string, trend:object (ver weightTrend), target:object|null
  *   (ver targetFor), status:'below'|'in'|'above'|'insufficient'|'no_goal', paceLabel:string,
  *   kcalPerDay:{ estimate:number|null, suggestion:{min, max}|null }, proteinG:{ min, max, perKg, focus, refKg },
@@ -1479,9 +1499,7 @@ export function analyzeWeight(input = {}) {
   const today = isDateStr(input.today) ? input.today : todayStr();
   const profile = { ...(input.profile || {}) };
   const female = isFemale(profile);
-  const rawCycle = female && input.cycle && input.cycle.enabled !== false ? input.cycle : null;
-  const hormonal = female && (isHormonal(profile) || !!rawCycle?.hormonal);
-  const cycle = rawCycle && !hormonal ? rawCycle : null;
+  const { hormonal, cycle } = weightCycle(profile, input.cycle);
   const context = input.context || null;
   const age = context?.age?.group || ageGroup(profile, today);
   const minor = age === 'minor';
@@ -1489,7 +1507,8 @@ export function analyzeWeight(input = {}) {
   // La fase de composición vigente («Tu contexto») manda sobre el objetivo del perfil: es lo que estás haciendo ahora.
   const goal = context?.body?.goal || (GOAL_IDS.includes(profile.goal) ? profile.goal : null);
   const goalSource = context?.body?.goal ? 'phase' : 'profile';
-  const trend = weightTrend(input.bodyweight, { today, profile, cycle });
+  // input.trend: la de analysisWeightTrend con estos mismos datos (buildAnalysis no la calcula dos veces).
+  const trend = input.trend && typeof input.trend === 'object' ? input.trend : weightTrend(input.bodyweight, { today, profile, cycle });
   const minutes = isNum(input.endurance?.weeklyMinutes4w) && input.endurance.weeklyMinutes4w >= 0 ? input.endurance.weeklyMinutes4w : null;
   const endHigh = minutes != null && minutes >= HIGH_ENDURANCE_MIN[female ? 'female' : 'male'];
   const refKg = trend.currentKg ?? trend.lastKg ?? null;

@@ -641,7 +641,8 @@ function referenceLabel(rec, ex, today) {
 /**
  * Fuerza: ritmo de mejora por ejercicio, comparación con lo habitual para tu experiencia y previsión a 4 y 8 semanas.
  * @param {object} data  progress-ui.dataFromStore(today) + checkins
- * @param {{profile?:object, today?:string}} [opts]
+ * @param {{profile?:object, today?:string, context?:object, bodyRefKg?:number|null}} [opts] bodyRefKg: peso de
+ *   referencia para la proteína de los consejos (en buildAnalysis, el peso de tendencia); sin él, el último pesaje.
  * @returns {{ exercises:{ exerciseId, name, sessions, e1rmNow, ratePctPerWeek, status, lastPrDate,
  *   forecast:{weeks, date, low, mid, high}[], main, slow, windowWeeks, e1rmStart, e1rmBest, reason?, stall? }[],
  *   summary:{ trendPctPerWeek, improving, stalled, down, mainCount, analyzed, experience, experienceAssumed },
@@ -736,7 +737,8 @@ export function analyzeStrength(data, opts = {}) {
   // Ronda 9: UNA decisión de volumen por músculo (mantener, añadir, reducir): la usan los consejos de los estancados
   // (aquí) y la tarjeta de volumen (analysis-hybrid), para no pedir a la vez «reduce» y «+1–2 series».
   const volume = volumeReview(d, today, { strength: { exercises }, age });
-  const insights = strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context, age, volume });
+  const bodyRefKg = opts.bodyRefKg > 0 ? opts.bodyRefKg : null;
+  const insights = strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context, age, volume, bodyRefKg });
   return { exercises, summary, insights, volume };
 }
 
@@ -767,7 +769,7 @@ function referenceFactors(row, c) {
   return [];
 }
 
-function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context = null, age = 'unknown', volume = null }) {
+function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, summary, ctx, context = null, age = 'unknown', volume = null, bodyRefKg = null }) {
   const out = [];
   const minor = age === 'minor';
   const senior = age === 'senior';
@@ -911,7 +913,9 @@ function strengthInsights({ d, today, p, exp, th, exercises, analyzed, base, sum
     const mus = muscleAverages(d, today);
     const targets = targetsOf(d.settings);
     const fat = fatigueSignals(d, today);
-    const bwKg = lastBodyweight(d, today);
+    // Ronda 10: «tu peso» para la proteína es el peso de tendencia de Análisis (opts.bodyRefKg, el mismo del mensaje de
+    // proteína); el último pesaje solo si no llega (analyzeStrength suelto).
+    const bwKg = bodyRefKg ?? lastBodyweight(d, today);
     // Ronda 9: el volumen sale de LA decisión por músculo (volumeReview), la misma de la tarjeta de volumen: nunca
     // «+1–2 series» de un músculo que se pide reducir.
     const vr = volume || volumeReview(d, today, { strength: { exercises }, age });

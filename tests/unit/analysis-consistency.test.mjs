@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { realisticData } from '../realistic-data.mjs';
 import { buildAnalysis } from '../../js/analysis.js';
+import { fmtNum } from '../../js/util.js';
 import { weeklyInsights, keyMessages } from '../../js/insights.js';
 import { weekFocus } from '../../js/focus.js';
 import { reportText } from '../../js/analysis-report.js';
@@ -120,6 +121,25 @@ for (const c of CASES) {
       assert.deepEqual(bad.map((m) => m.id), [], `menor con cifras de dieta:\n${list(bad)}`);
       assert.doesNotMatch(s.report, /kcal|déficit/i);
     }
+  });
+}
+
+// Ronda 10 (bloque 2, peso-1): «tu peso» para la proteína es UNO en Análisis: el peso de tendencia. El consejo de los
+// estancados («≈ X–Y g para tus Z kg») y el mensaje de proteína («Para tu peso (Z kg)…») no pueden dar dos pesos ni dos
+// rangos de gramos distintos (antes el consejo usaba el último pesaje).
+for (const c of CASES) {
+  test(`coherencia (${label(c)}): la proteína usa el mismo peso de referencia en todo Análisis`, () => {
+    const s = screens(dataFor(c));
+    const p = s.a.weight.proteinG;
+    const tips = s.analysisMsgs.flatMap((m) => [...shown(m).matchAll(/≈ (\d+)–(\d+) g para tus ([\d,]+) kg/g)].map((x) => ({ id: m.id, g: `${x[1]}–${x[2]}`, kg: x[3] })));
+    if (!c.minor) assert.ok(p?.refKg > 0, 'hay peso de referencia');
+    for (const t of tips) {
+      assert.equal(t.kg, fmtNum(p.refKg, 1), `${t.id}: «para tus ${t.kg} kg» frente a la tendencia ${fmtNum(p.refKg, 1)} kg`);
+      assert.equal(t.g, `${p.min}–${p.max}`, `${t.id}: ${t.g} g frente a ${p.min}–${p.max} g del mensaje de proteína`);
+    }
+    const ins = s.a.all.find((m) => m.id === 'weight-protein');
+    if (ins) assert.match(ins.text, new RegExp(`Para tu peso \\(${fmtNum(p.refKg, 1)} kg\\)`));
+    if (c.months === 12 && !c.minor) assert.ok(tips.length > 0, 'el caso trae consejos de estancados con proteína (la prueba no pasa en vacío)');
   });
 }
 

@@ -72,12 +72,13 @@ test('cuerpo: tendencia y ritmo del analista; minigráfica con la media de cada 
   for (let d = addDays(W0, -21); d < W0; d = addDays(d, 1)) if (d < addDays(W0, -14) || d >= addDays(W0, -7)) bw.push({ id: d, kg: 80 });
   bw.push({ id: T, kg: 79 }); // esta semana: no entra (a medias)
   const b = rows({ weeks: [], analysis, bodyweight: bw }).body;
-  assert.equal(b.value, '80,6 kg');
-  assert.equal(b.change, '−0,2 kg por semana');
+  assert.equal(b.value, '80,6 kg', 'el valor es el peso de tendencia del analista (trend.currentKg), no el último pesaje');
+  // Ronda 10 (peso-2): la fila dice qué peso es (el de tendencia, como en Análisis), junto a la «Media 7 días» de la tarjeta
+  assert.equal(b.change, 'Peso de tendencia · −0,2 kg/sem');
   assert.deepEqual(b.state, { kind: 'ok', label: 'En tu rango' });
   assert.deepEqual(b.spark, [80, 80], 'dos semanas con pesajes; la del medio, sin pesar, no se inventa');
   const few = rows({ weeks: [], analysis: { weight: { ok: false, trend: { currentKg: 80, ratePerWeekKg: NaN } } } }).body;
-  assert.equal(few.change, 'Aún pocos pesajes para ver tu ritmo');
+  assert.equal(few.change, 'Peso de tendencia · aún pocos pesajes para ver tu ritmo');
   noBad(few);
 });
 

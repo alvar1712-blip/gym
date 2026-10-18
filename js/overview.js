@@ -102,9 +102,11 @@ function bodyRow(a, bodyweight, today) {
   if (!t || !isNum(t.currentKg)) {
     return { ...row, value: '—', change: 'Pésate 3–4 veces por semana para ver tu tendencia', state: insufficient };
   }
+  // Ronda 10: el valor es el peso de tendencia (no el último pesaje ni la «Media 7 días» de la tarjeta Peso corporal):
+  // la fila lo dice, con el mismo nombre que en Análisis.
   const rate = w.ok && isNum(t.ratePerWeekKg)
-    ? `${t.ratePerWeekKg > 0 ? '+' : t.ratePerWeekKg < 0 ? '−' : '±'}${fmtNum(Math.abs(t.ratePerWeekKg), Math.abs(t.ratePerWeekKg) < 0.095 ? 2 : 1)} kg por semana`
-    : 'Aún pocos pesajes para ver tu ritmo';
+    ? `Peso de tendencia · ${t.ratePerWeekKg > 0 ? '+' : t.ratePerWeekKg < 0 ? '−' : '±'}${fmtNum(Math.abs(t.ratePerWeekKg), Math.abs(t.ratePerWeekKg) < 0.095 ? 2 : 1)} kg/sem`
+    : 'Peso de tendencia · aún pocos pesajes para ver tu ritmo';
   const state = !w.ok ? insufficient : w.status === 'in' ? { kind: 'ok', label: 'En tu rango' }
     : w.status === 'below' || w.status === 'above' ? { kind: 'warn', label: w.paceLabel || 'Fuera de tu rango' } : null;
   return { ...row, value: `${fmtNum(t.currentKg, 1)} kg`, change: rate, state };

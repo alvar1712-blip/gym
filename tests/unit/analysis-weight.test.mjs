@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  analyzeWeight, weightTrend, targetFor, classifyRate, kcalSuggestion, proteinFor, paceLabel, theilSen, emaSeries,
+  analyzeWeight, analysisWeightTrend, weightTrend, targetFor, classifyRate, kcalSuggestion, proteinFor, paceLabel, theilSen, emaSeries,
   cyclePhaseFor, cycleIrregularity, periodStarts, TARGETS, SOURCES, MIN_POINTS, MIN_SPAN_DAYS, KCAL_PER_KG,
 } from '../../js/analysis-weight.js';
 import { addDays, diffDays } from '../../js/util.js';
@@ -643,4 +643,26 @@ test('weightTrend: salida para la vista (puntos, ventana y método)', () => {
   assert.equal(sparse.ok, true);
   assert.equal(sparse.windowDays, 56);
   assert.equal(sparse.extended, true);
+});
+
+test('ronda 10: analysisWeightTrend es la tendencia de analyzeWeight (mismo filtro del ciclo) y analyzeWeight la reutiliza', () => {
+  const bw = series({ start: 60, perWeek: -0.3, bump: retBump(C1, 1.2) });
+  const cases = [
+    { profile: F({ goal: 'lose' }), cycle: C1 }, // ciclo natural: fuera los días de retención
+    { profile: F({ goal: 'lose', contraception: 'combined_pill' }), cycle: C1 }, // hormonal: el ciclo no cuenta
+    { profile: M({ goal: 'lose' }), cycle: C1 }, // hombre: tampoco
+  ];
+  for (const c of cases) {
+    const input = { bodyweight: bw, today: TODAY, ...c };
+    const t = analysisWeightTrend(input);
+    assert.deepEqual(t, analyzeWeight(input).trend);
+    // Con la tendencia ya calculada (buildAnalysis), analyzeWeight no la recalcula: usa ese mismo objeto.
+    const w = analyzeWeight({ ...input, trend: t });
+    assert.equal(w.trend, t);
+    assert.equal(w.proteinG.refKg, proteinFor(t.currentKg).refKg);
+  }
+  // El filtro importa: con ciclo natural la tendencia salta los días de retención y queda por debajo de la de la píldora.
+  const nat = analysisWeightTrend({ bodyweight: bw, today: TODAY, profile: F(), cycle: C1 });
+  const pill = analysisWeightTrend({ bodyweight: bw, today: TODAY, profile: F({ contraception: 'combined_pill' }), cycle: C1 });
+  assert.ok(nat.excluded.length > 0 && pill.excluded.length === 0);
 });
