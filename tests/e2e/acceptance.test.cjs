@@ -20,7 +20,7 @@ const { pathToFileURL } = require('url');
 // Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
 const playwright = require('playwright');
 const { devices } = playwright;
-const { waitReady, go, reload, storeAll, idbAll, shot, BROWSER, chromiumOnly, useExampleWeek } = require('./helpers.cjs');
+const { confirmBackupSaved, waitReady, go, reload, storeAll, idbAll, shot, BROWSER, chromiumOnly, useExampleWeek } = require('./helpers.cjs');
 
 const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle', 'context', 'pastRecords', 'races'];
 const PREV_MON = '2026-09-14';
@@ -507,7 +507,8 @@ test('CRITERIO 2: exporto una copia, borro los datos, importo la copia y todo qu
     const pre = await idbSnapshot(page); // disco justo antes de exportar
     await page.locator('.cfg-export').click();
     await page.waitForFunction(() => window.__shared.length === 1);
-    await page.locator('.toast', { hasText: 'Copia exportada' }).waitFor();
+    await confirmBackupSaved(page); // iOS no dice si se guardó en Archivos: lo confirma el usuario
+    await page.locator('.toast', { hasText: 'Copia guardada' }).waitFor();
     const [file] = await page.evaluate(() => window.__shared);
     assert.match(file.name, /^entreno-copia-2026-09-23-\d{4}\.json$/);
     assert.strictEqual(file.type, 'application/json');

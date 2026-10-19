@@ -105,7 +105,8 @@
 .today-backup-later { flex: none; padding: 0 8px; font-size: calc(14px * var(--ts)); }
 .today-backup .banner-title { font-size: calc(15px * var(--ts)); line-height: 1.3; }
 .today-backup .banner-text { font-size: calc(13px * var(--ts)); line-height: 1.3; }
-.today-backup .banner-title, .today-backup .banner-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Ronda 10: con muchos días sin copia («hace 400 días») el título se parte en dos líneas antes que cortarse con «…» */
+.today-backup .banner-title, .today-backup .banner-text { white-space: normal; overflow-wrap: break-word; }
 
 .today-active { cursor: pointer; gap: 4px; }
 .today-active-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

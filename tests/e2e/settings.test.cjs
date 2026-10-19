@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
-const { openApp, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
+const { confirmBackupSaved, openApp, go, reload, storeAll, idbAll, shot } = require('./helpers.cjs');
 
 const NOW = new Date('2026-09-23T10:00:00Z'); // 12:00 en Madrid
 const WS = '2026-09-21';
@@ -660,13 +660,14 @@ test('exportar con la hoja de compartir: compartido anota la copia; cancelado no
     assert.match(await page.locator('.cfg-last-value').innerText(), /Nunca/);
     await stubShare(page, 'ok');
     await page.locator('.cfg-export').click();
+    await confirmBackupSaved(page); // ronda 10: iOS no dice si se guardó; lo confirma el usuario
     await settle(page, 300);
     const [f] = await shared(page);
     assert.strictEqual(f.name, 'entreno-copia-2026-09-23-1200.json');
     assert.strictEqual(f.type, 'application/json');
     assert.strictEqual(JSON.parse(f.text).data.meta.find((m) => m.id === 'settings').lastBackupAt, NOW.getTime());
     assert.strictEqual((await settingsOf(page)).lastBackupAt, NOW.getTime());
-    assert.match(await page.locator('.toast').innerText(), /Copia exportada/);
+    assert.match(await page.locator('.toast').innerText(), /Copia guardada/);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();
@@ -827,6 +828,36 @@ test('almacenamiento: persistente, espacio usado y recuento por tipo', async () 
     await page.locator('.cfg-danger').scrollIntoViewIfNeeded();
     await shot(page, 'settings-data-bottom');
     assert.ok(await noHScroll(page));
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+// Ronda 10 · pendientes (PULIDO §34.3): en iOS, navigator.share() se resuelve aunque se cancele «Guardar en Archivos»
+// dentro de la hoja; la API no dice si el archivo llegó a guardarse. Una copia compartida no consta como hecha hasta
+// que el usuario lo confirma.
+test('exportar con la hoja de compartir: solo «Sí, está guardada» anota la copia; «No» la deja sin hacer', async () => {
+  const app = await setup();
+  const { page } = app;
+  const ask = () => page.getByRole('dialog', { name: '¿Se guardó la copia?' });
+  try {
+    await go(page, '#/settings/data');
+    await stubShare(page, 'ok'); // la hoja «se cierra bien», como hace iOS también al cancelar en Archivos
+    await page.locator('.cfg-export').click();
+    await ask().waitFor();
+    assert.strictEqual((await settingsOf(page)).lastBackupAt, null, 'mientras pregunta, aún no consta');
+    await ask().getByRole('button', { name: 'No', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.sheet-overlay'));
+    assert.strictEqual((await settingsOf(page)).lastBackupAt, null, '«No»: la copia no consta');
+    assert.match(await page.locator('.cfg-last-value').innerText(), /Nunca/);
+    assert.strictEqual(await page.locator('.toast', { hasText: 'Copia exportada' }).count(), 0, 'sin «Copia exportada»');
+    // Otra vez, y ahora sí se guardó
+    await page.locator('.cfg-export').click();
+    await ask().getByRole('button', { name: 'Sí, está guardada' }).click();
+    await page.locator('.toast', { hasText: 'Copia guardada' }).waitFor();
+    assert.strictEqual((await settingsOf(page)).lastBackupAt, NOW.getTime());
+    assert.doesNotMatch(await page.locator('.cfg-last-value').innerText(), /Nunca/);
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

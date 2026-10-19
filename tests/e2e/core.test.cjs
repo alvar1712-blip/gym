@@ -10,7 +10,7 @@ const { pathToFileURL } = require('url');
 // Motor: Chromium por defecto o WebKit con E2E_BROWSER=webkit (fase H de la ronda 6).
 const playwright = require('playwright');
 const { devices } = playwright;
-const { openApp, go, storeAll, shot, waitReady, chromiumOnly, BROWSER } = require('./helpers.cjs');
+const { confirmBackupSaved, openApp, go, storeAll, shot, waitReady, chromiumOnly, BROWSER } = require('./helpers.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
 const wait = (page, ms) => page.waitForTimeout(ms);
@@ -223,6 +223,7 @@ test('crear ejercicio rápido de cardio guarda el deporte; doble toque en «Expo
     assert.deepStrictEqual(r, { downloads: 0, last: null }, 'cancelada: sigue sin copia');
     await page.locator('.cfg-export').click();
     await page.evaluate(() => window.__finishShare());
+    await confirmBackupSaved(page);
     await wait(page, 300);
     r = await page.evaluate(() => ({ downloads: window.__downloads, last: window.__app.store.settings().lastBackupAt }));
     assert.strictEqual(r.downloads, 0);

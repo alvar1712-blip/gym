@@ -656,7 +656,7 @@ function bodyweightCard(ctx) {
     right: h('button.prg-head-link', { type: 'button', onClick: () => goChild('#/bodyweight') }, s.count ? 'Ver todo' : 'Registrar', icon('chevron-right', 16)),
     before: [s.count ? statLine([
       { label: 'Media 7 días', value: kg1(s.ma7), sub: `al ${fmtDay(s.ma7Date, ctx.today)}` },
-      { label: 'Tendencia', value: s.trend.ok ? s.trend.label : 'Datos insuficientes', sub: s.trend.ok ? 'sobre la media de 7 días' : 'faltan pesajes', cls: s.trend.ok ? '' : 'prg-stat-na' },
+      { label: 'Ritmo', value: s.trend.ok ? s.trend.label : 'Datos insuficientes', sub: s.trend.ok ? 'sobre la media de 7 días' : 'faltan pesajes', cls: s.trend.ok ? '' : 'prg-stat-na' },
     ]) : null],
     howto: 'Cada punto es un pesaje; la línea verde es la media de 7 días: fíjate en ella, no en un pesaje suelto (el agua o la sal lo mueven ±1 kg).',
   });

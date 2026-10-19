@@ -892,7 +892,7 @@ const TOAST_REFOCUS_MS = 3000; // al salir el foco del aviso, se cierra a los po
  * región viva que se inserta ya con texto. status (cortés) y alert (urgente, para errores); se crean una vez.
  */
 const liveRegions = {};
-function announce(text, urgent = false) {
+export function announce(text, urgent = false) {
   const key = urgent ? 'alert' : 'status';
   let r = liveRegions[key];
   if (!r || !r.isConnected) {

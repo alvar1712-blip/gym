@@ -332,6 +332,8 @@ test('#/progress con datos: se pinta cada gráfica, periodo global, globo con el
     // Toque en el peso corporal de hoy → pesaje exacto
     const bb = await svgBox(page, '[data-chart="bodyweight"]');
     await page.touchscreen.tap(xOfDate(bb, TODAY), bb.y + bb.height / 2);
+    // Ronda 10: el kg/sem de la tarjeta es un «Ritmo»; «Peso de tendencia» queda para el peso (kg) de Análisis
+    assert.deepStrictEqual(await page.locator('[data-chart="bodyweight"] .prg-stat-label').allInnerTexts(), ['Media 7 días', 'Ritmo']);
     const bwTip = await page.locator('[data-chart="bodyweight"] .chart-tip').innerText();
     const bwTxt = `${String(exp.bwToday).replace('.', ',')} kg`;
     assert.ok(bwTip.includes('24 sep 2026') && bwTip.includes(bwTxt), `pesaje de hoy ${bwTxt}: ${bwTip}`);

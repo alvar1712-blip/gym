@@ -6,7 +6,7 @@
 // PROPIETARIO: módulo de calendario (el hueco .today-extra lo rellena la integración de la Fase 3).
 import * as store from '../store.js';
 import { navigate, refresh } from '../router.js';
-import { h, icon, screen } from '../ui.js';
+import { h, icon, screen, announce } from '../ui.js';
 import { todayStr, fmtDate, fmtDuration, addDays, diffDays, weekStart, parseDate, dateFromTs, hhmm, DAY_LETTER } from '../util.js';
 import {
   ctxFromStore, dayStatus, weekPlan, effectiveDay, adherence, adherenceText, planEmoji, planLabel, STATUS_LABEL, hasWeekPattern,
@@ -282,6 +282,18 @@ function snoozeBackup(now = Date.now()) {
  * Aviso de copia de seguridad pendiente → Ajustes › Copias y datos (allí se exporta; el texto no promete exportar
  * desde aquí). Compacto: no debe empujar «Empezar». «Ahora no» lo pospone en Hoy (backupSnoozed).
  */
+/** Lo primero que se puede tocar DESPUÉS de `el` dentro de la pantalla (si no hay, el título de la pantalla). */
+function nextFocusable(el) {
+  const view = el.closest('#view') || document;
+  const sel = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+  const after = [...view.querySelectorAll(sel)].find((c) => !el.contains(c)
+    && (el.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING) && c.getClientRects().length);
+  if (after) return after;
+  const h1 = view.querySelector('.topbar h1');
+  if (h1) h1.tabIndex = -1;
+  return h1;
+}
+
 function backupBanner() {
   const last = store.settings()?.lastBackupAt;
   const days = last ? Math.max(0, Math.floor((Date.now() - last) / 86400000)) : null;
@@ -300,7 +312,15 @@ function backupBanner() {
     h('button.btn.btn-ghost.btn-sm.today-backup-later', {
       type: 'button',
       'aria-label': 'Ahora no: ocultar este aviso en Hoy unos días',
-      onClick: () => { snoozeBackup(); banner.remove(); },
+      onClick: () => {
+        snoozeBackup();
+        // Ronda 10 (PULIDO §34.3): al quitar el aviso, el foco no se pierde en el <body> (VoiceOver y teclado volverían
+        // al principio): pasa a lo siguiente que se puede tocar en Hoy y se anuncia qué ha pasado.
+        const next = nextFocusable(banner);
+        banner.remove();
+        if (next) { try { next.focus({ preventScroll: true }); } catch { /* sin foco: no pasa nada */ } }
+        announce('Aviso de copia oculto en Hoy unos días. Sigue en Ajustes.');
+      },
     }, 'Ahora no'));
   return banner;
 }

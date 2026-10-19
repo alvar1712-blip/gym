@@ -696,3 +696,47 @@ test('ejercicio quitado de una sesión registrada a posteriori: «hecho parcialm
     await app.close();
   }
 });
+
+// Ronda 10 · pendientes (PULIDO §34.3): con muchos días sin copia el título del aviso no se corta con «…» (se parte
+// en dos líneas), también con el texto grande; y «Ahora no» deja el foco en Hoy (en lo siguiente que se puede tocar)
+// y lo anuncia, en vez de dejarlo en el <body> al quitar el aviso.
+test('aviso de copia en Hoy: «hace 400 días» entero a 375 px (100 y 125 %) y el foco sigue en Hoy tras «Ahora no»', async () => {
+  const app = await setup(MON);
+  const { page } = app;
+  try {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.evaluate(async () => {
+      const st = window.__app.store;
+      await st.save('bodyweight', { id: '2026-09-20', kg: 75.4 });
+      await st.saveSettings({ lastBackupAt: Date.now() - 400 * 86400000 });
+    });
+    for (const scale of ['1', '1.25']) {
+      await page.evaluate((s) => localStorage.setItem('entreno.textScale', s), scale);
+      await reload(page);
+      await go(page, '#/today');
+      const fit = await page.evaluate(() => {
+        const t = document.querySelector('.today-backup .banner-title');
+        const r = t.getBoundingClientRect();
+        return { text: t.textContent, clipped: t.scrollWidth > t.clientWidth + 1, right: r.right, vw: innerWidth, h: document.querySelector('.today-backup').getBoundingClientRect().height };
+      });
+      assert.strictEqual(fit.text, 'Última copia: hace 400 días');
+      assert.ok(!fit.clipped && fit.right <= fit.vw, `al ${Number(scale) * 100} %: el título entero, sin «…» (${JSON.stringify(fit)})`);
+      assert.ok(fit.h <= 140, `sigue compacto (${fit.h} px)`);
+      assert.ok(await noHScroll(page));
+    }
+    // «Ahora no» con el teclado: el aviso desaparece y el foco pasa a lo siguiente de Hoy, no al <body>
+    await page.locator('.today-backup-later').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.querySelector('.today-backup'));
+    const f = await page.evaluate(() => {
+      const a = document.activeElement;
+      return { body: a === document.body, inView: !!document.getElementById('view')?.contains(a), tag: a.tagName, cls: a.className };
+    });
+    assert.ok(!f.body && f.inView, `foco en Hoy tras «Ahora no» (${JSON.stringify(f)})`);
+    await page.waitForFunction(() => [...document.querySelectorAll('[role="status"]')].some((r) => /aviso de copia/i.test(r.textContent)));
+    assert.deepStrictEqual(app.errors, []);
+  } finally {
+    await page.evaluate(() => localStorage.removeItem('entreno.textScale')).catch(() => {});
+    await app.close();
+  }
+});

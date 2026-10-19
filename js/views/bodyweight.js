@@ -199,7 +199,7 @@ export function mountBodyweight(root) {
           h('div.bw-kpi-value.bw-ma', fmtNum(s.ma7, 1), h('span.bw-unit', ' kg')),
           h('div.bw-kpi-sub', `${s.ma7N} ${s.ma7N === 1 ? 'pesaje' : 'pesajes'} · al ${fmtDate(s.ma7Date, 'day')}`)),
         h('div.bw-kpi',
-          h('div.bw-kpi-label', 'Tendencia'),
+          h('div.bw-kpi-label', 'Ritmo'), // kg/sem (ronda 10: «Peso de tendencia» es un peso, en Análisis)
           trendVal,
           h('div.bw-kpi-sub', trendSub))),
       h('div.bw-last.small.muted', `Último pesaje: ${fmtKg(s.last.kg)} · ${relDay(s.last.date)}`),

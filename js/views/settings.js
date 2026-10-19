@@ -530,9 +530,21 @@ export function mountData(root) {
     const file = new File([JSON.stringify(obj)], backupFileName(new Date(now)), { type: 'application/json' });
     const res = await shareFile(file, { title: 'Copia de Entreno' });
     if (res === 'cancelled') return res;
+    // Ronda 10 (PULIDO §34.3): en iOS la hoja de compartir se cierra «bien» también si se cancela «Guardar en
+    // Archivos» dentro de ella; la API no dice si el archivo llegó a guardarse. Por eso una copia compartida solo
+    // consta si el usuario lo confirma (si responde que no o cierra la pregunta, no se anota y el aviso sigue).
+    if (res === 'shared' && !(await confirmDialog({
+      title: '¿Se guardó la copia?',
+      message: 'El iPhone no le dice a Entreno si el archivo llegó a guardarse (por ejemplo, si cancelaste en «Guardar en Archivos»). Confírmalo solo si la ves en Archivos o la has enviado.',
+      confirmText: 'Sí, está guardada',
+      cancelText: 'No',
+    }))) {
+      toast('La copia no consta como hecha. Vuelve a exportarla cuando puedas.');
+      return 'cancelled';
+    }
     await markBackup(fileSettings, now);
     paintLast();
-    toast(res === 'shared' ? 'Copia exportada.' : 'Copia descargada.', { kind: 'success' });
+    toast(res === 'shared' ? 'Copia guardada.' : 'Copia descargada.', { kind: 'success' });
     return res;
   }
 

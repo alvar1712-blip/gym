@@ -1245,7 +1245,7 @@ function retentionInsight(ctx) {
     data: [
       { label: 'Último pesaje', value: `${kgTxt(last.kg)} · ${day(last.date)}` },
       ph ? { label: 'Día del ciclo', value: `día ${ph.day} de ~${ph.length} (${ph.phaseLabel}${ph.estimated ? ', estimada' : ''})` } : null,
-      isNum(last.trendKg) ? { label: 'Tendencia', value: kgTxt(last.trendKg, 2) } : null,
+      isNum(last.trendKg) ? { label: 'Peso de tendencia', value: kgTxt(last.trendKg, 2) } : null,
       dev != null ? { label: 'Diferencia', value: `${sgn(r2(dev))}${fmtNum(Math.abs(dev), 1)} kg` } : null,
       inWin.length ? { label: 'Pesajes marcados', value: listDates(inWin, 6) } : null,
     ],

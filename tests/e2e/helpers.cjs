@@ -140,4 +140,13 @@ function chromiumOnly(why) {
   return BROWSER === 'chromium' ? false : `Solo en Chromium (${why}); en WebKit no existe esa herramienta de Playwright`;
 }
 
-module.exports = { openApp, useExampleWeek, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable, chromiumOnly };
+/**
+ * Ronda 10 (PULIDO §34.3): tras compartir una copia, la app pregunta «¿Se guardó la copia?» (iOS no dice si se
+ * guardó en Archivos). Responde que sí, como haría el usuario que la ha guardado.
+ */
+async function confirmBackupSaved(page) {
+  const dlg = page.getByRole('dialog', { name: '¿Se guardó la copia?' });
+  await dlg.getByRole('button', { name: 'Sí, está guardada' }).click();
+}
+
+module.exports = { confirmBackupSaved, openApp, useExampleWeek, waitReady, reload, go, settle, waitRoute, storeAll, idbAll, shot, devices, BROWSER, engineAvailable, chromiumOnly };

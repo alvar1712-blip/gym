@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
-const { openApp, go, reload, idbAll, shot, engineAvailable } = require('./helpers.cjs');
+const { confirmBackupSaved, openApp, go, reload, idbAll, shot, engineAvailable } = require('./helpers.cjs');
 
 const NOW = new Date('2026-09-23T10:00:00Z'); // 12:00 en Madrid
 const STORES = ['meta', 'exercises', 'templates', 'sessions', 'plan', 'bodyweight', 'checkins', 'goals', 'cycle', 'context', 'pastRecords', 'races'];
@@ -408,6 +408,7 @@ test('exportar antes desde la confirmación: se comparte la copia y solo entonce
     await page.evaluate(() => { window.__shareMode = 'ok'; });
     await page.locator('.cfg-wipe').click();
     await sheetBtn(page, 'Exportar copia antes').click();
+    await confirmBackupSaved(page); // ronda 10: la copia compartida solo cuenta si se confirma
     await page.waitForFunction(() => document.querySelector('.sheet-overlay.open input'));
     const [f] = await page.evaluate(() => window.__shared);
     assert.match(f.name, /^entreno-copia-2026-09-23-1200\.json$/);

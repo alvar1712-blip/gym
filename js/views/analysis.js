@@ -363,7 +363,7 @@ function weightChart(a) {
   const chart = lineChart(slot, {
     series: [
       { id: 'daily', label: 'Pesaje', color: COLORS.text2, points: daily, line: false, dots: true },
-      { id: 'trend', label: 'Tendencia', color: COLORS.accent, points: trend, emphasis: true, dots: false },
+      { id: 'trend', label: 'Peso de tendencia', color: COLORS.accent, points: trend, emphasis: true, dots: false },
     ],
     height: chartHeight(150),
     yFormat: (v) => `${fmtNum(v, 1)} kg`,

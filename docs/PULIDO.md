@@ -772,11 +772,17 @@ nombres que no dicen cuál se muestra. Reglas:
   (sin insignia «Copia pendiente» ni icono de aviso). En Copias y datos avisa el propio bloque «Última copia» (la
   antigüedad en color de aviso y una línea `.cfg-overdue` con el porqué), sin el banner «Hace más de 7 días…» que
   repetía «Hace 21 días».
-- **Sin verificar (copias-6)**: en un iPhone real, si en la hoja de compartir se elige «Guardar en Archivos» y se
-  cancela en el selector de carpetas, ¿`navigator.share` se resuelve (y la app anotaría una copia que no existe)? No se
-  cambia código sin comprobarlo en un dispositivo (PWA instalada y Safari: Exportar → Guardar en Archivos → Cancelar →
-  mirar si «Última copia» cambia). Si cambia, la única mitigación honesta es un texto («Comprueba en Archivos que se ha
-  guardado»): la API no da más información.
+- **Copia compartida = copia confirmada (copias-6, pendientes de la ronda 10)**: `navigator.share` no dice si el
+  archivo llegó a guardarse (en iOS se resuelve también si se cancela «Guardar en Archivos» dentro de la hoja). Tras
+  compartir, la app pregunta «¿Se guardó la copia?»: solo «Sí, está guardada» la anota (y quita el aviso); «No» o
+  cerrar la pregunta la dejan sin hacer, y la exportación «antes de restaurar o borrar» no sigue. Una descarga
+  (navegador sin hoja de compartir) se anota como antes. Pendiente de comprobar en un iPhone real que la hoja y la
+  pregunta se encadenan bien.
+- **El aviso de Hoy no se corta**: «Última copia: hace 400 días» se parte en dos líneas antes que acabar en «…».
+- **Foco tras «Ahora no»**: el aviso desaparece y el foco pasa a lo siguiente que se puede tocar en Hoy (si no hay,
+  al título); VoiceOver anuncia «Aviso de copia oculto en Hoy unos días. Sigue en Ajustes.».
+- **Peso: una palabra para cada cosa**: «Peso de tendencia» es un peso (kg) en Análisis, en la línea de su gráfica y
+  en el «¿Por qué?» de la retención; el kg/semana es «Ritmo» en Análisis, Progreso y Peso corporal.
 - **Sin cambio (copias-7)**: tras restaurar una copia antigua el aviso reaparece con sus días; es correcto.
 - **Guardas**: `tests/e2e/restore-point.test.cjs` («restaurar en un iPhone sin datos», Chromium y WebKit),
   `tests/e2e/settings.test.cjs` («aviso de copia (ronda 10)») y `tests/e2e/calendar.test.cjs` («aviso de copia en Hoy
