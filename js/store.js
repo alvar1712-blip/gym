@@ -3,7 +3,7 @@
 import * as db from './db.js';
 import { SEED_VERSION, defaultSettings, exampleWeekPatterns, SEED_EXERCISES, SEED_TEMPLATES } from './seed.js';
 import { deepClone, fillDefaults, sortBy, todayStr } from './util.js';
-import { dataCounts, SECTION_LABELS } from './backup.js';
+import { dataCounts, SECTION_LABELS, verifyBackupIntegrity } from './backup.js';
 
 export const STORES = db.STORES;
 export const APP_VERSION = '1.0.0';
@@ -536,6 +536,8 @@ export function backupData(obj, { owned = false } = {}) {
 export async function importData(obj, { owned = false } = {}) {
   const v = validateBackup(obj);
   if (!v.ok) throw new Error(v.error);
+  // Una copia con sello que no coincide está modificada o dañada: no se restaura, antes de tocar nada (ni el punto de restauración)
+  if (verifyBackupIntegrity(obj).status === 'mismatch') throw new Error('El sello de integridad de la copia no coincide: el archivo se modificó o se dañó.');
   const data = backupData(obj, { owned });
   const undo = await guardRestorePoint('import');
   await replaceEverything(data, 'import', { undo });

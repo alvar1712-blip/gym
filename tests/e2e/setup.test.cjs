@@ -100,6 +100,19 @@ async function flow(page) {
   const cards = await page.locator('.prg-rec[data-ex="press_banca"]').evaluateAll((els) => els.map((e) => [e.dataset.setup, e.querySelector('[data-rec="weight"] .prg-rec-value')?.textContent.replace(/\s+/g, ' ').trim()]));
   assert.deepStrictEqual(cards.sort(), [['Máquina Hammer', '115 kg'], ['sin especificar', '100 kg']].sort());
 
+  // --- Plantillas: una sesión creada desde una rutina hereda la configuración habitual; la rutina no se modifica ---
+  const tpl = await page.evaluate(async () => {
+    const { store } = window.__app;
+    const before = JSON.stringify(store.get('templates', 'tpl_d1'));
+    const sl = await import('./js/session-logic.js');
+    const s = await sl.createStrengthSession({ templateId: 'tpl_d1', date: '2026-10-19', planDate: '2026-10-19' });
+    const bench = s.exercises.find((e) => e.exerciseId === 'press_banca');
+    return { setup: bench ? bench.setup : 'sin-press', unchanged: JSON.stringify(store.get('templates', 'tpl_d1')) === before, anySetupInTemplate: JSON.stringify(store.get('templates', 'tpl_d1')).includes('"setup"') };
+  });
+  if (tpl.setup !== 'sin-press') assert.strictEqual(tpl.setup, 'Máquina Hammer', 'la rutina hereda la configuración habitual del press');
+  assert.strictEqual(tpl.unchanged, true);
+  assert.strictEqual(tpl.anySetupInTemplate, false, 'la configuración vive en la sesión, no en la rutina');
+
   // --- Copia: la configuración viaja y el historial anterior no recibe una inventada ---
   const exported = await page.evaluate(() => JSON.parse(JSON.stringify(window.__app.store.exportData())));
   const byId = Object.fromEntries(exported.data.sessions.map((s) => [s.id, s.exercises[0]]));

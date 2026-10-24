@@ -104,3 +104,56 @@ No hay un sistema general de migraciones: no hace falta todavía (todo lo de est
 Ver el informe final de la ronda (resultados de las baterías). Nota de entorno: en esta máquina Windows `core.autocrlf=true`, así
 que el sello del service worker (`sw.js` VERSION) no coincide con el contenido (se calcula sobre bytes con CRLF): ejecutar
 `npm run stamp` **solo** en una copia con finales de línea LF antes de publicar. No se ha estampado ni publicado nada.
+
+## Cierre de la ronda
+
+**Service worker.** `scripts/stamp-sw.mjs` calcula el hash sobre los bytes tal como se SIRVEN (texto normalizado a LF; binarios
+intactos), así que da la misma `VERSION` en un checkout de Windows con `core.autocrlf=true` y en uno LF (comprobado con un
+checkout LF limpio). Ya no hace falta un checkout especial y no cambia finales de línea. `npm run check` pasa; `js/sha256.js`
+está en `ASSETS`, queda en la caché `entreno-<VERSION>` y se sirve sin conexión (comprobado en Chromium y WebKit con el SW activo).
+`VERSION` actual: ver `sw.js`. Si cambias cualquier archivo después, vuelve a ejecutar `npm run stamp`.
+
+**Copias con sello incorrecto.** No se pueden restaurar: «Importar copia» muestra «No se restaura» sin ofrecer sustituir, y
+`store.importData` las rechaza antes de crear el punto de restauración (cualquier camino). Probado: IndexedDB, ajustes y punto de
+restauración idénticos tras intentarlo. Las copias antiguas sin sello se importan como siempre; «Comprobar copia» las describe como
+«estructura válida, sin sello». (Quien edite una copia a mano puede borrar el campo `integrity`: pasa a ser una copia sin sello; el
+sello detecta daños y modificaciones accidentales, no es una firma.)
+
+**SHA-256.** Probado contra los vectores oficiales, `node:crypto` y Web Crypto con Unicode (acentos, CJK, emoji, `\u0000`), todos los
+límites de bloque y 24 MB de JSON y de bytes. Medido en navegador (mediana de 5) para 6,75 y 13,5 MB:
+
+| | JS síncrono | Web Crypto |
+|---|---|---|
+| Chromium | 58 / 112 ms | 18 / 33 ms |
+| WebKit | 52 / 99 ms | 28 / 56 ms |
+
+Decisión: se mantiene el síncrono. Web Crypto es 2–3× más rápido pero asíncrono: obligaría a precalcular el archivo antes del toque
+(y a invalidarlo con cada escritura, o a abrir la hoja de compartir con un archivo viejo) para no perder el gesto de usuario de iOS. Con
+5 años de datos el sello cuesta ~50–60 ms en un navegador de escritorio (el doble o triple en un iPhone, ~150 ms): no compensa la
+complejidad ni el riesgo de un archivo obsoleto. Si algún día el historial supera ~30 MB, precalcular con Web Crypto es la vía.
+
+**Configuración de material, verificada:** historial antiguo intacto (sin campo, no se inventa); cambiar de máquina o agarre no da
+récord; volver a una configuración recupera sus referencias (107,5 > 105 en Hammer aunque Polea tenga 130); una sesión desde una rutina
+hereda la configuración y la rutina no cambia; la copia JSON la conserva. **Límite documentado:** los objetivos de fuerza y las marcas
+históricas manuales miran todo el historial (un objetivo «125 × 5» es de fuerza, no de máquina), mientras que récords, estancamiento y
+progreso son por configuración; no se contradicen (el récord global coincide), pero un objetivo puede darse por conseguido con una
+máquina distinta a la de tus récords. No se amplía.
+
+**Batería de pruebas (Windows, mismas condiciones en la base `ef2a2f9` y en la rama).**
+
+| | Unitarias | Chromium (360) | WebKit completo (360) |
+|---|---|---|---|
+| Base | 774/775 | 338 ok, 18 fallan | 270 ok, 72 fallan, 14 omitidas |
+| Rama | 811/811 | 342 ok, 18 fallan (las mismas 18) | 276 ok, 70 fallan (subconjunto de las de la base) |
+
+Clasificación de los fallos que quedan (todos preexistentes; ninguno nuevo de esta ronda):
+- **Entorno Windows, fuentes y métricas** (guardas visuales: «palabra partida», tildes recortadas en la franja del check-in, «Registrar
+  serie» a la vista en iPhone SE, sesiones largas al 150 %): las pruebas se ajustaron con las fuentes de Linux/iOS; en Windows el texto mide
+  distinto. Alguna pasa sola y falla en la batería completa (carga de la máquina).
+- **Entorno Windows, WebKit:** el motor de Playwright para Windows cierra la página («Page crashed») al abrir Ajustes › Tu contexto
+  con un toque (por URL directa funciona), lo que tumba ~70 pruebas de WebKit que pasan por ahí. No es un fallo de Entreno en Safari.
+- **Fallos reales de la app:** ninguno encontrado en la comparación.
+- **Regresiones de esta ronda:** ninguna en la versión final. En la primera pasada hubo 3 (un CSV con una columna más y una
+  elección de tema de Hoy); se corrigió el código del segundo y se actualizó el recuento del primero, y vuelven a pasar.
+No se ha podido ejecutar en Linux (no hay WSL ni Docker en este PC y GitHub Actions exigiría publicar). Para tenerlo: ejecutar
+`npm run e2e` y `npm run e2e:webkit` en un Linux o en CI contra la base y la rama y comparar como aquí.

@@ -110,3 +110,18 @@ test('describeBackup: qué contiene, de cuándo es, su formato y qué se pudo co
   assert.equal(d1.format, 1);
   assert.deepEqual(d1.missingSections.map((s) => s.store), ['context', 'pastRecords', 'races']);
 });
+
+test('SHA-256 propio frente a Web Crypto (el nativo de los navegadores): Unicode, emoji, límites de bloque y archivos grandes', async () => {
+  const hex = async (bytes) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const enc = new TextEncoder();
+  const cases = ['', 'ñandú — Ünïcödé', '日本語のテキスト', '🏋️‍♂️💪🏃‍♀️ astral', 'a\u0000b�c', 'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(63), 'x'.repeat(64), 'x'.repeat(65), '€'.repeat(1000)];
+  for (const s of cases) assert.equal(sha256Hex(s), await hex(enc.encode(s)), JSON.stringify(s).slice(0, 30));
+  // Grande: 24 MB de JSON realista (con acentos y emoji) y 24 MB de bytes aleatorios deterministas
+  const row = JSON.stringify({ id: 's1', name: 'Sentadilla búlgara 🏋️', note: 'Más peso — ñ', sets: [60, 8, 1.5, null, true] });
+  const big = Array.from({ length: Math.ceil(24e6 / row.length) }, () => row).join(',');
+  assert.equal(sha256Hex(big), await hex(enc.encode(big)), 'JSON de ~24 MB');
+  const bytes = new Uint8Array(24e6);
+  let x = 123456789;
+  for (let i = 0; i < bytes.length; i++) { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; bytes[i] = x >>> 24; }
+  assert.equal(sha256Hex(bytes), await hex(bytes), '24 MB de bytes');
+});

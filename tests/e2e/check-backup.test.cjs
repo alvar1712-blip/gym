@@ -109,11 +109,33 @@ async function flow(page) {
   assert.strictEqual(await page.evaluate(() => JSON.stringify(window.__app.store.settings())), settingsBefore);
   assert.strictEqual(await page.evaluate(async () => (await window.__app.store.restorePointInfo()) === null), true, 'ningún punto de restauración nuevo');
 
-  // Importar una copia modificada avisa antes de sustituir nada
-  const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.cfg-import').click()]);
-  await fc.setFiles({ name: 'editada.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(edited), 'utf8') });
+  // Importar una copia con el sello incorrecto NO se puede: ni se ofrece sustituir, ni se toca nada (datos, ajustes, punto de restauración)
+  for (const [name, content] of [['editada.json', edited], ['incompleta.json', cut]]) {
+    await go(page, '#/settings/data');
+    const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.cfg-import').click()]);
+    await fc.setFiles({ name, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(content), 'utf8') });
+    await page.locator('.sheet-panel').waitFor();
+    const txt = clean(await page.locator('.sheet-panel').innerText());
+    assert.match(txt, /No se puede importar/);
+    assert.match(txt, /no se restaura/);
+    assert.doesNotMatch(txt, /Sustituir todo/);
+    await closeSheet(page);
+  }
+  await page.waitForTimeout(300);
+  assert.deepStrictEqual(await snapshot(page), before, 'tras intentar importar copias manipuladas, IndexedDB idéntico');
+  assert.strictEqual(await page.evaluate(async () => (await window.__app.store.restorePointInfo()) === null), true, 'sin punto de restauración nuevo');
+  // El propio almacén la rechaza aunque se llegue por otro camino
+  const rejected = await page.evaluate(async (c) => { try { await window.__app.store.importData(c); return 'importada'; } catch (e) { return e.message; } }, edited);
+  assert.match(rejected, /sello de integridad/);
+  assert.deepStrictEqual(await snapshot(page), before);
+
+  // Una copia anterior SIN sello sigue siendo compatible: se ofrece restaurarla y se restaura
+  const [fc2] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.cfg-import').click()]);
+  await fc2.setFiles({ name: 'antigua.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy), 'utf8') });
   await page.locator('.sheet-panel').waitFor();
-  assert.match(clean(await page.locator('.sheet-panel').innerText()), /ATENCIÓN: el sello de integridad de esta copia no coincide/);
+  assert.match(clean(await page.locator('.sheet-panel').innerText()), /Sustituir todo/);
+  await page.locator('.sheet-panel .btn', { hasText: 'Sustituir todo' }).click();
+  await page.waitForFunction(() => location.hash === '#/today' && window.__app.store.count('sessions') === 2, null, { timeout: 8000 });
 }
 
 test('Comprobar copia: sello, estados, sin escribir nada (Chromium, 375 px)', async () => {

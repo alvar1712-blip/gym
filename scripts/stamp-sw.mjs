@@ -10,6 +10,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERSION_RE = /^const VERSION = '([^']*)';/m;
 
+const TEXT_EXT = new Set(['.js', '.mjs', '.css', '.html', '.json', '.svg', '.webmanifest', '.txt']);
+/**
+ * Bytes de un archivo tal como se SIRVEN: en git y en GitHub Pages los de texto llevan LF. En un checkout de Windows con
+ * core.autocrlf=true están en el disco con CRLF y el hash saldría distinto; se normaliza (los binarios, intactos).
+ */
+function contentOf(file) {
+  const buf = fs.readFileSync(file);
+  return TEXT_EXT.has(path.extname(file).toLowerCase()) ? Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'), 'utf8') : buf;
+}
+
 /** Archivos listados en ASSETS de sw.js (sin './'). */
 export function listedAssets(swText) {
   return [...swText.matchAll(/'\.\/([^']*)'/g)].map((m) => m[1]).filter(Boolean);
@@ -24,11 +34,11 @@ export function computeVersion(root = ROOT) {
   const m = VERSION_RE.exec(swText);
   if (!m) throw new Error("sw.js no contiene la línea `const VERSION = '…';`");
   const hash = crypto.createHash('sha256');
-  hash.update(swText.replace(VERSION_RE, "const VERSION = '';"));
+  hash.update(swText.replace(VERSION_RE, "const VERSION = '';").replace(/\r\n/g, '\n'));
   for (const f of [...new Set(listedAssets(swText))].sort()) {
     const file = path.join(root, f);
     hash.update(`\0${f}\0`);
-    if (fs.existsSync(file)) hash.update(fs.readFileSync(file));
+    if (fs.existsSync(file)) hash.update(contentOf(file));
   }
   return { current: m[1], expected: `v1-${hash.digest('hex').slice(0, 10)}` };
 }

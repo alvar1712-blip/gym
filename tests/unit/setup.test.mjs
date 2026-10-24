@@ -180,3 +180,28 @@ test('resumen frente a la anterior: solo compara el mismo ejercicio con la misma
   const legacy = mk('2026-08-01', 100);
   assert.equal(compareSessions(mk('2026-08-08', 105), legacy, EX).rows[0].text, '+5 kg', 'sin configuración en ambas: como siempre');
 });
+
+test('volver a una configuración anterior recupera SUS referencias (récord y estancamiento propios)', () => {
+  const a1 = ses('2026-08-03', 'press', [set(100)], 'Hammer');
+  const a2 = ses('2026-08-10', 'press', [set(105)], 'Hammer');
+  const b1 = ses('2026-08-17', 'press', [set(130)], 'Polea');
+  const back = ses('2026-08-24', 'press', [set(107.5)], 'hammer');
+  const weak = ses('2026-08-31', 'press', [set(102.5)], 'Hammer');
+  const all = [a1, a2, b1, back, weak];
+  assert.ok(prsOf(all, back).includes('weight'), 'vuelve a Hammer: 107,5 supera su marca de 105, aunque Polea tenga 130');
+  assert.deepEqual(prsOf(all, weak), [], '102,5 no supera la marca de Hammer (107,5)');
+  const d = data(all);
+  assert.deepEqual(exerciseStream(d, 'press').map((e) => e.sessionId), [a1.id, a2.id, back.id, weak.id], 'el stream actual es el de Hammer, con todo su historial anterior');
+  assert.equal(exerciseRecord(d, 'press', { setup: 'Hammer' }).bestWeight.value, 107.5);
+  assert.equal(exerciseRecord(d, 'press', { setup: 'Polea' }).bestWeight.value, 130, 'la referencia de Polea sigue intacta');
+});
+
+test('objetivos y marcas históricas miran todo el historial (documentado): no se rompen con varias configuraciones y no contradicen el récord global', async () => {
+  const { goalProgress } = await import('../../js/goals-logic.js');
+  const sessions = [ses('2026-08-03', 'press', [set(100)], 'Hammer'), ses('2026-08-17', 'press', [set(130)], 'Polea'), ses('2026-09-14', 'press', [set(100)], 'Hammer')];
+  const d = data(sessions);
+  const goal = { id: 'g', kind: 'strength', exerciseId: 'press', weight: 125, reps: 5, createdAt: tsFromDate('2026-07-01', 10), achievedAt: null, archived: false };
+  const p = goalProgress(d, goal);
+  assert.equal(p.status, 'achieved', '130 × 5 en cualquier configuración cumple «125 × 5» (un objetivo es de fuerza, no de máquina)');
+  assert.equal(exerciseRecord(d, 'press').bestWeight.value, 130, 'y el récord de todo el historial coincide');
+});

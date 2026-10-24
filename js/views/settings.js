@@ -674,9 +674,13 @@ export function mountData(root) {
     const lostText = lostSectionsWarning(res.backup, Object.fromEntries(NEWER_SECTIONS.map((x) => [x.store, store.count(x.store)])));
     // Sello de integridad (copias nuevas): si no coincide, el archivo se modificó o se dañó; se avisa antes de sustituir nada
     const seal = verifyBackupIntegrity(res.backup);
-    const sealText = seal.status === 'mismatch'
-      ? 'ATENCIÓN: el sello de integridad de esta copia no coincide, así que el archivo se modificó o se dañó después de exportarlo. Si no lo modificaste tú, no la uses para restaurar (usa «Comprobar copia» para ver qué falta).'
-      : '';
+    // Con el sello incorrecto NO se restaura (ni se toca nada): el archivo se modificó o se dañó. Las copias sin sello (versiones
+    // anteriores) siguen siendo válidas.
+    if (seal.status === 'mismatch') {
+      importError('El sello de integridad de esta copia no coincide: el archivo se modificó o se dañó después de exportarlo, así que no se restaura. No se ha cambiado nada. Usa «Comprobar copia» para ver qué falta o exporta una copia nueva.');
+      return;
+    }
+    const sealText = '';
     const g = await guardSheet({
       title: '¿Importar esta copia?',
       message: `Copia ${when}: ${countsText(sum, { all: true, sep: ' · ' })}.\n\n`
