@@ -347,3 +347,25 @@ test('agujetas y dosis dentro de un ejercicio (series, RIR, carga) y curva de 24
   // 5 y 5 sesiones: sin conclusión
   assert.ok(!analyzeHybrid(build(10), { today: TODAY }).insights.some((i) => i.id === 'doms-dose'));
 });
+
+test('R11 · otras actividades: se distingue lo intermitente, lo explosivo y la movilidad; lo demás queda «sin clasificar»', () => {
+  const wk = (w, d) => addDays('2026-09-28', -7 * w + d);
+  const sessions = [];
+  for (let w = 1; w <= 4; w++) {
+    sessions.push(act('other', wk(w, 1), { min: 60, rpe: 8, subtype: 'basketball' }));
+    sessions.push(act('other', wk(w, 2), { min: 30, rpe: 7, subtype: 'agility' }));
+    sessions.push(act('other', wk(w, 3), { min: 20, rpe: 2, subtype: 'mobility' }));
+    sessions.push(act('other', wk(w, 4), { min: 45, rpe: 7, subtype: 'Clase de Educación Física' }));
+    sessions.push(act('run', wk(w, 5), { min: 40, rpe: 5, subtype: 'z2' }));
+  }
+  const sl = sportLoad(data({ sessions }), TODAY);
+  const other = sl.rows.find((r) => r.kind === 'other');
+  assert.deepEqual(other.mix, { intermittent: 60, explosive: 30, low: 20, unclassified: 45 }, 'minutos por semana de cada tipo');
+  assert.equal(sl.rows.find((r) => r.kind === 'run').mix, undefined, 'solo las otras actividades se desglosan');
+  const ins = analyzeHybrid(data({ sessions }), { today: TODAY }).insights.find((i) => i.id === 'load-sport');
+  const row = ins.why.data.find((d) => d.label === 'Otras');
+  assert.match(row.value, /intermitente 60 min/);
+  assert.match(row.value, /explosiva 30 min/);
+  assert.match(row.value, /sin clasificar 45 min/);
+  assert.doesNotMatch(row.value, /aeróbic|resistencia/i, 'no se inventa qué parte es aeróbica');
+});

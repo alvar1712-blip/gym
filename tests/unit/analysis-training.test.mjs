@@ -726,3 +726,41 @@ test('fuentes: solo de la lista del contrato (§5), con detalle', () => {
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// Ronda 11 (bloque 3): muestra mínima del reparto 80/20 y otras actividades sin inventar intensidad
+// ---------------------------------------------------------------------------
+
+test('R11 · el reparto suave/intenso no avisa con una muestra pequeña (pocas sesiones, semanas o minutos)', () => {
+  // 4 sesiones (3 intensas y 1 suave) en 4 semanas: antes avisaba «demasiada intensidad»
+  const small = [
+    act('run', ago(2), { km: 8, min: 45, subtype: 'intervals' }), act('run', ago(9), { km: 8, min: 45, subtype: 'intervals' }),
+    act('run', ago(16), { km: 8, min: 45, subtype: 'tempo' }), act('run', ago(23), { km: 6, min: 40, subtype: 'z2' }),
+  ];
+  const r = analyzeEndurance(mk({ sessions: small }), { today: TODAY });
+  assert.equal(byId(r.insights, 'endurance-intensity'), undefined, 'muestra pequeña: sin recomendación 80/20');
+  assert.ok(r.intensity.easyShare != null, 'el reparto sigue calculándose para quien lo consulte');
+  // Muchas sesiones, pero todas en una sola semana: tampoco
+  const oneWeek = Array.from({ length: 7 }, (_, k) => act('run', ago(1 + (k % 3)), { km: 8, min: 45, subtype: k < 5 ? 'intervals' : 'z2', hour: 7 + k }));
+  assert.equal(byId(analyzeEndurance(mk({ sessions: oneWeek }), { today: TODAY }).insights, 'endurance-intensity'), undefined);
+});
+
+test('R11 · otras actividades (baloncesto, Educación Física…): no entran en el 80/20, se cuentan aparte y bajan la confianza', () => {
+  const base = [];
+  for (let k = 0; k < 10; k++) base.push(act('run', ago(1 + k * 2), { km: 10, min: 60, subtype: 'z2' }));
+  base.push(act('run', ago(4), { km: 8, min: 40, subtype: 'intervals' }));
+  const withOther = [...base,
+    act('other', ago(2), { min: 90, rpe: 8, subtype: 'basketball' }), act('other', ago(10), { min: 60, rpe: 7, subtype: 'Clase de Educación Física' }),
+    act('other', ago(5), { min: 20, rpe: 2, subtype: 'mobility' })];
+  const r = analyzeEndurance(mk({ sessions: withOther }), { today: TODAY });
+  const plain = analyzeEndurance(mk({ sessions: base }), { today: TODAY });
+  assert.equal(r.intensity.easyMin, plain.intensity.easyMin, 'un RPE alto no convierte el baloncesto en resistencia intensa');
+  assert.equal(r.intensity.hardMin, plain.intensity.hardMin);
+  assert.equal(r.intensity.otherCount, 2, 'la movilidad no cuenta como actividad exigente');
+  assert.equal(r.intensity.otherMin, 150);
+  const i = byId(r.insights, 'endurance-intensity');
+  assert.match(i.text, /otras actividades/i);
+  assert.match(i.why.data.map((d) => `${d.label} ${d.value}`).join(' | '), /Otras actividades.*150 min/);
+  assert.equal(byId(plain.insights, 'endurance-intensity').confidence.level, 'high');
+  assert.equal(i.confidence.level, 'medium', 'con actividad de intensidad desconocida, no se afirma con confianza alta');
+});

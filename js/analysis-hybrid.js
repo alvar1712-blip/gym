@@ -125,6 +125,11 @@ function insight(o) {
 // Carga por deporte (weekAgg vía stats.weeklySeries)
 // ===========================================================================
 
+/** Naturaleza conocida de una «otra actividad» por su subtipo; el resto (texto libre, deporte libre…) queda sin clasificar. */
+const OTHER_PROFILE = { basketball: 'intermittent', agility: 'explosive', mobility: 'low' };
+export const OTHER_PROFILE_LABEL = { intermittent: 'intermitente', explosive: 'explosiva', low: 'movilidad', unclassified: 'sin clasificar' };
+export const otherProfile = (s) => OTHER_PROFILE[s?.subtype] || 'unclassified';
+
 /**
  * Carga (min × RPE) y minutos por deporte: últimas 4 semanas completas frente a las 4 anteriores, y la semana en curso
  * frente a la media de las 4 anteriores (pico). La carga total de siempre no cambia: esto la reparte. Un deporte sin
@@ -139,10 +144,15 @@ export function sportLoad(d, today) {
   const sum = (list, f) => list.reduce((t, r) => t + (f(r) || 0), 0);
   const noRpe = new Map(SPORTS.map((k) => [k, 0]));
   const from4 = last4.length ? last4[0].week : cw;
+  const otherMix = {};
   for (const s of toArr(d.sessions)) {
     if (!s || s.status !== 'done' || !isDateStr(s.date) || s.date < from4 || s.date >= cw) continue;
     const k = SPORTS.includes(s.kind) ? s.kind : 'other';
     if (!(s.rpe >= 1)) noRpe.set(k, noRpe.get(k) + 1);
+    if (k === 'other') {
+      const m = sessionDurationMin(s);
+      if (m > 0) { const p = otherProfile(s); otherMix[p] = (otherMix[p] || 0) + m; }
+    }
   }
   const out = SPORTS.map((k) => {
     const load4 = sum(last4, (r) => r.load[k]);
@@ -152,6 +162,8 @@ export function sportLoad(d, today) {
     const lastWeekLoad = cur ? cur.load[k] : 0;
     return {
       kind: k, label: SPORT_LABEL[k],
+      // Solo en «Otras»: minutos por semana según la naturaleza conocida de la actividad (sin inventar la parte aeróbica)
+      ...(k === 'other' && Object.keys(otherMix).length ? { mix: Object.fromEntries(Object.entries(otherMix).map(([p, m]) => [p, round(m / 4, 1)])) } : {}),
       minutes4w: round(sum(last4, (r) => r.minutes[k]) / 4, 1),
       km4w: round(sum(last4, (r) => r.km?.[k]), 0.1),
       load4w: round(avgWeek, 1),
@@ -175,7 +187,7 @@ function sportLoadInsight(sl, today) {
   const spikes = rows.filter((r) => r.spike);
   const data = rows.map((r) => ({
     label: r.label,
-    value: `${fmtNum(r.minutes4w, 0)} min/sem · carga ${fmtNum(r.load4w, 0)}/sem${r.share != null ? ` (${pctTxt(r.share)})` : ''}${r.changePct != null ? ` · ${r.changePct >= 0 ? '+' : '−'}${pctTxt(Math.abs(r.changePct))} frente a las 4 anteriores` : ''}${r.noRpe4w ? ` · ${plural(r.noRpe4w, 'sesión sin RPE', 'sesiones sin RPE')}` : ''}`,
+    value: `${fmtNum(r.minutes4w, 0)} min/sem · carga ${fmtNum(r.load4w, 0)}/sem${r.share != null ? ` (${pctTxt(r.share)})` : ''}${r.changePct != null ? ` · ${r.changePct >= 0 ? '+' : '−'}${pctTxt(Math.abs(r.changePct))} frente a las 4 anteriores` : ''}${r.noRpe4w ? ` · ${plural(r.noRpe4w, 'sesión sin RPE', 'sesiones sin RPE')}` : ''}${r.mix ? ` · de ellas: ${Object.entries(r.mix).map(([p, m]) => `${OTHER_PROFILE_LABEL[p]} ${fmtNum(m, 0)} min`).join(', ')}` : ''}`,
   }));
   const noRpe = rows.reduce((t, r) => t + r.noRpe4w, 0);
   const conf = combine([

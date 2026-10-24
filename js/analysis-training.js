@@ -80,6 +80,10 @@ export const MIN_NOISE = 0.01;
 
 /** Resistencia: reparto de las últimas 4 semanas frente a ~80/20. */
 export const INTENSITY_WEEKS = 4;
+/** Muestra mínima para hablar del reparto suave/intenso: sesiones con tipo o esfuerzo, semanas distintas y minutos. */
+export const INTENSITY_MIN_SESSIONS = 6;
+export const INTENSITY_MIN_WEEKS = 3;
+export const INTENSITY_MIN_MIN = 180;
 export const EASY_TARGET = 0.8;
 export const EASY_SUBTYPES = ['z2', 'long', 'easy', 'route'];
 export const HARD_SUBTYPES = ['intervals', 'tempo', 'race'];
@@ -1121,15 +1125,25 @@ export function intensitySplit(d, { today, weeks = INTENSITY_WEEKS } = {}) {
   const from = addDays(today, -(weeks * 7 - 1));
   let easyMin = 0; let hardMin = 0; let easyCount = 0; let hardCount = 0; let unknownCount = 0;
   const sessions = [];
+  const weeksWith = new Set();
   for (const s of enduranceSessions(d, from, today)) {
     const min = sessionDurationMin(s);
     const c = classifyIntensity(s);
     sessions.push({ id: s.id, date: s.date, kind: s.kind, subtype: s.subtype || null, rpe: s.rpe ?? null, min, intensity: c });
     if (!c || !(min > 0)) { unknownCount++; continue; }
+    weeksWith.add(weekStart(s.date));
     if (c === 'easy') { easyMin += min; easyCount++; } else { hardMin += min; hardCount++; }
   }
+  // Otras actividades (baloncesto, clases de Educación Física, deporte libre…): intermitentes o de intensidad desconocida. No se
+  // reparten entre suave e intenso (un RPE alto no las convierte en resistencia intensa); solo se cuentan aparte. La movilidad no.
+  let otherMin = 0; let otherCount = 0;
+  for (const s of toArr(d.sessions)) {
+    if (!s || s.status !== 'done' || s.kind !== 'other' || s.subtype === 'mobility' || !isDateStr(s.date) || s.date < from || s.date > today) continue;
+    const m = sessionDurationMin(s);
+    if (m > 0) { otherMin += m; otherCount++; }
+  }
   const total = easyMin + hardMin;
-  return { easyMin: round(easyMin, 1), hardMin: round(hardMin, 1), easyShare: total > 0 ? easyMin / total : null, weeks, from, to: today, easyCount, hardCount, unknownCount, sessions };
+  return { easyMin: round(easyMin, 1), hardMin: round(hardMin, 1), easyShare: total > 0 ? easyMin / total : null, weeks, from, to: today, easyCount, hardCount, unknownCount, sessions, weeksWith: weeksWith.size, otherMin: round(otherMin, 1), otherCount };
 }
 
 /** Sesión de fuerza con pierna: ≥ 3 series de trabajo de ejercicios con cuádriceps, isquios o glúteos como principales. */
@@ -1310,7 +1324,7 @@ export function analyzeEndurance(data, opts = {}) {
 
   // --- Reparto suave / intenso -------------------------------------------------
   const total = intensity.easyMin + intensity.hardMin;
-  if (intensity.easyShare != null && intensity.easyCount + intensity.hardCount >= 4 && total >= 90) {
+  if (intensity.easyShare != null && intensity.easyCount + intensity.hardCount >= INTENSITY_MIN_SESSIONS && intensity.weeksWith >= INTENSITY_MIN_WEEKS && total >= INTENSITY_MIN_MIN) {
     const share = intensity.easyShare * 100;
     const shareTxt = pctTxt(share);
     const rows = [
@@ -1319,11 +1333,13 @@ export function analyzeEndurance(data, opts = {}) {
       { label: 'Reparto', value: `${shareTxt} suave / ${pctTxt(100 - share)} intenso` },
     ];
     if (intensity.unknownCount) rows.push({ label: 'Sin tipo ni esfuerzo (no cuentan)', value: String(intensity.unknownCount) });
+    if (intensity.otherCount) rows.push({ label: 'Otras actividades (no entran en el reparto)', value: `${fmtNum(intensity.otherMin, 0)} min · ${plural(intensity.otherCount, 'sesión', 'sesiones')} · intensidad aeróbica desconocida` });
     for (const s of intensity.sessions.slice(-10)) {
       rows.push({ label: `${dayTxt(s.date, today)} · ${KIND_NOUN[s.kind]}${s.subtype ? ` (${s.subtype})` : ''}`, value: `${s.min != null ? `${fmtNum(s.min, 0)} min` : '—'}${s.rpe ? ` · RPE ${s.rpe}` : ''} → ${s.intensity === 'easy' ? 'suave' : s.intensity === 'hard' ? 'intenso' : 'no cuenta'}` });
     }
-    const rule = `Minutos de carrera, bici, natación y senderismo de las últimas ${INTENSITY_WEEKS} semanas. Suave: rodaje/Z2, tirada larga, rodaje en bici o ruta; intenso: series, tempo o competición. Sin tipo, por el esfuerzo (RPE 5 o menos, suave; 6 o más, intenso); senderismo sin esfuerzo, suave. Referencia: ~80 % del entrenamiento de resistencia suave y ~20 % intenso (distribución habitual de los deportistas de resistencia). Por debajo del 65 % suave, demasiado intenso; 65–75 %, algo alto; por encima del 95 % con 150 min o más, casi todo suave. La fuerza no cuenta aquí.`;
-    const unk = intensity.unknownCount ? ` (${plural(intensity.unknownCount, 'sesión sin tipo ni esfuerzo no cuenta', 'sesiones sin tipo ni esfuerzo no cuentan')}: añade el RPE)` : '';
+    const rule = `Minutos de carrera, bici, natación y senderismo de las últimas ${INTENSITY_WEEKS} semanas. Suave: rodaje/Z2, tirada larga, rodaje en bici o ruta; intenso: series, tempo o competición. Sin tipo, por el esfuerzo (RPE 5 o menos, suave; 6 o más, intenso); senderismo sin esfuerzo, suave. Referencia: ~80 % del entrenamiento de resistencia suave y ~20 % intenso (distribución habitual de los deportistas de resistencia). Por debajo del 65 % suave, demasiado intenso; 65–75 %, algo alto; por encima del 95 % con 150 min o más, casi todo suave. La fuerza no cuenta aquí. Tampoco las otras actividades (baloncesto, clases de Educación Física, deporte libre…): son intermitentes y no se sabe cuánto es aeróbico, así que no se reparten entre suave e intenso aunque su esfuerzo sea alto.`;
+    const oth = intensity.otherCount ? ` Aparte hubo ${fmtNum(intensity.otherMin, 0)} min de otras actividades, que no entran en este reparto (su intensidad aeróbica no se conoce): puede que tu carga real sea mayor de la que ves aquí.` : '';
+    const unk =intensity.unknownCount ? ` (${plural(intensity.unknownCount, 'sesión sin tipo ni esfuerzo no cuenta', 'sesiones sin tipo ni esfuerzo no cuentan')}: añade el RPE)` : '';
     let o;
     if (share < 65) {
       const shift = Math.max(0, Math.round(EASY_TARGET * total - intensity.easyMin));
@@ -1347,11 +1363,13 @@ export function analyzeEndurance(data, opts = {}) {
         text: `El ${shareTxt} de tus minutos de resistencia fue suave${unk}: en línea con el ~80/20 que se recomienda.`,
       };
     }
+    o.text += oth;
     insights.push(insight({
       id: 'endurance-intensity', area: 'endurance', rule, data: rows, sources: [SOURCES.seiler2010], ...o,
       confidence: combine([
         byCount(intensity.easyCount + intensity.hardCount, { low: 4, medium: 6, high: 10 }, (k) => `${k} sesiones con tipo o esfuerzo`, 'count'),
         intensity.unknownCount ? capAt('medium', `${plural(intensity.unknownCount, 'sesión sin tipo ni esfuerzo', 'sesiones sin tipo ni esfuerzo')}`, 'unknown') : null,
+        intensity.otherCount ? capAt('medium', 'otras actividades de intensidad aeróbica desconocida', 'other') : null,
       ]),
     }));
   }

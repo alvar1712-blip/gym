@@ -135,7 +135,7 @@ function buildSeed() {
     ], { dur: 50, rpe: 7 }));
     // Carrera: miércoles 6 km cada vez algo más rápida; domingo alterno, tirada larga
     const pace = 342 - 2.2 * w + 3 * noise(w); // s/km
-    add(activity(`r${w}_z2`, 'run', day(2), { km: 6, sec: Math.round(6 * pace), subtype: 'z2' }));
+    add(activity(`r${w}_z2`, 'run', day(2), { km: 6, sec: Math.round(6 * pace), subtype: w % 2 ? 'tempo' : 'z2' })); // R11: con todo rodajes suaves la previsión es «poco fiable»; una de cada dos es un tempo
     if (w % 2 === 0) add(activity(`r${w}_long`, 'run', day(6), { km: 12, sec: Math.round(12 * (pace + 25)), rpe: 6, subtype: 'long', hh: 9 }));
     // Bici: sábado 40 km
     add(activity(`b${w}`, 'bike', day(5), { km: 40, sec: Math.round((40 / (26 + 0.2 * w)) * 3600), subtype: 'easy', hh: 10 }));

@@ -22,7 +22,7 @@ import { enduranceRecords, runPartialsBySession } from '../../js/stats.js';
 const T = '2026-09-24';
 const ago = (n) => addDays(T, -n);
 let seq = 0;
-const run = (date, km, sec) => ({ id: `run${++seq}`, kind: 'run', status: 'done', date, distanceKm: km, movingSec: sec, durationMin: sec / 60, rpe: 5, startedAt: tsFromDate(date, 8) });
+const run = (date, km, sec) => ({ id: `run${++seq}`, kind: 'run', status: 'done', date, distanceKm: km, movingSec: sec, durationMin: sec / 60, rpe: 6, startedAt: tsFromDate(date, 8) }); // RPE 6: esfuerzo representativo (R11: todo rodajes suaves → poco fiable)
 const result = (date, precision, km, sec) => C.entryRecord({ kind: 'event', type: 'race_result', date: { date, precision }, text: '', notes: '', result: { km, sec } }, { id: `res${++seq}`, now: seq });
 const phase = (type, start, end) => C.entryRecord({ kind: 'phase', type, start: { date: start, precision: 'day' }, end: end ? { date: end, precision: 'day' } : null, text: '', notes: '' }, { id: `ph${++seq}`, now: seq });
 const data = ({ sessions = [], context = [], goals = [], races = [] } = {}) => ({

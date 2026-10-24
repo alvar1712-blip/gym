@@ -17,6 +17,7 @@ import { SEXES, GOALS, SECONDARY_GOALS, EXPERIENCES, CONTRACEPTION, SPORTS as PR
 import { MUSCLE_LABEL } from './seed.js';
 import { LEVEL_LABEL, DISCLAIMER, isPlaceholder } from './analysis.js';
 import { REPORT_HISTORY_MAX, rangeText } from './race-predict.js';
+import { OTHER_PROFILE_LABEL } from './analysis-hybrid.js';
 
 /** Insights de peso que revelan datos del ciclo (fuera del informe sin permiso). */
 export const CYCLE_WEIGHT_IDS = ['weight-cycle-retention', 'weight-reds-cycle'];
@@ -282,6 +283,8 @@ function loadSection(a) {
   const change = prev > 0 ? ((total - prev) / prev) * 100 : null;
   const lines = [`- Carga total (minutos × esfuerzo RPE), media semanal de las 4 semanas completas: ${fmtNum(total, 0)}${change != null ? ` (${signed(change, 0, ' %')} frente a las 4 anteriores)` : ''}`,
     `- Reparto: ${rows.map((r) => `${r.label.toLowerCase()} ${pct(r.share)}`).join(', ')} (cada deporte se mide aparte: 3 h de senderismo suave no pesan como 3 h de carrera)`];
+  const oth = (sl.rows || []).find((x) => x.kind === 'other' && x.mix);
+  if (oth) lines.push(`- Otras actividades (minutos por semana): ${Object.entries(oth.mix).map(([p, m]) => `${OTHER_PROFILE_LABEL[p]} ${fmtNum(m, 0)}`).join(', ')}; no se reparten entre suave e intenso ni se estima su parte aeróbica`);
   for (const r of (sl.rows || []).filter((x) => x.spike)) lines.push(`- Esta semana: pico de carga de ${r.label.toLowerCase()} (${fmtNum(r.lastWeekLoad, 0)} frente a ${fmtNum(r.load4w, 0)} de media)`);
   // Ronda 8 (G): con un evento A o B cerca (races-logic.taperRace, vía context.events.taper), una bajada de carga no
   // es pérdida de forma. En condicional: no calcula nada ni prescribe porcentajes.
