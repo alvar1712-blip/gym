@@ -787,7 +787,7 @@ test('CSV de fuerza y de cardio: archivos separados, formato Excel (;, coma, BOM
     fz = (await shared(page))[2];
     assert.notDeepStrictEqual(fz.head, [0xef, 0xbb, 0xbf], 'sin BOM');
     lines = fz.text.split('\r\n');
-    assert.strictEqual(lines[0].split(',').length, 21);
+    assert.strictEqual(lines[0].split(',').length, 22); // 21 + «Configuración» (ronda 11, al final)
     assert.ok(lines.some((l) => l.includes(',82.5,')), 'punto decimal');
     await reload(page);
     await go(page, '#/settings/data');

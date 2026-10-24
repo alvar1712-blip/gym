@@ -176,6 +176,7 @@ Superserie/circuito: ítems consecutivos con el mismo `groupId`; se muestran agr
   source }
 SessionExercise = { id, exerciseId, exName (copia del nombre), templateItemId|null, alternatives:[ids],
   target:{sets, setsMax, repMin, repMax, timeMin, timeMax, distance}, notes, section, groupId, groupType,
+  setup?:string,  // ronda 11: material o configuración (máquina, polea, agarre…), ≤ 40 car., opcional (ver docs/RONDA11.md §4)
   sets:[SetEntry] }
 SetEntry = { id, type:'warmup'|'effective'|'failure'|'drop', weight|null, reps|null, repsR|null,
   rir: 0..5 | 'F' | null, timeSec|null, distanceM|null, heightCm|null, note:'', done:bool, doneAt|null,
@@ -218,6 +219,9 @@ Solo existe si el usuario modificó ese día. **Modificar un día concreto nunca
 - Perfil (`settings.profile`, `js/profile.js`): campos opcionales `birthDate`, `secondaryGoals`, `sports`, `limitations`,
   `weeklyFrequency`, `onboardedAt`; `getProfile` los completa al leer (no se reescriben perfiles antiguos). `ageGroup`:
   `minor` (< 18) · `adult` · `senior` (≥ 65) · `unknown` (sin fecha).
+- Ronda 11: la copia lleva además `integrity: { algorithm:'sha256', hash, stores }` tras `data` (opcional: el formato sigue siendo 2;
+  `backup.buildBackupFile`, `verifyBackupIntegrity`, `describeBackup`; «Comprobar copia» no escribe nada). `SessionExercise.setup`
+  (opcional) viaja en la copia como el resto; `calc.setupKey/cleanSetup/setupOptions`, `stats.exerciseStream/exerciseStreams`.
 - Copia JSON: `format: 2` (acepta 1 y 2; una de formato 1 deja vacíos los almacenes nuevos). `validateBackup` exige
   `format` entero ≥ 1, todas las secciones como listas (formato 1: solo las 8 de la primera versión; `cycle` y las de
   la ronda 6 pueden faltar), ids de texto no vacío o número finito y sin repetir en una sección. Si importar o
@@ -429,6 +433,9 @@ en su propio hueco `.today-goals`, siempre al final). Progreso (`views/progress.
   (`breakAfter`: fase o hecho de tu contexto posterior, o 4 semanas sin correr tras una referencia histórica → peso × 0,5)
   y duplicados con carreras registradas (±5 %, cuenta la registrada). `canPredict(ctx)`, `runningSummary(data)` (informe:
   lo que usa la predicción actual y el tiempo previsto).
+- **Récords reales y estimados** (ronda 11): `run.best[X]` solo lleva marcas completas o mejores tramos medidos; las extrapolaciones a
+  ritmo medio van a `run.estimates[X]` y no cuentan como récord ni cumplen objetivos (docs/RONDA11.md §2). Lo que sigue describe
+  la regla de distancia; léelo con esa salvedad.
 - **Récords de running** (`stats.js`, vista derivada, sin copias): `enduranceRecords(data).run.best` por
   `RECORD_DISTANCES` (1 km, 5 km, 10 km, media, maratón; 1 km solo en Récords) con lo registrado o importado y tus marcas
   históricas (`historicalRunMarks(data)`: resultados de carrera de `data.context` con ritmo creíble y sin carrera

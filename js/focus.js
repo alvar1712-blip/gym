@@ -73,12 +73,13 @@ const SEVERITY = { warn: 3, good: 1.5, neutral: 1, info: 1 };
  * igual de grave y mejor respaldado, pero no se esconde.
  */
 const CONFIDENCE_WEIGHT = { high: 0.15, medium: 0, low: -0.3, insufficient: -0.6 };
-function weight(m, source, idx) {
+function weight(m, source, idx, { byConfidence = true } = {}) {
   const base = SEVERITY[m.level] ?? 1;
   const actionable = /^dp-up/.test(m.id) ? 0.8 : 0;
+  const conf = byConfidence ? CONFIDENCE_WEIGHT[m.confidence?.level] ?? 0 : 0;
   // Dentro del mismo nivel y confianza: el orden de su fuente (ya viene por prioridad); el analista lleva confianza y
   // fuentes, así que en empate gana su versión.
-  return base + actionable + (CONFIDENCE_WEIGHT[m.confidence?.level] ?? 0) + (source === 'analysis' ? 0.05 : 0) - idx * 0.01;
+  return base + actionable + conf + (source === 'analysis' ? 0.05 : 0) - idx * 0.01;
 }
 
 /** Destino de «ver más» de cada mensaje. */
@@ -94,14 +95,15 @@ function hrefOf(m, source) {
  */
 export function weekFocus({ weekly = [], analysis = [] } = {}, max = 3) {
   const cands = [];
-  (weekly || []).forEach((m, i) => { if (m && m.id !== 'checkins') cands.push({ m, source: 'weekly', w: weight(m, 'weekly', i) }); });
+  (weekly || []).forEach((m, i) => { if (m && m.id !== 'checkins') cands.push({ m, source: 'weekly', w: weight(m, 'weekly', i), w0: weight(m, 'weekly', i, { byConfidence: false }) }); });
   (analysis || []).forEach((m, i) => {
     if (!m || /-insufficient$/.test(m.id)) return; // «faltan datos» no es algo importante de la semana
-    cands.push({ m, source: 'analysis', w: weight(m, 'analysis', i) });
+    cands.push({ m, source: 'analysis', w: weight(m, 'analysis', i), w0: weight(m, 'analysis', i, { byConfidence: false }) });
   });
-  cands.sort((a, b) => b.w - a.w);
+  // Un mensaje por tema: gana el de siempre (nivel, orden de fuente y, en empate, el del analista, que lleva su confianza);
+  // la confianza solo ordena LOS TEMAS entre sí (más abajo), no decide qué motor cuenta un tema.
   const byTopic = new Map();
-  for (const c of cands) {
+  for (const c of [...cands].sort((a, b) => b.w0 - a.w0)) {
     const t = topicOf(c.m);
     if (!byTopic.has(t)) byTopic.set(t, c);
   }

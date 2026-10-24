@@ -157,13 +157,14 @@ test('R11 · un aviso de confianza baja, solo, sigue siendo el principal; no se 
   assert.equal(rec.items[0].step, 'recover');
 });
 
-test('R11 · el mismo tema lo dicen los dos motores: gana la versión con más confianza (no siempre el analista)', () => {
+test('R11 · el mismo tema lo dicen los dos motores: sigue ganando el del analista (lleva su confianza); la confianza ordena los temas', () => {
   const r = weekFocus({
     weekly: [wk('ex-stalled', 'warn')],
-    analysis: [an('strength-stalled-press_banca', 'warn', 'strength', 70, { confidence: { level: 'low' } })],
+    analysis: [an('strength-stalled-press_banca', 'warn', 'strength', 70, { confidence: { level: 'low' } }), an('recovery-sleep', 'warn', 'recovery', 50, { confidence: { level: 'high' } })],
   });
-  assert.equal(r.items.length, 1);
-  assert.equal(r.items[0].source, 'weekly', 'el panel (sin confianza propia = regla clara) frente a un análisis de confianza baja');
+  assert.equal(r.items.length, 2);
+  assert.equal(r.items.find((i) => i.topic === 'strength').source, 'analysis', 'el tema no cambia de motor por su confianza (Hoy sigue enseñando la confianza del analista)');
+  assert.deepEqual(r.items.map((i) => i.topic), ['recovery', 'strength'], 'pero entre temas va antes el mejor respaldado');
 });
 
 test('R11 · pickKeyPoints: la prioridad se ajusta por confianza (baja pesa menos, alta algo más), sin descartar nada', async () => {
