@@ -513,3 +513,33 @@ test('estimación central = media ponderada de las predicciones de Riegel; «¿P
   assert.equal(hi.confidence, 'alta');
   assert.deepEqual(hi.advice, { note: null, improve: null });
 });
+
+// ---------------------------------------------------------------------------
+// Ronda 11 (bloque 3): sin esfuerzos representativos (solo rodajes suaves) la predicción es muy incierta
+// ---------------------------------------------------------------------------
+
+test('R11 · solo rodajes suaves (Z2 o RPE ≤ 5): «todavía poco fiable», confianza baja y con el motivo', () => {
+  const easy = [run(ago(3), 5, 1800, { subtype: 'z2', rpe: 3 }), run(ago(10), 8, 2900, { subtype: 'z2', rpe: 3 }), run(ago(17), 6, 2160, { rpe: 4 })];
+  const r = predictRaces(data(easy));
+  assert.equal(r.ok, true, 'se calcula, pero no se presenta como fiable');
+  for (const id of ['5k', '10k']) {
+    const p = r.predictions[id];
+    assert.equal(p.status, 'tentative', id);
+    assert.equal(p.confidence, 'baja', id);
+    assert.ok(p.tentativeWhy.includes('effort'), id);
+    assert.ok(p.confidenceCodes.includes('easy'), id);
+    assert.match(p.advice.note, /rodajes suaves/, id);
+    assert.match(p.advice.improve, /a tope|esfuerzo/i, id);
+  }
+});
+
+test('R11 · con un esfuerzo representativo (series, tempo, carrera o RPE ≥ 6) o sin datos de esfuerzo, no se rebaja', () => {
+  const base = [run(ago(3), 5, 1800, { subtype: 'z2', rpe: 3 }), run(ago(10), 8, 2900, { subtype: 'z2', rpe: 3 })];
+  const withTempo = predictRaces(data([...base, run(ago(5), 5, 1500, { subtype: 'tempo', rpe: 8 })]));
+  assert.equal(withTempo.predictions['5k'].status, 'ok');
+  assert.ok(!withTempo.predictions['5k'].tentativeWhy.includes('effort'));
+  const unknown = predictRaces(data([run(ago(3), 5, 1800, { rpe: null }), run(ago(10), 8, 2900, { rpe: null })]));
+  assert.equal(unknown.predictions['5k'].status, 'ok', 'sin subtipo ni esfuerzo no se supone que fuera suave');
+  const hardRpe = predictRaces(data([run(ago(3), 5, 1500, { rpe: 8 }), run(ago(10), 8, 2500, { rpe: 6 })]));
+  assert.equal(hardRpe.predictions['5k'].status, 'ok');
+});

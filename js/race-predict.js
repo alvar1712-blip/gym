@@ -323,6 +323,19 @@ export function breakAfter(date, { breaks = [], dates = [], today, gaps = false 
   return g ? gapInfo(g.after, g.next, g.days, today) : null;
 }
 
+/** Subtipos de carrera que no son un esfuerzo a tope (rodaje, Z2, tirada larga): no representan tu rendimiento máximo. */
+export const EASY_RUN_SUBTYPES = ['z2', 'easy', 'long'];
+/**
+ * ¿Es una carrera SUAVE conocida? Por su subtipo (rodaje/Z2/tirada larga) o, sin subtipo, por un RPE de 5 o menos. Sin subtipo ni
+ * RPE no se sabe, y no se supone que lo fuera. Series, tempo y competición nunca son suaves.
+ */
+export function isEasyRun(s) {
+  if (!s) return false;
+  if (EASY_RUN_SUBTYPES.includes(s.subtype)) return true;
+  if (s.subtype === 'intervals' || s.subtype === 'tempo' || s.subtype === 'race') return false;
+  return s.rpe >= 1 && s.rpe <= 5;
+}
+
 /** ¿Hay datos para predecir? ≥ 2 carreras recientes válidas o al menos un resultado de tu contexto utilizable. */
 export const canPredict = (ctx) => ctx.valid.length >= MIN_VALID || (ctx.valid.length + ctx.history.length >= 1 && ctx.contextUsed > 0);
 
@@ -367,6 +380,7 @@ function buildRuns(d, today, partials) {
   const from = addDays(today, -(WINDOW_DAYS - 1));
   const volumeFrom = addDays(today, -(VOLUME_DAYS - 1));
   const runs = runPaceSeries(d).filter((a) => a.x <= today && a.km > 0 && a.sec > 0);
+  const sessById = new Map(toArr(d.sessions).map((s) => [s?.id, s]));
   const breaks = contextBreaks(d.context, today);
   const results = raceResults(d.context, today);
   // Días en que corriste: lo registrado y los resultados de tu contexto (para los huecos sin correr)
@@ -409,7 +423,7 @@ function buildRuns(d, today, partials) {
     valid.push({
       source: 'run', sessionId: a.sessionId, entryId: null, date: a.x, when: dayTxt(a.x), km: best.km, sec: best.sec, pace: bp,
       age: diffDays(a.x, today), score: best.score, old: false, interrupted: breakAfter(a.x, { breaks, today }),
-      partial: best.partial, wholeKm: a.km, wholeSec: a.sec,
+      partial: best.partial, wholeKm: a.km, wholeSec: a.sec, easy: isEasyRun(sessById.get(a.sessionId)),
       label: best.partial ? `${label(best.km, best.sec, bp)} · mejor tramo de una carrera de ${kmTxt(a.km)}` : label(a.km, a.sec, p),
     });
   }
@@ -520,7 +534,10 @@ export function predictDistance(ctx, km, race = raceFor(km)) {
   if (latest?.interrupted) why('break', `después de tu carrera más reciente (${latest.when}) hubo un parón: ${latest.interrupted.label}`);
   let level = Math.max(0, CONFIDENCE_LEVELS.length - 1 - reasons.length);
   const tentativeVolume = !!volume && volume.short >= TENTATIVE_SHORT - EPS;
-  const tentative = tentativeVolume || tentativeHistory;
+  // Solo rodajes suaves conocidos: no hay ningún esfuerzo representativo de tu rendimiento máximo (un rodaje da un tiempo
+  // más lento del que podrías hacer a tope, y no se sabe cuánto)
+  const tentativeEffort = efforts.length > 0 && efforts.every((e) => e.easy);
+  const tentative = tentativeVolume || tentativeHistory || tentativeEffort;
   if (!coherent) {
     level = 0;
     why('incoherent', `con una dispersión de más de ±${fmtNum(MAX_SPREAD * 100, 0)} % la predicción no es útil`);
@@ -528,6 +545,7 @@ export function predictDistance(ctx, km, race = raceFor(km)) {
     level = 0;
     if (tentativeHistory) why('history', `${recent.length ? 'solo 1 carrera reciente' : 'sin carreras recientes'}${old.length ? ': la estimación se apoya en tus marcas anteriores' : ''}; predicción todavía poco fiable`);
     if (tentativeVolume) why('tentative', `falta más de la mitad del volumen de referencia para ${noun}: predicción todavía poco fiable`);
+    if (tentativeEffort) why('easy', 'todas tus carreras recientes son rodajes suaves: sin un esfuerzo a tope, tu rendimiento máximo es muy incierto (probablemente más rápido que lo estimado)');
   }
   if (D > MARATHON_KM + 0.01) {
     level = 0;
@@ -547,7 +565,7 @@ export function predictDistance(ctx, km, race = raceFor(km)) {
     noun, profile, k, adjusted: !!volume && volume.short > EPS, volume, efforts, midExact,
     lowExact, highExact, spread, margin, step, low, mid, high, pace: mid / D, paceLow: low / D, paceHigh: high / D,
     confidence, confidenceLabel: CONFIDENCE_LABEL[confidence], confidenceReasons: reasons, confidenceCodes: codes,
-    status, usable: status === 'ok' || status === 'tentative', tentativeWhy: [tentativeHistory ? 'history' : null, tentativeVolume ? 'volume' : null].filter(Boolean),
+    status, usable: status === 'ok' || status === 'tentative', tentativeWhy: [tentativeHistory ? 'history' : null, tentativeEffort ? 'effort' : null, tentativeVolume ? 'volume' : null].filter(Boolean),
     recentCount: recent.length, oldShare, duplicates: ctx.duplicates || [], record,
   };
   p.advice = predictionAdvice(p);
@@ -600,6 +618,12 @@ export function predictionAdvice(p) {
       };
     }
     return { note: 'Solo tienes una carrera reciente: tómalo como orientación hasta que registres más.', improve: moreRuns };
+  }
+  if (p.status === 'tentative' && p.tentativeWhy.includes('effort')) {
+    return {
+      note: 'Solo tienes rodajes suaves: el tiempo estimado sale de un ritmo cómodo, así que tu marca a tope puede ser bastante más rápida. Tómalo como un techo, no como una predicción.',
+      improve: `Un esfuerzo a tope de ${MIN_KM} km o más (un test, un tempo o una carrera) hará la estimación representativa.`,
+    };
   }
   if (p.status === 'tentative') {
     return {
