@@ -48,7 +48,7 @@
 // SALIDA (contrato §3a + campos extra documentados en analyzeWeight):
 //   { ok, reason?, trend:{ points:[{ date, kg, trendKg }], currentKg, ratePerWeekKg, ratePerWeekPct, windowDays, n },
 //     target:{ minPct, maxPct, label } | null, status:'below'|'in'|'above'|'insufficient'|'no_goal',
-//     kcalPerDay:{ estimate, suggestion:{ min, max } | null }, proteinG:{ min, max }, insights: Insight[],
+//     kcalPerDay:{ estimate, range?:{ min, max }, suggestion:{ min, max } | null }, proteinG:{ min, max }, insights: Insight[],
 //     goalSuggestion?: { targetKg, byFrom, byTo, title } }
 import { addDays, diffDays, isDateStr, todayStr, fmtDate, fmtNum, round } from './util.js';
 import { g, isFemale, isHormonal, ageGroup } from './profile.js';
@@ -701,6 +701,20 @@ function kcalTxt(s) {
   const b = Math.max(Math.abs(s.min), Math.abs(s.max));
   return `${fmtNum(a, 0)}–${fmtNum(b, 0)} kcal ${s.max > 0 ? 'más' : 'menos'} al día`;
 }
+/** «unas 100–200 kcal más al día (un yogur…)» o, sin una cifra sólida, solo «algo más». */
+const moreTxt = (s) => (s ? `unas ${kcalTxt(s)} (${foodMore(s)})` : 'algo más');
+/** «unas 100–200 kcal menos al día (menos aceite…)» o, sin una cifra sólida, «algo menos (…)». */
+const lessTxt = (s) => (s ? `unas ${kcalTxt(s)} (${FOOD_LESS})` : `algo menos (${FOOD_LESS})`);
+/**
+ * Fila del «¿Por qué?» con el balance energético: un RANGO (el margen del 95 % del ritmo), orientativo. null si la estimación
+ * no es sólida (ctx.kcal.range lo fija analyzeWeight): con pocos datos solo se enseña el cambio observado en kg.
+ */
+function balanceRow(ctx) {
+  const r = ctx.kcal?.range;
+  if (!r) return null;
+  const sg = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtNum(Math.abs(v), 0)}`;
+  return { label: 'Balance orientativo', value: `entre ${sg(r.min)} y ${sg(r.max)} kcal/día (cálculo ritmo × 7700 / 7: una aproximación, no una medición)` };
+}
 function foodMore(s) {
   const b = Math.max(Math.abs(s.min), Math.abs(s.max));
   if (b <= 200) return 'un yogur con un puñado de frutos secos';
@@ -859,6 +873,11 @@ function contextExplanations(ctx) {
   return { up, down };
 }
 
+/** ¿Hay base para hablar de energía? Confianza media o alta (ya se rebaja si el margen del ritmo incluye el 0 sin ser ≈ 0). */
+function energyIsSolid(ctx) {
+  return ['medium', 'high'].includes(ctx.conf?.level);
+}
+
 /** Confianza del ritmo del peso: pesajes, días, ruido, claridad y cambios recientes del contexto. */
 function weightConfidence(ctx) {
   const t = ctx.trend;
@@ -949,7 +968,7 @@ function noGoalInsight(ctx) {
     data: [
       { label: 'Objetivo', value: 'Sin elegir' },
       ...trendRows(ctx),
-      isNum(kcal) ? { label: 'Balance estimado', value: `${signedKgW(t.ratePerWeekKg)} × 7700 / 7 ≈ ${sgn(kcal)}${fmtNum(Math.abs(kcal), 0)} kcal/día` } : null,
+      balanceRow(ctx),
     ],
     sources: isNum(kcal) ? [SOURCES.hall2008] : [], action,
   });
@@ -977,7 +996,7 @@ function rateInsight(ctx) {
       text = `${lead}: dentro del rango para ganar músculo con poca grasa (${rP} %). Si en el espejo no notas que acumulas grasa, vas bien.${hedge}`;
     } else if (status === 'below') {
       const extra = endHigh ? ` Con unas ${hoursTxt(minutes)} h de resistencia a la semana gastas mucho: es fácil quedarse corto de comida.` : '';
-      const eat = `Prueba a comer unas ${kcalTxt(sug)} (${foodMore(sug)}) y revisa en 3 semanas.`;
+      const eat = `Prueba a comer ${moreTxt(sug)} y revisa en 3 semanas.`;
       if (t.direction === 'up') {
         title = 'Subes poco para ganar músculo';
         text = `Subes muy poco para ganar músculo (${kgAbs(t.ratePerWeekKg)} kg/sem; lo recomendado es ${rP} % de tu peso, unos ${rK} kg/sem). ${eat}${extra}`;
@@ -991,7 +1010,7 @@ function rateInsight(ctx) {
     } else {
       priority = 64;
       title = 'Subes más rápido de lo necesario';
-      text = `${lead}: más rápido de lo necesario para ganar músculo (${rP} %); lo que sobra suele ser grasa. Prueba a comer unas ${kcalTxt(sug)} (${FOOD_LESS}) y revisa en 3 semanas.`;
+      text = `${lead}: más rápido de lo necesario para ganar músculo (${rP} %); lo que sobra suele ser grasa. Prueba a comer ${lessTxt(sug)} y revisa en 3 semanas.`;
     }
   } else if (goal === 'lose') {
     src = [SOURCES.helms2014, rec || status === 'below' ? SOURCES.garthe2011 : null];
@@ -1006,7 +1025,7 @@ function rateInsight(ctx) {
       if (rec && t.ratePerWeekPct < rec.minPct - 1e-9) {
         level = 'neutral'; priority = 55;
         title = 'Bajas bien, pero algo rápido';
-        text = `${lead}: dentro del rango para perder grasa conservando músculo (0,5–1 %), pero ${why} te conviene la mitad baja (${pctRange(rec.maxPct, rec.minPct)} %). Come un poco más: unas ${kcalTxt(sug)}.`;
+        text = `${lead}: dentro del rango para perder grasa conservando músculo (0,5–1 %), pero ${why} te conviene la mitad baja (${pctRange(rec.maxPct, rec.minPct)} %). Come un poco más${sug ? `: unas ${kcalTxt(sug)}` : ''}.`;
       } else {
         level = 'good'; priority = 50;
         title = t.direction === 'down' ? 'Bajas a buen ritmo' : 'Parece que vas bien';
@@ -1015,10 +1034,10 @@ function rateInsight(ctx) {
     } else if (status === 'below') {
       priority = 70;
       title = 'Bajas demasiado rápido';
-      text = `Bajas ${pctAbs(t.ratePerWeekPct)} % de tu peso por semana (${kgAbs(t.ratePerWeekKg)} kg): más rápido de lo recomendado para conservar músculo (0,5–1 %${rec ? `; para ti, mejor ${pctRange(rec.maxPct, rec.minPct)} %` : ''}). Sube un poco lo que comes: unas ${kcalTxt(sug)}.`;
+      text = `Bajas ${pctAbs(t.ratePerWeekPct)} % de tu peso por semana (${kgAbs(t.ratePerWeekKg)} kg): más rápido de lo recomendado para conservar músculo (0,5–1 %${rec ? `; para ti, mejor ${pctRange(rec.maxPct, rec.minPct)} %` : ''}). Sube un poco lo que comes${sug ? `: unas ${kcalTxt(sug)}` : ''}.`;
     } else {
       priority = 64;
-      const eat = `Prueba a comer unas ${kcalTxt(sug)} (${FOOD_LESS}) o a moverte algo más, y revisa en 3 semanas.`;
+      const eat = `Prueba a comer ${lessTxt(sug)} o a moverte algo más, y revisa en 3 semanas.`;
       const band = rec || target;
       const bP = pctRange(band.maxPct, band.minPct);
       const bK = kgRange(band.maxKg, band.minKg);
@@ -1048,13 +1067,13 @@ function rateInsight(ctx) {
     } else if (status === 'above') {
       priority = 62;
       title = 'Tu peso sube';
-      text = `${lead}: más de lo que encaja con ${perf ? 'un peso estable para rendir' : 'mantener'} (±0,25 %). Si no buscas subir, recorta unas ${kcalTxt(sug).replace(' menos', '')} (${FOOD_LESS}); si subes a propósito para ganar músculo, cambia tu objetivo en el perfil.${hedge}`;
+      text = `${lead}: más de lo que encaja con ${perf ? 'un peso estable para rendir' : 'mantener'} (±0,25 %). Si no buscas subir, recorta ${lessTxt(sug).replace(' menos', '')}; si subes a propósito para ganar músculo, cambia tu objetivo en el perfil.${hedge}`;
     } else {
       priority = 64;
       title = 'Tu peso baja';
       const more = perf
-        ? `Para rendir, comer por debajo de lo que gastas pasa factura: come unas ${kcalTxt(sug)}${endHigh ? ', sobre todo los días de entrenos largos' : ''}.`
-        : `Come algo más: unas ${kcalTxt(sug)}${endHigh ? ', sobre todo los días de entrenos largos' : ''}.`;
+        ? `Para rendir, comer por debajo de lo que gastas pasa factura: come ${moreTxt(sug)}${endHigh ? ', sobre todo los días de entrenos largos' : ''}.`
+        : `Come algo más${sug ? `: unas ${kcalTxt(sug)}` : ''}${endHigh ? ', sobre todo los días de entrenos largos' : ''}.`;
       text = `${lead}: más de lo que encaja con ${perf ? 'un peso estable para rendir' : 'mantener'} (±0,25 %). ${more}${hedge}`;
     }
   }
@@ -1076,7 +1095,7 @@ function rateInsight(ctx) {
       rec ? { label: 'Recomendado para ti', value: `${rec.label} = ${kgRange(rec.maxKg, rec.minKg)} kg/sem` } : null,
       ...trendRows(ctx),
       { label: 'Estado', value: paceLabel(goal, status, t.direction) },
-      isNum(kc) ? { label: 'Balance estimado', value: `${signedKgW(t.ratePerWeekKg)} × 7700 / 7 ≈ ${sgn(kc)}${fmtNum(Math.abs(kc), 0)} kcal/día` } : null,
+      balanceRow(ctx),
       sug ? { label: 'Ajuste sugerido', value: `${kcalTxt(sug)} (${sug.max > 0 ? '+' : '−'}${fmtNum(Math.min(Math.abs(sug.min), Math.abs(sug.max)), 0)} a ${sug.max > 0 ? '+' : '−'}${fmtNum(Math.max(Math.abs(sug.min), Math.abs(sug.max)), 0)} kcal/día)` } : null,
       endHigh ? { label: 'Resistencia', value: `${fmtNum(minutes, 0)} min/sem de media (4 semanas)` } : null,
     ],
@@ -1128,6 +1147,7 @@ function strengthInsight(ctx) {
   const recov = isNum(strength.recoveryShare) && strength.recoveryShare >= 0.5;
   const sConf = combine([...ctx.conf.factors, byCount(strength.n ?? 0, { low: 1, medium: 2, high: 3 }, (k) => `${k} ${k === 1 ? 'ejercicio' : 'ejercicios'} con tendencia`, 'exercises')]);
   const mk = (o) => insight({ id: 'weight-strength', rule, data: rows, confidence: sConf, ...o });
+  const solid = ['medium', 'high'].includes(sConf.level) && (strength.n ?? 0) >= 3;
   if (up && sUp && (expl.length || recov)) {
     // Con contexto (peso recuperado, vuelta a entrenar, creatina) o recuperando marcas, no se sabe aún cuánto es músculo.
     const bits = [];
@@ -1169,11 +1189,18 @@ function strengthInsight(ctx) {
     });
   }
   if (up && !sUp && t.ratePerWeekPct > gainMax) {
-    const cut = kcal?.suggestion && kcal.suggestion.max < 0 ? kcal.suggestion : { min: -300, max: -200 };
+    // La subida rápida es un dato medido y sigue avisando; que sea grasa es una hipótesis: solo con una base sólida (confianza
+    // media o más y ≥ 3 ejercicios) se dice «probablemente» y se propone un ajuste, y solo con la cifra propia del análisis.
+    const cut = solid && kcal?.suggestion && kcal.suggestion.max < 0 ? kcal.suggestion : null;
+    const check = 'que el entrenamiento progrese (más repeticiones o más peso)';
+    const tail = ctx.goalConflict ? `Revisa ${check}.`
+      : cut ? `Come unas ${kcalTxt(cut)} y revisa ${check}.`
+        : solid ? `Revisa lo que comes y ${check}.`
+          : `Puede deberse a más grasa, pero también a agua, glucógeno, sueño o una fase de fuerza más lenta: revisa ${check} y reevalúa en 2–3 semanas antes de cambiar lo que comes.`;
     return mk({
       level: 'warn', priority: 60, title: 'Subes rápido y la fuerza no acompaña',
-      text: `Tu peso sube ${kgAbs(t.ratePerWeekKg)} kg por semana pero tu fuerza está ${sDown ? 'bajando' : 'estancada'} (${sPct}): probablemente estés ganando más grasa que músculo. ${ctx.goalConflict ? 'Revisa' : `Come unas ${kcalTxt(cut)} y revisa`} que el entrenamiento progrese (más repeticiones o más peso).`,
-      sources: [SOURCES.iraki2019, SOURCES.hall2008],
+      text: `Tu peso sube ${kgAbs(t.ratePerWeekKg)} kg por semana pero tu fuerza está ${sDown ? 'bajando' : 'estancada'} (${sPct})${solid ? ': probablemente estés ganando más grasa que músculo' : ''}. ${tail}`,
+      sources: [SOURCES.iraki2019, cut ? SOURCES.hall2008 : null],
     });
   }
   if (up && !sUp) {
@@ -1193,7 +1220,9 @@ function strengthInsight(ctx) {
       level: 'warn', priority: 62, title: 'Bajas peso y pierdes fuerza',
       text: minor
         ? `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${sPct}). A tu edad lo importante es comer suficiente y variado, descansar bien y cuidar la técnica; si estás intentando bajar de peso, coméntalo con tu médico o con un dietista-nutricionista.`
-        : `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${sPct}): señal de un déficit demasiado agresivo. Come algo más, mantén la proteína alta y sigue entrenando pesado para conservar el músculo.`,
+        : solid
+          ? `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${sPct}): señal de un déficit demasiado agresivo. Come algo más, mantén la proteína alta y sigue entrenando pesado para conservar el músculo.`
+          : `Bajas ${kgAbs(t.ratePerWeekKg)} kg por semana y tu fuerza también baja (${sPct}). Puede ser un déficit alto, pero también fatiga, poco sueño o pocos ejercicios con datos: vigila que comes lo suficiente, mantén la proteína alta y reevalúa en 2–3 semanas.`,
       sources: minor ? [SOURCES.lloyd2014] : [SOURCES.helms2014, SOURCES.garthe2011],
     });
   }
@@ -1488,7 +1517,7 @@ export function analysisWeightTrend(input = {}) {
  *   trend: la de analysisWeightTrend con estos mismos datos, para no calcularla dos veces)
  * @returns {{ ok:boolean, reason?:string, reasonCode?:string, trend:object (ver weightTrend), target:object|null
  *   (ver targetFor), status:'below'|'in'|'above'|'insufficient'|'no_goal', paceLabel:string,
- *   kcalPerDay:{ estimate:number|null, suggestion:{min, max}|null }, proteinG:{ min, max, perKg, focus, refKg },
+ *   kcalPerDay:{ estimate:number|null, range?:{min, max} (solo con confianza media o alta), suggestion:{min, max}|null }, proteinG:{ min, max, perKg, focus, refKg },
  *   insights:Insight[] (ordenados por prioridad, de mayor a menor),
  *   goalSuggestion?:{ targetKg, byFrom, byTo, title, direction:'up'|'down', href, text } }}
  *   Extras respecto al contrato: reasonCode, paceLabel, trend.{from, to, spanDays, ci, ciPct, clear, direction,
@@ -1538,10 +1567,17 @@ export function analyzeWeight(input = {}) {
     insights.push(insufficientInsight(ctx));
     if (!goal) insights.push(noGoalInsight(ctx));
   } else {
-    ctx.kcal.estimate = minor ? null : round((trend.ratePerWeekKg * KCAL_PER_KG) / 7, 10);
+    // Energía solo con una base sólida (confianza media o alta y un ritmo distinguible de 0). Con menos, se enseña el
+    // cambio observado y su margen, pero ni «balance» ni ajuste en kcal: la regla de 7700 kcal/kg daría una falsa precisión.
+    const energyOk = !minor && energyIsSolid(ctx);
+    if (energyOk) {
+      const k = KCAL_PER_KG / 7;
+      ctx.kcal.estimate = round(trend.ratePerWeekKg * k, 50);
+      ctx.kcal.range = { min: round(trend.ci.lo * k, 50), max: round(trend.ci.hi * k, 50) };
+    }
     if (goal) {
       ctx.status = classifyRate(trend.ratePerWeekPct, target);
-      ctx.kcal.suggestion = minor ? null : kcalSuggestion(trend.ratePerWeekKg, refKg, target.recommended || target);
+      ctx.kcal.suggestion = !energyOk ? null : kcalSuggestion(trend.ratePerWeekKg, refKg, target.recommended || target);
       // 65 o más: ajustes pequeños (como mucho SENIOR_MAX_KCAL al día).
       if (senior && ctx.kcal.suggestion) ctx.kcal.suggestion = capKcal(ctx.kcal.suggestion, SENIOR_MAX_KCAL);
       const dir = trend.direction;
@@ -1556,11 +1592,13 @@ export function analyzeWeight(input = {}) {
         // El contexto explica parte del cambio: ni ajuste ni «balance» en kcal (darían una precisión que no hay).
         ctx.kcal.suggestion = null;
         ctx.kcal.estimate = null;
+        delete ctx.kcal.range;
         early = true;
         insights.push(contextRateInsight(ctx, upCtx ? ctx.expl.up : ctx.expl.down, upCtx ? 'up' : 'down'));
       } else if (ctx.conf.level === 'low' && ctx.status !== 'in' && !tooFastLoss) {
         ctx.kcal.suggestion = null;
         ctx.kcal.estimate = null;
+        delete ctx.kcal.range;
         early = true;
         insights.push(earlyRateInsight(ctx));
       } else insights.push(rateInsight(ctx));

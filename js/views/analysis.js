@@ -333,7 +333,7 @@ function weightCard(a, charts) {
       // Ronda 10: «Peso de tendencia» (kg), como en el resto de Análisis; «Tendencia» a secas es el ritmo en Progreso.
       kpi('Peso de tendencia', kgTxt(t.currentKg), 'media de ~10 días', 'trend'),
       kpi('Ritmo', w.ok ? signedKg(t.ratePerWeekKg) : '—', w.ok ? `por semana · ${signedPct(t.ratePerWeekPct)}` : 'faltan datos', 'rate'),
-      minor ? null : kpi('Balance', kc && isNum(kc.estimate) ? `${sgn(kc.estimate)}${fmtNum(Math.abs(kc.estimate), 0)}` : '—', 'kcal/día (aprox.)', 'kcal')));
+      minor ? null : kpi('Balance', kc && kc.range ? `${sgn(kc.range.min)}${fmtNum(Math.abs(kc.range.min), 0)} a ${sgn(kc.range.max)}${fmtNum(Math.abs(kc.range.max), 0)}` : '—', kc && kc.range ? 'kcal/día (orientativo)' : 'sin datos sólidos', 'kcal')));
     const chart = weightChart(a);
     if (chart) {
       el.appendChild(chart.wrap);

@@ -572,7 +572,8 @@ test('anticonceptivo hormonal: sin fases ni marcas de retención', () => {
 test('kcal/día ≈ ritmo × 7700 / 7 y proteína 1,6–2,2 g/kg con su cálculo', () => {
   const r = checkShape(run({ bodyweight: series({ perWeek: 0.3 }), profile: M() }));
   const expected = (r.trend.ratePerWeekKg * KCAL_PER_KG) / 7;
-  assert.ok(Math.abs(r.kcalPerDay.estimate - expected) <= 5, `${r.kcalPerDay.estimate} vs ${expected}`);
+  // R11: redondeado a 50 kcal (sin falsa precisión)
+  assert.ok(Math.abs(r.kcalPerDay.estimate - expected) <= 25 + 1e-9, `${r.kcalPerDay.estimate} vs ${expected}`);
   assert.ok(r.kcalPerDay.estimate > 250 && r.kcalPerDay.estimate < 400);
   const kg = r.proteinG.refKg;
   assert.ok(Math.abs(r.proteinG.min - kg * 1.6) <= 2.5 && Math.abs(r.proteinG.max - kg * 2.2) <= 2.5);
@@ -586,7 +587,7 @@ test('kcal/día ≈ ritmo × 7700 / 7 y proteína 1,6–2,2 g/kg con su cálculo
   const lose = checkShape(run({ bodyweight: series({ start: 80, perWeek: -0.5 }), profile: M({ goal: 'lose' }) }));
   assert.ok(lose.proteinG.focus && lose.proteinG.focus.min >= lose.proteinG.refKg * 2 - 2.5);
   assert.match(byId(lose, 'weight-protein').text, /parte alta/);
-  assert.ok(byId(lose, 'weight-rate').why.data.some((d) => d.label === 'Balance estimado' && /7700/.test(d.value)));
+  assert.ok(byId(lose, 'weight-rate').why.data.some((d) => d.label === 'Balance orientativo' && /7700/.test(d.value)));
 });
 
 test('goalSuggestion: ganar músculo con ritmo bajo → objetivo de peso con fechas coherentes', () => {
@@ -665,4 +666,61 @@ test('ronda 10: analysisWeightTrend es la tendencia de analyzeWeight (mismo filt
   const nat = analysisWeightTrend({ bodyweight: bw, today: TODAY, profile: F(), cycle: C1 });
   const pill = analysisWeightTrend({ bodyweight: bw, today: TODAY, profile: F({ contraception: 'combined_pill' }), cycle: C1 });
   assert.ok(nat.excluded.length > 0 && pill.excluded.length === 0);
+});
+
+// ---------------------------------------------------------------------------
+// Ronda 11 (bloque 1): la energía solo se estima con datos sólidos y nunca con falsa precisión
+// ---------------------------------------------------------------------------
+
+test('R11 · con pocos días de datos no hay balance ni ajuste de kcal (ni con objetivo ni sin él)', () => {
+  const weak = series({ perWeek: 0.7, days: 15 });
+  for (const profile of [M(), M({ goal: null })]) {
+    const r = checkShape(run({ bodyweight: weak, profile }));
+    assert.equal(r.trend.ok, true, 'hay tendencia');
+    assert.equal(r.kcalPerDay.estimate, null);
+    assert.equal(r.kcalPerDay.suggestion, null);
+    assert.doesNotMatch(r.insights.map((i) => `${i.text} ${JSON.stringify(i.why.data)}`).join(' | '), /kcal|7700/);
+  }
+});
+
+test('R11 · una pérdida demasiado rápida con pocos datos avisa sin dar cifras de kcal', () => {
+  const r = checkShape(run({ bodyweight: series({ start: 80, perWeek: -1.2, days: 15 }), profile: M({ goal: 'lose' }) }));
+  const i = byId(r, 'weight-rate');
+  assert.ok(i, 'sigue avisando');
+  assert.doesNotMatch(`${i.text} ${JSON.stringify(i.why.data)}`, /kcal|undefined|unas\s*[.,(]/);
+});
+
+test('R11 · con datos sólidos el balance es un rango orientativo, no un número exacto', () => {
+  const r = checkShape(run({ bodyweight: series({ perWeek: 0.5, days: 42 }), profile: M() }));
+  assert.ok(r.kcalPerDay.range, 'rango');
+  assert.ok(r.kcalPerDay.range.min < r.kcalPerDay.range.max);
+  assert.equal(r.kcalPerDay.estimate % 50, 0, 'redondeado a 50 kcal');
+  const row = byId(r, 'weight-rate').why.data.find((d) => /Balance/.test(d.label));
+  assert.match(row.label, /orientativo/i);
+  assert.match(row.value, /entre .* y .* kcal\/día/);
+});
+
+test('R11 · «subes rápido y la fuerza no» con poca base no habla de grasa segura ni de recortes concretos', () => {
+  const fast = { bodyweight: series({ perWeek: 0.7 }), profile: M() };
+  const weakStrength = byId(run({ ...fast, strength: { trendPctPerWeek: 0.05, n: 2 } }), 'weight-strength');
+  assert.ok(weakStrength);
+  assert.doesNotMatch(weakStrength.text, /kcal|probablemente/i);
+  assert.match(weakStrength.text, /agua|glucógeno|sueño|semanas/i);
+  assert.equal(weakStrength.level, 'warn', 'la subida rápida medida sigue siendo una alerta');
+  const lowConf = byId(run({ bodyweight: series({ perWeek: 0.9, days: 15 }), profile: M(), strength: { trendPctPerWeek: 0.05, n: 5 } }), 'weight-strength');
+  assert.doesNotMatch(lowConf.text, /kcal|probablemente/i);
+});
+
+test('R11 · sin sugerencia propia no se inventa un recorte fijo de 200–300 kcal', () => {
+  const r = run({ bodyweight: series({ perWeek: 0.7 }), profile: M(), strength: { trendPctPerWeek: 0.05, n: 4 } });
+  const i = byId(r, 'weight-strength');
+  const sug = r.kcalPerDay.suggestion;
+  if (!sug) assert.doesNotMatch(i.text, /kcal/);
+  else assert.doesNotMatch(i.text, /200[–-]300/);
+});
+
+test('R11 · bajar peso y perder fuerza con poca base no se llama déficit agresivo', () => {
+  const i = byId(run({ bodyweight: series({ start: 80, perWeek: -0.6 }), profile: M({ goal: 'lose' }), strength: { trendPctPerWeek: -0.6, n: 2 } }), 'weight-strength');
+  assert.ok(i);
+  assert.doesNotMatch(i.text, /señal de un déficit demasiado agresivo/);
 });

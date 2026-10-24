@@ -139,7 +139,8 @@ function weightSection(a) {
   }
   if (w.target && !minor) out.push(`- Rango recomendado para mi objetivo: ${w.target.label}${w.target.recommended ? ` (mejor ${w.target.recommended.label})` : ''} → ${w.paceLabel || '—'}`);
   const kc = w.kcalPerDay;
-  if (!minor && kc && isNum(kc.estimate)) out.push(`- Balance energético estimado: ${signed(kc.estimate, 0, ' kcal/día')} (aproximación con 7700 kcal/kg)`);
+  if (!minor && kc && kc.range) out.push(`- Balance energético orientativo: entre ${signed(kc.range.min, 0, '')} y ${signed(kc.range.max, 0, ' kcal/día')} (cálculo de 7700 kcal/kg: una aproximación, no una medición)`);
+  else if (!minor && w.ok) out.push('- Balance energético: sin estimación fiable con los datos actuales (solo se interpreta el cambio de peso observado)');
   if (!minor && kc && kc.suggestion) {
     const a1 = Math.min(Math.abs(kc.suggestion.min), Math.abs(kc.suggestion.max));
     const b1 = Math.max(Math.abs(kc.suggestion.min), Math.abs(kc.suggestion.max));
