@@ -326,12 +326,16 @@ test('informe: «RÉCORDS DE RUNNING» (la mejor de siempre) separado de «REFER
   assert.ok(rec && pred, txt);
   // Récords: la mejor de siempre, también una de 2024 (la antigüedad no le quita valor), con la precisión apuntada
   assert.deepEqual(rec.split('\n').slice(1), [
-    '- 1 km — 4:40 — 2024 — marca histórica (estimado a ritmo medio desde una carrera de 5 km)',
+    '- 1 km — sin marca',
     '- 5 km — 23:20 — 2024 — marca histórica',
     '- 10 km — 58:20 — verano 2025 — marca histórica',
-    '- Media maratón — 2:05:00 — 2025 — marca histórica (estimado a ritmo medio desde una carrera de 42,2 km)',
+    '- Media maratón — 2:20:00 — 15 mar 2026 — marca histórica',
     '- Maratón — 4:10:00 — 2025 — marca histórica',
   ]);
+  // R11: las extrapolaciones a ritmo medio van aparte y se dicen como tales (no son récords)
+  const est = blocks.find((b) => b.startsWith('ESTIMACIONES A RITMO MEDIO'));
+  assert.ok(est && /extrapolación, no una marca/.test(est), est);
+  assert.ok(!/estimado a ritmo medio desde/.test(rec));
   // Predicción actual: lo reciente y las referencias históricas más recientes, con su antigüedad y el parón
   const lines = pred.split('\n').slice(1);
   assert.match(lines[0], /^- 5 km — 27:10 — \d+ \w+ 2026 \(hace 5 días; carrera registrada\)$/);
@@ -340,9 +344,10 @@ test('informe: «RÉCORDS DE RUNNING» (la mejor de siempre) separado de «REFER
   assert.ok(lines.includes('- (3 marcas históricas más antiguas sin listar)'));
   assert.match(lines.at(-1), /^- Tiempo previsto hoy: 5 km ≈ \d+:\d\d \(\d+:\d\d–\d+:\d\d, (orientativo, )?confianza \w+\) · 10 km ≈ /);
   assert.ok(!/Carrera de mi barrio|nota privada/.test(txt), 'sin nombres ni notas');
-  // Orden: RUNNING (si hay) → RÉCORDS → PREDICCIÓN ACTUAL
+  // Orden: RUNNING (si hay) → RÉCORDS → ESTIMACIONES (si hay) → PREDICCIÓN ACTUAL
   const heads = blocks.map((b) => b.split('\n')[0]);
-  assert.equal(heads.indexOf(pred.split('\n')[0]), heads.indexOf(rec.split('\n')[0]) + 1);
+  assert.equal(heads.indexOf(est.split('\n')[0]), heads.indexOf(rec.split('\n')[0]) + 1);
+  assert.equal(heads.indexOf(pred.split('\n')[0]), heads.indexOf(est.split('\n')[0]) + 1);
   // Sin marcas ni carreras: ninguna de las dos
   const none = reportText(buildAnalysis({ ...d, sessions: [], context: [] }, T));
   assert.ok(!none.includes('RÉCORDS DE RUNNING') && !none.includes('REFERENCIAS PARA LA PREDICCIÓN ACTUAL'));

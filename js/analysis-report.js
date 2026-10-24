@@ -216,9 +216,20 @@ function runRecordsSection(a) {
   const lines = RECORD_LABELS.map(([id, label]) => {
     const b = best[id];
     if (!b) return `- ${label} — sin marca`;
-    return `- ${label} — ${fmtDuration(b.timeSec)} — ${b.when} — ${ORIGIN_TXT[b.source] || ''}${b.how === 'partial' ? ` (mejor tramo dentro de una carrera de ${fmtNum(b.fromKm, 2)} km)` : b.estimated ? ` (estimado a ritmo medio desde una carrera de ${fmtNum(b.fromKm, 2)} km)` : ''}`;
+    return `- ${label} — ${fmtDuration(b.timeSec)} — ${b.when} — ${ORIGIN_TXT[b.source] || ''}${b.how === 'partial' ? ` (mejor tramo medido dentro de una carrera de ${fmtNum(b.fromKm, 2)} km)` : ''}`;
   });
-  return section('RÉCORDS DE RUNNING (mi mejor marca de siempre en cada distancia; su antigüedad no le quita valor)', lines);
+  return section('RÉCORDS DE RUNNING (mi mejor marca de siempre en cada distancia, realmente corrida o medida; su antigüedad no le quita valor)', lines);
+}
+
+/** Extrapolaciones a ritmo medio de tiradas más largas que mejoran mi marca real: aparte, NO son récords ni cumplen objetivos. */
+function runEstimatesSection(a) {
+  const est = a.running?.records?.estimates;
+  if (!est) return [];
+  const lines = RECORD_LABELS.map(([id, label]) => {
+    const e = est[id];
+    return e ? `- ${label} — ${fmtDuration(e.timeSec)} — a ritmo medio de una carrera de ${fmtNum(e.fromKm, 2)} km (${e.when}); extrapolación, no una marca` : null;
+  });
+  return section('ESTIMACIONES A RITMO MEDIO (no son récords: no se corrió esa distancia)', lines);
 }
 
 /**
@@ -474,6 +485,7 @@ export function reportText(analysis, { includeCycle = false } = {}) {
     volumeSection(a),
     sports[0],
     runRecordsSection(a),
+    runEstimatesSection(a),
     runPredictionSection(a),
     ...sports.slice(1),
     loadSection(a),

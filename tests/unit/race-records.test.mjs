@@ -38,8 +38,9 @@ test('una marca histórica de 5 km o de 10 km es récord sin ninguna carrera reg
   const b10 = r.run.best['10k'];
   assert.deepEqual({ t: b10.timeLabel, when: b10.when, precision: b10.precision, source: b10.source }, { t: '1:00:00', when: 'may 2026', precision: 'month', source: 'context' });
   assert.equal(b10.date, '2026-05-01', 'solo para ordenar: el principio de su periodo');
-  // 1 km: al ritmo medio de la marca más rápida (estimado), como con las carreras registradas
-  assert.deepEqual([r.run.best['1k'].timeLabel, r.run.best['1k'].estimated], ['4:54', true]);
+  // 1 km: a ritmo medio de la marca más rápida es una ESTIMACIÓN (R11): no es récord, va aparte
+  assert.equal(r.run.best['1k'], null);
+  assert.deepEqual([r.run.estimates['1k'].timeLabel, r.run.estimates['1k'].estimated], ['4:54', true]);
   assert.equal(r.run.best.half, null);
   assert.equal(r.run.longest.source, 'context');
   assert.equal(r.run.longest.distanceKm, 10);
@@ -113,7 +114,8 @@ test('distancia personalizada: no crea filas nuevas; cuenta para las estándar m
   const custom = mark('2026-06-01', 'month', 7.5, 2400);
   const r = enduranceRecords(data([], [custom]));
   assert.deepEqual(Object.keys(r.run.best), ['1k', '5k', '10k', 'half', 'marathon']);
-  assert.deepEqual([r.run.best['5k'].timeLabel, r.run.best['5k'].estimated, r.run.best['5k'].fromKm], ['26:40', true, 7.5]);
+  assert.equal(r.run.best['5k'], null, 'a ritmo medio es una estimación, no un récord (R11)');
+  assert.deepEqual([r.run.estimates['5k'].timeLabel, r.run.estimates['5k'].estimated, r.run.estimates['5k'].fromKm], ['26:40', true, 7.5]);
   assert.equal(r.run.best['10k'], null);
   assert.equal(r.run.longest.distanceKm, 7.5);
 });
@@ -121,11 +123,11 @@ test('distancia personalizada: no crea filas nuevas; cuenta para las estándar m
 test('lo que no vale no es récord: ritmo imposible; ni empata por delante de la primera vez', () => {
   assert.equal(best(data([], [mark('2026-05-01', 'day', 10, 31 * 3600)]), '10k'), null);
   assert.equal(best(data([], [mark('2026-05-01', 'day', 10, 1000)]), '10k'), null);
-  // Empate exacto entre dos carreras distintas (20 km a ritmo de 1:00:00 el 10 km): cuenta la primera vez (la marca de
-  // mayo, desde el principio de su periodo, va antes que una carrera del 20 de mayo; la de junio, después)
+  // R11: una tirada de 20 km a ritmo de 1:00:00 el 10 km es una estimación: ni empata ni desplaza a la marca real
   const tie = run('2026-05-20', 20, 7200);
   assert.equal(best(data([tie], [mark('2026-05-01', 'month', 10, 3600)]), '10k').source, 'context');
-  assert.equal(best(data([tie], [mark('2026-06-01', 'month', 10, 3600)]), '10k').source, 'app');
+  assert.equal(best(data([tie], [mark('2026-06-01', 'month', 10, 3600)]), '10k').source, 'context');
+  assert.equal(enduranceRecords(data([tie], [mark('2026-06-01', 'month', 10, 3600)])).run.estimates['10k'], undefined);
   // Misma fecha, distancia y tiempo: es la misma carrera (duplicado), no un empate → la registrada
   assert.equal(best(data([run('2026-05-20', 10, 3600)], [mark('2026-05-01', 'month', 10, 3600)]), '10k').source, 'app');
 });

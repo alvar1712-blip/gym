@@ -64,11 +64,13 @@ async function flow(page, tag) {
   await openRecords(page);
   let r10 = await row(page, '10k');
   assert.deepStrictEqual(r10, { value: '1:00:00', sub: 'may 2026 · Marca histórica', source: 'context', entry: markId, session: '' }, tag);
-  const r5 = await row(page, '5k');
+  // R11: sin un 5 km real no hay récord de 5 km; la extrapolación del 10 km va aparte, como estimación
+  assert.deepStrictEqual(await row(page, '5k'), { value: '—', sub: 'Sin marca todavía', source: '', entry: '', session: '' });
+  const r5 = await row(page, '5k-est');
   assert.strictEqual(r5.value, '30:00');
-  assert.strictEqual(r5.sub, 'may 2026 · Marca histórica · de una carrera de 10 km');
-  assert.strictEqual(await page.locator('.prg-rec[data-sport="run"] [data-rec="5k"] .badge').textContent(), 'estimado');
-  assert.strictEqual(clean((await row(page, '1k')).value), '6:00');
+  assert.strictEqual(r5.sub, 'may 2026 · Marca histórica · a ritmo medio de una carrera de 10 km; no es un récord');
+  assert.strictEqual(await page.locator('.prg-rec[data-sport="run"] [data-rec="5k-est"] .badge').textContent(), 'estimado');
+  assert.strictEqual(clean((await row(page, '1k-est')).value), '6:00');
   assert.deepStrictEqual(await row(page, 'half'), { value: '—', sub: 'Sin marca todavía', source: '', entry: '', session: '' });
   assert.strictEqual(clean(await page.locator('.prg-rec[data-sport="run"] .prg-rec-meta').textContent()), '1 carrera · 1 marca histórica');
   assert.ok(await noHScroll(page));

@@ -1255,15 +1255,26 @@ function enduranceRecordsView(data, today) {
     const b = e.run.best[r.id];
     if (!b) {
       runRows.push(recRow({ key: r.id, label: r.label, value: '—', sub: 'Sin marca todavía', muted: true }));
-      continue;
+    } else {
+      // Distancia → tiempo → fecha (con la precisión apuntada) · origen; si es el mejor tramo medido de una carrera
+      // importada más larga, discreto «Parcial dentro de 12,4 km». Aquí solo hay marcas reales o medidas.
+      runRows.push(recRow({
+        key: r.id, label: r.label, value: b.timeLabel, sub: [b.name || null, b.when].filter(Boolean).join(' · '), origin: b.origin,
+        extra: b.how === 'partial' ? `Parcial dentro de ${km(b.fromKm)} km` : null,
+        sessionId: b.sessionId, entryId: b.entryId, source: b.source, href: recHref(b), how: b.how,
+      }));
     }
-    // Distancia → tiempo → fecha (con la precisión apuntada) · origen; si es el mejor tramo de una carrera importada
-    // más larga, discreto «Parcial dentro de 12,4 km»; si se estimó a ritmo medio (distintivo «estimado»), de cuál
-    runRows.push(recRow({
-      key: r.id, label: r.label, value: b.timeLabel, sub: [b.name || null, b.when].filter(Boolean).join(' · '), origin: b.origin,
-      extra: b.how === 'partial' ? `Parcial dentro de ${km(b.fromKm)} km` : b.estimated ? `de una carrera de ${km(b.fromKm)} km` : null,
-      sessionId: b.sessionId, entryId: b.entryId, source: b.source, href: recHref(b), badge: b.estimated ? 'estimado' : null, how: b.how,
-    }));
+    // Extrapolación a ritmo medio de una tirada más larga que mejora la marca (o la sustituye si no la hay): aparte,
+    // atenuada y con su distintivo; no es un récord ni cumple objetivos
+    const s = e.run.estimates?.[r.id];
+    if (s) {
+      runRows.push(recRow({
+        key: `${r.id}-est`, label: `${r.label} · estimación`, value: s.timeLabel, muted: true, badge: 'estimado',
+        sub: [s.name || null, s.when].filter(Boolean).join(' · '), origin: s.origin,
+        extra: `a ritmo medio de una carrera de ${km(s.fromKm)} km; no es un récord`,
+        sessionId: s.sessionId, entryId: s.entryId, source: s.source, href: recHref(s), how: s.how,
+      }));
+    }
   }
   const runMeta = [e.run.count ? plural(e.run.count, 'carrera', 'carreras') : null, e.run.historyCount ? plural(e.run.historyCount, 'marca histórica', 'marcas históricas') : null].filter(Boolean).join(' · ');
   return h('div.prg-rec-endurance',
@@ -1272,7 +1283,7 @@ function enduranceRecordsView(data, today) {
         h('span.prg-rec-name', h('span', { 'aria-hidden': 'true' }, '🏃\u00a0'), 'Carrera'),
         h('span.prg-rec-meta', runMeta || 'sin registros')),
       h('div.prg-rec-rows', runRows),
-      h('p.prg-hist-note', 'Tu mejor marca de siempre en cada distancia, de tus carreras (registradas o importadas) y de tus marcas históricas de «Tu contexto»; un récord no caduca (la antigüedad solo cuenta en los tiempos previstos). Si la carrera fue más larga, cuenta tu mejor tramo continuo cuando la importaste de un archivo; si no, se estima con su ritmo medio (no es un tiempo cronometrado en esa distancia).'),
+      h('p.prg-hist-note', 'Tu mejor marca de siempre en cada distancia, de tus carreras (registradas o importadas) y de tus marcas históricas de «Tu contexto»; un récord no caduca (la antigüedad solo cuenta en los tiempos previstos). Si la carrera fue más larga, cuenta tu mejor tramo continuo cuando la importaste de un archivo. Una extrapolación a ritmo medio de una tirada más larga se muestra aparte como «estimación»: no es un tiempo cronometrado en esa distancia, así que no cuenta como récord ni cumple objetivos.'),
       h('button.list-item.prg-link-row', { type: 'button', dataset: { link: 'add-result' }, onClick: () => navigate('#/context/new?kind=event&type=race_result') },
         h('span.prg-link-emoji', { 'aria-hidden': 'true' }, '🏁'),
         h('span.list-item-main', h('span.list-item-title', 'Apuntar una marca'), h('span.list-item-sub.wrap', 'Una carrera de antes de usar Entreno')),

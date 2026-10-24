@@ -905,7 +905,7 @@ export function enduranceRecords(data) {
 
 function computeEnduranceRecords(data, idx) {
   const out = {
-    run: { count: 0, historyCount: 0, longest: null, best: Object.fromEntries(RECORD_DISTANCES.map((r) => [r.id, null])) },
+    run: { count: 0, historyCount: 0, longest: null, best: Object.fromEntries(RECORD_DISTANCES.map((r) => [r.id, null])), estimates: {} },
     bike: { count: 0, longest: null },
     swim: { count: 0, longest: null },
     hike: { count: 0, longest: null, maxGain: null },
@@ -940,15 +940,22 @@ function computeEnduranceRecords(data, idx) {
         const m = isMark ? scaledRunMark(km, sec, r.km) : runMarkFor(a, r.km);
         if (!m) continue;
         const t = m.timeSec;
-        const cur = bucket.best[r.id];
+        // Una extrapolación a ritmo medio NO es una marca: va a `estimates`, aparte, y nunca desplaza a una real
+        const slot = m.how === 'estimated' ? bucket.estimates : bucket.best;
+        const cur = slot[r.id];
         if (cur && !(t < cur.timeSec - EPS)) continue;
-        bucket.best[r.id] = {
+        slot[r.id] = {
           id: r.id, label: r.label, distanceKm: r.km, timeSec: t, timeLabel: fmtDuration(t), paceLabel: fmtPace(m.paceSec),
           date: a.date, ...src, origin: RECORD_ORIGIN[src.source], alsoContext: isMark ? null : duplicates.get(a.id) ?? null,
           fromKm: km, fromSec: sec, how: m.how, partial: m.partial, estimated: m.how === 'estimated',
         };
       }
     }
+  }
+  // Solo se enseña la estimación que mejora la marca real (o si no hay ninguna): una más lenta no aporta nada
+  for (const id of Object.keys(out.run.estimates)) {
+    const real = out.run.best[id];
+    if (real && !(out.run.estimates[id].timeSec < real.timeSec - EPS)) delete out.run.estimates[id];
   }
   return out;
 }

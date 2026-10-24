@@ -495,9 +495,14 @@ test('enduranceRecords: 5k/10k/media reales y estimados desde tiradas más larga
   assert.equal(b5.timeLabel, '23:37');
   assert.equal(b5.paceLabel, '4:43 /km');
   const b10 = r.run.best['10k'];
-  assert.equal(b10.sessionId, 'r6');
-  close(b10.timeSec, (3000 * 10) / 10.5);
-  assert.equal(b10.estimated, true);
+  // R11: el récord de 10 km es el 10 km corrido (r2); el 10 km «a ritmo medio» de la tirada de 10,5 km va aparte
+  assert.equal(b10.sessionId, 'r2');
+  assert.equal(b10.timeSec, 2880);
+  assert.equal(b10.estimated, false);
+  const e10 = r.run.estimates['10k'];
+  assert.equal(e10.sessionId, 'r6');
+  close(e10.timeSec, (3000 * 10) / 10.5);
+  assert.equal(e10.estimated, true);
   const half = r.run.best.half;
   assert.equal(half.sessionId, 'r5');
   close(half.timeSec, (6300 * 21.0975) / 21.1);
@@ -509,7 +514,7 @@ test('enduranceRecords: 5k/10k/media reales y estimados desde tiradas más larga
   assert.deepEqual(RACE_DISTANCES.map((x) => x.km), [5, 10, 21.0975, 42.195]);
 });
 
-test('enduranceRecords: 5k estimado desde un 10k y exacto; empates → la primera; sin datos → null', () => {
+test('enduranceRecords: 5k real frente a la estimación desde un 10k; empates; sin datos → null', () => {
   const data = mk({
     sessions: [
       act('r1', 'run', '2026-09-01', { distanceKm: 10, movingSec: 2800 }), // 5k estimado 23:20
@@ -520,19 +525,23 @@ test('enduranceRecords: 5k estimado desde un 10k y exacto; empates → la primer
     ],
   });
   const r = enduranceRecords(data);
-  assert.equal(r.run.best['5k'].sessionId, 'r1');
+  // R11: manda el 5 km realmente corrido (r2); la estimación de r1 (mismo tiempo) no lo supera y no se enseña
+  assert.equal(r.run.best['5k'].sessionId, 'r2');
   assert.equal(r.run.best['5k'].timeSec, 1400);
-  assert.equal(r.run.best['5k'].estimated, true);
+  assert.equal(r.run.best['5k'].estimated, false);
+  assert.equal(r.run.estimates['5k'], undefined);
   assert.equal(r.run.best.marathon.timeSec, 14400);
   assert.equal(r.run.best.marathon.estimated, false);
   assert.equal(r.run.best.marathon.timeLabel, '4:00:00');
   // estimado solo si distanceKm > X × 1,02
   const d2 = mk({ sessions: [act('r3', 'run', '2026-09-10', { distanceKm: 5.1, movingSec: 1500 }), act('r4', 'run', '2026-09-11', { distanceKm: 5.11, movingSec: 1300 })] });
   const r2 = enduranceRecords(d2);
-  assert.equal(r2.run.best['5k'].estimated, true);
+  assert.equal(r2.run.best['5k'].estimated, false);
+  assert.equal(r2.run.estimates['5k'].estimated, true);
+  assert.equal(r2.run.estimates['5k'].sessionId, 'r4');
   assert.equal(enduranceRecords(mk({ sessions: [act('r3', 'run', '2026-09-10', { distanceKm: 5.1, movingSec: 1500 })] })).run.best['5k'].estimated, false);
   const empty = enduranceRecords(mk());
-  assert.deepEqual(empty, { run: { count: 0, historyCount: 0, longest: null, best: { '1k': null, '5k': null, '10k': null, half: null, marathon: null } }, bike: { count: 0, longest: null }, swim: { count: 0, longest: null }, hike: { count: 0, longest: null, maxGain: null } });
+  assert.deepEqual(empty, { run: { count: 0, historyCount: 0, longest: null, best: { '1k': null, '5k': null, '10k': null, half: null, marathon: null }, estimates: {} }, bike: { count: 0, longest: null }, swim: { count: 0, longest: null }, hike: { count: 0, longest: null, maxGain: null } });
 });
 
 // ---------------------------------------------------------------------------
@@ -922,4 +931,37 @@ test('rendimiento: 2 años de datos (500 sesiones × 25 series) → weeklySeries
 
 test('weekStart de las semanas: siempre lunes', () => {
   for (const r of weeklySeries(weekData(), '2026-08-01', TODAY)) assert.equal(weekStart(r.week), r.week);
+});
+
+// ---------------------------------------------------------------------------
+// Ronda 11 (bloque 2): marcas reales, parciales medidos y estimaciones, separados
+// ---------------------------------------------------------------------------
+
+test('R11 · una estimación a ritmo medio no es récord: va aparte y nunca desplaza a la marca real', () => {
+  const data = mk({
+    sessions: [
+      act('real10', 'run', '2026-09-01', { distanceKm: 10, movingSec: 3000 }), // 10 km reales: 50:00
+      act('long12', 'run', '2026-09-08', { distanceKm: 12, movingSec: 2880 }), // 4:00/km → «10 km» a ritmo medio 40:00 (estimado)
+    ],
+  });
+  const r = enduranceRecords(data).run;
+  assert.equal(r.best['10k'].sessionId, 'real10', 'el récord es el 10 km realmente corrido');
+  assert.equal(r.best['10k'].timeSec, 3000);
+  assert.equal(r.best['10k'].estimated, false);
+  assert.equal(r.best['5k'], null, 'sin un 5 km real no hay récord de 5 km');
+  assert.equal(r.estimates['5k'].sessionId, 'long12');
+  assert.equal(r.estimates['5k'].estimated, true);
+  assert.equal(r.estimates['10k'].timeSec, 2400, 'la estimación más rápida que el récord se enseña aparte');
+});
+
+test('R11 · una estimación más lenta que la marca real ni se enseña', () => {
+  const data = mk({
+    sessions: [
+      act('real5', 'run', '2026-09-01', { distanceKm: 5, movingSec: 1200 }),
+      act('long10', 'run', '2026-09-08', { distanceKm: 10, movingSec: 3000 }), // 5 km estimado 25:00 > 20:00
+    ],
+  });
+  const r = enduranceRecords(data).run;
+  assert.equal(r.best['5k'].timeSec, 1200);
+  assert.equal(r.estimates['5k'], undefined);
 });

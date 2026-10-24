@@ -330,7 +330,7 @@ test('récords del periodo: fuerza (uno por ejercicio) y resistencia (distancia,
     'Carrera · mayor distancia', // 20 sep
     'Senderismo · mayor distancia', // 19 sep
     'Senderismo · mayor desnivel', // 19 sep
-    'Carrera · 5 km', // 6 sep
+    // R11: el 5 km del 6 sep ya no es récord: lo anterior eran tiradas largas (estimaciones a ritmo medio), no un 5 km real
     'Press banca', // 2 sep
     'Sentadilla', // 2 sep
   ]);
@@ -347,7 +347,7 @@ test('récords del periodo: fuerza (uno por ejercicio) y resistencia (distancia,
   assert.equal(longest.detail, '14 km en 1:10:00');
   assert.equal(longest.prev, 12);
   assert.equal(s.records[2].detail, '+900 m · 15 km');
-  assert.equal(s.records[3].detail, '23:20 · 4:40 /km');
+  assert.ok(!s.records.some((r) => r.metric === '5k'), 'sin un 5 km real anterior no hay récord de 5 km');
   // La primera vez (bici) no es récord; los récords de agosto no salen en septiembre
   assert.ok(!s.records.some((r) => r.kind === 'bike'));
   const aug = periodSummary(data, { unit: 'month', start: '2026-08-01' });

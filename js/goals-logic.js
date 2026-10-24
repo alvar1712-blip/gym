@@ -529,8 +529,8 @@ const weekSnapDate = (date, today) => { const sun = addDays(weekStart(date), 6);
  * Análisis y el informe. «Actual» = predictFor(hoy).mid; veredicto = checkTarget (probable · ajustado · hoy no);
  * tendencia = regresión de las fotos del motor al final de cada semana con carreras válidas (≥ 3 km, ritmo creíble);
  * inicio = la foto el día en que se creó (o la primera semana con previsión después). Conseguido: una carrera de la
- * distancia o más, desde que se creó, con un ritmo creíble y cuya marca en la distancia (stats.runMarkFor, la regla de
- * Récords: completa, mejor tramo de una importada o a ritmo medio) baja del objetivo.
+ * distancia o más, desde que se creó, con un ritmo creíble y cuya marca REAL en la distancia (stats.runMarkFor: completa o
+ * mejor tramo medido de una importada; nunca una estimación a ritmo medio) baja del objetivo.
  */
 function runTimeModel(data, goal, today, { D, T, acts, Dtxt, createdDate }) {
   const opts = { today };
@@ -553,11 +553,12 @@ function runTimeModel(data, goal, today, { D, T, acts, Dtxt, createdDate }) {
     if (!byId) byId = new Map((Array.isArray(data?.sessions) ? data.sessions : []).map((s) => [s?.id, s]));
     const rec = byId.get(a.sessionId) || { kind: 'run', distanceKm: a.km, movingSec: a.sec };
     const mk = runMarkFor(rec, D);
-    if (!mk) continue;
+    // Una estimación a ritmo medio de una tirada más larga NO cumple el objetivo: hace falta la distancia realmente corrida
+    // (completa) o un mejor tramo medido (mk.how 'partial').
+    if (!mk || mk.how === 'estimated') continue;
     const t = Math.round(mk.timeSec);
     if (t < T) {
-      const label = mk.how === 'partial' ? `${runTxt(a)}: mejor tramo de ${Dtxt} en ${fmtDuration(t)}`
-        : mk.how === 'estimated' ? `${runTxt(a)}: ${Dtxt} a ritmo medio en ${fmtDuration(t)}` : runTxt(a);
+      const label = mk.how === 'partial' ? `${runTxt(a)}: mejor tramo de ${Dtxt} en ${fmtDuration(t)}` : runTxt(a);
       achieved = { date: a.x, label };
       break;
     }

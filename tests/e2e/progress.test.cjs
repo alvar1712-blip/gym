@@ -472,7 +472,7 @@ test('#/progress/exercise/:id: KPIs, gráficas con periodo, globo «80 kg × 6 @
   }
 });
 
-test('#/records: fuerza (mejor peso, 1RM estimado, reps a cada peso, buscador) y resistencia (5 km estimado desde 8 km…)', async () => {
+test('#/records: fuerza (mejor peso, 1RM estimado, reps a cada peso, buscador) y resistencia (5 km solo como estimación desde 8 km…)', async () => {
   const app = await launch();
   const { page } = app;
   try {
@@ -513,20 +513,22 @@ test('#/records: fuerza (mejor peso, 1RM estimado, reps a cada peso, buscador) y
     await page.locator('.seg-btn', { hasText: 'Resistencia' }).click();
     const run = page.locator('.prg-rec[data-sport="run"]');
     const row = (k) => run.locator(`[data-rec="${k}"]`).innerText();
-    const r5 = await row('5k');
+    // R11: sin un 5 km ni un 10 km corridos no hay récord; la extrapolación a ritmo medio sale aparte, con su distintivo
+    assert.match(await row('5k'), /Sin marca todavía/);
+    const r5 = await row('5k-est');
     assert.match(r5, /23:20/);
-    // Estimado (distintivo) a ritmo medio de una carrera más larga: de cuál; fecha y origen
     assert.match(r5, /estimado/);
-    assert.match(r5, /2 sep 2026 · Registrado en Entreno · de una carrera de 8 km/);
-    const r10 = await row('10k');
+    assert.match(r5, /2 sep 2026 · Registrado en Entreno · a ritmo medio de una carrera de 8 km; no es un récord/);
+    assert.match(await row('10k'), /Sin marca todavía/);
+    const r10 = await row('10k-est');
     assert.match(r10, /58:20/);
-    assert.match(r10, /de una carrera de 12 km/);
+    assert.match(r10, /a ritmo medio de una carrera de 12 km/);
     assert.match(await row('half'), /Sin marca todavía/);
     assert.match(await row('marathon'), /Sin marca todavía/);
     assert.match(await row('longest'), /15 km/);
     assert.match(await page.locator('.prg-rec[data-sport="bike"] [data-rec="longest"]').innerText(), /70 km/);
     assert.match(await page.locator('.prg-rec[data-sport="swim"] [data-rec="longest"]').innerText(), /2\.000 m/);
-    await run.locator('[data-rec="5k"]').click();
+    await run.locator('[data-rec="5k-est"]').click();
     await page.waitForFunction(() => location.hash === '#/activity/r11_tempo' || location.hash === '#/session/r11_tempo');
     assert.ok(await noHScroll(page));
     assert.deepStrictEqual(app.errors, []);

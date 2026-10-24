@@ -377,8 +377,9 @@ function endurancePRs(ctx) {
     const st = state.run || (state.run = { longest: null, race: {}, elev: null });
     if (st.longest == null || m.km > st.longest) st.longest = m.km;
     for (const r of RACE_DISTANCES) {
-      const t = scaledRunMark(m.km, m.sec, r.km)?.timeSec;
-      if (t == null) continue;
+      const mk = scaledRunMark(m.km, m.sec, r.km);
+      if (!mk || mk.how === 'estimated') continue; // una estimación no es una marca anterior
+      const t = mk.timeSec;
       if (st.race[r.id] == null || t < st.race[r.id]) st.race[r.id] = t;
     }
   };
@@ -398,7 +399,7 @@ function endurancePRs(ctx) {
         for (const r of RACE_DISTANCES) {
           // La misma regla que Récords (stats.runMarkFor): completa, mejor tramo de una importada o a ritmo medio
           const mk = runMarkFor(a, r.km);
-          if (!mk) continue;
+          if (!mk || mk.how === 'estimated') continue; // una estimación a ritmo medio no es récord
           const t = mk.timeSec;
           const prev = st.race[r.id];
           if (prev != null && t < prev - EPS) {

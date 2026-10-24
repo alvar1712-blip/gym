@@ -29,7 +29,7 @@ function ses(date, exerciseId, sets, extra = {}) {
   return { id: `s${++seq}`, kind: 'strength', status: 'done', date, startedAt: tsFromDate(date, 18), durationMin: 60, rpe: 8, exercises: [{ id: `se${seq}`, exerciseId, sets }], ...extra };
 }
 function act(kind, date, km, sec, extra = {}) {
-  return { id: `a${++seq}`, kind, status: 'done', date, distanceKm: km, movingSec: sec, durationMin: sec / 60, rpe: 5, startedAt: tsFromDate(date, 8), ...extra };
+  return { id: `a${++seq}`, kind, status: 'done', date, distanceKm: km, movingSec: sec, durationMin: sec / 60, rpe: 6, startedAt: tsFromDate(date, 8), ...extra }; // RPE 6: un esfuerzo representativo (R11: con RPE ≤ 5 y todo rodajes la previsión es «poco fiable»)
 }
 function data({ sessions = [], bodyweight = [], settings = defaultSettings(), today = TODAY } = {}) {
   return { sessions, exercises: new Map(Object.values(EX).map((e) => [e.id, e])), settings, bodyweight, today };
@@ -590,17 +590,17 @@ test('carrera: «Actual» = tiempo previsto del motor; tendencia = sus fotos sem
   assert.equal(MIN_KM.run, 3);
 });
 
-test('carrera: conseguido con una sesión ≥ distancia por debajo del tiempo (a ritmo medio, ritmo creíble), desde que se creó', () => {
+test('carrera: conseguido con una carrera de esa distancia corrida (completa) por debajo del tiempo, con ritmo creíble, desde que se creó', () => {
   const sessions = [
     act('run', '2026-06-20', 10, 2600), // antes de crearlo
     act('run', '2026-09-06', 10, 2700), // igual al objetivo: «en menos de» no se cumple
-    act('run', '2026-09-13', 12, 3200), // 10 km a ritmo medio = 44:27
+    act('run', '2026-09-13', 12, 3200), // 10 km a ritmo medio = 44:27: una estimación, NO cumple (R11)
     act('run', '2026-09-20', 10, 2650),
   ];
   const p = goalProgress(data({ sessions }), runGoal());
   assert.equal(p.status, 'achieved');
-  assert.equal(p.achievedOn, '2026-09-13');
-  assert.equal(p.explanation, 'Conseguido el 13 sep: 12 km en 53:20: 10 km a ritmo medio en 44:27 (objetivo 10 km en menos de 45:00).');
+  assert.equal(p.achievedOn, '2026-09-20');
+  assert.equal(p.explanation, 'Conseguido el 20 sep: 10 km en 44:10 (objetivo 10 km en menos de 45:00).');
   // Una de 9,9 km no llega a la distancia
   const short = [act('run', '2026-09-20', 9.9, 2400)];
   assert.notEqual(goalProgress(data({ sessions: short }), runGoal()).status, 'achieved');
@@ -909,4 +909,14 @@ test('la estimación es siempre un rango (from < to) y nunca antes de mañana', 
     assert.ok(p.eta.fromDays <= Math.floor(p.eta.centerDays * 0.8) && (p.eta.toDays == null || p.eta.toDays >= Math.ceil(p.eta.centerDays * 1.2)), 'margen mínimo ±20 %');
   }
   assert.equal(weekStart(TODAY), '2026-09-21');
+});
+
+test('R11 · un objetivo de carrera no se cumple con una estimación a ritmo medio de una tirada más larga', () => {
+  const sessions = [act('run', '2026-09-13', 12, 3200)]; // «10 km a ritmo medio» 44:27 < 45:00, pero nunca corrió 10 km
+  const p = goalProgress(data({ sessions }), runGoal());
+  assert.notEqual(p.status, 'achieved');
+  // Con un 10 km real por debajo del objetivo sí se cumple
+  const real = goalProgress(data({ sessions: [...sessions, act('run', '2026-09-20', 10, 2650)] }), runGoal());
+  assert.equal(real.status, 'achieved');
+  assert.equal(real.achievedOn, '2026-09-20');
 });

@@ -81,7 +81,7 @@ async function flow(browser, large) {
     const r1 = await row(page, '1k');
     assert.strictEqual(r1.how, 'partial');
     const note = clean(await page.locator('.prg-rec[data-sport="run"] .prg-hist-note').textContent());
-    assert.match(note, /cuenta tu mejor tramo continuo cuando la importaste de un archivo; si no, se estima con su ritmo medio/);
+    assert.match(note, /cuenta tu mejor tramo continuo cuando la importaste de un archivo\. Una extrapolación a ritmo medio/);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'sin scroll horizontal');
     // Cada línea del texto (Range: las cajas reales de cada trozo, también los que no se parten) queda a la izquierda del tiempo
     const overflow = await page.locator('.prg-rec[data-sport="run"] .prg-rec-row').evaluateAll((els) => els
@@ -102,9 +102,12 @@ async function flow(browser, large) {
     // Editar la distancia: el parcial deja de contar sin tocar los datos (vuelve «estimado» a ritmo medio)
     await editDistance(page, rec.id, '12,5', 12.5);
     await openRecords(page);
+    // R11: sin parcial, a ritmo medio es solo una estimación aparte: no hay récord de 5 km
     r5 = await row(page, '5k');
-    assert.deepStrictEqual([r5.how, r5.badge], ['estimated', 'estimado']);
-    assert.match(clean(r5.sub), /Actividad importada · de una carrera de 12,5 km$/);
+    assert.strictEqual(r5.value, '—');
+    const est5 = await row(page, '5k-est');
+    assert.deepStrictEqual([est5.how, est5.badge], ['estimated', 'estimado']);
+    assert.match(clean(est5.sub), /Actividad importada · a ritmo medio de una carrera de 12,5 km; no es un récord$/);
     const stored = (await idbAll(page, 'sessions'))[0];
     assert.deepStrictEqual(stored.bestEfforts, rec.bestEfforts, 'los parciales siguen guardados, solo no cuentan');
     if (large) await shot(page, `records-partials-edited-375-${tag}`);

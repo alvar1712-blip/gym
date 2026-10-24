@@ -105,11 +105,13 @@ test('en la misma carrera el parcial sustituye a la estimación (aunque sea más
   assert.equal(best(data([a]), '1k').timeSec, 300);
 });
 
-test('una estimación de otra carrera (manual) sigue compitiendo y, si gana, se etiqueta «estimado»', () => {
+test('R11 · una estimación de otra carrera (manual) no compite: el récord sigue siendo el parcial medido y la estimación va aparte', () => {
   const a = twelve(ago(10));
   const manual = run(ago(5), 6, 1680); // 5 km a ritmo medio = 23:20 < 24:50
   const b = best(data([a, manual]), '5k');
-  assert.deepEqual([b.sessionId, b.how, b.estimated, b.timeLabel], [manual.id, 'estimated', true, '23:20']);
+  assert.deepEqual([b.sessionId, b.how, b.estimated, b.timeLabel], [a.id, 'partial', false, '24:50']);
+  const e = enduranceRecords(data([a, manual])).run.estimates['5k'];
+  assert.deepEqual([e.sessionId, e.how, e.estimated, e.timeLabel], [manual.id, 'estimated', true, '23:20']);
   // Una manual más lenta no gana al parcial
   const slow = run(ago(5), 6, 1900);
   assert.equal(best(data([a, slow]), '5k').sessionId, a.id);
@@ -119,12 +121,14 @@ test('editar la distancia o el tiempo de la importada oculta su parcial (vuelve 
   const a = twelve();
   a.distanceKm = 12.5; // editada en el formulario (el registro se cambia en su sitio)
   let b = best(data([a]), '5k');
-  assert.deepEqual([b.how, b.estimated, b.partial], ['estimated', true, null]);
+  assert.equal(b, null, 'sin parcial, a ritmo medio es solo una estimación');
+  assert.deepEqual([enduranceRecords(data([a])).run.estimates['5k'].how, enduranceRecords(data([a])).run.estimates['5k'].partial], ['estimated', null]);
   a.distanceKm = 12.4;
   b = best(data([a]), '5k');
   assert.equal(b.how, 'partial');
   a.movingSec += 30;
-  assert.equal(best(data([a]), '5k').how, 'estimated');
+  assert.equal(best(data([a]), '5k'), null);
+  assert.equal(enduranceRecords(data([a])).run.estimates['5k'].how, 'estimated');
   a.movingSec -= 30;
   assert.equal(best(data([a]), '5k').how, 'partial');
 });
@@ -132,7 +136,8 @@ test('editar la distancia o el tiempo de la importada oculta su parcial (vuelve 
 test('un parcial aproximado (bordes con muestras muy separadas) no es récord: estimado', () => {
   const a = twelve();
   a.bestEfforts = { ...a.bestEfforts, items: { ...a.bestEfforts.items, '5k': { ...a.bestEfforts.items['5k'], approx: true } } };
-  assert.equal(best(data([a]), '5k').how, 'estimated');
+  assert.equal(best(data([a]), '5k'), null, 'queda solo la estimación');
+  assert.equal(enduranceRecords(data([a])).run.estimates['5k'].how, 'estimated');
   assert.equal(best(data([a]), '10k').how, 'partial', 'los demás parciales siguen valiendo');
 });
 
@@ -143,22 +148,30 @@ test('una marca histórica más rápida gana al parcial; una más lenta, no', ()
   assert.deepEqual([b.source, b.how], ['import', 'partial']);
 });
 
-test('carreras antiguas (sin source ni track): exactamente la regla de siempre (ritmo medio)', () => {
+test('carreras antiguas (sin source ni track): la regla de siempre (ritmo medio), con las estimaciones aparte (R11)', () => {
   const runs = [run(ago(40), 5, 1560), run(ago(30), 10.1, 3150), run(ago(20), 12, 3700), run(ago(10), 21.5, 7000), run(ago(3), 43, 15000)];
   const r = enduranceRecords(data(runs)).run.best;
   for (const { id, km } of RECORD_DISTANCES) {
     // El mismo cálculo de antes (stats.computeEnduranceRecords previo a C3), escrito aparte
     let exp = null;
+    let est = null;
     for (const a of runs) {
       if (a.distanceKm + 1e-9 < km) continue;
       const t = (a.movingSec * km) / a.distanceKm;
-      if (!exp || t < exp.t - 1e-9) exp = { t, id: a.id, est: a.distanceKm > km * 1.02 };
+      const isEst = a.distanceKm > km * 1.02;
+      if (isEst) { if (!est || t < est.t - 1e-9) est = { t, id: a.id }; }
+      else if (!exp || t < exp.t - 1e-9) exp = { t, id: a.id };
     }
-    assert.ok(Math.abs(r[id].timeSec - exp.t) < 1e-9, id);
-    assert.equal(r[id].sessionId, exp.id);
-    assert.equal(r[id].estimated, exp.est);
-    assert.equal(r[id].how, exp.est ? 'estimated' : 'full');
-    assert.equal(r[id].partial, null);
+    if (exp) {
+      assert.ok(Math.abs(r[id].timeSec - exp.t) < 1e-9, id);
+      assert.equal(r[id].sessionId, exp.id);
+      assert.equal(r[id].estimated, false);
+      assert.equal(r[id].how, 'full');
+      assert.equal(r[id].partial, null);
+    } else assert.equal(r[id], null, `${id}: sin carrera completa no hay récord`);
+    const shown = est && (!exp || est.t < exp.t - 1e-9) ? est : null;
+    const got = enduranceRecords(data(runs)).run.estimates[id];
+    if (shown) { assert.ok(Math.abs(got.timeSec - shown.t) < 1e-9, id); assert.equal(got.sessionId, shown.id); } else assert.equal(got, undefined, id);
   }
 });
 
@@ -167,7 +180,8 @@ test('copia de seguridad: los parciales sobreviven a la ida y vuelta (JSON); una
   const back = JSON.parse(JSON.stringify(a));
   assert.deepEqual(best(data([back]), '5k').partial, best(data([a]), '5k').partial);
   const { track, laps, bestEfforts, ...old } = back;
-  assert.equal(best(data([old]), '5k').how, 'estimated');
+  assert.equal(best(data([old]), '5k'), null);
+  assert.equal(enduranceRecords(data([old])).run.estimates['5k'].how, 'estimated');
 });
 
 test('resumen, objetivos y Récords usan la misma regla: mismos tiempos con parciales', () => {
@@ -198,7 +212,7 @@ test('informe para IA y «¿Por qué?» de Tiempos previstos nombran el parcial,
   const a = twelve(ago(4));
   const d = data([a, run(ago(9), 8, 2560), run(ago(16), 10, 3200)]);
   const txt = reportText(buildAnalysis(d, T));
-  assert.match(txt, /- 5 km — 24:50 — .* — actividad importada \(mejor tramo dentro de una carrera de 12,4 km\)/);
+  assert.match(txt, /- 5 km — 24:50 — .* — actividad importada \(mejor tramo medido dentro de una carrera de 12,4 km\)/);
   const p = predictRaces(d).predictions['5k'];
   assert.equal(p.record.how, 'partial');
   const row = p.why.data.find((x) => /Tu récord/.test(x.label));
