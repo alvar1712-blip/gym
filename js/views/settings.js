@@ -15,7 +15,7 @@ import { currentLabel, normalizeAll } from '../context-logic.js';
 import { currentPattern, setWeekPattern, hasWeekPattern } from '../plan.js';
 import { pickTemplate } from '../pickers.js';
 import {
-  buildBackupObject, backupFileName, csvFileName, parseBackupText, strengthCsv, cardioCsv, csvCounts, dataCounts, formatBytes,
+  buildBackupFile, verifyBackupIntegrity, describeBackup, backupFileName, csvFileName, parseBackupText, strengthCsv, cardioCsv, csvCounts, dataCounts, formatBytes,
   localKeysToClear, lostSectionsWarning, NEWER_SECTIONS,
 } from '../backup.js';
 import {
@@ -525,9 +525,10 @@ export function mountData(root) {
     // se serializan aquí mismo, sin await por medio (el JSON es la instantánea). Los ajustes del archivo sí se copian:
     // markBackup los compara DESPUÉS de compartir con los de ese momento.
     const now = Date.now();
-    const obj = buildBackupObject(store.exportData({ clone: false }), now);
-    const fileSettings = deepClone(obj.data?.meta?.find((m) => m && m.id === 'settings'));
-    const file = new File([JSON.stringify(obj)], backupFileName(new Date(now)), { type: 'application/json' });
+    // La copia lleva su sello de integridad (SHA-256 de los datos, calculado aquí mismo, sin await: ver backup.buildBackupFile)
+    const { text, data } = buildBackupFile(store.exportData({ clone: false }), now);
+    const fileSettings = deepClone(data?.meta?.find((m) => m && m.id === 'settings'));
+    const file = new File([text], backupFileName(new Date(now)), { type: 'application/json' });
     const res = await shareFile(file, { title: 'Copia de Entreno' });
     if (res === 'cancelled') return res;
     // Ronda 10 (PULIDO §34.3): en iOS la hoja de compartir se cierra «bien» también si se cancela «Guardar en
@@ -613,6 +614,43 @@ export function mountData(root) {
     sheet({ title: 'No se puede importar', className: 'cfg-import-error', body: h('p.sheet-msg', msg), actions: [{ label: 'Entendido' }] });
   }
 
+  /**
+   * «Comprobar copia»: lee un archivo de copia y dice qué contiene y qué se pudo comprobar (estructura válida frente a
+   * integridad comprobada con el sello). NO escribe ni reemplaza nada: ni datos, ni punto de restauración, ni la fecha de
+   * la última copia.
+   */
+  async function onCheck() {
+    const file = await pickFile({ accept: 'application/json,.json' });
+    if (!file) return;
+    const fail = (msg) => sheet({ title: 'No es una copia utilizable', className: 'cfg-verify cfg-verify-error', body: h('div.stack', h('p.sheet-msg', msg), h('p.sheet-msg', 'No se ha cambiado nada.')), actions: [{ label: 'Entendido' }] });
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      fail('No se pudo leer el archivo.');
+      return;
+    }
+    const res = parseBackupText(text, store.validateBackup);
+    if (!res.ok) { fail(res.error); return; }
+    const d = describeBackup(res.backup, verifyBackupIntegrity(res.backup));
+    const period = d.firstDate ? `${fmtDate(d.firstDate, 'full')}${d.lastDate && d.lastDate !== d.firstDate ? ` – ${fmtDate(d.lastDate, 'full')}` : ''}` : 'sin sesiones';
+    const STATUS_ICON = { verified: 'check', unsealed: 'info', mismatch: 'alert', unsupported: 'info' };
+    sheet({
+      title: 'Comprobar copia',
+      className: 'cfg-verify',
+      body: (close) => h('div.stack',
+        h('div.cfg-verify-status', { dataset: { status: d.status } }, icon(STATUS_ICON[d.status], 22), h('p.cfg-verify-headline', d.headline)),
+        h('div.cfg-verify-rows',
+          kv('Archivo', file.name || '—'),
+          kv('Exportada', d.exportedAt ? fmtStamp(d.exportedAt) : 'sin fecha'),
+          kv('Formato', `${d.format ?? '—'}${d.appVersion ? ` · app ${d.appVersion}` : ''}`),
+          kv('Sesiones entre', period),
+          kv('Contiene', `${countsText(d.counts, { all: true, sep: ' · ' })}.`)),
+        d.notes.map((n) => h('p.cfg-hint', n)),
+        h('button.btn.btn-primary.btn-block.cfg-verify-ok', { type: 'button', onClick: () => close() }, 'Entendido')),
+    });
+  }
+
   async function onImport() {
     const file = await pickFile({ accept: 'application/json,.json' });
     if (!file) return;
@@ -634,9 +672,15 @@ export function mountData(root) {
       : '';
     // Copia de una versión anterior sin secciones que ahora tienen datos: se dice qué se perderá.
     const lostText = lostSectionsWarning(res.backup, Object.fromEntries(NEWER_SECTIONS.map((x) => [x.store, store.count(x.store)])));
+    // Sello de integridad (copias nuevas): si no coincide, el archivo se modificó o se dañó; se avisa antes de sustituir nada
+    const seal = verifyBackupIntegrity(res.backup);
+    const sealText = seal.status === 'mismatch'
+      ? 'ATENCIÓN: el sello de integridad de esta copia no coincide, así que el archivo se modificó o se dañó después de exportarlo. Si no lo modificaste tú, no la uses para restaurar (usa «Comprobar copia» para ver qué falta).'
+      : '';
     const g = await guardSheet({
       title: '¿Importar esta copia?',
       message: `Copia ${when}: ${countsText(sum, { all: true, sep: ' · ' })}.\n\n`
+        + (sealText ? `${sealText}\n\n` : '')
         + (lostText ? `${lostText}\n\n` : '')
         + `SUSTITUYE todos los datos de este iPhone${curText}.\n\n`
         + restoreNote(await store.restorePointInfo()),
@@ -872,7 +916,9 @@ export function mountData(root) {
       h('button.btn.btn-primary.btn-lg.btn-block.cfg-export', { type: 'button', onClick: onExport }, icon('share', 22), 'Exportar copia'),
       h('p.cfg-hint', 'Se abre la hoja de compartir: elige «Guardar en Archivos» (o Google Drive) y guárdala en una carpeta que recuerdes.'),
       h('button.btn.btn-secondary.btn-block.cfg-import', { type: 'button', onClick: onImport }, icon('upload', 20), 'Importar copia'),
-      h('p.cfg-hint', 'Restaura una copia exportada antes. Sustituye TODOS los datos actuales; se pide confirmación.')),
+      h('p.cfg-hint', 'Restaura una copia exportada antes. Sustituye TODOS los datos actuales; se pide confirmación.'),
+      h('button.btn.btn-secondary.btn-block.cfg-verify-btn', { type: 'button', onClick: onCheck }, icon('check', 20), 'Comprobar copia'),
+      h('p.cfg-hint', 'Abre un archivo de copia y te dice qué contiene y si está íntegro, sin cambiar ni restaurar nada.')),
     rpBox,
     h('section.card.cfg-block', { dataset: { block: 'activities-import' } },
       h('h2.card-title', 'Actividades de otras apps'),

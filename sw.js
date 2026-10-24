@@ -55,6 +55,7 @@ const ASSETS = [
   './js/history-logic.js',
   './js/library-logic.js',
   './js/backup.js',
+  './js/sha256.js',
   './js/settings-logic.js',
   './js/charts.js',
   './js/stats.js',

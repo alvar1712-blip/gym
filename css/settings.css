@@ -224,3 +224,15 @@
 }
 .cfg-busy-box { width: 100%; max-width: 420px; background: var(--surface); color: var(--text); }
 .cfg-busy-box .icon { flex: none; color: var(--info); }
+
+/* Ronda 11: «Comprobar copia» (solo lectura) */
+.cfg-verify-status { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.cfg-verify-status .icon { flex: none; margin-top: 2px; }
+.cfg-verify-headline { margin: 0; font-weight: 700; line-height: 1.35; }
+.cfg-verify-status[data-status="verified"] .icon { color: var(--ok); }
+.cfg-verify-status[data-status="mismatch"] .icon { color: var(--warn); }
+.cfg-verify-rows { display: flex; flex-direction: column; gap: 8px; }
+.cfg-verify-rows .cfg-kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.cfg-verify-rows .cfg-kv-label { flex: none; color: var(--muted); }
+.cfg-verify-rows .cfg-kv { overflow-wrap: anywhere; text-align: right; }
+.cfg-verify-rows .cfg-kv-label { text-align: left; }

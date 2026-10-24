@@ -2,6 +2,7 @@
 // PROPIETARIO: módulo de ajustes. Sin DOM ni store: recibe los datos por parámetro y se prueba
 // en Node (tests/unit/backup.test.mjs). La vista (views/settings.js) lee del store y comparte los archivos.
 import { round, sortBy, isDateStr, fmtNum } from './util.js';
+import { sha256Hex } from './sha256.js';
 import { isWorkSet, setMetrics, makeBodyweightFn, sessionDurationMin, sessionLoad, pace, speed, pace100, cleanSetup } from './calc.js';
 import { MUSCLE_LABEL, ACTIVITY_LABEL, SET_TYPE_LABEL, RUN_TYPES, BIKE_TYPES, OTHER_TYPES, SWIM_STROKES } from './seed.js';
 
@@ -133,6 +134,87 @@ export function parseBackupText(text, validate = null) {
   const v = validate ? validate(obj) : { ok: !!obj.data && typeof obj.data === 'object', error: 'La copia no contiene datos.' };
   if (!v || !v.ok) return { ok: false, error: v?.error || 'La copia no es válida.' };
   return { ok: true, backup: obj, summary: backupSummary(obj) };
+}
+
+
+// ---------------------------------------------------------------------------
+// Sello de integridad y «Comprobar copia» (ronda 11)
+// ---------------------------------------------------------------------------
+// La copia lleva `integrity: { algorithm, hash, stores }` DESPUÉS de `data`: el SHA-256 del texto JSON de `data` y cuántos
+// registros tenía cada sección. Es un campo opcional (el formato sigue siendo 2): las apps antiguas lo ignoran y las copias
+// anteriores, sin sello, se aceptan igual (se dice que no se pueden comprobar). El sello detecta archivos truncados,
+// dañados o modificados; no es una firma (no protege frente a quien lo recalcule). Comprobarla no escribe nada.
+
+export const INTEGRITY_ALGORITHM = 'sha256';
+
+/** Registros por sección de un bloque `data`. */
+const storeCounts = (data) => Object.fromEntries(Object.keys(SECTION_LABELS).filter((k) => Array.isArray(data?.[k])).map((k) => [k, data[k].length]));
+
+/**
+ * Copia lista para guardar: el mismo contenido que buildBackupObject más el sello. Devuelve el TEXTO (con `data` serializado
+ * una sola vez, el mismo que se sella: exportar con 5 años de historial no tarda el doble) y el bloque `data`.
+ * SÍNCRONA: en iOS la hoja de compartir solo sale del propio toque, sin `await` por medio.
+ * @returns {{ text:string, data:object }}
+ */
+export function buildBackupFile(exported, now = Date.now()) {
+  const { data, ...head } = buildBackupObject(exported, now);
+  const dataJson = JSON.stringify(data);
+  const integrity = { algorithm: INTEGRITY_ALGORITHM, hash: sha256Hex(dataJson), stores: storeCounts(data) };
+  const text = `${JSON.stringify(head).slice(0, -1)},"data":${dataJson},"integrity":${JSON.stringify(integrity)}}`;
+  return { text, data };
+}
+
+/**
+ * ¿El archivo es el que se exportó? El sello se calcula sobre `JSON.stringify(data)`, así que da igual cómo se haya
+ * reformateado el archivo (sangrías, otro programa): importa el contenido.
+ * @returns {{ status:'verified'|'unsealed'|'mismatch'|'unsupported', diffs:{store,label,expected,actual}[] }}
+ *   unsealed: copia sin sello (versión anterior): válida, pero no se puede comprobar. mismatch: el contenido no es el
+ *   sellado (`diffs` = secciones con otro número de registros; vacío si cambió el contenido). unsupported: otro algoritmo.
+ */
+export function verifyBackupIntegrity(obj) {
+  const seal = obj?.integrity;
+  if (!seal || typeof seal !== 'object') return { status: 'unsealed', diffs: [] };
+  if (seal.algorithm !== INTEGRITY_ALGORITHM || typeof seal.hash !== 'string') return { status: 'unsupported', diffs: [] };
+  if (sha256Hex(JSON.stringify(obj.data ?? null)) === seal.hash.toLowerCase()) return { status: 'verified', diffs: [] };
+  const now = storeCounts(obj.data);
+  const diffs = Object.entries(seal.stores && typeof seal.stores === 'object' ? seal.stores : {})
+    .filter(([store, n]) => (now[store] ?? 0) !== n)
+    .map(([store, n]) => ({ store, label: SECTION_LABELS[store] || store, expected: n, actual: now[store] ?? 0 }));
+  return { status: 'mismatch', diffs };
+}
+
+/**
+ * Lo que dice «Comprobar copia» de un archivo YA válido en su estructura (parseBackupText + validateBackup): qué contiene,
+ * de cuándo es, de qué formato y qué se pudo comprobar. PURA.
+ * @param {object} obj copia leída
+ * @param {{status, diffs}} integrity verifyBackupIntegrity(obj)
+ */
+export function describeBackup(obj, integrity = verifyBackupIntegrity(obj)) {
+  const sum = backupSummary(obj);
+  const data = obj?.data || {};
+  const missingSections = NEWER_SECTIONS.filter((x) => !Array.isArray(data[x.store]));
+  const status = integrity?.status || 'unsealed';
+  const headline = {
+    verified: 'Copia válida con integridad comprobada',
+    unsealed: 'Estructura válida, sin sello de integridad: es de una versión anterior y no se puede comprobar si el archivo se modificó o se dañó',
+    mismatch: 'Estructura válida, pero el sello de integridad no coincide: el archivo se modificó o se dañó después de exportarlo',
+    unsupported: 'Estructura válida; el sello usa un método que esta versión no conoce, así que no se puede comprobar',
+  }[status];
+  const notes = [];
+  if (status === 'verified') notes.push('El sello comprueba que el contenido es el mismo que se exportó; no dice si es la copia más reciente que hiciste.');
+  if (status === 'mismatch') {
+    if (integrity.diffs?.length) for (const d of integrity.diffs) notes.push(`${d.label}: el sello dice ${d.expected} y el archivo trae ${d.actual}.`);
+    else notes.push('Tiene el mismo número de registros que se selló, pero su contenido es distinto.');
+    notes.push('Si no la modificaste tú, no la uses para restaurar: exporta una copia nueva.');
+  }
+  if (status === 'unsealed') notes.push('Las copias nuevas llevan sello; esta se hizo antes. Puedes restaurarla igualmente.');
+  if (obj?.format === 1) notes.push('Es de formato 1: no incluye contexto, marcas históricas ni eventos deportivos.');
+  else if (missingSections.length) notes.push(`No incluye ${missingSections.map((x) => x.name).join(', ')}.`);
+  notes.push('Comprobarla no ha cambiado ni escrito nada: tus datos siguen como estaban.');
+  return {
+    status, headline, counts: dataCounts(data), exportedAt: sum.exportedAt, appVersion: sum.appVersion, format: obj?.format ?? null,
+    firstDate: sum.firstDate, lastDate: sum.lastDate, missingSections, notes,
+  };
 }
 
 // ---------------------------------------------------------------------------
