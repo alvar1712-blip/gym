@@ -556,7 +556,9 @@ export function exerciseHistory(sessions, exercise, { bwFn = () => null, fmtSet 
     }
     const texts = fmtSet ? setTexts(work, lt, fmtSet) : [];
     const summary = texts.length ? texts.join(' · ') : plural(work.length, 'serie', 'series');
-    out.push({ sessionId: s.id, date: s.date, templateName: s.templateName || '', status: s.status, workSets: work.length, summary, setTexts: texts, bestE1rm: best, activities: [], key: s.startedAt || s.createdAt || 0 });
+    // Configuración (máquina, polea, agarre…) de esa sesión: las distintas si en la misma se hizo con varias; null si no se apuntó
+    const setups = [...new Set(ses.map((se) => (typeof se.setup === 'string' ? se.setup.replace(/\s+/g, ' ').trim() : '')).filter(Boolean))];
+    out.push({ sessionId: s.id, date: s.date, templateName: s.templateName || '', status: s.status, workSets: work.length, summary, setTexts: texts, bestE1rm: best, activities: [], setup: setups.length ? setups.join(' + ') : null, key: s.startedAt || s.createdAt || 0 });
   }
   return sortBy(out, '-date', (r) => -r.key);
 }

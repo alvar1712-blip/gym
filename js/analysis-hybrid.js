@@ -21,7 +21,7 @@
 // nunca «causa». Si hay datos suficientes y NO hay diferencia, también se dice (resultado personal positivo).
 import { addDays, diffDays, isDateStr, todayStr, fmtDate, fmtNum, fmtPace, weekStart, round } from './util.js';
 import { isWorkSet, setMetrics, sessionDurationMin, pace, rirValue } from './calc.js';
-import { weeklySeries, runPaceSeries, weekPlanOf, exerciseHistory } from './stats.js';
+import { weeklySeries, runPaceSeries, weekPlanOf, exerciseStream } from './stats.js';
 import { MUSCLE_LABEL, defaultSettings } from './seed.js';
 import { areasOf, checkinsBetween } from './checkin-logic.js';
 import { combine, byCount, bySpan, capAt, insufficient as confInsufficient, confidenceRow } from './confidence.js';
@@ -780,7 +780,7 @@ export function volumeChanges(d, today, { strength = null, context = null } = {}
     if (Math.abs(delta) < Math.max(VOLUME_CHANGE_SETS, (avgA * VOLUME_CHANGE_PCT) / 100) - EPS) continue;
     for (const x of rows) {
       if (!(exMap.get(x.exerciseId)?.primary || []).includes(m)) continue;
-      const hist = exerciseHistory(d, x.exerciseId, { labels: false }).filter((e) => e.e1rm != null && e.date >= fromA && e.date <= toB);
+      const hist = exerciseStream(d, x.exerciseId).filter((e) => e.e1rm != null && e.date >= fromA && e.date <= toB);
       const ha = hist.filter((e) => e.date < fromB); const hb = hist.filter((e) => e.date >= fromB);
       if (ha.length < MIN_OBS || hb.length < MIN_OBS) continue;
       const ra = rate(ha); const rb = rate(hb);

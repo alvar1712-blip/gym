@@ -3,7 +3,7 @@
 // Las funciones marcadas «pura» no leen el store: reciben los datos por parámetro y se prueban en Node.
 import * as store from './store.js';
 import { uid, todayStr, tsFromDate, fmtNum, fmtDuration, deepClone, sum, round } from './util.js';
-import { lastPerformance, orderKeyOf, isWorkSet, sessionDurationMin } from './calc.js';
+import { lastPerformance, orderKeyOf, isWorkSet, sessionDurationMin, cleanSetup, setupKey, setupOptions } from './calc.js';
 // Objetivos: una sola definición (la del editor de plantillas), para que sesión, Hoy y plantillas coincidan.
 import { targetFamily, defaultTarget, targetText as itemTargetText } from './library-logic.js';
 
@@ -79,7 +79,38 @@ export function sessionExerciseFromItem(item, session) {
     groupType: item.groupType || null,
     sets: [],
   };
+  applyHabitualSetup(se, session);
   se.sets = prefillSets(se, session);
+  return se;
+}
+
+/**
+ * Configuración habitual de un ejercicio de sesión (máquina, polea, agarre…): la de la última vez que se hizo, sea cual sea.
+ * Si nunca se apuntó una, no se pone ninguna (el historial anterior queda como está). Se cambia en la tarjeta (setSetup).
+ */
+export function applyHabitualSetup(se, session, sessions = store.all('sessions')) {
+  const last = lastPerformance(sessions, se.exerciseId, lastOpts(session));
+  const s = cleanSetup(last?.sessionExercise?.setup);
+  if (s) se.setup = s;
+  else delete se.setup;
+  return se;
+}
+
+/**
+ * Cambia la configuración de un ejercicio de sesión. Si el texto coincide con una usada antes (sin importar mayúsculas, tildes
+ * ni espacios) se usa SU escritura, así no se duplican. Sin series hechas, vuelve a prellenar las pendientes con la última vez
+ * de ESA configuración. Un texto vacío quita la configuración («sin especificar»).
+ */
+export function setSetup(se, value, session) {
+  const clean = cleanSetup(value);
+  const hit = clean ? setupOptions(store.all('sessions'), se.exerciseId, { excludeSessionId: session?.id }).find((o) => o.key === setupKey(clean)) : null;
+  const label = hit ? hit.label : clean;
+  if (label) se.setup = label;
+  else delete se.setup;
+  const ex = store.exercise(se.exerciseId);
+  if (ex && ex.logType !== 'cardio' && !(se.sets || []).some((s) => s.done)) {
+    se.sets = prefillSets(se, session, Math.max(1, (se.sets || []).length || se.target?.sets || 1));
+  }
   return se;
 }
 
@@ -115,7 +146,8 @@ export function lastPerformanceFor(sessions, se, session = null) {
   const eid = se?.exerciseId;
   if (!eid) return null;
   const opts = lastOpts(session);
-  const first = lastPerformance(sessions || [], eid, opts);
+  // Prefiere la última vez con la MISMA configuración (máquina, polea, agarre…); si nunca la hubo, la más reciente de cualquiera
+  const first = lastPerformance(sessions || [], eid, { ...opts, setup: se.setup ?? '' }) || lastPerformance(sessions || [], eid, opts);
   if (!first) return null;
   const hasDone = (e) => (e.sets || []).some((x) => x.done);
   const sameEx = (s) => (s.exercises || []).filter((e) => e.exerciseId === eid);
@@ -188,6 +220,7 @@ export function newSessionExercise(exerciseId, session, { section = '' } = {}) {
     groupType: null,
     sets: [],
   };
+  applyHabitualSetup(se, session);
   const last = lastFor(se, session);
   const lt = last?.sessionExercise?.target;
   if (lt) se.target = fullTarget({ ...lt, sets: lt.sets ?? 3 });
@@ -224,6 +257,7 @@ export function switchExercise(se, exerciseId, session) {
   const pending = (se.sets || []).filter((s) => !s.done).length;
   se.exerciseId = exerciseId;
   se.exName = ex ? ex.name : '';
+  applyHabitualSetup(se, session); // la configuración es del ejercicio: la del nuevo, no la del anterior
   const tpl = session?.templateId && se.templateItemId ? store.get('templates', session.templateId) : null;
   const item = (tpl?.items || []).find((i) => i.id === se.templateItemId) || null;
   se.target = switchedTarget(se.target, oldLt, ex?.logType || null, item, item ? store.exercise(item.exerciseId)?.logType : null);

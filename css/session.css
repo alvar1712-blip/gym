@@ -524,3 +524,10 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ci-area-level .chip { flex: 1 0 calc(16.66% - 6px); min-width: 0; padding: 0; }
 .ci-area-joints .chip, .ci-area-side .chip { padding: 0 12px; }
 .ci-area-zone .bm-figure { max-width: 280px; }
+
+/* Ronda 11: configuración del ejercicio (máquina, polea, agarre…) */
+.ses-setup-row { display: flex; min-width: 0; }
+.ses-setup { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; max-width: 100%; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border, rgba(255,255,255,0.14)); background: var(--surface-2); color: var(--text-2); font-size: calc(15px * var(--ts)); font-weight: 650; }
+.ses-setup .icon { flex: none; color: var(--muted); }
+.ses-setup-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ses-setup.is-pressed { background: var(--surface-3, var(--surface-2)); }

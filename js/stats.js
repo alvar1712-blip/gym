@@ -27,7 +27,7 @@ import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtDuration
 import {
   isWorkSet, setMetrics, makeBodyweightFn, sessionLoad, sessionDurationMin, sessionVolume, sessionMuscleSets,
   pace, speed, pace100, movingAverage, bestSet as calcBestSet, weeksBetween, orderKeyOf, emptyBests, addToBests,
-  detectPRs, RUN_PACE_MIN, RUN_PACE_MAX,
+  detectPRs, RUN_PACE_MIN, RUN_PACE_MAX, setupKey, cleanSetup,
 } from './calc.js';
 import { raceResults, matchesRun, approxLabel } from './context-logic.js';
 import { effortsOf, EFFORT_DISTANCES } from './best-efforts.js';
@@ -189,18 +189,22 @@ export function buildIndex(data) {
   const activities = Object.fromEntries(KINDS.filter((k) => k !== 'strength').map((k) => [k, []]));
   for (const s of done) {
     if (s.kind === 'strength') {
+      // Una entrada por sesión, ejercicio y CONFIGURACIÓN (ronda 11: máquina, polea, agarre…; '' = sin especificar): el
+      // mismo ejercicio con otra configuración es otra serie de datos comparable solo consigo misma.
       const local = new Map();
       for (const se of s.exercises || []) {
         if (!se || !se.exerciseId) continue;
         const work = (se.sets || []).filter(isWorkSet);
         if (!work.length) continue;
-        const e = local.get(se.exerciseId);
+        const sk = setupKey(se.setup);
+        const lk = `${se.exerciseId}\u0000${sk}`;
+        const e = local.get(lk);
         if (e) e.sets.push(...work);
-        else local.set(se.exerciseId, { session: s, sets: work });
+        else local.set(lk, { session: s, sets: work, exerciseId: se.exerciseId, setupKey: sk, setup: sk ? cleanSetup(se.setup) : null });
       }
-      for (const [id, e] of local) {
-        if (!byExercise.has(id)) byExercise.set(id, []);
-        byExercise.get(id).push(e);
+      for (const e of local.values()) {
+        if (!byExercise.has(e.exerciseId)) byExercise.set(e.exerciseId, []);
+        byExercise.get(e.exerciseId).push(e);
       }
     } else {
       activities[kindOf(s)].push(s); // carrera, bici, natación, senderismo u otra (desconocida → otra)
@@ -355,10 +359,14 @@ function historyOf(idx, exerciseId) {
     const lt = ex.logType;
     const isBw = lt === 'bodyweight';
     const load = LOAD_REP_TYPES.includes(lt);
-    const bests = emptyBests(); // récords batidos en cada sesión: misma regla que el resumen (calc.sessionPRs)
+    // Récords batidos en cada sesión: misma regla que el resumen (calc.sessionPRs), SOLO frente a las sesiones con la misma
+    // configuración (la primera con otra máquina o agarre es una referencia nueva, no un récord)
+    const bestsBy = new Map();
     for (const e of entries) {
       const s = e.session;
       const bw = isBw ? idx.bwFn(s.date) : null;
+      let bests = bestsBy.get(e.setupKey);
+      if (!bests) { bests = emptyBests(); bestsBy.set(e.setupKey, bests); }
       bests.prior = bests.count;
       const prs = [];
       let maxWeight = null; let maxWeightSet = null; let maxWeightReps = 0;
@@ -397,6 +405,8 @@ function historyOf(idx, exerciseId) {
       list.push({
         date: s.date,
         sessionId: s.id,
+        setup: e.setup, // configuración de esa sesión (null = sin especificar)
+        setupKey: e.setupKey,
         templateName: s.templateName || 'Sesión libre',
         logType: lt,
         sets: e.sets,
@@ -439,14 +449,40 @@ function historyOf(idx, exerciseId) {
  *  prs: récords batidos en esa sesión frente al historial anterior ('weight','e1rm','reps','time','height'),
  *       con la misma regla que el resumen de la sesión (calc.detectPRs; la primera sesión nunca marca).
  */
-export function exerciseHistory(data, exerciseId, { labels = true } = {}) {
+export function exerciseHistory(data, exerciseId, { labels = true, setup } = {}) {
   const idx = getIndex(data);
-  const list = historyOf(idx, exerciseId);
+  let list = historyOf(idx, exerciseId);
+  // setup: undefined = todas las configuraciones; si no, solo la equivalente (calc.setupKey; '' = sin especificar)
+  if (setup !== undefined) { const k = setupKey(setup); list = list.filter((e) => e.setupKey === k); }
   if (!labels) return list.slice();
   return list.map((e) => {
     const setLabels = e.sets.map((s) => formatSet(s, e.logType));
     return { ...e, setLabels, summary: setLabels.join(' · ') };
   });
+}
+
+/**
+ * Historial de un ejercicio en su configuración ACTUAL (la de su última sesión): lo que hay que comparar para hablar de
+ * progreso o estancamiento sin mezclar máquinas, poleas o agarres. Sin configuraciones apuntadas es todo el historial.
+ */
+export function exerciseStream(data, exerciseId, { labels = false } = {}) {
+  const all = historyOf(getIndex(data), exerciseId);
+  if (!all.length) return [];
+  return exerciseHistory(data, exerciseId, { labels, setup: all[all.length - 1].setupKey });
+}
+
+/**
+ * Todas las series de datos comparables de un ejercicio: una por configuración, la más reciente primero. Sin
+ * configuraciones apuntadas hay una sola (todo el historial). → { key, setup (null = sin especificar), entries }[]
+ */
+export function exerciseStreams(data, exerciseId, { labels = false } = {}) {
+  const all = exerciseHistory(data, exerciseId, { labels });
+  const by = new Map();
+  for (const e of all) {
+    if (!by.has(e.setupKey)) by.set(e.setupKey, { key: e.setupKey, setup: e.setup, entries: [] });
+    by.get(e.setupKey).entries.push(e);
+  }
+  return [...by.values()].sort((a, b) => (a.entries[a.entries.length - 1].date < b.entries[b.entries.length - 1].date ? 1 : -1));
 }
 
 /**
@@ -565,11 +601,14 @@ export function exerciseSeries(data, exerciseId, from = null, to = null) {
 // ===========================================================================
 
 /** Récord de un ejercicio (null si no tiene series de trabajo). Ver strengthRecords. */
-function recordOf(idx, exerciseId) {
-  if (idx.records.has(exerciseId)) return idx.records.get(exerciseId);
+function recordOf(idx, exerciseId, key = null) {
+  // key: null = todo el historial; si no, solo la configuración equivalente (calc.setupKey; '' = sin especificar)
+  const ck = key === null ? exerciseId : `${exerciseId}\u0000${key}`;
+  if (idx.records.has(ck)) return idx.records.get(ck);
   const ex = idx.exMap.get(exerciseId);
-  const entries = idx.byExercise.get(exerciseId) || [];
-  if (!ex || ex.logType === 'cardio' || !entries.length) { idx.records.set(exerciseId, null); return null; }
+  const all = idx.byExercise.get(exerciseId) || [];
+  const entries = key === null ? all : all.filter((e) => e.setupKey === key);
+  if (!ex || ex.logType === 'cardio' || !entries.length) { idx.records.set(ck, null); return null; }
   const lt = ex.logType;
   const isBw = lt === 'bodyweight';
   const load = LOAD_REP_TYPES.includes(lt);
@@ -622,9 +661,13 @@ function recordOf(idx, exerciseId) {
     bestHeavier = Math.max(bestHeavier, r.reps);
     return { weight: r.weight, reps: r.reps, date: r.date, sessionId: r.sessionId, setId: r.set.id ?? null, dominated, label: `${weightLabel(lt, r.weight)} × ${r.reps}${perSide}` };
   });
+  const keys = new Set(all.map((e) => e.setupKey));
   const rec = {
     exerciseId,
     name: ex.name || exerciseId,
+    // Configuración de este récord (null = sin especificar o varias mezcladas) y si el ejercicio tiene varias
+    setup: keys.size === 1 || key !== null ? entries[0].setup : null,
+    multiSetup: keys.size > 1,
     logType: lt,
     archived: !!ex.archived,
     sessions: entries.length,
@@ -647,7 +690,7 @@ function recordOf(idx, exerciseId) {
       rec.bestSprint[k] = fin(r, `${num(r.distanceM, 1)} m en ${num(r.timeSec, 2)} s`);
     }
   }
-  idx.records.set(exerciseId, rec);
+  idx.records.set(ck, rec);
   return rec;
 }
 
@@ -665,16 +708,20 @@ function recordOf(idx, exerciseId) {
 export function strengthRecords(data) {
   const idx = getIndex(data);
   const out = [];
-  for (const id of idx.byExercise.keys()) {
-    const r = recordOf(idx, id);
-    if (r) out.push(r);
+  for (const [id, entries] of idx.byExercise) {
+    // Con varias configuraciones (máquinas, polea, agarre…) sale un récord por configuración: solo se comparan entre sí
+    const keys = [...new Set(entries.map((e) => e.setupKey))];
+    for (const k of keys.length > 1 ? keys : [null]) {
+      const r = recordOf(idx, id, k);
+      if (r) out.push(r);
+    }
   }
   return out.sort(byLastThenName);
 }
 
 /** Récord de UN ejercicio (misma forma que un elemento de strengthRecords) o null. */
-export function exerciseRecord(data, exerciseId) {
-  return recordOf(getIndex(data), exerciseId);
+export function exerciseRecord(data, exerciseId, { setup } = {}) {
+  return recordOf(getIndex(data), exerciseId, setup === undefined ? null : setupKey(setup));
 }
 
 /**
@@ -694,7 +741,9 @@ export function exerciseSummary(data, exerciseId) {
   if (last) last.summary = last.setLabels.join(' · ');
   return {
     exerciseId, name: ex.name || exerciseId, logType: ex.logType, exercise: ex, sessions: hist.length, workSets,
-    firstDate: hist[0]?.date ?? null, lastDate: lastE?.date ?? null, last, record: recordOf(idx, exerciseId),
+    // Con varias configuraciones (máquina, polea, agarre…), el récord es el de la de la última sesión; sin ellas, todo
+    firstDate: hist[0]?.date ?? null, lastDate: lastE?.date ?? null, last,
+    record: new Set(hist.map((e) => e.setupKey)).size > 1 ? recordOf(idx, exerciseId, lastE.setupKey) : recordOf(idx, exerciseId),
   };
 }
 

@@ -18,7 +18,7 @@
 // (forma en 5 km por bloques con predictWindow y el 5 km previsto de hoy con predictFor), checkin-logic.js y profile.js; los umbrales de estancamiento y descarga salen de settings.
 import { addDays, diffDays, weekStart, todayStr, isDateStr, fmtDate, fmtNum, fmtDuration, fmtPace, round } from './util.js';
 import { isWorkSet, setMetrics, sessionDurationMin, pace } from './calc.js';
-import { exercisesWithHistory, exerciseHistory, weeklySeries, runPaceSeries, dataRange, adherenceSeries, adherenceTotals } from './stats.js';
+import { exercisesWithHistory, exerciseStream, exerciseStreams, weeklySeries, runPaceSeries, dataRange, adherenceSeries, adherenceTotals } from './stats.js';
 import { predictWindow, predictFor, MIN_KM as RUN_MIN_KM, MIN_VALID, MAX_SPREAD, TOP_N, plausibleRunPace } from './race-predict.js';
 import { getProfile, isFemale, g } from './profile.js';
 import { checkinFor, level as ckLevel, checkinsBetween, isLowCheckin, areasOf, FIELDS as CK_FIELDS } from './checkin-logic.js';
@@ -289,7 +289,8 @@ function bestAtBw(sets, ex, bw) {
  * @returns {{ points:{date, e1rm, set, sessionId}[], hist, lastPrDate, bwRef }}
  */
 function exercisePoints(data, ex, today) {
-  const hist = exerciseHistory(data, ex.id, { labels: false }).filter((e) => e.date <= today && e.e1rm != null);
+  // Solo la configuración actual (máquina, polea, agarre…): la tendencia no mezcla condiciones distintas (ronda 11)
+  const hist = exerciseStream(data, ex.id).filter((e) => e.date <= today && e.e1rm != null);
   const isBw = ex.logType === 'bodyweight';
   const bwRef = isBw && hist.length && hist[hist.length - 1].bw > 0 ? hist[hist.length - 1].bw : null;
   const byDay = new Map();
@@ -1460,24 +1461,27 @@ export function sessionPerformance(d, { today, from = null, filter = null } = {}
   for (const it of exercisesWithHistory(d)) {
     const ex = it.exercise;
     if (!hasE1rm(ex) || (filter && !filter(ex))) continue;
-    const hist = exerciseHistory(d, ex.id, { labels: false }).filter((e) => e.date <= today && e.e1rm != null);
     const isBw = ex.logType === 'bodyweight';
-    for (let i = 0; i < hist.length; i++) {
-      const e = hist[i];
-      if (from && e.date < from) continue;
-      const lo = addDays(e.date, -REL_DAYS);
-      let priorMax = null;
-      for (let j = i - 1; j >= 0 && hist[j].date >= lo; j--) {
-        if (hist[j].date >= e.date) continue;
-        const v = isBw && e.bw > 0 ? bestAtBw(hist[j].sets, ex, e.bw)?.value : hist[j].e1rm;
-        if (v != null && (priorMax == null || v > priorMax)) priorMax = v;
+    // Cada configuración (máquina, polea, agarre…) es una serie propia: el rendimiento relativo no cruza condiciones
+    for (const stream of exerciseStreams(d, ex.id)) {
+      const hist = stream.entries.filter((e) => e.date <= today && e.e1rm != null);
+      for (let i = 0; i < hist.length; i++) {
+        const e = hist[i];
+        if (from && e.date < from) continue;
+        const lo = addDays(e.date, -REL_DAYS);
+        let priorMax = null;
+        for (let j = i - 1; j >= 0 && hist[j].date >= lo; j--) {
+          if (hist[j].date >= e.date) continue;
+          const v = isBw && e.bw > 0 ? bestAtBw(hist[j].sets, ex, e.bw)?.value : hist[j].e1rm;
+          if (v != null && (priorMax == null || v > priorMax)) priorMax = v;
+        }
+        if (!(priorMax > 0)) continue;
+        const ratio = Math.max(0.7, Math.min(1.3, e.e1rm / priorMax));
+        let row = out.get(e.sessionId);
+        if (!row) { row = { sessionId: e.sessionId, date: e.date, ratio: 0, n: 0, parts: [] }; out.set(e.sessionId, row); }
+        row.parts.push({ name: ex.name || ex.id, ratio });
+        row.n++;
       }
-      if (!(priorMax > 0)) continue;
-      const ratio = Math.max(0.7, Math.min(1.3, e.e1rm / priorMax));
-      let row = out.get(e.sessionId);
-      if (!row) { row = { sessionId: e.sessionId, date: e.date, ratio: 0, n: 0, parts: [] }; out.set(e.sessionId, row); }
-      row.parts.push({ name: ex.name || ex.id, ratio });
-      row.n++;
     }
   }
   for (const row of out.values()) row.ratio = row.parts.reduce((t, x) => t + x.ratio, 0) / row.n;

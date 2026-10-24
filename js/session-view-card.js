@@ -81,6 +81,11 @@ export function renderCard(ctx, se) {
     card.appendChild(h('div.ses-alts', h('span.ses-alts-icon', { 'aria-hidden': 'true' }, '⇄'), altChips));
   }
 
+  // Configuración (máquina, polea, agarre…), solo si se apuntó: se cambia aquí o en «⋯ › Material o configuración»
+  if (se.setup && logType !== 'cardio') {
+    card.appendChild(h('div.ses-setup-row', h('button.ses-setup', { type: 'button', 'aria-label': `Configuración: ${se.setup}. Cambiar`, onClick: () => ctx.editSetup(se) }, icon('sliders', 14), h('span.ses-setup-txt', se.setup))));
+  }
+
   const tgt = targetText(se.target, logType);
   // Siguiente paso (doble progresión, la misma regla que el panel semanal): discreto, no una orden; en la línea del
   // objetivo (no añade altura: en un iPhone SE «Registrar serie» sigue a la vista sin desplazar)
@@ -90,7 +95,7 @@ export function renderCard(ctx, se) {
   const hint = last && ctx.session.status === 'active' && ex
     ? progressionHint({
       exercise: ex, target: se.target, lastSets: last.sets, settings: ctx.settings?.(),
-      history: ctx.historyFor?.(ex.id) ?? null, ref: ctx.session.date, lastDate: last.session?.date ?? null,
+      history: ctx.historyFor?.(ex.id, se.setup ?? '') ?? null, ref: ctx.session.date, lastDate: last.session?.date ?? null,
     }) : null;
   const next = !hint ? null : hint.action
     ? h('button.ses-next.ses-next-btn', { type: 'button', dataset: { kind: hint.kind }, 'aria-label': hint.label, onClick: () => navigate(`#/progress/exercise/${encodeURIComponent(ex.id)}`) },
@@ -125,7 +130,7 @@ export function renderCard(ctx, se) {
   }
 
   // Series
-  const prs = ctx.prsFor(se.exerciseId);
+  const prs = ctx.prsFor(se.exerciseId, se.setup ?? '');
   const editId = currentEditId(ctx, se);
   const editSet = se.sets.find((s) => s.id === editId) || null;
   // Mientras no hay ninguna serie de trabajo hecha, «+ Calent.» va en la cabecera del editor (a mano,
@@ -552,7 +557,7 @@ function registerSet(ctx, se, set, ex, logType, { confirmed = false } = {}) {
   ctx.touch(se);
   ctx.save();
   haptic(15);
-  const prs = set.type !== 'warmup' ? ctx.prsFor(se.exerciseId).get(set.id) : null;
+  const prs = set.type !== 'warmup' ? ctx.prsFor(se.exerciseId, se.setup ?? '').get(set.id) : null;
   if (prs) toast(prMessage(prs, ex), { kind: 'pr', duration: 5000 });
   ctx.rerenderCard(se);
   // La fila hecha empuja el editor hacia abajo: que «Registrar» siga a la vista (no bajo las pestañas).

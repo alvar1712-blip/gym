@@ -433,7 +433,7 @@ test('strengthCsv: columnas pedidas y una fila por serie HECHA', () => {
   assert.deepEqual(headers, [
     'Fecha', 'Sesión', 'Ejercicio', 'Músculo principal', 'Orden ejercicio', 'Nº serie', 'Tipo de serie', 'Peso (kg)', 'Reps', 'Reps derecha',
     'RIR (F = fallo)', 'Tiempo (s)', 'Distancia (m)', 'Altura (cm)', 'Nota serie', '1RM estimado (kg)', 'Volumen (kg)',
-    'Duración sesión (min)', 'RPE sesión', 'Carga sesión', 'Nota sesión',
+    'Duración sesión (min)', 'RPE sesión', 'Carga sesión', 'Nota sesión', 'Configuración',
   ]);
   const settings = defaultSettings();
   const csv = strengthCsv([strengthSession(), run], exMap, settings, { excel: true, bodyweight: [{ id: '2026-09-01', kg: 80 }] });

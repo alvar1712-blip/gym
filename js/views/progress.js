@@ -880,6 +880,11 @@ export function mountExerciseProgress(root, params = {}) {
   kpis.push(k('Sesiones', nf0(sum.sessions), plural(sum.workSets, 'serie de trabajo', 'series de trabajo'), 'sessions'));
   kpis.push(k('Última vez', fmtDay(sum.lastDate, today), relDay(sum.lastDate, today), 'last'));
   c.appendChild(h('div.kpis.kpis-2.prg-kpis', kpis));
+  // Con varias configuraciones, los récords de arriba son los de la de tu última sesión; los demás van aparte en Récords
+  if (rec.multiSetup) {
+    c.appendChild(h('p.prg-hist-note.prg-setup-note', { dataset: { setup: rec.setup || '' } },
+      `Récords con ${rec.setup ? `«${rec.setup}»` : 'este ejercicio sin configuración'}: la de tu última sesión. Con otro material, polea o agarre los récords van aparte (Récords), porque no son comparables.`));
+  }
   if (pastCard) c.appendChild(pastCard);
 
   // Gráficas (todas con el mismo selector de periodo). Ejes con un rango mínimo relativo al valor (span): un
@@ -1187,10 +1192,12 @@ function strengthRecordsView(data, today) {
       });
       reps = [btn, box];
     }
-    return h('section.card.prg-rec', { dataset: { ex: r.exerciseId } },
-      h('button.prg-rec-head', { type: 'button', onClick: () => navigate(`#/progress/exercise/${r.exerciseId}`), 'aria-label': `${r.name}: ver progreso` },
+    // Con varias configuraciones (máquina, polea, agarre…) hay un récord por cada una: solo se comparan entre sí
+    const setupTag = r.multiSetup ? r.setup || 'sin especificar' : null;
+    return h('section.card.prg-rec', { dataset: setupTag ? { ex: r.exerciseId, setup: setupTag } : { ex: r.exerciseId } },
+      h('button.prg-rec-head', { type: 'button', onClick: () => navigate(`#/progress/exercise/${r.exerciseId}`), 'aria-label': `${r.name}${setupTag ? ` con ${setupTag}` : ''}: ver progreso` },
         h('span.prg-rec-titles',
-          h('span.prg-rec-name', r.name, r.archived ? h('span.badge.badge-warn.prg-badge-inline', 'Archivado') : null),
+          h('span.prg-rec-name', r.name, setupTag ? h('span.badge.badge-info.prg-badge-inline', setupTag) : null, r.archived ? h('span.badge.badge-warn.prg-badge-inline', 'Archivado') : null),
           h('span.prg-rec-meta', `${plural(r.sessions, 'sesión', 'sesiones')} · última ${fmtDay(r.lastDate, today)}`)),
         h('span.prg-rec-go', 'Progreso', icon('chevron-right', 16))),
       h('div.prg-rec-rows', rows),
@@ -1199,7 +1206,7 @@ function strengthRecordsView(data, today) {
   function paint() {
     const res = S.searchExercises(items, ui.recQ);
     listEl.replaceChildren(...(res.length
-      ? res.map((it) => { let el = cardCache.get(it.rec.exerciseId); if (!el) { el = card(it.rec); cardCache.set(it.rec.exerciseId, el); } return el; })
+      ? res.map((it) => { const ck = `${it.rec.exerciseId}|${it.rec.setup ?? ''}`; let el = cardCache.get(ck); if (!el) { el = card(it.rec); cardCache.set(ck, el); } return el; })
       : [h('p.muted.prg-ex-none', `Ningún ejercicio coincide con «${ui.recQ.trim()}».`)]));
   }
   input.addEventListener('input', () => { ui.recQ = input.value; paint(); });

@@ -10,6 +10,47 @@ export function isWorkSet(set) {
   return !!set && set.done === true && set.type !== 'warmup';
 }
 
+// ---------------------------------------------------------------------------
+// Configuración del ejercicio (ronda 11): máquina, polea, agarre, sistema de lastre…
+// ---------------------------------------------------------------------------
+// SessionExercise.setup es un texto corto y opcional. Solo se compara con lo EQUIVALENTE: récords, estancamiento y progresión
+// miran únicamente las sesiones con la misma configuración. Sin configuración (todo el historial anterior) = ''; nunca se inventa.
+
+/** Texto de una configuración tal como se guarda: sin espacios de más y como mucho 40 caracteres. '' si no hay. */
+export function cleanSetup(s) {
+  return typeof s === 'string' ? s.replace(/\s+/g, ' ').trim().slice(0, 40).trim() : '';
+}
+
+/**
+ * Configuraciones usadas con un ejercicio (para sugerirlas): la más reciente primero. Una por clave: se muestra la escritura
+ * de la última vez, así «hammer» y «Hammer » no salen duplicadas. → { key, label, count, lastDate }[]
+ * @param {object[]} sessions sesiones de fuerza (se ignoran las demás y la sesión `excludeSessionId`)
+ */
+export function setupOptions(sessions, exerciseId, { excludeSessionId = null } = {}) {
+  const by = new Map();
+  for (const s of sessions || []) {
+    if (!s || s.kind !== 'strength' || s.id === excludeSessionId) continue;
+    const at = sessionOrderKey(s);
+    for (const se of s.exercises || []) {
+      if (se?.exerciseId !== exerciseId) continue;
+      const key = setupKey(se.setup);
+      if (!key) continue;
+      const cur = by.get(key);
+      if (!cur) by.set(key, { key, label: cleanSetup(se.setup), count: 1, lastDate: s.date, at });
+      else {
+        cur.count++;
+        if (at > cur.at) { cur.at = at; cur.label = cleanSetup(se.setup); cur.lastDate = s.date; }
+      }
+    }
+  }
+  return [...by.values()].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.count - a.count)).map(({ at, ...o }) => o);
+}
+
+/** Clave de comparación: sin mayúsculas, tildes ni espacios de más («Polea  alta» = «polea alta»). '' = sin especificar. */
+export function setupKey(s) {
+  return cleanSetup(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
 /**
  * Progreso de una sesión de fuerza: series hechas de todas las que tiene (calentamientos incluidos; las pendientes
  * prellenadas cuentan en el total). Una sola cuenta para Hoy («2 de 20 series») y la barra de la sesión («2/20»).
@@ -287,7 +328,9 @@ function sessionOrderKey(s) {
  * con al menos una serie hecha. Devuelve { session, sessionExercise, sets } o null.
  * `sets` = series hechas (incluye calentamientos) en su orden.
  */
-export function lastPerformance(sessions, exerciseId, { excludeSessionId = null, beforeKey = null } = {}) {
+export function lastPerformance(sessions, exerciseId, { excludeSessionId = null, beforeKey = null, setup } = {}) {
+  // setup: undefined = cualquiera; si no, solo la misma configuración (setupKey; '' = sin especificar)
+  const want = setup === undefined ? null : setupKey(setup);
   let best = null;
   let bestKey = '';
   for (const s of sessions) {
@@ -295,7 +338,7 @@ export function lastPerformance(sessions, exerciseId, { excludeSessionId = null,
     const key = sessionOrderKey(s);
     if (beforeKey && key >= beforeKey) continue;
     if (key <= bestKey) continue;
-    const se = (s.exercises || []).find((e) => e.exerciseId === exerciseId && (e.sets || []).some((x) => x.done));
+    const se = (s.exercises || []).find((e) => e.exerciseId === exerciseId && (e.sets || []).some((x) => x.done) && (want === null || setupKey(e.setup) === want));
     if (!se) continue;
     best = { session: s, sessionExercise: se, sets: se.sets.filter((x) => x.done) };
     bestKey = key;
@@ -381,12 +424,15 @@ export function addToBests(bests, set, exercise, bwKg = null) {
  * Mejores marcas de un ejercicio en el historial (series de trabajo, sin calentamientos).
  * opts.excludeSessionId: excluye una sesión (la actual). opts.bwFn: date → kg.
  */
-export function bestsForExercise(sessions, exerciseId, exercise, { excludeSessionId = null, bwFn = () => null } = {}) {
+export function bestsForExercise(sessions, exerciseId, exercise, { excludeSessionId = null, bwFn = () => null, setup } = {}) {
   const bests = emptyBests();
+  // setup: undefined = todas las configuraciones; si no, solo la equivalente (setupKey; '' = sin especificar)
+  const want = setup === undefined ? null : setupKey(setup);
   for (const s of sessions) {
     if (s.kind !== 'strength' || s.id === excludeSessionId) continue;
     for (const se of s.exercises || []) {
       if (se.exerciseId !== exerciseId) continue;
+      if (want !== null && setupKey(se.setup) !== want) continue;
       for (const set of se.sets || []) addToBests(bests, set, exercise, bwFn(s.date));
     }
   }
@@ -443,8 +489,10 @@ export function sessionPRs(session, sessions, exMap, bwFn = () => null) {
   for (const se of session.exercises || []) {
     const ex = exMap.get ? exMap.get(se.exerciseId) : exMap[se.exerciseId];
     if (!ex) continue;
-    if (!bestsCache.has(se.exerciseId)) bestsCache.set(se.exerciseId, bestsForExercise(earlier, se.exerciseId, ex, { bwFn }));
-    const bests = bestsCache.get(se.exerciseId);
+    // Récords solo entre configuraciones equivalentes (la primera sesión con otra configuración es una referencia nueva)
+    const ck = `${se.exerciseId}\u0000${setupKey(se.setup)}`;
+    if (!bestsCache.has(ck)) bestsCache.set(ck, bestsForExercise(earlier, se.exerciseId, ex, { bwFn, setup: se.setup ?? '' }));
+    const bests = bestsCache.get(ck);
     const bw = bwFn(session.date);
     for (const set of se.sets || []) {
       if (!isWorkSet(set)) continue;

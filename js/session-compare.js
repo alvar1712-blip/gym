@@ -2,7 +2,7 @@
 // (docs/PULIDO.md §9). Solo datos reales: la serie más pesada de cada ejercicio (y sus reps), las series de trabajo,
 // el volumen y la duración. Nada de puntuaciones inventadas. Si no hay sesión comparable (sesión libre, primera vez
 // con esa rutina) o ningún ejercicio en común, no hay comparación. PURA. Pruebas: tests/unit/session-compare.test.mjs.
-import { isWorkSet, sessionVolume, sessionDurationMin, workSetCount } from './calc.js';
+import { isWorkSet, sessionVolume, sessionDurationMin, workSetCount, setupKey } from './calc.js';
 import { fmtNum } from './util.js';
 import { LOAD_REP_TYPES } from './session-logic.js';
 
@@ -50,16 +50,18 @@ export function compareSessions(cur, prev, exMap, bwFn = () => null) {
   if (!cur || !prev) return null;
   const get = (id) => (exMap?.get ? exMap.get(id) : exMap?.[id]);
   const prevBy = new Map();
-  for (const se of prev.exercises || []) if (!prevBy.has(se.exerciseId)) prevBy.set(se.exerciseId, se);
+  // Solo frente a la misma configuración (máquina, polea, agarre…): con otra no hay comparación que valga (ronda 11)
+  const keyOf = (se) => `${se.exerciseId}\u0000${setupKey(se.setup)}`;
+  for (const se of prev.exercises || []) if (!prevBy.has(keyOf(se))) prevBy.set(keyOf(se), se);
   const rows = [];
   const seen = new Set();
   for (const se of cur.exercises || []) {
-    if (seen.has(se.exerciseId)) continue; // un ejercicio repetido se compara una vez (el primero)
-    seen.add(se.exerciseId);
+    if (seen.has(keyOf(se))) continue; // un ejercicio repetido se compara una vez (el primero)
+    seen.add(keyOf(se));
     const ex = get(se.exerciseId);
     if (!ex || !LOAD_REP_TYPES.includes(ex.logType)) continue;
     const a = topSet(se, ex.logType);
-    const b = topSet(prevBy.get(se.exerciseId), ex.logType);
+    const b = topSet(prevBy.get(keyOf(se)), ex.logType);
     if (!a || !b) continue;
     const dw = Math.round((a.w - b.w) * 100) / 100;
     const dr = a.r - b.r;

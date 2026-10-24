@@ -2,7 +2,7 @@
 // PROPIETARIO: módulo de ajustes. Sin DOM ni store: recibe los datos por parámetro y se prueba
 // en Node (tests/unit/backup.test.mjs). La vista (views/settings.js) lee del store y comparte los archivos.
 import { round, sortBy, isDateStr, fmtNum } from './util.js';
-import { isWorkSet, setMetrics, makeBodyweightFn, sessionDurationMin, sessionLoad, pace, speed, pace100 } from './calc.js';
+import { isWorkSet, setMetrics, makeBodyweightFn, sessionDurationMin, sessionLoad, pace, speed, pace100, cleanSetup } from './calc.js';
 import { MUSCLE_LABEL, ACTIVITY_LABEL, SET_TYPE_LABEL, RUN_TYPES, BIKE_TYPES, OTHER_TYPES, SWIM_STROKES } from './seed.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -202,6 +202,7 @@ export const STRENGTH_COLUMNS = [
   { h: 'RPE sesión', dec: 1 },
   { h: 'Carga sesión', dec: 0 },
   { h: 'Nota sesión' },
+  { h: 'Configuración' }, // ronda 11: máquina, polea, agarre… (vacía si no se apuntó); al final, para no desplazar las demás
 ];
 
 /**
@@ -232,7 +233,7 @@ export function strengthRows(sessions, exMap, settings = {}, { bodyweight = [] }
           i + 1, n, SET_TYPE_LABEL[set.type] || set.type || '',
           set.weight ?? null, set.reps ?? null, set.repsR ?? null, set.rir ?? null,
           set.timeSec ?? null, set.distanceM ?? null, set.heightCm ?? null, set.note || null,
-          m.e1rm, m.volume || null, dur, s.rpe ?? null, load, s.notes || null,
+          m.e1rm, m.volume || null, dur, s.rpe ?? null, load, s.notes || null, cleanSetup(se.setup) || null,
         ]);
       }
     });

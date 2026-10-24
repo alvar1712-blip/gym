@@ -765,7 +765,7 @@ test('CSV de fuerza y de cardio: archivos separados, formato Excel (;, coma, BOM
     assert.deepStrictEqual(fz.head, [0xef, 0xbb, 0xbf], 'BOM UTF-8');
     let lines = fz.text.replace(/^﻿/, '').split('\r\n');
     assert.ok(lines[0].startsWith('Fecha;Sesión;Ejercicio;Músculo principal;Orden ejercicio;Nº serie;Tipo de serie;Peso (kg);Reps'), lines[0]);
-    assert.strictEqual(lines[0].split(';').length, 21);
+    assert.strictEqual(lines[0].split(';').length, 22); // 21 + «Configuración» (ronda 11, al final)
     assert.ok(lines.some((l) => l.includes(';82,5;')), 'coma decimal');
     assert.ok(fz.text.includes('"Nota; con ""comillas""\ny salto"'), 'nota de sesión escapada');
     // 12 series hechas + cabecera + línea final vacía.

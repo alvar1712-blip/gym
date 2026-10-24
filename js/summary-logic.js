@@ -26,7 +26,7 @@
 //    (1–26 sep frente a 1–26 ago): comparar medio mes con un mes entero daría bajadas engañosas.
 import { weekStart, addDays, addMonths, diffDays, dow, isDateStr, todayStr, fmtDate, fmtWeekRange, fmtDuration, fmtPace, fmtMinutes, round, MONTH_LONG, MONTH_SHORT, DAY_LONG } from './util.js';
 import { isWorkSet, sessionLoad, sessionDurationMin, sessionVolume, sessionMuscleSets, makeBodyweightFn, orderKeyOf, emptyBests, addToBests, detectPRs } from './calc.js';
-import { DISTANCE_KINDS, RACE_DISTANCES, runMarkFor, scaledRunMark, exercisesWithHistory, exerciseHistory, distanceLabel, weightLabel, fmtNumFast, muscleTarget, historicalRunMarks } from './stats.js';
+import { DISTANCE_KINDS, RACE_DISTANCES, runMarkFor, scaledRunMark, exercisesWithHistory, exerciseHistory, exerciseStreams, distanceLabel, weightLabel, fmtNumFast, muscleTarget, historicalRunMarks } from './stats.js';
 import { ACTIVITY_KINDS, MUSCLES, MUSCLE_LABEL } from './seed.js';
 import { formatSet, fmtSec, LOAD_REP_TYPES } from './session-logic.js';
 
@@ -306,8 +306,11 @@ function strengthPRs(ctx) {
     if (!ex) continue;
     const hist = exerciseHistory(ctx.data, it.exerciseId, { labels: false });
     if (!hist.some((e) => e.prs && e.prs.length)) continue;
-    const bests = emptyBests();
+    // Récords solo frente a la misma configuración (máquina, polea, agarre…): una por configuración
+    const bestsBy = new Map();
     for (const e of hist) {
+      let bests = bestsBy.get(e.setupKey);
+      if (!bests) { bests = emptyBests(); bestsBy.set(e.setupKey, bests); }
       bests.prior = bests.count;
       const found = [];
       for (const set of e.sets) {
@@ -482,10 +485,14 @@ function e1rmHistories(ctx) {
   const out = [];
   for (const it of exercisesWithHistory(ctx.data)) {
     if (!LOAD_REP_TYPES.includes(it.logType)) continue;
-    const list = exerciseHistory(ctx.data, it.exerciseId, { labels: false })
-      .filter((e) => e.e1rm != null)
-      .map((e) => ({ date: e.date, e1rm: e.e1rm, sessionId: e.sessionId }));
-    if (list.length) out.push({ exerciseId: it.exerciseId, name: it.name, logType: it.logType, list });
+    // Una serie por configuración: el «progreso del periodo» no compara máquinas, poleas o agarres distintos
+    const streams = exerciseStreams(ctx.data, it.exerciseId);
+    for (const st of streams) {
+      const list = st.entries
+        .filter((e) => e.e1rm != null)
+        .map((e) => ({ date: e.date, e1rm: e.e1rm, sessionId: e.sessionId }));
+      if (list.length) out.push({ exerciseId: it.exerciseId, name: streams.length > 1 ? `${it.name} · ${st.setup || 'sin especificar'}` : it.name, logType: it.logType, list });
+    }
   }
   ctx.e1rmHist = out;
   return out;

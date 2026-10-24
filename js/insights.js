@@ -24,7 +24,7 @@
 import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtPct, fmtWeekRange } from './util.js';
 import { muscleContrib, workSetCount } from './calc.js';
 import {
-  weeklySeries, muscleTable, exerciseHistory, exercisesWithHistory, dataRange, fmtMetric, fmtNumFast, KINDS,
+  weeklySeries, muscleTable, exerciseStream, exercisesWithHistory, dataRange, fmtMetric, fmtNumFast, KINDS,
 } from './stats.js';
 import { PATTERNS, PATTERN_LABEL, defaultSettings } from './seed.js';
 import { targetText, LOAD_REP_TYPES } from './session-logic.js';
@@ -649,7 +649,8 @@ function classify(ctx) {
 /** Historial de un ejercicio (stats.exerciseHistory), memorizado por pantalla: lo leen la clasificación y la doble progresión. */
 function historyOf(ctx, exerciseId) {
   const memo = ctx.memo.hist || (ctx.memo.hist = new Map());
-  if (!memo.has(exerciseId)) memo.set(exerciseId, exerciseHistory(ctx.d, exerciseId, { labels: false }));
+  // Solo la configuración actual (máquina, polea, agarre…): lo anterior con otra no es comparable (ronda 11)
+  if (!memo.has(exerciseId)) memo.set(exerciseId, exerciseStream(ctx.d, exerciseId));
   return memo.get(exerciseId);
 }
 
@@ -682,7 +683,7 @@ function progressMessages(ctx) {
   const rule = progressRule(S, W);
   if (!list.length) {
     const counts = exercisesWithHistory(ctx.d).map((it) => ({
-      name: it.name, n: exerciseHistory(ctx.d, it.exerciseId, { labels: false }).filter((e) => e.date <= ctx.ref && e.e1rm != null).length,
+      name: it.name, n: exerciseStream(ctx.d, it.exerciseId).filter((e) => e.date <= ctx.ref && e.e1rm != null).length,
     })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 8);
     return [info('ex-none', 'neutral', {
       title: 'Aún sin datos para valorar el progreso',

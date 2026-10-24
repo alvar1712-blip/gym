@@ -10,7 +10,7 @@
 // análisis. Prueba cruzada: tests/unit/analysis-consistency.test.mjs.
 import { isWorkSet, rirValue, setMetrics } from './calc.js';
 import { addDays, diffDays, isDateStr } from './util.js';
-import { fmtNumFast, weightLabel, exercisesWithHistory, exerciseHistory } from './stats.js';
+import { fmtNumFast, weightLabel, exercisesWithHistory, exerciseStream } from './stats.js';
 import { checkinsBetween, isLowCheckin } from './checkin-logic.js';
 import { PATTERNS, SET_TYPE_LABEL, defaultSettings } from './seed.js';
 import { formatSet, LOAD_REP_TYPES } from './session-logic.js';
@@ -292,7 +292,7 @@ export function fatigueState(data, ref, { stalled = null } = {}) {
     list = [];
     for (const it of exercisesWithHistory(d)) {
       if (it.archived) continue;
-      const st = progressStatus({ exercise: it.exercise, history: exerciseHistory(d, it.exerciseId, { labels: false }), ref, stall: settings.stall });
+      const st = progressStatus({ exercise: it.exercise, history: exerciseStream(d, it.exerciseId), ref, stall: settings.stall });
       if (st && st.status === 'stalled') list.push({ exerciseId: it.exerciseId, name: it.name, ...st });
     }
   }

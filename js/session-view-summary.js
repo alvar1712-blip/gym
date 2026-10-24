@@ -106,7 +106,7 @@ export function renderSummary(root, id) {
     bestRows.push(h('div.list-item.ses-sum-best',
       h('div.list-item-main',
         h('div.list-item-title', ex.name),
-        h('div.list-item-sub.wrap', best ? `${formatSet(best, ex.logType, { kg: true })}${e1}` : '—')),
+        h('div.list-item-sub.wrap', best ? `${formatSet(best, ex.logType, { kg: true })}${e1}${se.setup ? ` · ${se.setup}` : ''}` : '—')),
       h('span.badge', `${n} ${n === 1 ? 'serie' : 'series'}`)));
   }
   if (bestRows.length) c.append(h('h2.section-title', 'Mejor serie por ejercicio'), h('div.list', bestRows));
@@ -151,7 +151,7 @@ function prCard(session, prs, exMap) {
       if (!list) continue;
       // Nombre y serie en líneas separadas: el dato clave (peso × reps) nunca se corta.
       rows.push(h('li.ses-sum-pr',
-        h('div.ses-sum-pr-name', ex?.name || se.exName),
+        h('div.ses-sum-pr-name', ex?.name || se.exName, se.setup ? ` · ${se.setup}` : ''),
         h('div.ses-sum-pr-set.tnum', formatSet(set, ex?.logType, { kg: true })),
         h('div.ses-sum-pr-kind', list.map((p) => prLabel(p, ex)).join(' · '))));
     }

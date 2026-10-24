@@ -4,16 +4,16 @@
 import * as store from '../store.js';
 import {
   h, icon, header, sheet, confirmDialog, promptDialog, actionSheet, toast, undoToast,
-  rpePicker, field, textInput, numInput, emptyState, scrollPageTo, focusBar,
+  rpePicker, field, textInput, numInput, emptyState, scrollPageTo, focusBar, chips,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
-import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress } from '../calc.js';
+import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions } from '../calc.js';
 import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import { exerciseHistory } from '../stats.js';
 import {
   lastFor, newSessionExercise, switchExercise, linkedActivities, orphanActivities, proposedDuration, lastActivityAt, finishSession,
-  pendingCount, doneCount, templateDiff, applyTemplateDiff, autoDuration, syncAutoDuration,
+  pendingCount, doneCount, templateDiff, applyTemplateDiff, autoDuration, syncAutoDuration, setSetup,
   listBlocks, itemStates, foldedKeys, nextPendingIndex, jumpTarget,
 } from '../session-logic.js';
 import {
@@ -104,20 +104,23 @@ export function mountSession(root, params = {}) {
       return snap.last.get(key);
     },
     /** Historial de un ejercicio (stats.exerciseHistory; solo sesiones terminadas): el «Siguiente paso» mira su progreso reciente. */
-    historyFor(eid) {
+    historyFor(eid, setup = '') {
       if (!snap.hist) snap.hist = { sessions: snap.sessions, exercises: store.all('exercises'), settings: store.settings(), bodyweight: store.bodyweightList() };
-      return exerciseHistory(snap.hist, eid, { labels: false });
+      // Solo la misma configuración (máquina, polea, agarre…): el progreso no se mide entre condiciones distintas
+      return exerciseHistory(snap.hist, eid, { labels: false, setup });
     },
-    /** Récords de las series hechas de ese ejercicio en esta sesión: Map(setId → récords). */
-    prsFor(eid) {
+    /** Récords de las series hechas de ese ejercicio con esa configuración en esta sesión: Map(setId → récords). */
+    prsFor(eid, setup = '') {
       const ex = store.exercise(eid);
       const out = new Map();
       if (!ex) return out;
-      if (!snap.bests.has(eid)) snap.bests.set(eid, bestsForExercise(snap.earlier, eid, ex, { bwFn: snap.bwFn }));
-      const bests = deepClone(snap.bests.get(eid));
+      const sk = setupKey(setup);
+      const ck = `${eid}\u0000${sk}`;
+      if (!snap.bests.has(ck)) snap.bests.set(ck, bestsForExercise(snap.earlier, eid, ex, { bwFn: snap.bwFn, setup: sk }));
+      const bests = deepClone(snap.bests.get(ck));
       const bw = snap.bwFn(session.date);
       for (const se of session.exercises) {
-        if (se.exerciseId !== eid) continue;
+        if (se.exerciseId !== eid || setupKey(se.setup) !== sk) continue;
         for (const set of se.sets) {
           if (!isWorkSet(set)) continue;
           const prs = detectPRs(set, ex, bests, bw);
@@ -148,6 +151,7 @@ export function mountSession(root, params = {}) {
     },
     rerenderList: () => renderList(),
     exerciseMenu: (se) => exerciseMenu(se),
+    editSetup: (se) => editSetup(se),
     cardEl: (se) => cardEl(se),
     /** Tras registrar/añadir una serie: que el botón «Registrar» del editor quede a la vista. */
     revealEditor(se) {
@@ -592,6 +596,7 @@ export function mountSession(root, params = {}) {
       title: name,
       actions: [
         { label: 'Cambiar por otro ejercicio', icon: 'swap', onClick: () => replaceExercise(se) },
+        ex && ex.logType !== 'cardio' ? { label: se.setup ? 'Cambiar material o configuración' : 'Material o configuración', icon: 'sliders', hint: se.setup || null, onClick: () => editSetup(se) } : null,
         ex ? { label: 'Ver ficha del ejercicio', icon: 'info', onClick: () => navigate(`#/exercise/${ex.id}`) } : null,
         { label: se.note ? 'Editar nota del ejercicio' : 'Nota del ejercicio', icon: 'note', onClick: () => editExerciseNote(se) },
         { label: 'Mover arriba', icon: 'arrow-up', disabled: idx <= 0, onClick: () => moveExercise(se, -1) },
@@ -625,6 +630,33 @@ export function mountSession(root, params = {}) {
     ctx.save();
     ctx.rerenderCard(se);
     ctx.afterDropLinked(se, before, dropped, `Cambiado a «${store.exercise(eid)?.name || eid}»`, prevCursor);
+  }
+
+  /** Material o configuración (máquina, polea, agarre, sistema de lastre…): récords y progreso solo se comparan con la misma. */
+  function editSetup(se) {
+    const options = setupOptions(store.all('sessions'), se.exerciseId, { excludeSessionId: session.id });
+    const apply = (v) => {
+      setSetup(se, v, session);
+      ctx.touch(se);
+      ctx.save();
+      ctx.rerenderCard(se);
+    };
+    sheet({
+      title: 'Material o configuración',
+      body: (close) => {
+        const input = textInput({ value: se.setup || '', placeholder: 'Máquina, polea, agarre, lastre…', maxlength: 40, ariaLabel: 'Material o configuración' });
+        const go = (v) => { close(); apply(v); };
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(input.value); });
+        const cur = options.find((o) => o.key === setupKey(se.setup));
+        return h('div.stack.ses-setup-sheet',
+          h('p.sheet-msg', 'Los récords y el progreso solo se comparan con la misma configuración. Lo que ya tienes sin configuración no cambia.'),
+          options.length ? chips({ options: options.map((o) => ({ value: o.label, label: o.label })), value: cur ? cur.label : null, ariaLabel: 'Configuraciones usadas', className: 'ses-setup-chips', onChange: go }) : null,
+          field(options.length ? 'Otra' : 'Configuración', input),
+          h('div.sheet-actions.sheet-actions-inline',
+            h('button.btn.btn-block.btn-primary.ses-setup-save', { type: 'button', onClick: () => go(input.value) }, 'Guardar'),
+            se.setup ? h('button.btn.btn-block.btn-secondary.ses-setup-clear', { type: 'button', onClick: () => go('') }, 'Sin especificar') : null));
+      },
+    });
   }
 
   async function editExerciseNote(se) {

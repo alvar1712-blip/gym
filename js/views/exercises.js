@@ -248,7 +248,7 @@ export function mountExerciseDetail(root, params = {}) {
     const histRow = (r) => h('button.list-item.lib-hist-row', { type: 'button', dataset: { session: r.sessionId }, onClick: () => navigate(`#/session/${r.sessionId}`) },
       h('span.list-item-main',
         h('span.list-item-title', fmtDate(r.date, 'full'), r.status === 'active' ? h('span.badge.badge-accent.lib-badge-inline', 'En curso') : null),
-        r.templateName ? h('span.list-item-sub', r.templateName) : null,
+        r.templateName || r.setup ? h('span.list-item-sub', [r.templateName, r.setup].filter(Boolean).join(' · ')) : null,
         h('span.lib-hist-sets.tnum', r.setTexts.length
           ? r.setTexts.flatMap((t, i) => [i ? ' · ' : null, h('span.lib-hist-set', t)])
           : r.summary)),
