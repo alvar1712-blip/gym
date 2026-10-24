@@ -204,6 +204,10 @@ export function wellbeingSummary(checkins, today, days = 28) {
   };
 }
 
+/** Ajuste de la prioridad por confianza, solo para ELEGIR los puntos clave (pickKeyPoints): la baja pesa menos, la alta algo más. */
+export const CONFIDENCE_RANK = { high: 4, medium: 0, low: -14, insufficient: -22 };
+export const rankOf = (i) => (Number(i?.priority) || 0) + (CONFIDENCE_RANK[i?.confidence?.level] ?? 0);
+
 /** Orden común: prioridad (de mayor a menor), área y id. */
 export function sortInsights(list) {
   return [...list].sort((a, b) => (b.priority - a.priority) || (AREAS.indexOf(a.area) - AREAS.indexOf(b.area)) || String(a.id).localeCompare(String(b.id)));
@@ -216,7 +220,9 @@ export function sortInsights(list) {
  * @param {object[]} all Insights (en cualquier orden)
  */
 export function pickKeyPoints(all, max = 3) {
-  const list = sortInsights(all || []);
+  // Ronda 11: se elige por prioridad AJUSTADA por confianza (una con poca base cede el hueco a una igual de grave y mejor
+  // respaldada), pero nada se descarta por eso: un aviso de confianza baja, solo, sigue entrando.
+  const list = [...(all || [])].sort((a, b) => (rankOf(b) - rankOf(a)) || (AREAS.indexOf(a.area) - AREAS.indexOf(b.area)) || String(a.id).localeCompare(String(b.id)));
   const out = [];
   const areas = new Set();
   const blocked = new Set();

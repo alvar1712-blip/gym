@@ -67,12 +67,18 @@ export function nextStep(m) {
 
 /** Peso para elegir: primero lo que pide un cambio; después lo accionable que va bien; lo informativo al final. */
 const SEVERITY = { warn: 3, good: 1.5, neutral: 1, info: 1 };
+/**
+ * Ronda 11: la confianza ajusta el peso DENTRO de un nivel (una alta, un poco más; una baja, menos), nunca lo bastante
+ * para que un aviso de confianza baja caiga por debajo de lo que solo va bien: un aviso con poca base cede el sitio a otro
+ * igual de grave y mejor respaldado, pero no se esconde.
+ */
+const CONFIDENCE_WEIGHT = { high: 0.15, medium: 0, low: -0.3, insufficient: -0.6 };
 function weight(m, source, idx) {
   const base = SEVERITY[m.level] ?? 1;
   const actionable = /^dp-up/.test(m.id) ? 0.8 : 0;
-  // Dentro del mismo nivel: el orden de su fuente (ya viene por prioridad); el analista lleva confianza y fuentes,
-  // así que en empate gana su versión.
-  return base + actionable + (source === 'analysis' ? 0.05 : 0) - idx * 0.01;
+  // Dentro del mismo nivel y confianza: el orden de su fuente (ya viene por prioridad); el analista lleva confianza y
+  // fuentes, así que en empate gana su versión.
+  return base + actionable + (CONFIDENCE_WEIGHT[m.confidence?.level] ?? 0) + (source === 'analysis' ? 0.05 : 0) - idx * 0.01;
 }
 
 /** Destino de «ver más» de cada mensaje. */
@@ -112,7 +118,9 @@ export function weekFocus({ weekly = [], analysis = [] } = {}, max = 3) {
   // (sigue en su tarjeta y en el panel). Sin avisos, solo lo que va bien.
   const pool = chosen.filter((c) => c.m.level === 'good' || (!allGood && c.m.level === 'warn'));
   const items = pool.slice(0, allGood || fewData ? Math.max(0, max - 1) : max).map(({ m, source }) => {
-    const step = nextStep(m);
+    let step = nextStep(m);
+    // Con confianza baja no se prescribe tocar series («Reduce/Añade 1–2 series»): el aviso se queda, el paso es reevaluar
+    if ((step === 'reduce' || step === 'add') && m.confidence?.level === 'low') step = 'recheck';
     // Si el analista ya dice qué hacer (parts.recommendation: «…y revisa en 3 semanas»), esa es LA acción: no se
     // pone otra genérica que pueda contradecirla, y el texto se queda con el dato y su lectura (sin repetirla).
     const rec = m.parts?.recommendation || null;

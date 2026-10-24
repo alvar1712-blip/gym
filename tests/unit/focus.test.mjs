@@ -125,3 +125,53 @@ test('shortParagraphs: una frase por párrafo, las cortas se juntan y no se pier
   assert.deepStrictEqual(shortParagraphs(''), []);
   assert.deepStrictEqual(shortParagraphs(null), []);
 });
+
+// ---------------------------------------------------------------------------
+// Ronda 11 (bloque 6): la confianza influye en la prioridad, sin esconder avisos
+// ---------------------------------------------------------------------------
+
+test('R11 · entre avisos igual de graves va primero el mejor respaldado; el de confianza baja sigue saliendo', () => {
+  const conf = (level) => ({ level });
+  const r = weekFocus({
+    analysis: [
+      an('weight-rate', 'warn', 'weight', 70, { confidence: conf('low') }),
+      an('recovery-sleep', 'warn', 'recovery', 60, { confidence: conf('high') }),
+      an('strength-down-x', 'warn', 'strength', 62, { confidence: conf('medium') }),
+    ],
+  });
+  assert.deepEqual(r.items.map((i) => i.id), ['recovery-sleep', 'strength-down-x', 'weight-rate'], 'alta, media y, al final, la baja (aunque su prioridad bruta sea la mayor)');
+  assert.equal(r.items.length, 3, 'ningún aviso desaparece por tener poca base');
+});
+
+test('R11 · un aviso de confianza baja, solo, sigue siendo el principal; no se prescribe tocar series con datos flojos', () => {
+  const r = weekFocus({ analysis: [an('strength-volume', 'warn', 'strength', 58, { title: 'Reduce un poco el volumen de pecho', confidence: { level: 'low' } })] });
+  assert.equal(r.items.length, 1);
+  assert.equal(r.items[0].level, 'warn');
+  assert.equal(r.items[0].step, 'recheck', 'en vez de «Reduce 1–2 series»: primero se reevalúa');
+  assert.equal(r.items[0].stepLabel, STEPS.recheck);
+  // Con confianza media o alta, la acción de siempre
+  const ok = weekFocus({ analysis: [an('strength-volume', 'warn', 'strength', 58, { title: 'Reduce un poco el volumen de pecho', confidence: { level: 'medium' } })] });
+  assert.equal(ok.items[0].step, 'reduce');
+  // Un aviso de recuperación o de energía baja mantiene su paso (es de seguridad, no de ajuste de series)
+  const rec = weekFocus({ analysis: [an('recovery-sleep', 'warn', 'recovery', 60, { confidence: { level: 'low' } })] });
+  assert.equal(rec.items[0].step, 'recover');
+});
+
+test('R11 · el mismo tema lo dicen los dos motores: gana la versión con más confianza (no siempre el analista)', () => {
+  const r = weekFocus({
+    weekly: [wk('ex-stalled', 'warn')],
+    analysis: [an('strength-stalled-press_banca', 'warn', 'strength', 70, { confidence: { level: 'low' } })],
+  });
+  assert.equal(r.items.length, 1);
+  assert.equal(r.items[0].source, 'weekly', 'el panel (sin confianza propia = regla clara) frente a un análisis de confianza baja');
+});
+
+test('R11 · pickKeyPoints: la prioridad se ajusta por confianza (baja pesa menos, alta algo más), sin descartar nada', async () => {
+  const { pickKeyPoints } = await import('../../js/analysis.js');
+  const mk = (id, area, priority, level) => ({ id, area, level: 'warn', priority, title: id, text: 't', why, confidence: { level } });
+  const list = [mk('a-low', 'weight', 70, 'low'), mk('b-medium', 'strength', 62, 'medium'), mk('c-high', 'recovery', 58, 'high'), mk('d-low', 'endurance', 66, 'low')];
+  // Con hueco para 3 de 4 (áreas distintas): queda fuera el peor respaldado ajustado (d-low: 66 − 14 = 52), no el de menor prioridad bruta (c-high: 58)
+  assert.deepEqual(pickKeyPoints(list, 3).map((i) => i.id), ['a-low', 'b-medium', 'c-high'], 'se muestran por prioridad bruta');
+  assert.ok(!pickKeyPoints(list, 3).some((i) => i.id === 'd-low'));
+  assert.equal(pickKeyPoints([mk('solo-low', 'weight', 70, 'low')], 3).length, 1, 'un aviso de confianza baja, solo, entra');
+});
