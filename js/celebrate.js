@@ -1,14 +1,15 @@
-// celebrate.js — animaciones de inicio y fin de sesión (css/celebrate.css; qué se dice: celebrate-logic.js).
-// Una sola coreografía: una cortina verde cruza la pantalla de abajo arriba, deja un fondo negro con el icono del
-// deporte, el mensaje y dos curvas verdes que enmarcan el texto, y al final la misma cortina vuelve a pasar y deja a la
-// vista la pantalla de destino. Solo CSS y temporizadores de un disparo (sin bucles ni librerías); con movimiento
-// reducido, solo un fundido. Nada de lo que hay debajo depende de ella: se navega y se guarda antes o a la vez; si se
-// omite (toque o tecla) o falla, la pantalla de debajo ya es la correcta.
+﻿// celebrate.js — animaciones de inicio y fin de sesión (css/celebrate.css; qué se dice: celebrate-logic.js).
+// Una sola coreografía: una cortina verde de bordes curvos cruza la pantalla de abajo arriba, deja un fondo negro con el
+// mensaje, el icono del deporte y una gran cinta verde que entra por arriba, da la vuelta fuera de la pantalla y vuelve
+// a entrar por abajo (enmarca el texto sin cruzarlo, y se transforma despacio); al final la cortina vuelve a pasar y deja
+// a la vista la pantalla de destino. Solo CSS, un morfado SVG (SMIL) y temporizadores de un disparo (sin librerías); con
+// movimiento reducido, solo un fundido. Nada de lo que hay debajo depende de ella: se navega y se guarda antes o a la
+// vez; si se omite (toque o tecla) o falla, la pantalla de debajo ya es la correcta.
 import { h, icon } from './ui.js';
 import { pickMessage } from './celebrate-logic.js';
 
-const HOLD_MS = 3000; // desde que empieza a entrar hasta que empieza a salir (entrada ≈0,9 s + mensaje legible ≈2 s)
-const HOLD_RECORD_MS = 3500; // con récord se alarga medio segundo
+const HOLD_MS = 3300; // desde que empieza a entrar hasta que empieza a salir (entrada ≈0,95 s + mensaje legible ≈2,5 s)
+const HOLD_RECORD_MS = 3900; // con récord se alarga 0,6 s
 const HOLD_REDUCED_MS = 1200;
 const SWEEP_MS = 820; // duración de cada pasada de la cortina; coincide con --sweep en celebrate.css
 const OUT_SKIP_MS = 160;
@@ -30,6 +31,13 @@ function sportIcon(kind, size) {
   return svg;
 }
 
+// Símbolos pequeños de trazo blanco que aparecen y se separan un poco: posición final respecto al centro (vw, vh), giro
+// y retardo. Solo en las franjas libres entre las curvas y el mensaje: nunca cruzan el texto. Con récord solo los tres\n// de arriba (los de abajo chocarían con la línea del récord).
+const AMBIENT = [
+  [-31, -19, -14, 760], [3, -20, 10, 840], [31, -17, 18, 920],
+  [-30, 18, 12, 1000], [2, 19, -8, 1080], [31, 17, -16, 1160],
+];
+
 let current = null; // { el, finish }
 
 /**
@@ -43,11 +51,12 @@ export function celebrate({ message, record = null, kind = 'strength' }) {
   const msg = h('div.cele-msg', message);
   const el = h('div.cele', { role: 'status', 'aria-label': `${message}${record ? ` ${record}` : ''}` },
     h('div.cele-scene',
-      band('cele-band-top', '0 0 390 300', 'xMidYMin slice', 'M 450 -30 C 350 10 300 100 210 128 C 130 152 50 150 -50 214'),
-      band('cele-band-bot', '0 0 390 260', 'xMidYMax slice', 'M -50 226 C 40 150 170 138 262 178 C 330 208 390 214 450 186'),
+      ribbon(),
+      h('div.cele-amb', { 'aria-hidden': 'true' }, AMBIENT.slice(0, record ? 3 : 6).map(([x, y, r, d], i) => h('span', {
+        style: `--x:${x}vw;--y:${y}vh;--r:${r}deg;--d:${d}ms`, // custom properties: solo valen como texto
+      }, i % 2 ? icon('check', 34) : sportIcon(kind, 34)))),
       h('div.cele-center',
-        h('div.cele-mark', { 'aria-hidden': 'true' }, ring(), sportIcon(kind, 44),
-          Array.from({ length: 10 }, (_, i) => h('i', { style: `--a:${i * 36}deg` }))),
+        h('div.cele-mark', { 'aria-hidden': 'true' }, sportIcon(kind, 88)),
         h('div.cele-text', msg, record ? h('div.cele-pr', icon('trophy', 22), h('span', record)) : null))),
     h('div.cele-sweep.cele-sweep-a', { 'aria-hidden': 'true' }, sweepShape()),
     h('div.cele-sweep.cele-sweep-b', { 'aria-hidden': 'true' }, sweepShape()));
@@ -101,32 +110,39 @@ function svgEl(name, attrs) {
   return n;
 }
 
-/** Una curva verde gruesa que se dibuja de un extremo al otro (pathLength=1 para animar el trazo). */
-function band(cls, viewBox, aspect, d) {
-  const svg = svgEl('svg', { class: `cele-band ${cls}`, viewBox, preserveAspectRatio: aspect, 'aria-hidden': 'true' });
-  svg.appendChild(svgEl('path', { d, pathLength: '1', class: 'cele-band-path' }));
+// La cinta: un solo trazo. Baja por la derecha, cruza la parte alta hacia la izquierda, da la vuelta FUERA de la pantalla
+// (x < 0) y vuelve a entrar por la izquierda abajo, para salir por la derecha. Arriba y abajo son la misma curva.
+// RIBBON_B tiene la misma estructura con los puntos de control movidos: el morfado A→B→A la hace respirar en el centro.
+const RIBBON_A = 'M 340 -80 C 346 60 300 138 200 162 C 110 184 36 170 -70 232 C -170 292 -170 590 -70 650 C 40 712 150 704 230 664 C 305 628 350 636 460 706';
+const RIBBON_B = 'M 318 -80 C 330 84 326 156 214 182 C 122 204 28 198 -70 252 C -190 322 -190 570 -70 628 C 42 692 142 734 242 694 C 322 660 364 650 460 726';
+
+function ribbon() {
+  const svg = svgEl('svg', { class: 'cele-ribbon', viewBox: '0 0 390 844', preserveAspectRatio: 'xMidYMid slice', 'aria-hidden': 'true' });
+  const p = svgEl('path', { d: RIBBON_A, pathLength: '1' });
+  p.appendChild(svgEl('animate', {
+    attributeName: 'd', dur: '3.8s', begin: '1.7s', repeatCount: 'indefinite', calcMode: 'spline',
+    keyTimes: '0;0.5;1', keySplines: '0.45 0 0.55 1;0.45 0 0.55 1', values: `${RIBBON_A};${RIBBON_B};${RIBBON_A}`,
+  }));
+  svg.appendChild(p);
   return svg;
 }
 
-/** Cortina: más alta que la pantalla, con el borde de ataque y el de salida curvos (se estira a la pantalla). */
+/** Cortina: más alta que la pantalla, con el borde de ataque y el de salida ondulados (se estira a la pantalla). */
 function sweepShape() {
   const svg = svgEl('svg', { viewBox: '0 0 390 1860', preserveAspectRatio: 'none' });
-  svg.appendChild(svgEl('path', { d: 'M0 300 C 130 290 250 170 390 0 L390 1560 C 260 1690 130 1790 0 1860 Z' }));
+  svg.appendChild(svgEl('path', {
+    d: 'M0 340 C 40 330 90 200 160 120 C 230 40 320 20 390 60 L390 1500 C 330 1450 240 1520 180 1690 C 130 1830 60 1850 0 1860 Z',
+  }));
   return svg;
 }
 
-/** Aro que se dibuja alrededor del icono del deporte. */
-function ring() {
-  const svg = svgEl('svg', { class: 'cele-ring', viewBox: '0 0 100 100' });
-  svg.appendChild(svgEl('circle', { cx: 50, cy: 50, r: 46, pathLength: '1' }));
-  return svg;
-}
-
-/** El mensaje cabe siempre en una línea: si con el tamaño de texto o de pantalla se saldría, se reduce. */
+/** El mensaje ocupa siempre una línea y todo el ancho útil: se mide a un tamaño de referencia y se escala (tope 76 px). */
 function fit(msg) {
   const room = document.documentElement.clientWidth - 48;
+  if (room <= 0) return;
+  msg.style.fontSize = '100px';
   const w = msg.scrollWidth;
-  if (w > room && room > 0) msg.style.fontSize = `${Math.floor(parseFloat(getComputedStyle(msg).fontSize) * room / w)}px`;
+  msg.style.fontSize = `${Math.max(20, Math.floor(Math.min(76, (100 * room) / (w || room))))}px`;
 }
 
 /** Transición breve y discreta al empezar una sesión (~0,5 s). No bloquea: no recoge toques ni espera a nada. */
@@ -136,3 +152,5 @@ export function playStart() {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), START_MS + 40);
 }
+
+

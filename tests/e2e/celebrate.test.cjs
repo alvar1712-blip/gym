@@ -1,4 +1,4 @@
-// Animaciones de inicio y fin de sesión (js/celebrate.js, js/celebrate-logic.js):
+﻿// Animaciones de inicio y fin de sesión (js/celebrate.js, js/celebrate-logic.js):
 //   · terminar: guarda y SOLO después se felicita (mensaje corto y variado); acaba en el resumen; se puede omitir;
 //   · récord: solo de ejercicios principales (celebrate-logic.MAIN_LIFTS), nunca de accesorios; uno solo;
 //   · si guardar falla: error, la sesión vuelve a estar activa y se puede reintentar sin perder nada; sin duplicados;
@@ -74,7 +74,7 @@ test('terminar: se guarda, felicita con un mensaje corto, destaca el récord de 
   // Acaba sola, en el resumen de ESA sesión, en unos 2-3 s
   const t0 = Date.now();
   await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 6000 });
-  assert.ok(Date.now() - t0 < 4500, `dura 2-3 s (${Date.now() - t0} ms restantes)`);
+  assert.ok(Date.now() - t0 < 5200, `dura 2-3 s (${Date.now() - t0} ms restantes)`);
   await atSummary(page, id);
 }));
 
@@ -250,7 +250,7 @@ test('movimiento reducido: sin destello al empezar y, al terminar, solo el mensa
   const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
   await pressFinish(await openFinish(page, id)).click();
   await page.locator('.cele').waitFor();
-  const shown = await page.evaluate(() => ['.cele-sweep', '.cele-band', '.cele-ring'].map((s) => getComputedStyle(document.querySelector(s)).display));
+  const shown = await page.evaluate(() => ['.cele-sweep', '.cele-ribbon', '.cele-amb'].map((s) => getComputedStyle(document.querySelector(s)).display));
   assert.deepStrictEqual(shown, ['none', 'none', 'none']);
   assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
   const t0 = Date.now();
@@ -304,3 +304,4 @@ test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): v
   await page.waitForSelector('.ses-finish');
   assert.deepStrictEqual((await sessionOf(page, id)).exercises, before.exercises, 'series intactas');
 }));
+

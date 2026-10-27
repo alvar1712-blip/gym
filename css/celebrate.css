@@ -1,11 +1,12 @@
-/* celebrate.css — animación de fin de sesión (js/celebrate.js) y transición breve de inicio.
+﻿/* celebrate.css — animación de fin de sesión (js/celebrate.js) y transición breve de inicio.
    Coreografía (todo parte de la misma cortina, --sweep = 820 ms por pasada):
-     0,00 s  una cortina verde (dos capas, la oscura delante) sube cubriendo la pantalla anterior
-     0,48 s  ya cubierta: aparece el fondo negro debajo; la cortina sigue y sale por arriba
-     0,60 s  aro + icono del deporte; 0,72 s el mensaje; 0,64 s y 0,90 s se dibujan las dos curvas
-     1,4 s…  las curvas derivan despacio mientras el mensaje queda quieto y legible
-     3,0 s   la cortina vuelve a pasar y deja a la vista la pantalla de destino (≈3,8 s en total)
-   Solo transform / opacity / stroke-dashoffset. Las curvas viven arriba y abajo: no cruzan el mensaje. */
+     0,00 s  una cortina verde ondulada (dos capas, la oscura delante) sube cubriendo la pantalla anterior
+     0,45 s  ya cubierta: aparece el fondo negro debajo; la cortina sigue y sale por arriba
+     0,52 s  la cinta verde se dibuja (arriba, da la vuelta fuera de la pantalla y vuelve por abajo)
+     0,60 s  icono del deporte; 0,72 s el mensaje; 0,76-1,16 s aparecen los símbolos blancos y se separan
+     1,7 s…  la cinta «respira» (morfado SVG) mientras el mensaje queda quieto y legible
+     3,3 s   la cinta se retira, el mensaje sube y la cortina vuelve a pasar y deja a la vista el destino (≈4,1 s en total)
+   Solo transform / opacity / stroke-dashoffset (y el morfado de la cinta). La cinta nunca cruza el mensaje. */
 .cele {
   --sweep: 820ms;
   --sweep-ease: cubic-bezier(0.65, 0, 0.35, 1);
@@ -18,15 +19,15 @@
   cursor: pointer;
 }
 
-/* Escena: fondo negro + curvas + icono y mensaje. Oculta hasta que la cortina la tapa; vuelve a ocultarse al salir. */
+/* Escena: fondo negro + cinta + símbolos + icono y mensaje. Oculta hasta que la cortina la tapa; vuelve a ocultarse al salir. */
 .cele-scene {
   position: absolute;
   inset: 0;
   background: var(--bg);
   opacity: 0;
-  animation: cele-scene-in 1ms 480ms steps(1, end) forwards;
+  animation: cele-scene-in 1ms 450ms steps(1, end) forwards;
 }
-.cele-out .cele-scene { animation: cele-scene-out 1ms 480ms steps(1, end) forwards; opacity: 1; }
+.cele-out .cele-scene { animation: cele-scene-out 1ms 450ms steps(1, end) forwards; opacity: 1; }
 
 /* Cortina: más alta que la pantalla; sube desde debajo y sale por arriba. */
 .cele-sweep {
@@ -47,20 +48,33 @@
 .cele-out .cele-sweep { transform: translateY(100vh); animation: cele-sweep-out var(--sweep) var(--sweep-ease) forwards; }
 .cele-out .cele-sweep-b { animation-delay: 70ms; }
 
-/* Curvas verdes: arriba (entra por la derecha) y abajo (entra por la izquierda); se dibujan y luego derivan. */
-.cele-band { position: absolute; left: 0; width: 100%; overflow: visible; pointer-events: none; }
-.cele-band-top { top: 0; height: 36vh; animation: cele-drift-a 2800ms 1500ms ease-in-out infinite alternate; }
-.cele-band-bot { bottom: 0; height: 30vh; animation: cele-drift-b 3100ms 1700ms ease-in-out infinite alternate; }
-.cele-band-path {
+/* Cinta: un solo trazo que se dibuja de punta a punta y luego se transforma despacio (morfado SMIL en celebrate.js). */
+.cele-ribbon { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cele-ribbon path {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 62;
+  stroke-width: 64;
   stroke-linecap: round;
+  stroke-linejoin: round;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: cele-draw 760ms 640ms cubic-bezier(0.22, 0.7, 0.2, 1) forwards;
+  animation: cele-draw 1250ms 520ms cubic-bezier(0.5, 0, 0.25, 1) forwards;
 }
-.cele-band-bot .cele-band-path { animation-delay: 900ms; }
+.cele-out .cele-ribbon path { animation: cele-undraw 620ms cubic-bezier(0.5, 0, 0.8, 0.4) forwards; }
+
+/* Símbolos blancos: pocos, pequeños, en las franjas libres; aparecen y se separan un poco. */
+.cele-amb { position: absolute; inset: 0; pointer-events: none; }
+.cele-amb span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  color: #fff;
+  opacity: 0;
+  animation: cele-amb 2200ms var(--d) cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+.cele-amb svg { display: block; stroke-width: 2; }
+.cele-out .cele-amb { animation: cele-fade-out 250ms ease forwards; }
 
 .cele-center {
   position: absolute;
@@ -69,50 +83,24 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 22px;
+  gap: 20px;
   padding: 0 24px;
   text-align: center;
   pointer-events: none;
 }
+.cele-out .cele-center { animation: cele-lift 330ms 80ms cubic-bezier(0.5, 0, 0.8, 0.5) forwards; }
 
-/* Icono del deporte: aro que se dibuja, icono que aparece y unas marcas que salen una vez. */
+/* Icono del deporte: grande y libre, en verde (detrás del mensaje en jerarquía). */
 .cele-mark {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 96px;
-  height: 96px;
   color: var(--accent);
   opacity: 0;
-  animation: cele-pop 420ms 600ms var(--spring-soft) forwards;
+  animation: cele-pop 440ms 600ms var(--spring-soft) forwards;
 }
-.cele-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-.cele-ring circle {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: cele-draw 700ms 640ms var(--ease-ios) forwards;
-}
-.cele-mark i {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 14px;
-  margin: -7px 0 0 -2px;
-  border-radius: 2px;
-  background: var(--accent);
-  opacity: 0;
-  transform: rotate(var(--a)) translateY(-52px);
-  animation: cele-tick 640ms 760ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
-}
+.cele-mark svg { display: block; stroke-width: 1.7; }
 
 .cele-text { position: relative; max-width: 100%; }
 .cele-msg {
-  font-size: clamp(30px, 12vw, 64px);
+  font-size: 48px; /* js/celebrate.js lo ajusta al ancho de la pantalla (una sola línea, tope 76 px) */
   font-weight: 800;
   line-height: 1.05;
   letter-spacing: -0.02em;
@@ -131,7 +119,7 @@
   justify-content: center;
   gap: 8px;
   margin-top: 14px;
-  font-size: calc(18px * var(--ts, 1));
+  font-size: calc(19px * var(--ts, 1));
   font-weight: 700;
   color: var(--accent);
   opacity: 0;
@@ -148,6 +136,7 @@
 @keyframes cele-fade-in { to { opacity: 1; } }
 @keyframes cele-fade-out { to { opacity: 0; } }
 @keyframes cele-draw { to { stroke-dashoffset: 0; } }
+@keyframes cele-undraw { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -1; } }
 @keyframes cele-pop {
   from { opacity: 0; transform: scale(0.8); }
   to { opacity: 1; transform: none; }
@@ -156,13 +145,12 @@
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: none; }
 }
-@keyframes cele-tick {
-  0% { opacity: 0; transform: rotate(var(--a)) translateY(-46px) scaleY(0.3); }
-  30% { opacity: 1; }
-  100% { opacity: 0; transform: rotate(var(--a)) translateY(-62px) scaleY(1); }
+@keyframes cele-lift { to { opacity: 0; transform: translateY(-18px); } }
+@keyframes cele-amb {
+  0% { opacity: 0; transform: translate(calc(-50% + var(--x) * 0.78), calc(-50% + var(--y) * 0.78)) rotate(var(--r)) scale(0.5); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0.72; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) rotate(var(--r)) scale(1); }
 }
-@keyframes cele-drift-a { to { transform: translate(-12px, 7px); } }
-@keyframes cele-drift-b { to { transform: translate(14px, -6px); } }
 
 /* Inicio de sesión: un destello breve con el icono (≈0,5 s); no recoge toques. */
 .cele-start {
@@ -181,10 +169,11 @@
 @keyframes cele-start { 0% { opacity: 0; } 25% { opacity: 1; } 65% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes cele-start-mark { from { transform: scale(0.8); } to { transform: scale(1.04); } }
 
-/* Movimiento reducido: sin cortina, curvas ni marcas; solo el mensaje con un fundido corto. */
+/* Movimiento reducido: sin cortina, cinta ni símbolos; solo el mensaje con un fundido corto. */
 @media (prefers-reduced-motion: reduce) {
-  .cele-sweep, .cele-band, .cele-mark i, .cele-ring { display: none; }
+  .cele-sweep, .cele-ribbon, .cele-amb { display: none; }
   .cele-scene { opacity: 1; animation: none; }
   .cele-mark, .cele-msg, .cele-pr { opacity: 0; animation: cele-fade-in 150ms linear forwards; transform: none; }
   .cele.cele-skip { animation-duration: 120ms; }
 }
+
