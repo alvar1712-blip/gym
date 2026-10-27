@@ -8,13 +8,8 @@ import {
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions, sessionPRs } from '../calc.js';
-import { pickMessage, mainRecord } from '../celebrate-logic.js';
-import { celebrate } from '../celebrate.js';
-
-// Último mensaje de felicitación mostrado (para no repetirlo dos veces seguidas); si no se puede guardar, da igual.
-const MSG_KEY = 'entreno.lastCongrats';
-const lastMessage = () => { try { return localStorage.getItem(MSG_KEY); } catch { return null; } };
-const rememberMessage = (m) => { try { localStorage.setItem(MSG_KEY, m); } catch { /* almacenamiento bloqueado */ } };
+import { mainRecord } from '../celebrate-logic.js';
+import { congratulate } from '../celebrate.js';
 import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import { exerciseHistory } from '../stats.js';
@@ -980,11 +975,8 @@ export function mountSession(root, params = {}) {
           clearInterval(timer);
           close();
           await askTemplateChanges();
-          const message = pickMessage(Math.random, lastMessage());
-          rememberMessage(message);
-          const record = celebrationRecord(session);
           // La felicitación cubre la pantalla y el resumen se monta debajo: al terminar (o al omitirla) ya está listo.
-          const shown = celebrate({ message, record });
+          const shown = congratulate(celebrationRecord(session));
           navigate(`#/session/${session.id}/summary`, { replace: true });
           await shown;
         },

@@ -3,6 +3,7 @@
 // fundido. Nada de lo que hay debajo depende de ellas: se navega y se guarda antes o a la vez; si se omiten (toque o
 // tecla) o fallan, la pantalla de debajo ya es la correcta.
 import { h, icon } from './ui.js';
+import { pickMessage } from './celebrate-logic.js';
 
 const HOLD_MS = 1900; // tiempo hasta empezar a salir (todo el movimiento de entrada ocurre en ~1 s)
 const HOLD_REDUCED_MS = 1200;
@@ -64,6 +65,20 @@ export function celebrate({ message, record = null }) {
     hold = setTimeout(() => finish(false), calm ? HOLD_REDUCED_MS : HOLD_MS);
     current = { el, finish };
   });
+}
+
+const MSG_KEY = 'entreno.lastCongrats';
+
+/**
+ * Felicitación al terminar cualquier tipo de sesión (fuerza o actividad): elige un mensaje que no sea el último que se
+ * mostró (se recuerda en localStorage; si no se puede, da igual) y lo celebra. `record`: texto de récord (opcional).
+ */
+export function congratulate(record = null) {
+  let last = null;
+  try { last = localStorage.getItem(MSG_KEY); } catch { /* almacenamiento bloqueado */ }
+  const message = pickMessage(Math.random, last);
+  try { localStorage.setItem(MSG_KEY, message); } catch { /* almacenamiento bloqueado */ }
+  return celebrate({ message, record });
 }
 
 function ribbons() {

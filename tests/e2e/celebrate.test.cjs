@@ -7,7 +7,7 @@
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/celebrate.test.cjs  (E2E_BROWSER=webkit para Safari)
 const test = require('node:test');
 const assert = require('node:assert');
-const { openApp, go, reload, idbAll } = require('./helpers.cjs');
+const { openApp, go, reload, idbAll, settle } = require('./helpers.cjs');
 
 const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡A seguir!', '¡Sesión completada!', '¡Gran esfuerzo!'];
 const summaryHash = (id) => `#/session/${id}/summary`;
@@ -100,7 +100,8 @@ test('omitir con un toque: sale enseguida y llega al resumen correcto', () => wi
   const t0 = Date.now();
   await page.locator('.cele').click({ position: { x: 20, y: 200 } });
   await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
-  assert.ok(Date.now() - t0 < 900, `salida corta (${Date.now() - t0} ms)`);
+  // La salida es de 160 ms; el margen cubre la latencia del clic en WebKit y sigue lejos de los ~2,2 s de la natural
+  assert.ok(Date.now() - t0 < 1500, `salida corta (${Date.now() - t0} ms)`);
   await atSummary(page, id);
   assert.strictEqual(await page.locator('.cele').count(), 0);
 }));
@@ -150,13 +151,81 @@ test('fallo al guardar: error, la sesión sigue activa con todo lo apuntado, sin
   const mid = await sessionOf(page, id);
   assert.strictEqual(mid.status, 'active', 'vuelve a estar activa');
   assert.deepStrictEqual(mid.exercises, before.exercises, 'las series siguen intactas');
+  const n0 = (await idbAll(page, 'sessions')).length;
   // Reintentar
   await pressFinish(fin).click();
   await page.locator('.cele').waitFor();
   assert.strictEqual((await sessionOf(page, id)).status, 'done');
   await page.evaluate(() => window.__app.store.flush());
-  assert.ok((await idbAll(page, 'sessions')).some((s) => s.id === id && s.status === 'done'), 'guardada en disco tras reintentar');
+  const all = await idbAll(page, 'sessions');
+  assert.ok(all.some((s) => s.id === id && s.status === 'done'), 'guardada en disco tras reintentar');
+  assert.strictEqual(all.length, n0, 'el fallo y el reintento no duplican sesiones');
+  assert.strictEqual(all.filter((s) => s.id === id).length, 1);
   await atSummary(page, id);
+}));
+
+// Actividades que se cierran con «Listo» (no tienen «Terminar sesión»): carrera, bici, natación, senderismo y otra
+for (const kind of ['run', 'bike', 'swim', 'hike', 'other']) {
+  test(`actividad (${kind}): «Listo» en una nueva guarda una sola vez y felicita (sin récord); omitir vuelve a la pantalla anterior`, () => withApp(async ({ page }) => {
+    await go(page, '#/today');
+    await go(page, `#/activity/new?kind=${kind}`);
+    await page.locator('input[aria-label$=": min"]').first().fill('40');
+    await settle(page);
+    await page.locator('.act-done').click();
+    await page.locator('.cele').waitFor();
+    assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
+    assert.strictEqual(await page.locator('.cele-pr').count(), 0, 'las actividades no destacan récords de ejercicio');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
+    assert.ok(!(await page.evaluate(() => location.hash)).startsWith('#/activity'), 'ya no está en el formulario');
+    const mine = (await idbAll(page, 'sessions')).filter((s) => s.kind === kind);
+    assert.strictEqual(mine.length, 1, 'guardada una sola vez');
+  }));
+}
+
+test('actividad: editar una antigua y pulsar «Listo» NO felicita', () => withApp(async ({ page }) => {
+  await go(page, '#/today');
+  await go(page, '#/activity/new?kind=run');
+  await page.locator('input[aria-label$=": min"]').first().fill('40');
+  await settle(page);
+  await page.locator('.act-done').click();
+  await page.locator('.cele').waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
+  const run = (await idbAll(page, 'sessions')).find((s) => s.kind === 'run');
+  await go(page, `#/activity/${run.id}`);
+  await page.locator('.act-done').click();
+  await page.waitForTimeout(600);
+  assert.strictEqual(await page.locator('.cele').count(), 0);
+}));
+
+test('actividad: si no se puede guardar lo pendiente, error, sin felicitación y sigue en el formulario; reintentar no duplica', () => withApp(async ({ page }) => {
+  await go(page, '#/today');
+  await go(page, '#/activity/new?kind=run');
+  await page.locator('input[aria-label$=": min"]').first().fill('40');
+  await settle(page);
+  const n0 = (await idbAll(page, 'sessions')).length;
+  await page.evaluate(() => {
+    const orig = IDBObjectStore.prototype.put;
+    window.__fails = 4; // db.put reintenta una vez; el guardado diferido también cuenta
+    IDBObjectStore.prototype.put = function (v, k) {
+      if (window.__fails > 0 && this.name === 'sessions' && v && v.kind === 'run') { window.__fails--; throw new DOMException('simulado', 'QuotaExceededError'); }
+      return orig.call(this, v, k);
+    };
+  });
+  await page.fill('[aria-label="Distancia (km)"]', '8');
+  await page.locator('.act-done').click();
+  await page.locator('.toast.toast-error').waitFor();
+  assert.strictEqual(await page.locator('.cele').count(), 0, 'sin felicitación si no se guardó');
+  assert.match(await page.evaluate(() => location.hash), /^#\/activity\//, 'se queda en el formulario');
+  await page.evaluate(() => { window.__fails = 0; });
+  await page.locator('.act-done').click();
+  await page.locator('.cele').waitFor();
+  await page.evaluate(() => window.__app.store.flush());
+  const runs = (await idbAll(page, 'sessions')).filter((s) => s.kind === 'run');
+  assert.strictEqual(runs.length, 1);
+  assert.strictEqual(runs[0].distanceKm, 8, 'lo escrito se conservó');
+  assert.strictEqual((await idbAll(page, 'sessions')).length, n0, 'sin duplicados');
 }));
 
 test('empezar sesión: destello breve de ~0,5 s que no bloquea ni tapa los toques; abre la sesión', () => withApp(async ({ page }) => {

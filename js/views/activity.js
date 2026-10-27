@@ -14,6 +14,7 @@ import * as L from '../activity-logic.js';
 import { syncLinkedDuration } from '../session-logic.js';
 import { checkActivity, split } from '../sanity.js';
 import { findDuplicate, findLikelyDuplicate } from '../import-logic.js';
+import { congratulate } from '../celebrate.js';
 
 const DRAFT_PREFIX = 'draft:activity:';
 const DRAFT_TTL = 48 * 3600 * 1000; // un borrador de hace más de 2 días ya no se ofrece
@@ -133,6 +134,7 @@ function mountForm(root, ctx) {
   let record = ctx.record; // objeto del store; null hasta que la actividad es válida
   let removed = false;
   let pendingSoon = false; // hay un saveSoon sin escribir aún en disco
+  let createdHere = false; // se creó en esta pantalla (no es editar una antigua): al pulsar «Listo» se felicita
   let unsaved = false; // el último cambio no se escribió por un dato imposible
   const parent = ctx.parent || (form.parentId ? store.get('sessions', form.parentId) : null);
   const parentSe = ctx.se || (parent && form.parentItemId ? (parent.exercises || []).find((x) => x.id === form.parentItemId) : null);
@@ -424,6 +426,7 @@ function mountForm(root, ctx) {
   function create() {
     saveDraftSoon.cancel();
     record = L.buildRecord(form, null, { id: uid('a_') });
+    createdHere = true;
     store.save('sessions', record);
     syncParent();
     clearOwnDraft(form.kind, ctx.draftCtx);
@@ -622,7 +625,15 @@ function mountForm(root, ctx) {
       if (first) first.focus();
       return;
     }
-    flushRecord();
+    // Lo pendiente se escribe y se COMPRUEBA antes de seguir: si falla (el aviso ya lo muestra app.js), se queda aquí
+    // para reintentar con «Listo», sin felicitar ni salir.
+    if (pendingSoon && !removed) {
+      try { await store.save('sessions', record); } catch { return; }
+    }
+    pendingSoon = false;
+    // Una actividad nueva e independiente (carrera, bici, natación, senderismo u otra) se felicita como una sesión
+    // de fuerza; la enlazada a una sesión de fuerza se celebra al terminar esa sesión, y editar una antigua no.
+    if (createdHere && !form.parentId && !removed) congratulate(); // cubre la pantalla; no se espera
     back(backFallback);
     const p = form.parentId ? store.get('sessions', form.parentId) : null;
     if (p && p.status === 'done' && p.durationMin != null && parentMinAtOpen != null && p.durationMin !== parentMinAtOpen) {
