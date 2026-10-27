@@ -21,10 +21,10 @@ function build(todayExercises, history) {
 }
 
 test('mensajes: cortos, con exclamación, sin raya larga ni frases largas, y nunca el mismo dos veces seguidas', () => {
-  assert.ok(MESSAGES.length >= 5);
+  assert.ok(MESSAGES.length >= 3);
   for (const m of MESSAGES) {
     assert.match(m, /^¡.+!$/);
-    assert.ok(m.length <= 24, m);
+    assert.ok(m.length <= 16, `${m}: ha de caber en una línea`);
     assert.ok(!m.includes('—'));
   }
   for (const last of MESSAGES) {

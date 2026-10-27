@@ -2,7 +2,7 @@
 // (tests/unit/celebrate.test.mjs). La animación está en celebrate.js.
 
 /** Mensajes de felicitación: cortos y sin sermones. */
-export const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡A seguir!', '¡Sesión completada!', '¡Gran esfuerzo!'];
+export const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡Gran esfuerzo!', '¡Así se hace!'];
 
 /**
  * Ejercicios cuyos récords se destacan al terminar (por id, no por nombre: renombrar un ejercicio no lo saca de la

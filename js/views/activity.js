@@ -633,7 +633,7 @@ function mountForm(root, ctx) {
     pendingSoon = false;
     // Una actividad nueva e independiente (carrera, bici, natación, senderismo u otra) se felicita como una sesión
     // de fuerza; la enlazada a una sesión de fuerza se celebra al terminar esa sesión, y editar una antigua no.
-    if (createdHere && !form.parentId && !removed) congratulate(); // cubre la pantalla; no se espera
+    if (createdHere && !form.parentId && !removed) congratulate(null, record.kind); // cubre la pantalla; no se espera
     back(backFallback);
     const p = form.parentId ? store.get('sessions', form.parentId) : null;
     if (p && p.status === 'done' && p.durationMin != null && parentMinAtOpen != null && p.durationMin !== parentMinAtOpen) {

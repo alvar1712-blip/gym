@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { openApp, go, reload, idbAll, settle } = require('./helpers.cjs');
 
-const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡A seguir!', '¡Sesión completada!', '¡Gran esfuerzo!'];
+const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡Gran esfuerzo!', '¡Así se hace!'];
 const summaryHash = (id) => `#/session/${id}/summary`;
 const atSummary = (page, id) => page.waitForFunction((h) => location.hash.split('?')[0] === h, summaryHash(id), { timeout: 8000 });
 
@@ -250,13 +250,40 @@ test('movimiento reducido: sin destello al empezar y, al terminar, solo el mensa
   const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
   await pressFinish(await openFinish(page, id)).click();
   await page.locator('.cele').waitFor();
-  const shown = await page.evaluate(() => ['.cele-wipe', '.cele-burst', '.cele-ribbons'].map((s) => getComputedStyle(document.querySelector(s)).display));
+  const shown = await page.evaluate(() => ['.cele-sweep', '.cele-band', '.cele-ring'].map((s) => getComputedStyle(document.querySelector(s)).display));
   assert.deepStrictEqual(shown, ['none', 'none', 'none']);
   assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
   const t0 = Date.now();
   await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 4000 });
   assert.ok(Date.now() - t0 < 2200, 'más corta con movimiento reducido');
   await atSummary(page, id);
+}));
+
+test('composición: mensaje en una línea, icono según el deporte, el récord no mueve el mensaje y la duración total es la prevista', () => withApp(async ({ page }) => {
+  const info = (kind, record) => page.evaluate(async ({ kind, record }) => {
+    const c = await import('./js/celebrate.js');
+    const p = c.celebrate({ message: '¡Gran esfuerzo!', record, kind });
+    await new Promise((r) => setTimeout(r, 1300)); // ya entrada del todo
+    const m = document.querySelector('.cele-msg').getBoundingClientRect();
+    const lineH = parseFloat(getComputedStyle(document.querySelector('.cele-msg')).lineHeight);
+    const out = { top: Math.round(m.top), lines: Math.round(m.height / lineH), right: m.right, left: m.left, vw: innerWidth, d: document.querySelector('.cele-mark > svg.icon path').getAttribute('d').slice(0, 12) };
+    const t0 = performance.now();
+    await p;
+    out.ms = Math.round(performance.now() - t0);
+    return out;
+  }, { kind, record });
+  const strength = await info('strength', null);
+  const run = await info('run', null);
+  const withRecord = await info('strength', '¡Nuevo récord en press banca!');
+  for (const r of [strength, run, withRecord]) {
+    assert.strictEqual(r.lines, 1, 'una sola línea');
+    assert.ok(r.left >= 0 && r.right <= r.vw, 'dentro de la pantalla');
+  }
+  assert.notStrictEqual(run.d, strength.d, 'una carrera no usa la mancuerna');
+  assert.strictEqual(withRecord.top, strength.top, 'el récord no desplaza al mensaje');
+  // Total ≈ 3,0 s de espera + 0,86 s de salida (menos los 1,3 s ya transcurridos al medir)
+  assert.ok(strength.ms > 2200 && strength.ms < 3200, `sin récord ${strength.ms} ms`);
+  assert.ok(withRecord.ms > strength.ms + 300, `con récord dura algo más (${withRecord.ms} ms)`);
 }));
 
 test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): vuelve a la sesión, sin bienvenida y sin perder nada', () => withApp(async ({ page }) => {
