@@ -932,6 +932,8 @@ export function mountSession(root, params = {}) {
         kind: 'primary',
         onClick: async (close) => {
           if (session.status !== 'active') return; // doble toque
+          // El botón del que nace la felicitación: se toma ya, antes de esperar al guardado.
+          const finishBtn = document.querySelector('.ses-finish-sheet .sheet-actions .btn-primary');
           const now = Date.now();
           // Propuesta al instante de terminar (misma `now` que endedAt: así se puede recalcular después).
           const fresh = proposedDuration(session, linkedActivities(session, store.all('sessions')), now);
@@ -973,11 +975,22 @@ export function mountSession(root, params = {}) {
             return; // la hoja sigue abierta; el aviso de error ya lo muestra app.js
           }
           clearInterval(timer);
-          close();
-          await askTemplateChanges();
-          // La felicitación cubre la pantalla y el resumen se monta debajo: al terminar (o al omitirla) ya está listo.
-          const shown = congratulate(celebrationRecord(session));
-          navigate(`#/session/${session.id}/summary`, { replace: true });
+          // La felicitación nace del botón pulsado: mientras crece, la hoja sigue ahí; cuando ya cubre la pantalla se
+          // cierra la hoja y se monta el resumen debajo (onCovered), así que al terminar (o al omitirla) ya está listo.
+          // Si hay que preguntar por la plantilla, se pregunta antes (sin botón del que nacer: sale de abajo).
+          let origin = finishBtn;
+          if (templateChanges().length) {
+            close();
+            await askTemplateChanges();
+            origin = null;
+          }
+          const shown = congratulate(celebrationRecord(session), session.kind || 'strength', {
+            origin,
+            onCovered: () => {
+              if (origin) close();
+              navigate(`#/session/${session.id}/summary`, { replace: true });
+            },
+          });
           await shown;
         },
       }],
@@ -996,11 +1009,17 @@ export function mountSession(root, params = {}) {
     }
   }
 
+  /** Cambios de la sesión respecto a su plantilla (vacío si no hay plantilla o es igual). */
+  function templateChanges() {
+    const tpl = session.templateId ? store.get('templates', session.templateId) : null;
+    return tpl ? templateDiff(tpl, session, { nameOf: (eid) => store.exercise(eid)?.name }) : [];
+  }
+
   /** Si la sesión difiere de su plantilla, pregunta qué cambios aplicar. */
   function askTemplateChanges() {
     const tpl = session.templateId ? store.get('templates', session.templateId) : null;
     if (!tpl) return Promise.resolve(false);
-    const changes = templateDiff(tpl, session, { nameOf: (eid) => store.exercise(eid)?.name });
+    const changes = templateChanges();
     if (!changes.length) return Promise.resolve(false);
     return new Promise((resolve) => {
       // Segura por defecto: cambiar y añadir vienen marcados; quitar y reordenar, no (saltarse hoy un ejercicio o

@@ -1,61 +1,74 @@
-﻿// celebrate.js — animaciones de inicio y fin de sesión (css/celebrate.css; qué se dice: celebrate-logic.js).
-// Una sola coreografía: una cortina verde de bordes curvos cruza la pantalla de abajo arriba, deja un fondo negro con el
-// mensaje, el icono del deporte y una gran cinta verde que entra por arriba, da la vuelta fuera de la pantalla y vuelve
-// a entrar por abajo (enmarca el texto sin cruzarlo, y se transforma despacio); al final la cortina vuelve a pasar y deja
-// a la vista la pantalla de destino. Solo CSS, un morfado SVG (SMIL) y temporizadores de un disparo (sin librerías); con
-// movimiento reducido, solo un fundido. Nada de lo que hay debajo depende de ella: se navega y se guarda antes o a la
-// vez; si se omite (toque o tecla) o falla, la pantalla de debajo ya es la correcta.
+﻿// celebrate.js — animación de fin de sesión (css/celebrate.css; qué se dice: celebrate-logic.js).
+// Nace del botón que se acaba de pulsar («Terminar sesión», «Listo»): una superficie verde con su mismo color, radio y
+// etiqueta crece desde su posición real y, a la vez, sale de ella una S gruesa; juntas cubren la pantalla (≈0,7 s). Con
+// la pantalla de debajo ya tapada se hace el trabajo de pasar al destino (onCovered) y desde el centro se abre un iris
+// negro con la gran cinta verde, el icono de la actividad (su emoji de siempre) y el mensaje. Al final una cortina
+// ondulada vuelve a pasar y deja a la vista el destino. Solo CSS, un morfado SVG (SMIL) y temporizadores de un disparo
+// (sin librerías); con movimiento reducido, solo un fundido. Nada de lo que hay debajo depende de ella: se guarda antes;
+// si se omite (toque o tecla) o falla, onCovered se ejecuta igualmente y la pantalla de debajo es la correcta.
 import { h, icon } from './ui.js';
 import { pickMessage } from './celebrate-logic.js';
+import { ACTIVITY_EMOJI } from './seed.js';
 
-const HOLD_MS = 3300; // desde que empieza a entrar hasta que empieza a salir (entrada ≈0,95 s + mensaje legible ≈2,5 s)
-const HOLD_RECORD_MS = 3900; // con récord se alarga 0,6 s
+const COVER_MS = 620; // la expansión del botón + la S cubren la pantalla (coincide con cele-grow en celebrate.css)
+const HOLD_MS = 3700; // desde el toque hasta empezar a salir (mensaje completo a ≈1,3 s: se lee ≈2,4 s)
+const HOLD_RECORD_MS = 4300; // con récord se alarga 0,6 s
 const HOLD_REDUCED_MS = 1200;
-const SWEEP_MS = 820; // duración de cada pasada de la cortina; coincide con --sweep en celebrate.css
+const SWEEP_MS = 820; // duración de la cortina de salida; coincide con --sweep en celebrate.css
 const OUT_SKIP_MS = 160;
 const reduced = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-// Iconos del deporte (trazos 24×24, como los de ui.js). La fuerza y «otra» reutilizan los de la app.
-const SPORT = {
-  run: 'M15.5 3.2a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4ZM13 8.5l-3.2 2.6 2.7 2.4-1.6 5.5M9.8 11.1 6 11.8M13 8.5l2.6 3.2 3.2.6M12.5 13.5l3.6 2.2.6 4.6',
-  bike: 'M5.5 19a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM18.5 19a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM5.5 15.5 9.5 8h5l4 7.5M9.5 8l2.6 7.5H5.5M14.5 8l-1.2-2.5h-2.3',
-  swim: 'M16.5 4.2a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4ZM4 13.5l4-3.4 4.5 1.4 3.2 2.3M2 17.2c1.6 1.3 3.2 1.3 4.8 0s3.2-1.3 4.8 0 3.2 1.3 4.8 0 3.2-1.3 4.8 0M2 21c1.6 1.3 3.2 1.3 4.8 0s3.2-1.3 4.8 0 3.2 1.3 4.8 0 3.2-1.3 4.8 0',
-  hike: 'M2 20 9 7.5l4 6.5 2.6-4.2L22 20ZM9 7.5 7.4 10.3 9 9.5l1.6 1.2',
-};
-
-function sportIcon(kind, size) {
-  if (!SPORT[kind]) return icon(kind === 'other' ? 'bolt' : 'dumbbell', size);
-  const svg = icon('info', size); // se reutiliza el contenedor (mismo trazo y caps) y se cambia el dibujo
-  svg.querySelector('path').setAttribute('d', SPORT[kind]);
-  return svg;
-}
-
-// Símbolos pequeños de trazo blanco que aparecen y se separan un poco: posición final respecto al centro (vw, vh), giro
-// y retardo. Solo en las franjas libres entre las curvas y el mensaje: nunca cruzan el texto. Con récord solo los tres\n// de arriba (los de abajo chocarían con la línea del récord).
+// Símbolos pequeños (el emoji de la actividad) que aparecen y se separan un poco: posición final respecto al centro
+// (vw, vh), giro y retardo. Solo en las franjas libres entre las curvas y el mensaje; con récord, solo los de arriba.
 const AMBIENT = [
-  [-31, -19, -14, 760], [3, -20, 10, 840], [31, -17, 18, 920],
-  [-30, 18, 12, 1000], [2, 19, -8, 1080], [31, 17, -16, 1160],
+  [-31, -19, -14, 1130], [31, -17, 18, 1210],
+  [-30, 18, 12, 1290], [31, 17, -16, 1370],
 ];
 
 let current = null; // { el, finish }
 
+/** Rectángulo de origen: el del botón (Element o DOMRect) si es válido y se ve; si no, un botón ficticio abajo. */
+function originRect(origin, W, H) {
+  const r = origin?.getBoundingClientRect ? origin.getBoundingClientRect() : origin;
+  if (r && r.width > 8 && r.height > 8 && r.bottom > 0 && r.right > 0 && r.left < W && r.top < H) return r;
+  const w = Math.min(W - 32, 320);
+  return { left: (W - w) / 2, right: (W + w) / 2, top: H - 96, bottom: H - 40, width: w, height: 56 };
+}
+
 /**
  * Pantalla completa de felicitación. Devuelve una promesa que se resuelve cuando ya no está (al terminar o al omitirla
- * con un toque / Enter / Espacio / Escape). `kind`: strength|run|bike|swim|hike|other (elige el icono). `record`: texto
- * de un récord en un ejercicio principal (opcional, secundario al mensaje).
+ * con un toque / Enter / Espacio / Escape). `kind`: strength|run|bike|swim|hike|other (elige el emoji). `record`: texto
+ * de un récord en un ejercicio principal (opcional, secundario al mensaje). `origin`: el botón del que nace (Element o
+ * DOMRect). `onCovered`: se llama UNA vez cuando la pantalla de debajo ya está tapada (o al omitir): ahí se cierra la
+ * hoja y se navega al destino sin que se vea.
  */
-export function celebrate({ message, record = null, kind = 'strength' }) {
+export function celebrate({ message, record = null, kind = 'strength', origin = null, onCovered = null }) {
   current?.finish(true);
   const calm = reduced();
+  const W = document.documentElement.clientWidth;
+  const H = window.innerHeight;
+  const r = originRect(origin, W, H);
+  const st = origin?.nodeType === 1 ? getComputedStyle(origin) : null;
+  const bg = st && st.backgroundColor && st.backgroundColor !== 'rgba(0, 0, 0, 0)' ? st.backgroundColor : null;
+  const rad = Math.min(parseFloat(st?.borderTopLeftRadius) || 14, r.height / 2);
+  const emoji = ACTIVITY_EMOJI[kind] || '⚡';
   const msg = h('div.cele-msg', message);
-  const el = h('div.cele', { role: 'status', 'aria-label': `${message}${record ? ` ${record}` : ''}` },
+  const label = origin?.nodeType === 1 ? origin.textContent.trim() : '';
+  const el = h('div.cele', {
+    role: 'status', 'aria-label': `${message}${record ? ` ${record}` : ''}`,
+    style: `--it:${r.top}px;--ir:${W - r.right}px;--ib:${H - r.bottom}px;--il:${r.left}px;--rad:${rad}px${bg ? `;--gc:${bg}` : ''}`, // custom properties: solo valen como texto
+  },
+    h('div.cele-grow', { 'aria-hidden': 'true' }, label ? h('span.cele-grow-label', {
+      style: `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;${st ? `color:${st.color};font:${st.font}` : ''}`,
+    }, label) : null),
+    tendril(r, W, H),
     h('div.cele-scene',
       ribbon(),
-      h('div.cele-amb', { 'aria-hidden': 'true' }, AMBIENT.slice(0, record ? 3 : 6).map(([x, y, r, d], i) => h('span', {
-        style: `--x:${x}vw;--y:${y}vh;--r:${r}deg;--d:${d}ms`, // custom properties: solo valen como texto
-      }, i % 2 ? icon('check', 34) : sportIcon(kind, 34)))),
+      h('div.cele-amb', { 'aria-hidden': 'true' }, AMBIENT.filter((_, i) => !record || i < 2).map(([x, y, a, d]) => h('span', {
+        style: `--x:${x}vw;--y:${y}vh;--r:${a}deg;--d:${d}ms`,
+      }, emoji))),
       h('div.cele-center',
-        h('div.cele-mark', { 'aria-hidden': 'true' }, sportIcon(kind, 88)),
+        h('div.cele-mark', { 'aria-hidden': 'true' }, emoji),
         h('div.cele-text', msg, record ? h('div.cele-pr', icon('trophy', 22), h('span', record)) : null))),
     h('div.cele-sweep.cele-sweep-a', { 'aria-hidden': 'true' }, sweepShape()),
     h('div.cele-sweep.cele-sweep-b', { 'aria-hidden': 'true' }, sweepShape()));
@@ -65,11 +78,20 @@ export function celebrate({ message, record = null, kind = 'strength' }) {
   return new Promise((resolve) => {
     let hold = null;
     let done = false;
+    let covered = false;
+    const cover = () => {
+      if (covered) return;
+      covered = true;
+      clearTimeout(coverT);
+      try { onCovered?.(); } catch (err) { console.error('[celebrar] onCovered', err); }
+    };
+    const coverT = setTimeout(cover, calm ? 0 : COVER_MS);
     const end = () => { el.remove(); if (current?.el === el) current = null; resolve(); };
     const finish = (skip = false) => {
       if (done) return;
       done = true;
       clearTimeout(hold);
+      cover(); // si se omite antes de tiempo, el destino se monta igualmente
       document.removeEventListener('keydown', onKey, true);
       el.removeEventListener('pointerdown', onTap);
       el.classList.add(skip || calm ? 'cele-skip' : 'cele-out');
@@ -93,13 +115,20 @@ const MSG_KEY = 'entreno.lastCongrats';
 /**
  * Felicitación al terminar cualquier tipo de sesión (fuerza o actividad): elige un mensaje que no sea el último que se
  * mostró (se recuerda en localStorage; si no se puede, da igual) y lo celebra. `record`: texto de récord (opcional).
+ * `opts`: { origin, onCovered } (ver celebrate). Si algo fallara al montarla, onCovered se llama igual.
  */
-export function congratulate(record = null, kind = 'strength') {
+export function congratulate(record = null, kind = 'strength', opts = {}) {
   let last = null;
   try { last = localStorage.getItem(MSG_KEY); } catch { /* almacenamiento bloqueado */ }
   const message = pickMessage(Math.random, last);
   try { localStorage.setItem(MSG_KEY, message); } catch { /* almacenamiento bloqueado */ }
-  return celebrate({ message, record, kind });
+  try {
+    return celebrate({ message, record, kind, ...opts });
+  } catch (err) {
+    console.error('[celebrar]', err);
+    try { opts.onCovered?.(); } catch (e) { console.error('[celebrar] onCovered', e); }
+    return Promise.resolve();
+  }
 }
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -107,6 +136,18 @@ function svgEl(name, attrs) {
   const n = document.createElementNS(NS, name);
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
   return n;
+}
+
+/** La S que sale del botón: una banda gruesa que se dibuja desde su centro hacia arriba, mientras el botón crece. */
+function tendril(r, W, H) {
+  const cx = (r.left + r.right) / 2;
+  const cy = (r.top + r.bottom) / 2;
+  const svg = svgEl('svg', { class: 'cele-tendril', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+  svg.appendChild(svgEl('path', {
+    d: `M ${cx} ${cy} C ${W * 1.1} ${cy - H * 0.04} ${W * 0.98} ${H * 0.5} ${W * 0.5} ${H * 0.46} S ${-W * 0.1} ${H * 0.3} ${W * 0.66} ${-H * 0.14}`,
+    pathLength: '1', 'stroke-width': String(Math.round(W * 0.36)),
+  }));
+  return svg;
 }
 
 // La cinta: un solo trazo. Baja por la derecha, cruza la parte alta hacia la izquierda, da la vuelta FUERA de la pantalla
@@ -119,14 +160,14 @@ function ribbon() {
   const svg = svgEl('svg', { class: 'cele-ribbon', viewBox: '0 0 390 844', preserveAspectRatio: 'xMidYMid slice', 'aria-hidden': 'true' });
   const p = svgEl('path', { d: RIBBON_A, pathLength: '1' });
   p.appendChild(svgEl('animate', {
-    attributeName: 'd', dur: '3.8s', begin: '1.7s', repeatCount: 'indefinite', calcMode: 'spline',
+    attributeName: 'd', dur: '3.8s', begin: '2.2s', repeatCount: 'indefinite', calcMode: 'spline',
     keyTimes: '0;0.5;1', keySplines: '0.45 0 0.55 1;0.45 0 0.55 1', values: `${RIBBON_A};${RIBBON_B};${RIBBON_A}`,
   }));
   svg.appendChild(p);
   return svg;
 }
 
-/** Cortina: más alta que la pantalla, con el borde de ataque y el de salida ondulados (se estira a la pantalla). */
+/** Cortina de salida: más alta que la pantalla, con el borde de ataque y el de salida ondulados (se estira a la pantalla). */
 function sweepShape() {
   const svg = svgEl('svg', { viewBox: '0 0 390 1860', preserveAspectRatio: 'none' });
   svg.appendChild(svgEl('path', {

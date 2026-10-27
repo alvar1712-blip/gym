@@ -633,8 +633,9 @@ function mountForm(root, ctx) {
     pendingSoon = false;
     // Una actividad nueva e independiente (carrera, bici, natación, senderismo u otra) se felicita como una sesión
     // de fuerza; la enlazada a una sesión de fuerza se celebra al terminar esa sesión, y editar una antigua no.
-    if (createdHere && !form.parentId && !removed) congratulate(null, record.kind); // cubre la pantalla; no se espera
-    back(backFallback);
+    // Nace del botón «Listo»; cuando ya cubre la pantalla se vuelve atrás (onCovered), sin que se vea. No se espera.
+    if (createdHere && !form.parentId && !removed) congratulate(null, record.kind, { origin: doneBtn, onCovered: () => back(backFallback) });
+    else back(backFallback);
     const p = form.parentId ? store.get('sessions', form.parentId) : null;
     if (p && p.status === 'done' && p.durationMin != null && parentMinAtOpen != null && p.durationMin !== parentMinAtOpen) {
       toast(`Duración de la fuerza recalculada: ${fmtMinutes(parentMinAtOpen)} → ${fmtMinutes(p.durationMin)} (sin el cardio enlazado).`);

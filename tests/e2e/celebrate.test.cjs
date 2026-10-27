@@ -263,10 +263,10 @@ test('composición: mensaje en una línea, icono según el deporte, el récord n
   const info = (kind, record) => page.evaluate(async ({ kind, record }) => {
     const c = await import('./js/celebrate.js');
     const p = c.celebrate({ message: '¡Gran esfuerzo!', record, kind });
-    await new Promise((r) => setTimeout(r, 1300)); // ya entrada del todo
+    await new Promise((r) => setTimeout(r, 1800)); // ya entrada del todo
     const m = document.querySelector('.cele-msg').getBoundingClientRect();
     const lineH = parseFloat(getComputedStyle(document.querySelector('.cele-msg')).lineHeight);
-    const out = { top: Math.round(m.top), lines: Math.round(m.height / lineH), right: m.right, left: m.left, vw: innerWidth, d: document.querySelector('.cele-mark > svg.icon path').getAttribute('d').slice(0, 12) };
+    const out = { top: Math.round(m.top), lines: Math.round(m.height / lineH), right: m.right, left: m.left, vw: innerWidth, d: document.querySelector('.cele-mark').textContent };
     const t0 = performance.now();
     await p;
     out.ms = Math.round(performance.now() - t0);
@@ -279,10 +279,11 @@ test('composición: mensaje en una línea, icono según el deporte, el récord n
     assert.strictEqual(r.lines, 1, 'una sola línea');
     assert.ok(r.left >= 0 && r.right <= r.vw, 'dentro de la pantalla');
   }
-  assert.notStrictEqual(run.d, strength.d, 'una carrera no usa la mancuerna');
+  assert.strictEqual(strength.d, '🏋️', 'fuerza: la pesa de siempre');
+  assert.strictEqual(run.d, '🏃', 'una carrera usa el corredor, no la pesa');
   assert.strictEqual(withRecord.top, strength.top, 'el récord no desplaza al mensaje');
-  // Total ≈ 3,0 s de espera + 0,86 s de salida (menos los 1,3 s ya transcurridos al medir)
-  assert.ok(strength.ms > 2200 && strength.ms < 3200, `sin récord ${strength.ms} ms`);
+  // Total ≈ 3,7 s de espera + 0,86 s de salida (menos los 1,8 s ya transcurridos al medir)
+  assert.ok(strength.ms > 2300 && strength.ms < 3500, `sin récord ${strength.ms} ms`);
   assert.ok(withRecord.ms > strength.ms + 300, `con récord dura algo más (${withRecord.ms} ms)`);
 }));
 
