@@ -1,0 +1,210 @@
+// Animaciones de inicio y fin de sesión (js/celebrate.js, js/celebrate-logic.js):
+//   · terminar: guarda y SOLO después se felicita (mensaje corto y variado); acaba en el resumen; se puede omitir;
+//   · récord: solo de ejercicios principales (celebrate-logic.MAIN_LIFTS), nunca de accesorios; uno solo;
+//   · si guardar falla: error, la sesión vuelve a estar activa y se puede reintentar sin perder nada; sin duplicados;
+//   · empezar: destello breve que no bloquea; movimiento reducido: sin destello y solo mensaje;
+//   · bloquear y desbloquear (iOS recarga la página) con una sesión en curso: vuelve a la sesión sin bienvenida.
+// Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/celebrate.test.cjs  (E2E_BROWSER=webkit para Safari)
+const test = require('node:test');
+const assert = require('node:assert');
+const { openApp, go, reload, idbAll } = require('./helpers.cjs');
+
+const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡A seguir!', '¡Sesión completada!', '¡Gran esfuerzo!'];
+const summaryHash = (id) => `#/session/${id}/summary`;
+const atSummary = (page, id) => page.waitForFunction((h) => location.hash.split('?')[0] === h, summaryHash(id), { timeout: 8000 });
+
+/** Historial (sesión terminada hace meses) y una sesión de hoy en curso; cada ejercicio: [id, kg, reps] con la serie hecha. */
+async function seed(page, { hist, today }) {
+  return page.evaluate(async ({ hist, today }) => {
+    const m = await import('./js/session-logic.js');
+    const st = window.__app.store;
+    const fill = (s, list) => {
+      for (const [eid, w, r] of list) {
+        const se = m.newSessionExercise(eid, s);
+        const set = m.newSet(null, se);
+        Object.assign(set, { weight: w, reps: r, done: true, doneAt: Date.now() });
+        se.sets = [set];
+        s.exercises.push(se);
+      }
+    };
+    const h = await m.createStrengthSession({ templateId: null, date: '2026-01-05', past: true });
+    fill(h, hist);
+    Object.assign(h, { status: 'done', durationMin: 50, rpe: 7 });
+    await st.save('sessions', h);
+    const t = await m.createStrengthSession({ templateId: null });
+    fill(t, today);
+    await st.save('sessions', t);
+    return t.id;
+  }, { hist, today });
+}
+
+async function openFinish(page, id) {
+  await go(page, `#/session/${id}`);
+  await page.locator('.ses-finish').click();
+  const fin = page.locator('.sheet-panel.ses-finish-sheet');
+  await fin.waitFor();
+  await fin.locator('.ses-dur input').fill('45');
+  return fin;
+}
+const pressFinish = (fin) => fin.locator('.sheet-actions button', { hasText: 'Terminar sesión' });
+const sessionOf = (page, id) => page.evaluate((sid) => window.__app.store.get('sessions', sid), id);
+
+async function withApp(fn) {
+  const app = await openApp({ exampleWeek: true });
+  try {
+    await fn(app);
+    assert.deepStrictEqual(app.errors.filter((e) => !/No se pudo guardar|simulado/.test(e)), []);
+  } finally {
+    await app.close();
+  }
+}
+
+test('terminar: se guarda, felicita con un mensaje corto, destaca el récord de un ejercicio principal y acaba en el resumen', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [['press_banca', 80, 5], ['elevaciones_laterales', 10, 12]], today: [['press_banca', 90, 5], ['elevaciones_laterales', 12, 12]] });
+  const fin = await openFinish(page, id);
+  await pressFinish(fin).click();
+  await page.locator('.cele').waitFor();
+  // Guardada ANTES de la animación
+  assert.strictEqual((await sessionOf(page, id)).status, 'done');
+  assert.ok((await idbAll(page, 'sessions')).some((s) => s.id === id && s.status === 'done'), 'en disco');
+  const msg = await page.locator('.cele-msg').innerText();
+  assert.ok(MESSAGES.includes(msg), `mensaje de la colección: ${msg}`);
+  assert.strictEqual(await page.locator('.cele-pr').innerText(), '¡Nuevo récord en press banca!', 'un solo récord, el del ejercicio principal');
+  assert.strictEqual(await page.locator('.cele-pr').count(), 1, 'ni listas ni accesorios (laterales también batió su marca)');
+  // Acaba sola, en el resumen de ESA sesión, en unos 2-3 s
+  const t0 = Date.now();
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 6000 });
+  assert.ok(Date.now() - t0 < 4500, `dura 2-3 s (${Date.now() - t0} ms restantes)`);
+  await atSummary(page, id);
+}));
+
+test('récord solo en un accesorio: felicitación normal, sin mensaje de récord', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [['elevaciones_laterales', 10, 12]], today: [['elevaciones_laterales', 12, 12]] });
+  await pressFinish(await openFinish(page, id)).click();
+  await page.locator('.cele').waitFor();
+  assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
+  assert.strictEqual(await page.locator('.cele-pr').count(), 0);
+}));
+
+test('primera sesión con el ejercicio o igualar la marca: no es récord', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [['sentadilla', 100, 5]], today: [['press_banca', 90, 5], ['sentadilla', 100, 5]] });
+  await pressFinish(await openFinish(page, id)).click();
+  await page.locator('.cele').waitFor();
+  assert.strictEqual(await page.locator('.cele-pr').count(), 0);
+}));
+
+test('omitir con un toque: sale enseguida y llega al resumen correcto', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [['press_banca', 80, 5]], today: [['press_banca', 90, 5]] });
+  await pressFinish(await openFinish(page, id)).click();
+  await page.locator('.cele').waitFor();
+  const t0 = Date.now();
+  await page.locator('.cele').click({ position: { x: 20, y: 200 } });
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
+  assert.ok(Date.now() - t0 < 900, `salida corta (${Date.now() - t0} ms)`);
+  await atSummary(page, id);
+  assert.strictEqual(await page.locator('.cele').count(), 0);
+}));
+
+test('omitir con el teclado (Escape): mismo resultado', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
+  await pressFinish(await openFinish(page, id)).click();
+  await page.locator('.cele').waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
+  await atSummary(page, id);
+}));
+
+test('doble toque en «Terminar sesión»: una sola sesión terminada y una sola felicitación', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
+  const before = (await idbAll(page, 'sessions')).length;
+  await pressFinish(await openFinish(page, id)).dblclick();
+  await page.locator('.cele').waitFor();
+  assert.strictEqual(await page.locator('.cele').count(), 1);
+  await page.evaluate(() => window.__app.store.flush());
+  const all = await idbAll(page, 'sessions');
+  assert.strictEqual(all.length, before, 'sin sesiones duplicadas');
+  assert.strictEqual(all.filter((s) => s.id === id && s.status === 'done').length, 1);
+}));
+
+test('fallo al guardar: error, la sesión sigue activa con todo lo apuntado, sin animación; reintentar funciona', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
+  const fin = await openFinish(page, id);
+  const before = await sessionOf(page, id);
+  await page.evaluate(() => {
+    const orig = IDBObjectStore.prototype.put;
+    window.__fails = 2; // db.put reintenta una vez (iOS pierde la conexión al volver de segundo plano): fallan los dos intentos
+    IDBObjectStore.prototype.put = function (v, k) {
+      if (window.__fails > 0 && this.name === 'sessions' && v && v.status === 'done') {
+        window.__fails--;
+        throw new DOMException('simulado', 'QuotaExceededError');
+      }
+      return orig.call(this, v, k);
+    };
+  });
+  await pressFinish(fin).click();
+  await page.locator('.toast.toast-error').waitFor();
+  assert.match(await page.locator('.toast.toast-error').innerText(), /No se pudo guardar/);
+  assert.strictEqual(await page.locator('.cele').count(), 0, 'sin felicitación si no se guardó');
+  assert.ok(await fin.isVisible(), 'la hoja sigue abierta para reintentar');
+  assert.match(await fin.innerText(), /No se pudo guardar la sesión/);
+  const mid = await sessionOf(page, id);
+  assert.strictEqual(mid.status, 'active', 'vuelve a estar activa');
+  assert.deepStrictEqual(mid.exercises, before.exercises, 'las series siguen intactas');
+  // Reintentar
+  await pressFinish(fin).click();
+  await page.locator('.cele').waitFor();
+  assert.strictEqual((await sessionOf(page, id)).status, 'done');
+  await page.evaluate(() => window.__app.store.flush());
+  assert.ok((await idbAll(page, 'sessions')).some((s) => s.id === id && s.status === 'done'), 'guardada en disco tras reintentar');
+  await atSummary(page, id);
+}));
+
+test('empezar sesión: destello breve de ~0,5 s que no bloquea ni tapa los toques; abre la sesión', () => withApp(async ({ page }) => {
+  await go(page, '#/today');
+  const t0 = Date.now();
+  const id = await page.evaluate(async () => (await (await import('./js/plan-ui.js')).startStrength({ templateId: 'tpl_d1' })).id);
+  await page.locator('.cele-start').waitFor({ state: 'attached' });
+  assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.cele-start')).pointerEvents), 'none', 'no recoge toques');
+  assert.strictEqual(await page.evaluate(() => location.hash.split('?')[0]), `#/session/${id}`, 'ya está en la sesión');
+  await page.waitForFunction(() => !document.querySelector('.cele-start'), null, { timeout: 2000 });
+  const ms = Date.now() - t0;
+  assert.ok(ms >= 300 && ms < 1500, `dura unos 300-600 ms (${ms} ms con la carga)`);
+}));
+
+test('movimiento reducido: sin destello al empezar y, al terminar, solo el mensaje (sin barrido, iconos ni cintas)', () => withApp(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await go(page, '#/today');
+  await page.evaluate(async () => { await (await import('./js/plan-ui.js')).startStrength({ templateId: 'tpl_d1' }); });
+  await page.waitForFunction(() => location.hash.startsWith('#/session/'));
+  assert.strictEqual(await page.locator('.cele-start').count(), 0);
+  await page.evaluate(() => window.__app.navigate('#/today'));
+  const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
+  await pressFinish(await openFinish(page, id)).click();
+  await page.locator('.cele').waitFor();
+  const shown = await page.evaluate(() => ['.cele-wipe', '.cele-burst', '.cele-ribbons'].map((s) => getComputedStyle(document.querySelector(s)).display));
+  assert.deepStrictEqual(shown, ['none', 'none', 'none']);
+  assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
+  const t0 = Date.now();
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 4000 });
+  assert.ok(Date.now() - t0 < 2200, 'más corta con movimiento reducido');
+  await atSummary(page, id);
+}));
+
+test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): vuelve a la sesión, sin bienvenida y sin perder nada', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
+  await go(page, `#/session/${id}`);
+  await page.waitForSelector('.ses-finish');
+  const before = await sessionOf(page, id);
+  // Bloquear: segundo plano; el sistema descarta la página y al desbloquear se vuelve a cargar
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.evaluate(() => { delete document.visibilityState; });
+  await reload(page);
+  assert.strictEqual(await page.locator('#splash').count(), 0, 'sin bienvenida');
+  assert.strictEqual(await page.evaluate(() => window.__boot.skipped), true);
+  assert.strictEqual(await page.evaluate(() => location.hash.split('?')[0]), `#/session/${id}`, 'misma sesión en curso');
+  await page.waitForSelector('.ses-finish');
+  assert.deepStrictEqual((await sessionOf(page, id)).exercises, before.exercises, 'series intactas');
+}));

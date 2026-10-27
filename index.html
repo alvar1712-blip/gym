@@ -41,6 +41,13 @@
     // pantalla de inicio de iOS (entonces su imagen de arranque ya enseña el logo: sin animación de entrada).
     window.__boot = { t0: performance.now() };
     if (navigator.standalone) document.documentElement.classList.add('splash-static');
+    // Bienvenida solo tras una pausa: si la app se usó hace menos de 5 min (js/app.js escribe esta marca al pasar a
+    // segundo plano y, como mucho cada 15 s, al tocarla; sin temporizadores), se omite. Mantener el nombre y el tope
+    // en sincronía con ACTIVE_KEY y WELCOME_AFTER_MS de js/app.js.
+    try {
+      var gap = Date.now() - Number(localStorage.getItem('entreno.lastActive'));
+      if (gap >= 0 && gap < 300000) document.documentElement.classList.add('splash-skip');
+    } catch (e) { /* almacenamiento bloqueado: se enseña la bienvenida */ }
   </script>
   <!-- splash:start (scripts/make-splash.cjs) -->
   <link rel="apple-touch-startup-image" href="splash/splash-640x1136.png" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"><!-- SE (1.ª) -->
@@ -70,6 +77,7 @@
   <link rel="stylesheet" href="css/analysis.css">
   <link rel="stylesheet" href="css/cycle.css">
   <link rel="stylesheet" href="css/context.css">
+  <link rel="stylesheet" href="css/celebrate.css">
 </head>
 <body>
   <div id="splash" role="img" aria-label="Entreno">

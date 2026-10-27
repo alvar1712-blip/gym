@@ -10,6 +10,7 @@ import { pickTemplate } from './pickers.js';
 import { STATUS_LABEL } from './plan.js';
 import { sessionSummary } from './history-logic.js';
 import { subtypeFromNotes } from './activity-logic.js';
+import { playStart } from './celebrate.js';
 
 export const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
@@ -114,6 +115,7 @@ export async function startStrength({ templateId = null, date = todayStr(), plan
   starting = true;
   try {
     const s = await sessionLogic.createStrengthSession({ templateId, date, planDate, past });
+    if (!past) playStart(); // destello de ~0,5 s que no bloquea; una sesión a posteriori no «empieza» ahora
     navigate(`#/session/${s.id}`);
     return s;
   } catch (err) {

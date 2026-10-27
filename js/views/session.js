@@ -7,7 +7,14 @@ import {
   rpePicker, field, textInput, numInput, emptyState, scrollPageTo, focusBar, chips,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
-import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions } from '../calc.js';
+import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions, sessionPRs } from '../calc.js';
+import { pickMessage, mainRecord } from '../celebrate-logic.js';
+import { celebrate } from '../celebrate.js';
+
+// Último mensaje de felicitación mostrado (para no repetirlo dos veces seguidas); si no se puede guardar, da igual.
+const MSG_KEY = 'entreno.lastCongrats';
+const lastMessage = () => { try { return localStorage.getItem(MSG_KEY); } catch { return null; } };
+const rememberMessage = (m) => { try { localStorage.setItem(MSG_KEY, m); } catch { /* almacenamiento bloqueado */ } };
 import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import { exerciseHistory } from '../stats.js';
@@ -956,15 +963,45 @@ export function mountSession(root, params = {}) {
           // no vuelve a «hasta ahora» si después cambia una actividad enlazada.
           const endedAt = !fresh.stale ? now
             : fresh.endAt ?? Math.min(now, session.startedAt + (Math.max(0, minutes) + fresh.activitiesMin) * 60000);
+          // finishSession muta la sesión (descarta series pendientes y la marca terminada) y el guardado puede fallar:
+          // con una copia previa se vuelve exactamente al estado anterior para poder reintentar sin perder nada.
+          // Mientras se guarda, `status` ya no es 'active': un segundo toque cae en el guard de arriba (sin duplicar).
+          const before = deepClone(session);
           finishSession(session, { durationMin: minutes, rpe, notes: session.notes, now, endedAt, auto });
+          try {
+            await store.save('sessions', session);
+          } catch (err) {
+            for (const k of Object.keys(session)) delete session[k];
+            Object.assign(session, before);
+            durErr.textContent = 'No se pudo guardar la sesión. No se ha perdido nada: vuelve a pulsar «Terminar sesión».';
+            durErr.hidden = false;
+            return; // la hoja sigue abierta; el aviso de error ya lo muestra app.js
+          }
           clearInterval(timer);
-          await store.save('sessions', session).catch(() => {});
           close();
           await askTemplateChanges();
+          const message = pickMessage(Math.random, lastMessage());
+          rememberMessage(message);
+          const record = celebrationRecord(session);
+          // La felicitación cubre la pantalla y el resumen se monta debajo: al terminar (o al omitirla) ya está listo.
+          const shown = celebrate({ message, record });
           navigate(`#/session/${session.id}/summary`, { replace: true });
+          await shown;
         },
       }],
     });
+  }
+
+  /** Texto de un récord en un ejercicio PRINCIPAL de esta sesión (celebrate-logic.MAIN_LIFTS), o null. Nunca rompe el cierre. */
+  function celebrationRecord(s) {
+    try {
+      const exMap = new Map(store.all('exercises').map((e) => [e.id, e]));
+      const bwFn = makeBodyweightFn(store.bodyweightList(), store.settings()?.bodyweightDefault ?? 75);
+      return mainRecord(s, sessionPRs(s, store.all('sessions'), exMap, bwFn), (id) => exMap.get(id))?.text ?? null;
+    } catch (err) {
+      console.error('[celebrar] récord', err);
+      return null;
+    }
   }
 
   /** Si la sesión difiere de su plantilla, pregunta qué cambios aplicar. */

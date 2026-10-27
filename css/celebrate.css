@@ -1,0 +1,112 @@
+/* celebrate.css — animación de fin de sesión (js/celebrate.js) y transición breve de inicio.
+   Secuencia (≈1 s de movimiento + pausa): barrido verde desde la esquina inferior derecha → fondo negro → iconos que
+   salen del centro y mensaje grande → dos cintas verdes que se dibujan. Solo transform/opacity/clip-path/stroke-dashoffset. */
+.cele {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000; /* por encima de hojas y avisos; por debajo de la bienvenida (2147483000) */
+  overflow: hidden;
+  touch-action: none;
+  color: #fff;
+  cursor: pointer;
+}
+.cele-bg { position: absolute; inset: 0; background: var(--bg); opacity: 0; animation: cele-fade-in 140ms 240ms linear forwards; }
+.cele-wipe {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  clip-path: circle(0 at 100% 100%);
+  animation: cele-wipe 440ms var(--ease-ios) forwards, cele-fade-out 220ms 420ms linear forwards;
+}
+.cele-burst { position: absolute; inset: 0; pointer-events: none; }
+.cele-bit {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  opacity: 0;
+  color: #fff;
+  animation: cele-fly 900ms var(--d) cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+.cele-ribbons { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cele-ribbon {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 44;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: cele-draw 560ms var(--d) var(--ease-ios) forwards;
+}
+.cele-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 28px;
+  text-align: center;
+  pointer-events: none;
+}
+.cele-mark { color: var(--accent); opacity: 0; animation: cele-pop 380ms 480ms var(--spring-soft) forwards; }
+.cele-msg {
+  font-size: clamp(40px, 13vw, 66px);
+  font-weight: 800;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  opacity: 0;
+  animation: cele-pop 420ms 520ms var(--spring-soft) forwards;
+}
+.cele-pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: calc(18px * var(--ts, 1));
+  font-weight: 700;
+  color: var(--accent);
+  opacity: 0;
+  animation: cele-pop 360ms 960ms var(--spring-soft) forwards;
+}
+.cele.cele-out { animation: cele-fade-out 300ms ease forwards; }
+.cele.cele-skip { animation: cele-fade-out 160ms ease forwards; }
+
+@keyframes cele-fade-in { to { opacity: 1; } }
+@keyframes cele-fade-out { to { opacity: 0; } }
+@keyframes cele-wipe { to { clip-path: circle(150% at 100% 100%); } }
+@keyframes cele-draw { to { stroke-dashoffset: 0; } }
+@keyframes cele-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.9); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cele-fly {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) rotate(var(--r)) scale(var(--s)); }
+}
+
+/* Inicio de sesión: un destello breve con el icono (≈0,5 s); no recoge toques. */
+.cele-start {
+  position: fixed;
+  inset: 0;
+  z-index: 2147481000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 13, 16, 0.94);
+  pointer-events: none;
+  opacity: 0;
+  animation: cele-start 480ms ease-out forwards;
+}
+.cele-start-mark { color: var(--accent); animation: cele-start-mark 480ms var(--spring-soft) forwards; }
+@keyframes cele-start { 0% { opacity: 0; } 25% { opacity: 1; } 65% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes cele-start-mark { from { transform: scale(0.8); } to { transform: scale(1.04); } }
+
+/* Movimiento reducido: sin barrido, iconos ni cintas; solo el mensaje con un fundido corto. */
+@media (prefers-reduced-motion: reduce) {
+  .cele-wipe, .cele-burst, .cele-ribbons { display: none; }
+  .cele-bg { opacity: 1; animation: none; }
+  .cele-mark, .cele-msg, .cele-pr { opacity: 0; animation: cele-fade-in 150ms linear forwards; transform: none; }
+  .cele.cele-out, .cele.cele-skip { animation-duration: 120ms; }
+}
