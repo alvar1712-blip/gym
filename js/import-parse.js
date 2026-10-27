@@ -12,7 +12,7 @@
 //   (los cortes entre <trkseg>/<Track> no se marcan: los huecos se tratan con la regla de huecos sin avance)
 // summarize(parsed) las convierte en métricas (Summary), con la serie distancia–tiempo (`series`, best-efforts.js) y
 // las vueltas para los parciales de las carreras. readActivityFile(nombre, bytes) hace todo el proceso.
-import { ImportError, toU8, isGzip, isZip, gunzip, zipEntries, zipRead, baseName, isJunkEntry } from './import-zip.js';
+import { ImportError, toU8, isGzip, isZip, gunzip, zipEntries, zipRead, baseName, isJunkEntry, newInflateBudget } from './import-zip.js';
 import { buildSeries, SPIKE_SPEED } from './best-efforts.js';
 import { sportToKind } from './import-logic.js';
 
@@ -842,13 +842,13 @@ export function parseActivityBytes(format, input) {
   throw new ImportError(`Formato no reconocido. ${FORMAT_HELP}`);
 }
 
-async function expand(name, label, srcName, u8, depth, out, inZip) {
+async function expand(name, label, srcName, u8, depth, out, inZip, budget) {
   const format = detectFormat(u8, name);
   if (format === 'gzip') {
     if (depth > 3) return;
     let inner;
-    try { inner = await gunzip(u8); } catch (err) { out.push({ label, fileName: srcName, error: errText(err) }); return; }
-    await expand(name.replace(/\.gz$/i, ''), label, srcName, inner, depth + 1, out, inZip);
+    try { inner = await gunzip(u8, budget); } catch (err) { out.push({ label, fileName: srcName, error: errText(err) }); return; }
+    await expand(name.replace(/\.gz$/i, ''), label, srcName, inner, depth + 1, out, inZip, budget);
     return;
   }
   if (format === 'zip') {
@@ -860,11 +860,11 @@ async function expand(name, label, srcName, u8, depth, out, inZip) {
       const base = baseName(e.name);
       const sub = `${label} › ${base}`;
       let bytes;
-      try { bytes = await zipRead(u8, e); } catch (err) {
+      try { bytes = await zipRead(u8, e, budget); } catch (err) {
         if (/\.(gpx|tcx|fit)(\.gz)?$/i.test(base)) out.push({ label: sub, fileName: base, error: errText(err) });
         continue;
       }
-      await expand(base, sub, base, bytes, depth + 1, out, true);
+      await expand(base, sub, base, bytes, depth + 1, out, true, budget);
     }
     if (out.length === before) out.push({ label, fileName: srcName, error: `El .zip no contiene actividades. ${FORMAT_HELP}` });
     return;
@@ -901,7 +901,7 @@ export async function readActivityFile(name, input) {
   const out = [];
   const fileName = String(name || 'archivo');
   try {
-    await expand(fileName, fileName, fileName, toU8(input), 0, out, false);
+    await expand(fileName, fileName, fileName, toU8(input), 0, out, false, newInflateBudget());
   } catch (err) {
     out.push({ label: fileName, fileName, error: errText(err) });
   }

@@ -23,26 +23,59 @@ export const isGzip = (u8) => u8.length >= 2 && u8[0] === 0x1f && u8[1] === 0x8b
 export const isZip = (u8) => u8.length >= 4 && u8[0] === 0x50 && u8[1] === 0x4b
   && ((u8[2] === 3 && u8[3] === 4) || (u8[2] === 5 && u8[3] === 6));
 
-async function decompress(u8, format) {
+/**
+ * Topes de descompresión contra «bombas» .gz/.zip. Se aplican a los bytes que de verdad salen del descompresor (no
+ * al tamaño que declara el .zip, que un archivo manipulado puede falsear). Por archivo: pico de memoria (los trozos
+ * más la copia final, ~2×); un GPX de 24 h a 1 Hz pesa ~13 MB. Por importación (suma de todo lo descomprimido):
+ * acota el tiempo de CPU con un .zip de miles de entradas; la memoria no se acumula porque cada entrada se libera.
+ * Medido en escritorio: ~24 ms por MB (descomprimir + analizar) con pico de memoria plano; en un iPhone, 3-5 veces
+ * más lento, así que 250 MB son ~30 s como máximo y ya equivalen a miles de actividades (un GPX de un entreno: ~40 KB).
+ */
+export const MAX_INFLATED = 50 * 1024 * 1024;
+export const MAX_INFLATED_TOTAL = 250 * 1024 * 1024;
+const TOO_BIG = 'Los archivos descomprimidos son demasiado grandes para importarlos (límite 50 MB por archivo, 250 MB en total). Divide el .zip en varios.';
+
+/** Presupuesto compartido de una importación: `{ left }` se va gastando con cada descompresión. */
+export const newInflateBudget = () => ({ left: MAX_INFLATED_TOTAL });
+
+async function decompress(u8, format, budget) {
   if (typeof DecompressionStream === 'undefined') {
     throw new ImportError('Este navegador no puede descomprimir archivos: descomprímelo antes de importarlo.');
   }
+  const limit = Math.min(MAX_INFLATED, budget ? budget.left : Infinity);
+  const tooBig = new ImportError(TOO_BIG);
   try {
-    const stream = new Blob([u8]).stream().pipeThrough(new DecompressionStream(format));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  } catch {
-    throw new ImportError('El archivo comprimido está dañado o incompleto.');
+    const reader = new Blob([u8]).stream().pipeThrough(new DecompressionStream(format)).getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > limit) {
+        await reader.cancel();
+        throw tooBig;
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const c of chunks) { out.set(c, at); at += c.length; }
+    if (budget) budget.left -= total;
+    return out;
+  } catch (e) {
+    throw e === tooBig ? e : new ImportError('El archivo comprimido está dañado o incompleto.');
   }
 }
 
 /** Descomprime un .gz. */
-export function gunzip(input) {
-  return decompress(toU8(input), 'gzip');
+export function gunzip(input, budget) {
+  return decompress(toU8(input), 'gzip', budget);
 }
 
 /** Descomprime datos 'deflate' sin cabecera (los de una entrada ZIP). */
-export function inflateRaw(input) {
-  return decompress(toU8(input), 'deflate-raw');
+export function inflateRaw(input, budget) {
+  return decompress(toU8(input), 'deflate-raw', budget);
 }
 
 const SIG_EOCD = 0x06054b50;
@@ -86,18 +119,19 @@ export function zipEntries(input) {
 }
 
 /** Contenido descomprimido de una entrada del ZIP. */
-export async function zipRead(input, entry) {
+export async function zipRead(input, entry, budget) {
   const u8 = toU8(input);
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   const lo = entry.localOffset;
   if (entry.encrypted) throw new ImportError('El archivo del .zip está protegido con contraseña.');
+  if (entry.size > MAX_INFLATED) throw new ImportError(TOO_BIG);
   if (lo + 30 > u8.length || dv.getUint32(lo, true) !== SIG_LOC) throw new ImportError('El .zip está dañado.');
   const start = lo + 30 + dv.getUint16(lo + 26, true) + dv.getUint16(lo + 28, true);
   const end = start + entry.compSize;
   if (end > u8.length) throw new ImportError('El .zip está incompleto.');
   const data = u8.subarray(start, end);
   if (entry.method === 0) return data;
-  if (entry.method === 8) return inflateRaw(data);
+  if (entry.method === 8) return inflateRaw(data, budget);
   throw new ImportError('El .zip usa una compresión no admitida: descomprímelo antes.');
 }
 
