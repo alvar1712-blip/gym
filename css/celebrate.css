@@ -152,23 +152,6 @@
   100% { opacity: 0.72; transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) rotate(var(--r)) scale(1); }
 }
 
-/* Inicio de sesión: un destello breve con el icono (≈0,5 s); no recoge toques. */
-.cele-start {
-  position: fixed;
-  inset: 0;
-  z-index: 2147481000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(11, 13, 16, 0.94);
-  pointer-events: none;
-  opacity: 0;
-  animation: cele-start 480ms ease-out forwards;
-}
-.cele-start-mark { color: var(--accent); animation: cele-start-mark 480ms var(--spring-soft) forwards; }
-@keyframes cele-start { 0% { opacity: 0; } 25% { opacity: 1; } 65% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes cele-start-mark { from { transform: scale(0.8); } to { transform: scale(1.04); } }
-
 /* Movimiento reducido: sin cortina, cinta ni símbolos; solo el mensaje con un fundido corto. */
 @media (prefers-reduced-motion: reduce) {
   .cele-sweep, .cele-ribbon, .cele-amb { display: none; }

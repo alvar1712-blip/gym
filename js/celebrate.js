@@ -13,7 +13,6 @@ const HOLD_RECORD_MS = 3900; // con récord se alarga 0,6 s
 const HOLD_REDUCED_MS = 1200;
 const SWEEP_MS = 820; // duración de cada pasada de la cortina; coincide con --sweep en celebrate.css
 const OUT_SKIP_MS = 160;
-const START_MS = 480;
 const reduced = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 // Iconos del deporte (trazos 24×24, como los de ui.js). La fuerza y «otra» reutilizan los de la app.
@@ -144,13 +143,3 @@ function fit(msg) {
   const w = msg.scrollWidth;
   msg.style.fontSize = `${Math.max(20, Math.floor(Math.min(76, (100 * room) / (w || room))))}px`;
 }
-
-/** Transición breve y discreta al empezar una sesión (~0,5 s). No bloquea: no recoge toques ni espera a nada. */
-export function playStart() {
-  if (reduced()) return;
-  const el = h('div.cele-start', { 'aria-hidden': 'true' }, h('span.cele-start-mark', icon('dumbbell', 72)));
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), START_MS + 40);
-}
-
-

@@ -228,19 +228,19 @@ test('actividad: si no se puede guardar lo pendiente, error, sin felicitación y
   assert.strictEqual((await idbAll(page, 'sessions')).length, n0, 'sin duplicados');
 }));
 
-test('empezar sesión: destello breve de ~0,5 s que no bloquea ni tapa los toques; abre la sesión', () => withApp(async ({ page }) => {
+test('empezar sesión: abre la sesión al instante, sin pantalla de destello encima ni toques bloqueados', () => withApp(async ({ page }) => {
   await go(page, '#/today');
   const t0 = Date.now();
   const id = await page.evaluate(async () => (await (await import('./js/plan-ui.js')).startStrength({ templateId: 'tpl_d1' })).id);
-  await page.locator('.cele-start').waitFor({ state: 'attached' });
-  assert.strictEqual(await page.evaluate(() => getComputedStyle(document.querySelector('.cele-start')).pointerEvents), 'none', 'no recoge toques');
   assert.strictEqual(await page.evaluate(() => location.hash.split('?')[0]), `#/session/${id}`, 'ya está en la sesión');
-  await page.waitForFunction(() => !document.querySelector('.cele-start'), null, { timeout: 2000 });
-  const ms = Date.now() - t0;
-  assert.ok(ms >= 300 && ms < 1500, `dura unos 300-600 ms (${ms} ms con la carga)`);
+  await page.locator('.ses-menu-btn').waitFor({ timeout: 2000 });
+  assert.strictEqual(await page.locator('.cele-start').count(), 0, 'nada tapa la entrada');
+  // El menú de la sesión responde enseguida (no hay capa encima)
+  await page.locator('.ses-menu-btn').click({ timeout: 1000 });
+  await page.locator('.sheet-panel').waitFor({ timeout: 1000 });
+  assert.ok(Date.now() - t0 < 2500, `entrar y tocar: ${Date.now() - t0} ms`);
 }));
-
-test('movimiento reducido: sin destello al empezar y, al terminar, solo el mensaje (sin barrido, iconos ni cintas)', () => withApp(async ({ page }) => {
+test('movimiento reducido: sin animación al empezar y, al terminar, solo el mensaje (sin barrido, iconos ni cintas)', () => withApp(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await go(page, '#/today');
   await page.evaluate(async () => { await (await import('./js/plan-ui.js')).startStrength({ templateId: 'tpl_d1' }); });

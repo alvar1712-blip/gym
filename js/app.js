@@ -292,6 +292,19 @@ async function boot() {
   window.__boot.mounted = performance.now() - window.__boot.t0;
   document.documentElement.classList.add('ready');
   await hideSplash(viewEl);
+  warmViews();
+}
+
+/**
+ * Las pantallas de sesión y de actividad son las que más se tocan y las más grandes: se descargan y analizan en un
+ * momento libre, para que al empezar una sesión (la primera vez tras abrir la app) no se pague ese coste en el toque.
+ * Con CPU ×4 la primera entrada pasó de ~615 ms (tarea larga de 271 ms) a la de las siguientes.
+ */
+function warmViews() {
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
+  idle(() => {
+    for (const name of ['session', 'activity']) import(`./views/${name}.js`).catch(() => { /* se reintentará al entrar */ });
+  }, { timeout: 4000 });
 }
 
 // ---------------------------------------------------------------------------
