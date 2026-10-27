@@ -250,7 +250,7 @@ test('movimiento reducido: sin animación al empezar y, al terminar, solo el men
   const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
   await pressFinish(await openFinish(page, id)).click();
   await page.locator('.cele').waitFor();
-  const shown = await page.evaluate(() => ['.cele-sweep', '.cele-ribbon', '.cele-amb'].map((s) => getComputedStyle(document.querySelector(s)).display));
+  const shown = await page.evaluate(() => ['.cele-mass', '.cele-bands', '.cele-amb'].map((s) => getComputedStyle(document.querySelector(s)).display));
   assert.deepStrictEqual(shown, ['none', 'none', 'none']);
   assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
   const t0 = Date.now();
@@ -299,11 +299,39 @@ test('composición: mensaje en una línea, icono según el deporte, el récord n
   assert.strictEqual(strength.d, '🏋️', 'fuerza: la pesa de siempre');
   assert.strictEqual(run.d, '🏃', 'una carrera usa el corredor, no la pesa');
   assert.strictEqual(withRecord.top, strength.top, 'el récord no desplaza al mensaje');
-  // Total ≈ 3,7 s de espera + 0,86 s de salida (menos los 1,8 s ya transcurridos al medir)
-  assert.ok(strength.ms > 2300 && strength.ms < 3500, `sin récord ${strength.ms} ms`);
+  // Total ≈ 3,5 s hasta pasar al destino + 0,13 s de fundido (menos los 1,8 s ya transcurridos al medir)
+  assert.ok(strength.ms > 1300 && strength.ms < 2600, `sin récord ${strength.ms} ms`);
   assert.ok(withRecord.ms > strength.ms + 300, `con récord dura algo más (${withRecord.ms} ms)`);
 }));
 
+test('coreografía: el negro cubre sin iris, la masa se retira y el final pasa directo al destino (sin segunda cortina) a los ≈3,6 s', () => withApp(async ({ page }) => {
+  const id = await seed(page, { hist: [['press_banca', 80, 5]], today: [['press_banca', 80, 5]] });
+  const fin = await openFinish(page, id);
+  const t0 = Date.now();
+  await pressFinish(fin).click();
+  await page.locator('.cele').waitFor();
+  const tCele = Date.now(); // la celebración arranca al guardar (unos ms tras el toque)
+  assert.strictEqual(await page.locator('.cele-sweep, .cele-scene, .cele-grow, .cele-tendril, .cele-ribbon').count(), 0, 'sin la cortina, el iris ni las formas de versiones anteriores');
+  // A los ≈0,9 s el negro ya es opaco y la masa verde se ha retirado del árbol; la hoja y el destino no se ven
+  await page.waitForTimeout(Math.max(0, 900 - (Date.now() - tCele)));
+  const mid = await page.evaluate(() => ({
+    bg: getComputedStyle(document.querySelector('.cele-bg')).opacity,
+    mass: getComputedStyle(document.querySelector('.cele-mass')).display,
+    hash: location.hash,
+  }));
+  assert.strictEqual(mid.bg, '1');
+  assert.strictEqual(mid.mass, 'none', 'la masa ya no está');
+  // La hoja se cierra (con su animación) cuando ya está cubierta, no antes: pasados 0,58 s\n  await page.waitForFunction(() => !document.querySelector('.ses-finish-sheet'), null, { timeout: 1500 });\n  assert.ok(Date.now() - tCele >= 500, 'la hoja se cierra bajo la cubierta, no antes');\n  assert.match(mid.hash, /\/summary/, 'el destino ya está montado');
+  // Final: se pasa al destino con un fundido corto, sin nada verde a pantalla completa
+  await page.waitForFunction(() => document.querySelector('.cele')?.classList.contains('cele-out'), null, { timeout: 6000 });
+  const tOut = Date.now() - tCele;
+  assert.ok(tOut > 2500 && tOut < 3700, `empieza a salir a los ${tOut} ms de arrancar (3,5 s menos lo ya transcurrido)`);
+  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('.cele-mass, .cele-sweep').length === 1 && getComputedStyle(document.querySelector('.cele-mass')).display === 'none'), true, 'al salir no vuelve a aparecer nada verde de pantalla completa');
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
+  const total = Date.now() - t0;
+  assert.ok(total > 3300 && total < 4700, `total desde la pulsación: ${total} ms`);
+  await atSummary(page, id);
+}));
 test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): vuelve a la sesión, sin bienvenida y sin perder nada', () => withApp(async ({ page }) => {
   const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
   await go(page, `#/session/${id}`);

@@ -146,15 +146,26 @@ test('la felicitación nace del botón real: mismo rectángulo, y la hoja se cie
   await page.waitForTimeout(500);
   const btn = fin.locator('.sheet-actions .btn-primary');
   const box = await btn.boundingBox();
+  const btnBg = await btn.evaluate((e) => getComputedStyle(e).backgroundColor);
+  // Sin rAF la forma no avanza: se lee exactamente el primer fotograma (si no, depende de cuántos pasen antes de leerlo)
+  await page.evaluate(() => { window.requestAnimationFrame = () => 0; });
   await btn.click();
-  await page.locator('.cele-grow').waitFor({ state: 'attached' });
+  await page.locator('.cele-mass path').waitFor({ state: 'attached' });
+  // Primer fotograma: la masa ES la silueta del botón (tolerancia de una fila: la forma se muestrea en 96 filas)
   const o = await page.evaluate(() => {
-    const cs = document.querySelector('.cele').style;
-    const W = document.documentElement.clientWidth, H = innerHeight;
-    return { top: parseFloat(cs.getPropertyValue('--it')), left: parseFloat(cs.getPropertyValue('--il')), right: W - parseFloat(cs.getPropertyValue('--ir')), bottom: H - parseFloat(cs.getPropertyValue('--ib')), sheetOpen: !!document.querySelector('.ses-finish-sheet') };
-  });
-  assert.ok(Math.abs(o.left - box.x) <= 1 && Math.abs(o.top - box.y) <= 1, `arranca en el botón (${o.left},${o.top}) vs (${box.x},${box.y})`);
-  assert.ok(Math.abs(o.right - (box.x + box.width)) <= 1 && Math.abs(o.bottom - (box.y + box.height)) <= 1, 'y con su tamaño');
+    const p = document.querySelector('.cele-mass path');
+    // Filas con anchura de la silueta (las prolongaciones hasta los bordes tienen ancho cero y no se ven)
+    const pts = p.getAttribute('d').match(/-?\d+(\.\d+)?/g).map(Number);
+    const byY = new Map();
+    for (let i = 0; i < pts.length; i += 2) { const [x, y] = [pts[i], pts[i + 1]]; const v = byY.get(y) || [x, x]; byY.set(y, [Math.min(v[0], x), Math.max(v[1], x)]); }
+    const rows = [...byY].filter(([, [a, b]]) => b - a > 1);
+    return { left: Math.min(...rows.map(([, v]) => v[0])), right: Math.max(...rows.map(([, v]) => v[1])), top: Math.min(...rows.map(([y]) => y)), bottom: Math.max(...rows.map(([y]) => y)), sheetOpen: !!document.querySelector('.ses-finish-sheet'), fill: getComputedStyle(p).fill };
+  });  const rowPx = 844 / 96;
+  // El botón hace un pequeño rebote de escala (≈3 %) al soltarlo: la masa parte de su tamaño visible en ese instante
+  const tol = 0.04 * box.width;
+  assert.ok(Math.abs(o.left - box.x) <= tol && Math.abs(o.right - (box.x + box.width)) <= tol, `arranca en el botón (x ${o.left}-${o.right} vs ${box.x}-${box.x + box.width})`);
+  assert.ok(Math.abs(o.top - box.y) <= rowPx + 4 && Math.abs(o.bottom - (box.y + box.height)) <= rowPx + 4, `y con su altura (y ${o.top}-${o.bottom} vs ${box.y}-${box.y + box.height})`);
+  assert.strictEqual(o.fill, btnBg, 'del color del botón');
   assert.ok(o.sheetOpen, 'la hoja sigue ahí mientras el botón crece (sin saltos)');
   await page.waitForFunction(() => !document.querySelector('.ses-finish-sheet'), null, { timeout: 2000 });
   assert.match(await page.evaluate(() => location.hash), new RegExp(`#/session/${id}/summary`), 'ya montó el resumen debajo');

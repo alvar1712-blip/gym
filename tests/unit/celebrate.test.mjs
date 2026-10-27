@@ -106,3 +106,64 @@ test('dominadas (peso corporal): más repeticiones sin lastre cuentan como réco
   assert.equal(rec?.exerciseId, 'dominadas');
   assert.equal(rec.text, '¡Nuevo récord en dominadas!');
 });
+
+// ---------------------------------------------------------------------------
+// Siluetas animadas: datos trazados + interpolación y path
+// ---------------------------------------------------------------------------
+import { frameAt, rowsPath, colsPath, pillFrame, withPill } from '../../js/celebrate-logic.js';
+import { MASS, TOP, BOT } from '../../js/celebrate-data.js';
+
+test('datos de las siluetas: tiempos crecientes, mismas dimensiones y valores dentro de pantalla (con margen)', () => {
+  for (const [name, d, n] of [['MASS', MASS, 96], ['TOP', TOP, 72], ['BOT', BOT, 64]]) {
+    assert.ok(d.t.length >= 10, name);
+    for (let i = 1; i < d.t.length; i++) assert.ok(d.t[i] > d.t[i - 1], `${name}: tiempos crecientes`);
+    assert.equal(d.a.length, d.t.length);
+    assert.equal(d.b.length, d.t.length);
+    for (let i = 0; i < d.t.length; i++) {
+      assert.equal(d.a[i].length, n, `${name}[${i}] filas`);
+      assert.equal(d.b[i].length, n);
+      for (let k = 0; k < n; k++) {
+        assert.ok(d.a[i][k] >= -30 && d.b[i][k] <= 1030, `${name}[${i}][${k}] dentro de la pantalla`);
+        assert.ok(d.b[i][k] >= d.a[i][k] - 1, `${name}[${i}][${k}] b ≥ a`);
+      }
+    }
+  }
+  // La masa acaba cubriendo toda la pantalla; las cintas acaban quietas (dos últimos fotogramas casi iguales o ya estables)
+  assert.ok(MASS.a.at(-1).every((v) => v <= 0) && MASS.b.at(-1).every((v) => v >= 1000), 'la masa llena la pantalla');
+  assert.ok(MASS.t[0] > 0 && MASS.t.at(-1) < 800, 'cubre en menos de 0,8 s');
+  assert.ok(TOP.t[0] >= 900 && BOT.t[0] >= 1700 && BOT.t.at(-1) <= 2300, 'cintas entran en su momento');
+});
+
+test('frameAt: interpola entre fotogramas y se mantiene antes del primero y después del último', () => {
+  const d = { t: [0, 100], a: [[0, 10], [100, 30]], b: [[1000, 1000], [900, 800]] };
+  assert.deepEqual(frameAt(d, -5).a, [0, 10]);
+  assert.deepEqual(frameAt(d, 50).a, [50, 20]);
+  assert.deepEqual(frameAt(d, 50).b, [950, 900]);
+  assert.deepEqual(frameAt(d, 500).b, [900, 800]);
+});
+
+test('rowsPath / colsPath: polígono cerrado con 2 vértices por fila (más los bordes)', () => {
+  const p = rowsPath([0, 0, 0], [1000, 1000, 1000], 100, 200, { edges: true });
+  assert.match(p, /^M.*Z$/);
+  assert.equal((p.match(/[ML]/g) || []).length, 2 * (3 + 2), 'filas + 2 de borde, por lado');
+  assert.ok(p.startsWith('M0 0L'), 'prolongado hasta el borde superior');
+  const c = colsPath([500, 500], [1000, 1000], 100, 200);
+  assert.match(c, /^M25 100L75 100L75 200L25 200Z$/);
+});
+
+test('pillFrame: la silueta del botón en filas (esquinas redondeadas) y nada fuera de él', () => {
+  const W = 390, H = 844, n = 96;
+  const rect = { left: 16, right: 374, top: 770, bottom: 822 };
+  const f = pillFrame(rect, 14, W, H, n);
+  const rows = f.a.map((a, k) => k).filter((k) => f.b[k] - f.a[k] > 1);
+  assert.ok(rows.length >= 4 && rows.length <= 7, `unas 6 filas (${rows.length})`);
+  const mid = rows[Math.floor(rows.length / 2)];
+  assert.ok(Math.abs(f.a[mid] - (16 / W) * 1000) < 1 && Math.abs(f.b[mid] - (374 / W) * 1000) < 1, 'ancho del botón en el centro');
+  assert.ok(f.a[rows[0]] > f.a[mid], 'la fila de arriba está recortada por la esquina redondeada');
+  // Un botón más bajo que una fila sigue dando forma
+  const tiny = pillFrame({ left: 10, right: 20, top: 100, bottom: 102 }, 1, W, H, n);
+  assert.ok(tiny.b.some((b, k) => b - tiny.a[k] > 1));
+  const w = withPill(MASS, f);
+  assert.equal(w.t[0], 0);
+  assert.equal(w.t.length, MASS.t.length + 1);
+});
