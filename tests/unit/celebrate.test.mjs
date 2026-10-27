@@ -34,11 +34,33 @@ test('mensajes: cortos, con exclamación, sin raya larga ni frases largas, y nun
   assert.equal(pickMessage(() => 0.999999, null), MESSAGES.at(-1), 'el límite superior no se sale de la lista');
 });
 
-test('la lista de ejercicios principales usa ids reales de la biblioteca y deja fuera los accesorios', () => {
+test('la lista inicial es corta y exclusiva: banca, sentadilla, peso muerto, dominadas y su variante supina', () => {
+  assert.deepEqual(MAIN_LIFTS, ['press_banca', 'sentadilla', 'peso_muerto', 'dominadas', 'dominadas_supinas']);
   for (const id of MAIN_LIFTS) assert.ok(exMap.has(id), `${id} existe en la biblioteca`);
-  for (const id of ['elevaciones_laterales', 'face_pull', 'curl_barra', 'curl_mancuerna', 'crunch_polea']) {
-    assert.ok(!MAIN_LIFTS.includes(id), `${id} es un accesorio`);
+  // Accesorios y, por ahora, press militar y remo con barra: nunca destacan
+  for (const id of ['press_militar', 'remo_barra', 'elevaciones_laterales', 'face_pull', 'curl_barra', 'curl_mancuerna', 'crunch_polea', 'press_banca_mancuerna', 'peso_muerto_rumano']) {
+    assert.ok(!MAIN_LIFTS.includes(id), `${id} no se destaca`);
   }
+});
+
+test('récord en press militar o remo con barra (fuera de la lista por ahora): no se destaca; el de banca sí', () => {
+  let r = build([lift('press_militar', [set('s1', 60, 5)]), lift('remo_barra', [set('r1', 80, 8)])],
+    [lift('press_militar', [set('p1', 50, 5)]), lift('remo_barra', [set('q1', 70, 8)])]);
+  assert.ok(r.prs.size > 0, 'sí son récords para el sistema de récords');
+  assert.equal(mainRecord(r.today, r.prs, exOf), null);
+  r = build([lift('press_militar', [set('s1', 60, 5)]), lift('press_banca', [set('b1', 90, 5)])],
+    [lift('press_militar', [set('p1', 50, 5)]), lift('press_banca', [set('b0', 80, 5)])]);
+  assert.equal(mainRecord(r.today, r.prs, exOf).exerciseId, 'press_banca');
+});
+
+test('variantes: las dominadas supinas cuentan con su propio historial; banca con mancuernas no entra y no se mezcla con la de barra', () => {
+  let r = build([lift('dominadas_supinas', [set('s1', 0, 10)])], [lift('dominadas_supinas', [set('p1', 0, 8)])]);
+  assert.equal(mainRecord(r.today, r.prs, exOf).exerciseId, 'dominadas_supinas');
+  // Primera vez con la variante (aunque se hayan hecho dominadas pronas): no es récord, no son comparables
+  r = build([lift('dominadas_supinas', [set('s1', 0, 12)])], [lift('dominadas', [set('p1', 0, 8)])]);
+  assert.equal(mainRecord(r.today, r.prs, exOf), null);
+  r = build([lift('press_banca_mancuerna', [set('s1', 40, 8)])], [lift('press_banca_mancuerna', [set('p1', 30, 8)])]);
+  assert.equal(mainRecord(r.today, r.prs, exOf), null);
 });
 
 test('récord en un ejercicio principal: mensaje con el nombre del ejercicio', () => {

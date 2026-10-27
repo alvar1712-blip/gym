@@ -7,10 +7,12 @@ export const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡A seguir!', '¡S
 /**
  * Ejercicios cuyos récords se destacan al terminar (por id, no por nombre: renombrar un ejercicio no lo saca de la
  * lista). El orden es la prioridad si en la misma sesión hay varios. Los accesorios (laterales, face pull, curl, crunch…)
- * NUNCA disparan el mensaje de récord; sus marcas siguen en Progreso y en el resumen. Para cambiar la selección, solo
- * hay que editar esta lista.
+ * NUNCA disparan el mensaje de récord; sus marcas siguen en Progreso y en el resumen. Selección inicial, deliberadamente
+ * corta: los cuatro básicos y la variante supina de las dominadas (mismo movimiento; cada id lleva su propio historial,
+ * así que sus marcas nunca se mezclan con las de otra variante). Press militar y remo con barra, fuera por ahora.
+ * Para ampliarla basta con añadir ids aquí.
  */
-export const MAIN_LIFTS = ['press_banca', 'sentadilla', 'peso_muerto', 'dominadas', 'dominadas_supinas', 'press_militar', 'remo_barra'];
+export const MAIN_LIFTS = ['press_banca', 'sentadilla', 'peso_muerto', 'dominadas', 'dominadas_supinas'];
 
 /** Mensaje distinto del último mostrado (`rand`: () => [0,1), inyectable para probar; `last`: el anterior). */
 export function pickMessage(rand = Math.random, last = null) {
