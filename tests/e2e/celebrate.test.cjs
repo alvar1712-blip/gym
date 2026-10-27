@@ -1,4 +1,4 @@
-﻿// Animaciones de inicio y fin de sesión (js/celebrate.js, js/celebrate-logic.js):
+// Animaciones de inicio y fin de sesión (js/celebrate.js, js/celebrate-logic.js):
 //   · terminar: guarda y SOLO después se felicita (mensaje corto y variado); acaba en el resumen; se puede omitir;
 //   · récord: solo de ejercicios principales (celebrate-logic.MAIN_LIFTS), nunca de accesorios; uno solo;
 //   · si guardar falla: error, la sesión vuelve a estar activa y se puede reintentar sin perder nada; sin duplicados;
@@ -259,6 +259,23 @@ test('movimiento reducido: sin animación al empezar y, al terminar, solo el men
   await atSummary(page, id);
 }));
 
+test('icono de la felicitación: el emoji de siempre de cada tipo de actividad (strength, run, bike, swim, hike, other)', () => withApp(async ({ page }) => {
+  const marks = await page.evaluate(async () => {
+    const c = await import('./js/celebrate.js');
+    const { ACTIVITY_EMOJI } = await import('./js/seed.js');
+    const out = {};
+    for (const kind of ['strength', 'run', 'bike', 'swim', 'hike', 'other', 'desconocido']) {
+      const p = c.celebrate({ message: '¡Bien hecho!', kind });
+      out[kind] = { mark: document.querySelector('.cele-mark').textContent, seed: ACTIVITY_EMOJI[kind] ?? null };
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await p;
+    }
+    return out;
+  });
+  for (const kind of ['strength', 'run', 'bike', 'swim', 'hike', 'other']) assert.strictEqual(marks[kind].mark, marks[kind].seed, `${kind}: el emoji de la biblioteca de la app`);
+  assert.deepStrictEqual(Object.values(marks).slice(0, 6).map((m) => m.mark), ['🏋️', '🏃', '🚴', '🏊', '🥾', '⚡']);
+  assert.strictEqual(marks.desconocido.mark, '⚡', 'sin icono específico: el genérico de la app');
+}));
 test('composición: mensaje en una línea, icono según el deporte, el récord no mueve el mensaje y la duración total es la prevista', () => withApp(async ({ page }) => {
   const info = (kind, record) => page.evaluate(async ({ kind, record }) => {
     const c = await import('./js/celebrate.js');

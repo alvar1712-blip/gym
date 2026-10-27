@@ -1,4 +1,4 @@
-﻿/* celebrate.css — animación de fin de sesión (js/celebrate.js).
+/* celebrate.css — animación de fin de sesión (js/celebrate.js).
    Una sola secuencia que nace del botón pulsado (rect de origen en --it/--ir/--ib/--il, radio --rad, color --gc):
      0,00 s  el botón crece desde su sitio (mismo color, radio y etiqueta) y de él sale una S gruesa hacia arriba
      0,60 s  cubren la pantalla; en ese momento se cierra la hoja y se navega al destino, sin que se vea (onCovered)
@@ -59,13 +59,14 @@
   height: 220vh;
   pointer-events: none;
   transform: translateY(100vh);
+  visibility: hidden; /* nunca asoma antes de salir, aunque 100vh no coincida con lo visible */
   will-change: transform;
 }
 .cele-sweep svg { display: block; width: 100%; height: 100%; }
 .cele-sweep-a { color: #7fae2c; }
 .cele-sweep-b { color: var(--accent); }
 .cele-sweep path { fill: currentColor; }
-.cele-out .cele-sweep { animation: cele-sweep-out var(--sweep) var(--sweep-ease) forwards; }
+.cele-out .cele-sweep { visibility: visible; animation: cele-sweep-out var(--sweep) var(--sweep-ease) forwards; }
 .cele-out .cele-sweep-b { animation-delay: 70ms; }
 
 /* Cinta: un solo trazo que se dibuja de punta a punta y luego se transforma despacio (morfado SMIL en celebrate.js). */
@@ -132,14 +133,14 @@
 .cele-pr {
   position: absolute;
   top: 100%;
-  left: 0;
-  right: 0;
+  left: -24px; /* el ancho de la pantalla (el padding de .cele-center): el récord cabe en una línea en iPhone SE */
+  right: -24px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   margin-top: 14px;
-  font-size: calc(19px * var(--ts));
+  font-size: calc(18px * var(--ts));
   font-weight: 700;
   color: var(--accent);
   opacity: 0;

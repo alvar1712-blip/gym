@@ -682,7 +682,10 @@ test('fluidez: entrada escalonada solo al avanzar, cápsula líquida y capturas 
     }));
     assert.ok(Math.abs(card.a - 0.94) < 0.005, `la pantalla de detrás se encoge (${card.a})`);
     assert.match(card.clip, /round/, 'y redondea');
-    assert.ok(card.top > 0 && card.top < 40, `la cabecera sigue dentro de la tarjeta (${card.top})`);
+    // La tarjeta se encoge hacia arriba con la base fija (así no asoma negro bajo la hoja): su borde de arriba baja un 6 %
+    // del alto visible (≈ 40 px en 664) y la cabecera queda justo debajo.
+    const vh = await page.evaluate(() => innerHeight);
+    assert.ok(card.top > 0 && card.top < vh * 0.09, `la cabecera sigue dentro de la tarjeta (${card.top})`);
     await shot(page, 'gestures-sheet-card');
     await page.keyboard.press('Escape');
     await sheetGone(page);
