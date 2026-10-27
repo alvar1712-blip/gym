@@ -31,6 +31,9 @@
     /* Abierta desde la pantalla de inicio de iOS: su imagen de arranque ya enseña el logo en el mismo sitio; sin animación
        de entrada (no parpadea). Movimiento reducido: estática, y salida casi instantánea. */
     .splash-static #splash * { animation: none !important; }
+    /* Reabierta a los pocos minutos de usarla (iOS recarga la página al desbloquear): sin bienvenida, directo a la app.
+       La decisión se toma en el script de abajo, antes del primer fotograma, para que ni siquiera parpadee. */
+    .splash-skip #splash { display: none; }
     @media (prefers-reduced-motion: reduce) { #splash * { animation: none !important; } #splash { transition-duration: 60ms; } }
   </style>
   <script>

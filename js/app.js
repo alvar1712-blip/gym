@@ -243,6 +243,7 @@ function registerSW() {
 async function boot() {
   const viewEl = document.getElementById('view');
   applyTextScale();
+  trackActivity();
   // El usuario puede cambiar el tamaño de texto en Ajustes con la app en segundo plano.
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') applyTextScale(); });
   registerSW();
@@ -296,6 +297,34 @@ async function boot() {
 // ---------------------------------------------------------------------------
 // Pantalla de arranque (index.html #splash; docs/PULIDO.md §27)
 // ---------------------------------------------------------------------------
+/**
+ * «Última vez que se usó la app» (para decidir si se enseña la bienvenida). iOS puede recargar la página al desbloquear
+ * el móvil aunque se acabe de usar: la bienvenida solo vuelve tras WELCOME_AFTER_MS sin uso. Sin temporizadores: se
+ * escribe al pasar a segundo plano (también al cerrarse la página) y, como mucho cada ACTIVE_THROTTLE_MS, al tocarla.
+ * La lee el script de index.html antes del primer fotograma (mismo nombre y mismo tope allí).
+ */
+export const ACTIVE_KEY = 'entreno.lastActive';
+export const WELCOME_AFTER_MS = 5 * 60 * 1000;
+const ACTIVE_THROTTLE_MS = 15000;
+
+function markActive() {
+  try { localStorage.setItem(ACTIVE_KEY, String(Date.now())); } catch { /* almacenamiento bloqueado */ }
+}
+
+function trackActivity() {
+  let last = 0;
+  const touch = () => {
+    const now = Date.now();
+    if (now - last < ACTIVE_THROTTLE_MS) return;
+    last = now;
+    markActive();
+  };
+  document.addEventListener('pointerdown', touch, { capture: true, passive: true });
+  document.addEventListener('keydown', touch, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') markActive(); });
+  window.addEventListener('pagehide', markActive);
+}
+
 /** Mínimo visible desde que se ve el logo: una entrada con ritmo de app nativa, nunca un retraso artificial largo. */
 export const SPLASH_MIN_MS = 800;
 /** Lo que se espera a las tarjetas de Hoy tras montar; si tardan más, se entra igual (no se esconde una lentitud). */
@@ -323,6 +352,16 @@ async function hideSplash(viewEl) {
   const app = document.getElementById('app');
   const b = window.__boot;
   if (!splash) { app?.removeAttribute('inert'); return; }
+  if (document.documentElement.classList.contains('splash-skip')) {
+    // Uso reciente: sin bienvenida (el splash ya estaba oculto por CSS); la app se puede tocar en cuanto está montada
+    splash.remove();
+    app.removeAttribute('inert');
+    b.skipped = true;
+    b.interactive = performance.now() - b.t0;
+    document.documentElement.classList.add('splash-done');
+    markActive();
+    return;
+  }
   b.cardsInTime = await todayCardsReady(viewEl);
   b.appReady = performance.now() - b.t0;
   const wait = SPLASH_MIN_MS - (performance.now() - b.t0);
@@ -337,6 +376,7 @@ async function hideSplash(viewEl) {
   splash.remove();
   b.interactive = performance.now() - b.t0;
   document.documentElement.classList.add('splash-done');
+  markActive();
 }
 
 boot();
