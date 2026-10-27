@@ -287,6 +287,20 @@ export function exportData({ clone = true } = {}) {
 const validId = (id) => (typeof id === 'string' ? id !== '' : typeof id === 'number' && Number.isFinite(id));
 
 /**
+ * Forma mínima sin la que una vista lanza una excepción al abrirse (reproducido restaurando copias manipuladas: un
+ * ejercicio sin `name` de texto rompe Ajustes; `sets` que no es una lista rompe Progreso, Historial y Datos). Solo
+ * tipos, nunca campos que falten: las copias antiguas pueden no traer opcionales. '' = bien; si no, el motivo.
+ */
+function badShape(store, x) {
+  if (store === 'exercises' && (typeof x.name !== 'string' || !x.name)) return 'ejercicio sin nombre';
+  if (store === 'sessions' && x.exercises != null) {
+    if (!Array.isArray(x.exercises)) return 'sesión con ejercicios dañados';
+    if (x.exercises.some((e) => !e || typeof e !== 'object' || (e.sets != null && !Array.isArray(e.sets)))) return 'sesión con series dañadas';
+  }
+  return '';
+}
+
+/**
  * Valida una copia. Devuelve { ok, error?, counts? }. Antes de escribir nada: una sección que falta, un registro sin
  * clave válida o dos con el mismo id harían que «sustituir todo» fallara a medias en IndexedDB (con un mensaje técnico)
  * o que se perdieran datos sin decirlo (secciones vacías, repetidos que se pisan).
@@ -313,6 +327,8 @@ export function validateBackup(obj) {
       if (!x || typeof x !== 'object' || !validId(x.id)) return { ok: false, error: `La copia tiene registros sin identificador válido en «${label}».` };
       if (seen.has(x.id)) return { ok: false, error: `La copia tiene registros repetidos en «${label}» (${x.id}).` };
       seen.add(x.id);
+      const bad = badShape(s, x);
+      if (bad) return { ok: false, error: `La copia tiene un registro dañado en «${label}» (${bad}, ${x.id}).` };
     }
     counts[s] = arr.length;
   }

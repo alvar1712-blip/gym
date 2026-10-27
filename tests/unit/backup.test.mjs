@@ -295,6 +295,21 @@ test('validateBackup: formato entero ≥ 1 (NaN, 0, negativo, decimal o texto no
   assert.equal(validateBackup({ ...obj, format: 2 }).ok, true);
 });
 
+test('validateBackup: rechaza registros con la forma rota que hacían lanzar a las vistas; tolera los campos que faltan', () => {
+  const withRec = (store, rec) => { const o = sampleExport(); o.data[store].push(rec); return validateBackup(o); };
+  // Reproducido en navegador: sin esto, Ajustes (name) y Progreso/Historial/Datos (sets) lanzaban tras restaurar.
+  assert.match(withRec('exercises', { id: 'x1', primary: [] }).error, /dañado.*ejercicio sin nombre/);
+  assert.match(withRec('exercises', { id: 'x2', name: 5 }).error, /ejercicio sin nombre/);
+  assert.match(withRec('sessions', { id: 's1', kind: 'strength', exercises: 'x' }).error, /ejercicios dañados/);
+  assert.match(withRec('sessions', { id: 's2', kind: 'strength', exercises: [{ exerciseId: 'a', sets: 7 }] }).error, /series dañadas/);
+  assert.match(withRec('sessions', { id: 's3', kind: 'strength', exercises: [null] }).error, /series dañadas/);
+  // Copias antiguas: sesiones sin ejercicios, ejercicios sin series, actividades y campos opcionales ausentes siguen valiendo.
+  assert.equal(withRec('sessions', { id: 's4', kind: 'strength' }).ok, true);
+  assert.equal(withRec('sessions', { id: 's5', kind: 'strength', exercises: [{ exerciseId: 'a' }] }).ok, true);
+  assert.equal(withRec('sessions', { id: 's6', kind: 'run', date: 'ayer' }).ok, true);
+  assert.equal(withRec('exercises', { id: 'x3', name: 'Press' }).ok, true);
+});
+
 test('validateBackup: con formato 2 falta cualquier sección → «La copia está incompleta»', () => {
   const missing = (s, format = 2) => {
     const obj = sampleExport();
