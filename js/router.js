@@ -872,8 +872,8 @@ function showError(err, focus = false) {
   box.innerHTML = `
     <div class="card card-danger">
       <h2>Algo ha fallado al abrir esta pantalla</h2>
-      <p class="muted">Tus datos están a salvo. Detalle técnico:</p>
-      <pre class="err-pre"></pre>
+      <p class="muted">Tus datos están a salvo.</p>
+      <details><summary>Detalle técnico</summary><pre class="err-pre"></pre></details>
       <button class="btn btn-primary" type="button">Ir a Hoy</button>
     </div>`;
   box.querySelector('pre').textContent = String(err && (err.stack || err.message || err));

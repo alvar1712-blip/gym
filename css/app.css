@@ -706,7 +706,7 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   -webkit-appearance: none;
   appearance: none;
 }
-.stepper-input:focus { border-color: var(--accent); }
+.stepper-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .stepper-suffix { position: absolute; right: 8px; bottom: 5px; font-size: var(--fs-xs); color: var(--muted); pointer-events: none; }
 .stepper-md .stepper-btn { width: 44px; min-height: 46px; }
 .stepper-md .stepper-input { min-height: 46px; font-size: calc(20px * var(--ts)); }
@@ -730,7 +730,7 @@ input[type="date"].input, input[type="time"].input { min-height: var(--tap); }
   padding: 0 28px 0 8px;
   outline: none;
 }
-.dur-input:focus { border-color: var(--accent); }
+.dur-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .dur-unit { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: calc(13px * var(--ts)); color: var(--muted); pointer-events: none; }
 
 /* ---------- Hojas (bottom sheet) ---------- */

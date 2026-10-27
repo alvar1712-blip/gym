@@ -222,7 +222,7 @@ export function mountTemplateEdit(root, params = {}) {
   // --- nombre y notas ---
   let goodName = tpl.name;
   const nameInp = textInput({
-    value: tpl.name, placeholder: 'p. ej. Día 1 — Upper pesado', ariaLabel: 'Nombre de la rutina', maxlength: 80,
+    value: tpl.name, placeholder: 'p. ej. Día 1: Upper pesado', ariaLabel: 'Nombre de la rutina', maxlength: 80,
     onInput: (v) => {
       const nm = v.trim();
       titleEl.textContent = nm || 'Rutina sin nombre';

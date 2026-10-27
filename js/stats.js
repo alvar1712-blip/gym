@@ -23,7 +23,7 @@
 // actividades por deporte, agregados por semana) que se construye UNA vez por objeto `data` y se reutiliza
 // en las llamadas siguientes con el mismo objeto (WeakMap). Si cambian los datos, construye un `data` nuevo
 // (o llama a buildIndex(data) para forzar la reconstrucción). No mutes los objetos devueltos.
-import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtDuration, fmtPace, fmtMinutes, fmtSigned, normalize, round } from './util.js';
+import { weekStart, addDays, diffDays, todayStr, isDateStr, fmtDate, fmtDuration, fmtPace, fmtMinutes, fmtSigned, fmtNum, normalize, round } from './util.js';
 import {
   isWorkSet, setMetrics, makeBodyweightFn, sessionLoad, sessionDurationMin, sessionVolume, sessionMuscleSets,
   pace, speed, pace100, movingAverage, bestSet as calcBestSet, weeksBetween, orderKeyOf, emptyBests, addToBests,
@@ -76,23 +76,9 @@ const weightKey = (w) => String(round(w ?? 0, 0.25));
 // Formato (es-ES)
 // ===========================================================================
 
-const NF = new Map();
-/**
- * Igual que util.fmtNum (misma salida: Number#toLocaleString('es-ES') equivale por especificación a
- * Intl.NumberFormat con las mismas opciones) pero reutilizando el formateador: toLocaleString crea uno en
- * cada llamada (~20 µs) y las gráficas formatean cientos de etiquetas.
- */
-export function fmtNumFast(n, dec = 1, minDec = 0) {
-  if (n == null || !Number.isFinite(n)) return '—';
-  const key = `${dec}|${minDec}`;
-  let f = NF.get(key);
-  if (!f) {
-    f = new Intl.NumberFormat('es-ES', { maximumFractionDigits: dec, minimumFractionDigits: minDec, useGrouping: true });
-    NF.set(key, f);
-  }
-  return f.format(n);
-}
-const num = fmtNumFast;
+/** Alias de util.fmtNum (que ya reutiliza el formateador); los módulos de gráficas lo importan desde aquí. */
+export const fmtNumFast = fmtNum;
+const num = fmtNum;
 
 /** Texto de un peso según el tipo: «80 kg»; peso corporal: «+10 kg», «−15 kg asist.», «Sin lastre». */
 export function weightLabel(logType, w) {

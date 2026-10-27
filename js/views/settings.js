@@ -100,9 +100,10 @@ function restoringIndicator() {
       h('div.banner-main',
         h('div.banner-title', 'Restaurando copia…'),
         h('div.banner-text', 'Puede tardar unos segundos. No cierres la app.'))));
+  const wasInert = !!app?.inert;
   if (app) app.inert = true;
   document.body.appendChild(el);
-  const remove = () => { el.remove(); if (app) app.inert = false; };
+  const remove = () => { el.remove(); if (app) app.inert = wasInert; };
   if (document.visibilityState === 'hidden') return Promise.resolve(remove);
   return new Promise((resolve) => requestAnimationFrame(() => setTimeout(() => resolve(remove), 0)));
 }
