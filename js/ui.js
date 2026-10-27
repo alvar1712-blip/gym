@@ -1,4 +1,4 @@
-// ui.js — utilidades DOM y componentes comunes (tema oscuro, pensado para una mano).
+﻿// ui.js — utilidades DOM y componentes comunes (tema oscuro, pensado para una mano).
 import { back as routerBack, navigate, routeEpoch, pushOverlay, onMount, refresh as routerRefresh } from './router.js';
 import { numToInput, parseNum, clamp, round } from './util.js';
 
@@ -338,6 +338,9 @@ function lockScroll() {
   lockedY = window.scrollY;
   // Centro de la parte visible de la vista (efecto tarjeta de las hojas, css/app.css).
   document.documentElement.style.setProperty('--lock-y', `${lockedY}px`);
+  // Alto de lo que se ve de verdad (innerHeight): 100vh es mayor en Safari con barras y 100dvh no siempre sigue al
+  // visor en todos los motores; el efecto tarjeta ancla su base aquí (css/app.css).
+  document.documentElement.style.setProperty('--lock-h', `${window.innerHeight}px`);
   const b = document.body.style;
   b.position = 'fixed';
   b.top = `-${lockedY}px`;

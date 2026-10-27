@@ -1094,22 +1094,16 @@ html[data-nav="tab"]::view-transition-new(topbar) { animation-duration: var(--du
 /* El origen es el borde INFERIOR de lo que se ve: la tarjeta se encoge hacia arriba y su base no se mueve, así que bajo
    la hoja (de cristal translúcido) nunca asoma el fondo negro de detrás. Solo se redondean las esquinas de arriba. */
 #view {
-  transform-origin: 50% calc(var(--lock-y, 0px) + 100vh);
+  transform-origin: 50% calc(var(--lock-y, 0px) + var(--lock-h, 100vh));
   transition: transform var(--dur-sheet) var(--spring-nav), clip-path var(--dur-sheet) var(--spring-nav);
 }
 html.sheet-card body,
 html.sheet-card-out body { background: #000; }
 html.sheet-card #view {
   transform: scale(calc(0.94 + 0.06 * var(--sheet-drag, 0)));
-  clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100vh) 0 round 24px 24px 0 0);
+  clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - var(--lock-h, 100vh)) 0 round 24px 24px 0 0);
 }
-html.sheet-card-out #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100vh) 0 round 0px); }
-/* Safari con barras: 100vh es la altura SIN barras (mayor que lo que se ve); 100dvh es la visible. */
-@supports (height: 100dvh) {
-  #view { transform-origin: 50% calc(var(--lock-y, 0px) + 100dvh); }
-  html.sheet-card #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100dvh) 0 round 24px 24px 0 0); }
-  html.sheet-card-out #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100dvh) 0 round 0px); }
-}
+html.sheet-card-out #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - var(--lock-h, 100vh)) 0 round 0px); }
 html.sheet-dragging #view,
 html.sheet-instant #view,
 html[data-nav] #view { transition: none !important; }
