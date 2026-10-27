@@ -117,6 +117,15 @@ html {
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
 }
+/* Sin zoom accidental por doble toque en cualquier sitio (antes solo en botones y enlaces). El zoom deliberado con
+   pellizco se respeta: es accesibilidad, y Safari ignora user-scalable=no desde iOS 10. Los campos ya miden ≥ 16 px
+   (Safari hace autozoom al enfocar los menores). */
+html, body { touch-action: manipulation; }
+/* Pantallas táctiles: sin la línea de desplazamiento (el scroll sigue igual). En escritorio se conservan las barras. */
+@media (hover: none) and (pointer: coarse) {
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { display: none; }
+}
 body {
   margin: 0;
   min-height: 100%;
