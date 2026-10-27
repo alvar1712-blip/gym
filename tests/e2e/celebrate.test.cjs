@@ -319,6 +319,10 @@ test('coreografía: el negro cubre sin iris, la masa se retira y el final pasa d
     mass: getComputedStyle(document.querySelector('.cele-mass')).display,
     hash: location.hash,
   }));
+  // La celebración va en su propio grupo de transición de vista: el montaje del destino no pinta su cabecera, su barra
+  // inferior ni la imagen antigua por encima (se vería parte de Hoy durante el negro)
+  const vt = await page.evaluate(() => (CSS.supports('view-transition-name', 'x') ? getComputedStyle(document.querySelector('.cele')).viewTransitionName : 'cele'));
+  assert.strictEqual(vt, 'cele');
   assert.strictEqual(mid.bg, '1');
   assert.strictEqual(mid.mass, 'none', 'la masa ya no está');
   // La hoja se cierra (con su animación) cuando ya está cubierta, no antes: pasados 0,58 s\n  await page.waitForFunction(() => !document.querySelector('.ses-finish-sheet'), null, { timeout: 1500 });\n  assert.ok(Date.now() - tCele >= 500, 'la hoja se cierra bajo la cubierta, no antes');\n  assert.match(mid.hash, /\/summary/, 'el destino ya está montado');
