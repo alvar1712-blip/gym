@@ -1,4 +1,4 @@
-/* app.css — sistema de diseño común. Tema oscuro SIEMPRE, alto contraste, objetivos táctiles grandes. */
+﻿/* app.css — sistema de diseño común. Tema oscuro SIEMPRE, alto contraste, objetivos táctiles grandes. */
 
 :root {
   color-scheme: dark;
@@ -168,6 +168,11 @@ img, svg { display: block; }
 /* Testigo del título compacto (ui.js): los primeros px de la página. */
 .topbar-probe { position: absolute; top: 0; left: 0; width: 1px; pointer-events: none; visibility: hidden; }
 .view-inner { min-height: 60vh; }
+/* En Safari con barras 100vh es mayor que lo visible: una pantalla corta tendría siempre un poco de recorrido (rebote e
+   indicador de desplazamiento sin motivo). Con dvh la página mide justo lo que se ve. */
+@supports (height: 100dvh) {
+  #app, .view { min-height: 100dvh; }
+}
 
 .topbar {
   position: sticky;
@@ -791,6 +796,10 @@ html.sheet-dragging .sheet-overlay::before { transition: none; }
 }
 .sheet-overlay.open .sheet-panel { transform: translateY(0); }
 .sheet-tall { height: calc(88vh - var(--kb)); }
+@supports (height: 100dvh) {
+  .sheet-panel { max-height: calc(92dvh - var(--kb)); }
+  .sheet-tall { height: calc(88dvh - var(--kb)); }
+}
 /* Asa y cabecera: se arrastran hacia abajo para cerrar (sin desplazamiento del navegador). */
 .sheet-grabber { width: 38px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.28); margin: 8px auto 2px; flex: none; position: relative; touch-action: none; }
 .sheet-grabber::before { content: ""; position: absolute; inset: -10px -40px -6px; }
@@ -1073,17 +1082,25 @@ html[data-nav="tab"]::view-transition-new(topbar) { animation-duration: var(--du
    abrir). El transform va en #view, que no contiene position:fixed (la barra de pestañas y los avisos están
    fuera); la cabecera pegajosa sigue en su sitio dentro de la tarjeta. Al arrastrar la hoja vuelve con ella
    (--sheet-drag). Durante una transición entre pantallas no se anima (la imagen se captura a tamaño real). */
+/* El origen es el borde INFERIOR de lo que se ve: la tarjeta se encoge hacia arriba y su base no se mueve, así que bajo
+   la hoja (de cristal translúcido) nunca asoma el fondo negro de detrás. Solo se redondean las esquinas de arriba. */
 #view {
-  transform-origin: 50% calc(var(--lock-y, 0px) + 50vh);
+  transform-origin: 50% calc(var(--lock-y, 0px) + 100vh);
   transition: transform var(--dur-sheet) var(--spring-nav), clip-path var(--dur-sheet) var(--spring-nav);
 }
 html.sheet-card body,
 html.sheet-card-out body { background: #000; }
 html.sheet-card #view {
   transform: scale(calc(0.94 + 0.06 * var(--sheet-drag, 0)));
-  clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100vh) 0 round 24px);
+  clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100vh) 0 round 24px 24px 0 0);
 }
 html.sheet-card-out #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100vh) 0 round 0px); }
+/* Safari con barras: 100vh es la altura SIN barras (mayor que lo que se ve); 100dvh es la visible. */
+@supports (height: 100dvh) {
+  #view { transform-origin: 50% calc(var(--lock-y, 0px) + 100dvh); }
+  html.sheet-card #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100dvh) 0 round 24px 24px 0 0); }
+  html.sheet-card-out #view { clip-path: inset(var(--lock-y, 0px) 0 calc(100% - var(--lock-y, 0px) - 100dvh) 0 round 0px); }
+}
 html.sheet-dragging #view,
 html.sheet-instant #view,
 html[data-nav] #view { transition: none !important; }
