@@ -14,6 +14,7 @@ const { confirmBackupSaved, openApp, go, storeAll, shot, waitReady, chromiumOnly
 
 const ROOT = path.join(__dirname, '..', '..');
 const wait = (page, ms) => page.waitForTimeout(ms);
+/** Espera a que la felicitación de fin de actividad haya terminado (ya guardó y volvió atrás). */ celebrationDone = (page) => page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 8000 });
 
 test('duración: lo escrito es lo que se guarda (75 min = 4500 s) y al salir del campo se normaliza', async () => {
   const app = await openApp();
@@ -28,7 +29,7 @@ test('duración: lo escrito es lo que se guarda (75 min = 4500 s) y al salir del
     assert.strictEqual(await h.inputValue(), '1');
     assert.strictEqual(await m.inputValue(), '15');
     await page.locator('.act-done').click();
-    await wait(page, 400);
+    await celebrationDone(page); // la felicitación vuelve atrás a los 0,6 s: no se navega ni se escribe mientras dura
     const bike = (await storeAll(page, 'sessions')).find((s) => s.kind === 'bike');
     assert.strictEqual(bike.movingSec, 4500);
     assert.strictEqual(bike.durationMin, 75);
@@ -46,7 +47,7 @@ test('duración: lo escrito es lo que se guarda (75 min = 4500 s) y al salir del
     assert.strictEqual(await rm.inputValue(), '21');
     assert.strictEqual(await rs.inputValue(), '30');
     await page.locator('.act-done').click();
-    await wait(page, 400);
+    await celebrationDone(page); // la felicitación vuelve atrás a los 0,6 s: no se navega ni se escribe mientras dura
     const run = (await storeAll(page, 'sessions')).find((s) => s.kind === 'run');
     assert.strictEqual(run.movingSec, 1290);
 

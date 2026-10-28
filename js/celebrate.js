@@ -5,23 +5,30 @@
 // la pantalla (≈0,55 s). Con la pantalla ya tapada se hace el trabajo de pasar al destino (onCovered) y el verde se funde
 // a negro. En el negro: un cúmulo de símbolos blancos que salen del centro y se dispersan, el mensaje con el emoji de la
 // actividad encima, y dos cintas que entran (arriba y abajo); los símbolos se desvanecen mientras entra la cinta. Se
-// mantiene y pasa directamente al destino (sin segunda cortina). La forma de la masa y de las cintas se mueve por
-// fotogramas reales (celebrate-data.js) interpolados con requestAnimationFrame durante ≈2,1 s; lo demás es CSS.
+// mantiene (las cintas siguen asentándose, nunca queda quieta) y pasa al destino a los 3,2 s (sin segunda cortina). La masa se mueve por
+// fotogramas reales (celebrate-data.js; la cima del dedo se redondea) y las cintas son formas fijas que solo se descubren con una cabeza redondeada, todo con requestAnimationFrame durante ≈2,25 s; lo demás es CSS.
 // Con movimiento reducido, solo un fundido. Nada de lo de debajo depende de ella: se guarda antes; si se omite (toque o
 // tecla) o falla, onCovered se ejecuta igualmente y la pantalla de debajo es la correcta.
 import { h, icon } from './ui.js';
-import { pickMessage, frameAt, rowsPath, colsPath, pillFrame, withPill } from './celebrate-logic.js';
-import { MASS, TOP, BOT } from './celebrate-data.js';
+import { pickMessage, frameAt, rowsPath, pillFrame, withPill, smooth, axisOf, tubePath, revealBand, roundTop } from './celebrate-logic.js';
+import { MASS, TOP_AXIS, BOT } from './celebrate-data.js';
 import { ACTIVITY_EMOJI } from './seed.js';
 
 const COVER_MS = 580; // la masa ya cubre todo (≈0,55 s) y el negro está entrando (coincide con .cele-bg en celebrate.css)
 const MASS_GONE_MS = 700; // el negro ya es opaco: la masa se retira del árbol
-const SHAPES_END_MS = 2250; // fin del movimiento de las cintas
-const HOLD_MS = 3500; // desde el toque hasta pasar al destino (mensaje legible ≈2,9 s)
-const HOLD_RECORD_MS = 4100; // con récord se alarga 0,6 s
+const SHAPES_END_MS = 2250; // fin del trazo de las cintas (después siguen asentándose con la deriva de css/celebrate.css)
+const TOP_T0 = 1000; // la cinta superior baja desde la esquina entre TOP_T0 y TOP_T0 + TOP_MS (frena al final)
+const TOP_MS = 720;
+const BOT_T0 = 1800; // la cinta inferior entra de izquierda a derecha entre BOT_T0 y SHAPES_END_MS
+const HOLD_MS = 3200; // desde el toque hasta pasar al destino (mensaje legible ≈2,6 s)
+const HOLD_RECORD_MS = 3800; // con récord se alarga 0,6 s
 const HOLD_REDUCED_MS = 1200;
-const OUT_MS = 100; // paso directo al destino: un fundido de un par de fotogramas, sin cortina
+const OUT_MS = 160; // paso directo al destino: un fundido corto, sin cortina
 const OUT_SKIP_MS = 160;
+// Las dos cintas son una forma fija que solo se va descubriendo con una cabeza redondeada (el trazado fotograma a fotograma
+// llevaba puntas, pliegues y un avance a saltos): la superior, un tubo sobre su eje; la inferior, su forma final por columnas.
+const BOT_A = smooth(BOT.a.at(-1));
+const BOT_B = smooth(BOT.b.at(-1));
 const reduced = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 // Pictogramas de trazo (24×24, como los de ui.js) para los símbolos que se dispersan. La fuerza y «otra» reutilizan los de
@@ -83,7 +90,8 @@ export function celebrate({ message, record = null, kind = 'strength', origin = 
   const symbols = AMBIENT.filter(([, y]) => !record || y < 0.5 || y > 0.66); // con récord, libre la franja de su línea
   const el = h('div.cele', {
     role: 'status', 'aria-label': `${message}${record ? ` ${record}` : ''}`,
-    style: `--gc:${bg || 'var(--accent)'};--mk:${Math.round(Math.min(56, W * 0.115))}px`, // custom properties: solo valen como texto
+    // custom properties: solo valen como texto. --tail: la deriva de las cintas dura hasta después de la salida (nunca se queda quieta)
+    style: `--gc:${bg || 'var(--accent)'};--mk:${Math.round(Math.min(56, W * 0.115))}px;--tail:${(record ? HOLD_RECORD_MS : HOLD_MS) - 400}ms`,
   },
     svg('cele-mass', W, H, [shape('M0 0')]),
     h('div.cele-bg'),
@@ -187,8 +195,8 @@ function bands(W, H) {
 }
 
 /**
- * Mueve las formas: la masa (del botón a pantalla completa, 0–0,6 s) y las dos cintas (1,0–1,65 s la superior y
- * 1,8–2,1 s la inferior), interpolando los fotogramas de celebrate-data.js en cada fotograma de pantalla. Devuelve la
+ * Mueve las formas: la masa (del botón a pantalla completa, 0–0,6 s), la cinta superior (1,0–1,72 s, un tubo sobre su eje) y
+ * la inferior (1,8–2,25 s, su forma final descubierta de izquierda a derecha), en cada fotograma de pantalla. Devuelve la
  * función que lo detiene.
  */
 function drive(el, W, H, rect, rad) {
@@ -196,6 +204,7 @@ function drive(el, W, H, rect, rad) {
   const mass = el.querySelector('.cele-mass path');
   const top = el.querySelector('.cele-top');
   const bot = el.querySelector('.cele-bot');
+  const topAxis = axisOf(TOP_AXIS.p.map(([x, y]) => [x * W, y * H]));
   const p0 = frameAt(massData, 0);
   mass.setAttribute('d', rowsPath(p0.a, p0.b, W, H, { edges: true })); // ya en el primer fotograma: es el botón
   const t0 = performance.now();
@@ -205,14 +214,22 @@ function drive(el, W, H, rect, rad) {
     const t = now - t0;
     if (t <= MASS_GONE_MS) {
       const f = frameAt(massData, t);
-      mass.setAttribute('d', rowsPath(f.a, f.b, W, H, { edges: true }));
+      const m = roundTop(f.a, f.b, W, H);
+      mass.setAttribute('d', rowsPath(m.a, m.b, W, H, { edges: true }));
     } else if (!massGone) {
       massGone = true;
       mass.parentNode.style.display = 'none';
     }
-    if (t >= TOP.t[0] - 30) { const f = frameAt(TOP, t); top.setAttribute('d', rowsPath(f.a, f.b, W, H, { y0: 0, y1: 0.62 })); }
-    if (t >= BOT.t[0] - 30) { const f = frameAt(BOT, t); bot.setAttribute('d', colsPath(f.a, f.b, W, H, { edges: true })); }
+    if (t >= TOP_T0 - 30) {
+      const u = Math.min(1, Math.max(0, (t - TOP_T0) / TOP_MS));
+      top.setAttribute('d', tubePath(topAxis, W * TOP_AXIS.r, (1 - (1 - u) ** 2) * topAxis.len.at(-1)));
+    }
+    if (t >= BOT_T0 - 30) {
+      const u = Math.min(1, Math.max(0, (t - BOT_T0) / (SHAPES_END_MS - BOT_T0)));
+      bot.setAttribute('d', revealBand(BOT_A, BOT_B, W, H, (1 - (1 - u) ** 2) * (W + H * 0.06)));
+    }
     if (t < SHAPES_END_MS) raf = requestAnimationFrame(tick);
+    else bot.setAttribute('d', revealBand(BOT_A, BOT_B, W, H, W + H * 0.06)); // forma completa exacta
   };
   raf = requestAnimationFrame(tick);
   return () => cancelAnimationFrame(raf);

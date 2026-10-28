@@ -1,11 +1,12 @@
 /* celebrate.css — animación de fin de sesión (js/celebrate.js). Tiempos desde la pulsación del botón:
      0,00 s  la masa parte de la silueta exacta del botón (color --gc) y sube por la derecha; las formas las mueve
-             celebrate.js con siluetas reales (celebrate-data.js): masa 0–0,6 s, cinta superior 1,0–1,65 s, inferior 1,8–2,1 s
+             celebrate.js: la masa con siluetas reales (celebrate-data.js), 0–0,6 s; las cintas como formas fijas que se descubren con cabeza redondeada: superior 1,0–1,72 s, inferior 1,8–2,25 s
      0,43 s  el cúmulo de símbolos blancos sale del centro y se dispersa (el verde aún cubre)
      0,56 s  el negro entra encima del verde (fundido de 0,12 s, sin iris ni formas); ya cubierto: onCovered
      0,48 s  emoji de la actividad; 0,56 s el mensaje
      1,05 s  los símbolos se desvanecen en orden mientras entra la cinta superior
-     3,50 s  paso directo al destino (fundido de 0,1 s): no hay segunda cortina
+     0,8 s   las cintas empiezan a separarse del mensaje muy despacio (deriva que frena hasta la salida: nunca queda quieta)
+     3,20 s  paso directo al destino (fundido de 0,16 s): no hay segunda cortina (con récord, 3,8 s)
    Solo transform / opacity y el `d` de tres paths. Los símbolos y las cintas nunca cruzan el mensaje. */
 .cele {
   --gc: var(--accent);
@@ -31,6 +32,10 @@
 
 /* Cintas (sus formas las mueve celebrate.js). */
 .cele-bands path { fill: url(#cele-grad); }
+/* Asentamiento: cuando las cintas terminan de trazarse siguen separándose del mensaje muy despacio (frenan hasta la salida),
+   en vez de quedarse quietas. El mensaje no se mueve. Solo transform, en la capa de las cintas. */
+.cele-bands { transform-origin: 50% 54%; animation: cele-settle var(--tail, 2800ms) 800ms cubic-bezier(0.25, 0.6, 0.35, 1) both; }
+@keyframes cele-settle { to { transform: scale(1.045); } }
 
 /* Símbolos blancos de trazo fino: salen del cúmulo central, se separan un poco y se desvanecen en orden. */
 .cele-amb { position: absolute; inset: 0; pointer-events: none; }
@@ -97,7 +102,7 @@
 }
 
 /* Salida: paso directo al destino (ya montado debajo). Omitir con un toque: igual, algo más lento. */
-.cele.cele-out { animation: cele-fade-out 100ms linear forwards; }
+.cele.cele-out { animation: cele-fade-out 160ms ease-out forwards; }
 .cele.cele-skip { animation: cele-fade-out 160ms ease forwards; }
 
 @keyframes cele-fade-in { to { opacity: 1; } }

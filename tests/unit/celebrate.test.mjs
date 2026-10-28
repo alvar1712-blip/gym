@@ -110,8 +110,8 @@ test('dominadas (peso corporal): más repeticiones sin lastre cuentan como réco
 // ---------------------------------------------------------------------------
 // Siluetas animadas: datos trazados + interpolación y path
 // ---------------------------------------------------------------------------
-import { frameAt, rowsPath, colsPath, pillFrame, withPill } from '../../js/celebrate-logic.js';
-import { MASS, TOP, BOT } from '../../js/celebrate-data.js';
+import { frameAt, rowsPath, colsPath, pillFrame, withPill, smooth, axisOf, tubePath, revealBand, roundTop } from '../../js/celebrate-logic.js';
+import { MASS, TOP, BOT, TOP_AXIS } from '../../js/celebrate-data.js';
 
 test('datos de las siluetas: tiempos crecientes, mismas dimensiones y valores dentro de pantalla (con margen)', () => {
   for (const [name, d, n] of [['MASS', MASS, 96], ['TOP', TOP, 72], ['BOT', BOT, 64]]) {
@@ -166,4 +166,67 @@ test('pillFrame: la silueta del botón en filas (esquinas redondeadas) y nada fu
   const w = withPill(MASS, f);
   assert.equal(w.t[0], 0);
   assert.equal(w.t.length, MASS.t.length + 1);
+});
+
+// Cintas: forma fija que solo se descubre con una cabeza redondeada (sin puntas ni saltos)
+const nums = (d) => (d.match(/-?\d+(\.\d+)?/g) || []).map(Number);
+
+test('smooth: conserva una recta y alisa un pico sin salirse del rango', () => {
+  assert.deepEqual(smooth([5, 5, 5, 5, 5]), [5, 5, 5, 5, 5]);
+  const s = smooth([0, 0, 100, 0, 0]);
+  assert.ok(s[2] < 100 && s[2] > 0 && s.every((v) => v >= 0 && v <= 100));
+});
+
+test('tubePath: crece con la longitud, termina en un semicírculo y con s ≥ longitud es la cinta entera', () => {
+  const W = 390, H = 844;
+  const ax = axisOf(TOP_AXIS.p.map(([x, y]) => [x * W, y * H]));
+  const L = ax.len.at(-1);
+  assert.ok(L > 600 && L < 1200, `longitud del eje (${L})`);
+  const hw = W * TOP_AXIS.r;
+  assert.equal(tubePath(ax, hw, 0), '');
+  let prev = 0;
+  for (const s of [0.1, 0.3, 0.6, 0.9, 1, 1.5]) {
+    const d = tubePath(ax, hw, s * L);
+    assert.match(d, /^M.*A[\d.]+ [\d.]+ 0 0 1 .*Z$/, 'cabeza con arco, polígono cerrado');
+    assert.ok(nums(d).every(Number.isFinite));
+    assert.ok(d.length >= prev, 'cada vez más larga');
+    prev = d.length;
+  }
+  assert.equal(tubePath(ax, hw, L), tubePath(ax, hw, 5 * L), 'pasada la longitud es la forma completa');
+  // El radio del arco es el de la cinta (cabeza redondeada, no una punta)
+  assert.ok(tubePath(ax, hw, 0.5 * L).includes(`A${Math.round(hw)} ${Math.round(hw)} 0 0 1`));
+});
+
+test('revealBand: la cinta inferior avanza sin retroceder, con cabeza elíptica, y llena la pantalla al final', () => {
+  const W = 390, H = 844;
+  const a = smooth(BOT.a.at(-1));
+  const b = smooth(BOT.b.at(-1));
+  assert.equal(revealBand(a, b, W, H, 0), '');
+  assert.match(revealBand(a, b, W, H, 120), /^M.*A[\d.]+ [\d.]+ 0 0 1 .*Z$/);
+  let prev = -Infinity;
+  for (const xh of [20, 100, 200, 300, 390, W + H * 0.06]) {
+    const d = revealBand(a, b, W, H, xh);
+    assert.ok(nums(d).every(Number.isFinite), `xh=${xh}`);
+    const maxX = Math.max(...(d.match(/(?<=[ML])-?[\d.]+(?= )/g) || ['0']).map(Number));
+    assert.ok(maxX >= prev, 'el borde del trazo nunca retrocede');
+    prev = maxX;
+  }
+  assert.ok(prev >= W, 'a pantalla completa el trazo llega al borde derecho');
+});
+
+test('roundTop: quita la aguja de la cima del dedo y la cierra redonda; no toca el botón ni la masa ancha', () => {
+  const W = 390, H = 844, n = 96;
+  // dedo: 3 filas de aguja (4 px) sobre un cuerpo de 60 px
+  const a = new Array(n).fill(700), b = new Array(n).fill(700);
+  for (let k = 60; k < 63; k++) { a[k] = 700; b[k] = 710; }
+  for (let k = 63; k < n; k++) { a[k] = 700; b[k] = 700 + (60 / W) * 1000; }
+  const r = roundTop(a, b, W, H);
+  for (let k = 60; k < 63; k++) assert.ok(r.b[k] - r.a[k] < 1, `fila ${k}: la aguja desaparece`);
+  const w = (k) => ((r.b[k] - r.a[k]) / 1000) * W;
+  assert.ok(w(63) < w(66) && w(66) <= 60.5, 'la cima crece hasta el ancho del cuerpo (redonda, no plana)');
+  assert.ok(w(90) > 59.5, 'el cuerpo no se toca');
+  // el botón (ancho, 52 px de alto) y una masa a pantalla completa pasan intactos
+  const pill = pillFrame({ left: 16, right: 374, top: 770, bottom: 822 }, 14, W, H, n);
+  assert.deepEqual(roundTop(pill.a, pill.b, W, H), pill);
+  assert.deepEqual(roundTop(MASS.a.at(-1), MASS.b.at(-1), W, H).a, MASS.a.at(-1));
 });

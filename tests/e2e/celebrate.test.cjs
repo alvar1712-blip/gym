@@ -355,3 +355,26 @@ test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): v
   assert.deepStrictEqual((await sessionOf(page, id)).exercises, before.exercises, 'series intactas');
 }));
 
+test('la navegación bajo la celebración no usa View Transitions (WebKit las pintaba por encima: se veían el formulario y «Hoy»)', () => withApp(async ({ page }) => {
+  await go(page, '#/today');
+  await go(page, '#/activity/new?kind=run');
+  await page.locator('input[aria-label$=": min"]').first().fill('40');
+  await settle(page);
+  await page.locator('.act-done').click();
+  await page.locator('.cele').waitFor();
+  // Se muestrea en la página mientras dura la celebración: nunca hay transición activa ni data-nav
+  const seen = await page.evaluate(() => new Promise((resolve) => {
+    const out = { samples: 0, vt: 0 };
+    const t0 = performance.now();
+    const tick = () => {
+      out.samples++;
+      if (document.documentElement.dataset.nav || document.activeViewTransition) out.vt++;
+      if (performance.now() - t0 < 1800 && document.querySelector('.cele')) setTimeout(tick, 20); else resolve(out);
+    };
+    tick();
+  }));
+  assert.ok(seen.samples > 30, `muestreo suficiente (${seen.samples})`);
+  assert.strictEqual(seen.vt, 0, 'ninguna View Transition mientras se celebra');
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 6000 });
+  assert.ok(!(await page.evaluate(() => location.hash)).startsWith('#/activity'), 'acaba en el destino');
+}));

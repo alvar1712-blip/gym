@@ -661,6 +661,7 @@ function transitionMode(kind) {
   if (typeof document === 'undefined' || document.visibilityState === 'hidden') return 'none';
   if (!viewEl || !viewEl.isConnected) return 'none';
   if (pressing) return 'none'; // una transición ahora partiría la pulsación en curso (watchPress)
+  if (document.querySelector('.cele')) return 'none'; // celebración en pantalla: el destino se monta tapado, sin animar (en WebKit la transición se pintaba por encima)
   return typeof document.startViewTransition === 'function' ? 'vt' : 'css';
 }
 

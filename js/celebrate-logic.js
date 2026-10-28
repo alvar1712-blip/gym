@@ -99,6 +99,114 @@ export function colsPath(a, b, W, H, { edges = false } = {}) {
   return `M${top.join('L')}L${bottom.join('L')}Z`;
 }
 
+/** Perfil suavizado (núcleo binomial 1-4-6-4-1, extremos replicados): quita el ruido del trazado sin mover la forma. */
+export function smooth(v) {
+  const n = v.length;
+  const K = [1, 4, 6, 4, 1];
+  return v.map((_, k) => K.reduce((s, w, j) => s + w * v[Math.min(n - 1, Math.max(0, k + j - 2))], 0) / 16);
+}
+
+/**
+ * Eje denso de una cinta: la curva de Catmull-Rom que pasa por `pts` ([x, y] en px), con `per` puntos por tramo y la
+ * longitud acumulada de cada punto. Se calcula una vez por tamaño de pantalla.
+ */
+export function axisOf(pts, per = 10) {
+  const p = [];
+  const at = (i) => pts[Math.min(pts.length - 1, Math.max(0, i))];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)];
+    for (let k = 0; k < per; k++) {
+      const u = k / per;
+      p.push([0, 1].map((c) => 0.5 * (2 * p1[c] + (p2[c] - p0[c]) * u + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * u * u + (3 * p1[c] - p0[c] - 3 * p2[c] + p3[c]) * u ** 3)));
+    }
+  }
+  p.push(pts.at(-1));
+  const len = [0];
+  for (let i = 1; i < p.length; i++) len.push(len[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  return { p, len };
+}
+
+/**
+ * Cinta de radio `hw` a lo largo del eje hasta la longitud `s`, cerrada con una cabeza semicircular (nunca una punta). Con
+ * s ≥ longitud total es la cinta entera. La misma forma en todo el recorrido: solo avanza la cabeza.
+ */
+export function tubePath(ax, hw, s) {
+  if (s <= 0) return '';
+  const { p, len } = ax;
+  let n = 1;
+  while (n < p.length && len[n] <= s) n++;
+  const pts = p.slice(0, n);
+  if (n < p.length && len[n - 1] < s) {
+    const u = (s - len[n - 1]) / (len[n] - len[n - 1]);
+    pts.push([p[n - 1][0] + (p[n][0] - p[n - 1][0]) * u, p[n - 1][1] + (p[n][1] - p[n - 1][1]) * u]);
+  }
+  if (pts.length < 2) return '';
+  const side = pts.map((q, i) => {
+    const a = pts[Math.max(0, i - 1)];
+    const b = pts[Math.min(pts.length - 1, i + 1)];
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    const nx = -(b[1] - a[1]) / d;
+    const ny = (b[0] - a[0]) / d;
+    return [[q[0] - nx * hw, q[1] - ny * hw], [q[0] + nx * hw, q[1] + ny * hw]];
+  });
+  const xy = (q) => `${f1(q[0])} ${f1(q[1])}`;
+  const one = side.map((s2) => xy(s2[0]));
+  const two = side.map((s2) => xy(s2[1])).reverse();
+  return `M${one.join('L')}A${f1(hw)} ${f1(hw)} 0 0 1 ${two[0]}L${two.slice(1).join('L')}Z`;
+}
+/**
+ * Cinta por columnas (a: borde superior, b: inferior, ×1000 del alto) descubierta de izquierda a derecha: dibuja la forma
+ * final hasta que su frente llega a x = xh (px) y lo cierra con una cabeza redondeada. Para xh ≥ W + el radio, es la forma
+ * completa. Como la forma es siempre la misma y solo avanza el frente, no hay saltos ni puntas.
+ */
+export function revealBand(a, b, W, H, xh) {
+  if (xh <= 0) return '';
+  const n = a.length;
+  const at = (arr, x) => {
+    const p = Math.min(n - 1, Math.max(0, (x / W) * n - 0.5));
+    const i = Math.floor(p);
+    return ((arr[i] + (arr[Math.min(n - 1, i + 1)] - arr[i]) * (p - i)) / 1000) * H;
+  };
+  const thick = (x) => at(b, x) - at(a, x);
+  const cap = thick(Math.min(W, xh)) * 0.5;
+  const xe = xh - cap;
+  const xs = [];
+  const step = W / 48;
+  for (let x = 0; x < xe; x += step) xs.push(x);
+  xs.push(xe);
+  const top = xs.map((x) => `${f1(x)} ${f1(at(a, x))}`);
+  const bot = xs.map((x) => `${f1(x)} ${f1(at(b, x))}`).reverse();
+  return `M${top.join('L')}A${f1(cap)} ${f1(thick(xe) / 2)} 0 0 1 ${bot[0]}${bot.length > 1 ? `L${bot.slice(1).join('L')}` : ''}Z`;
+}
+
+/**
+ * Cima de la masa por filas: el trazado deja encima de la cabeza unas filas estrechísimas (una aguja de 2-4 px). Aquí se
+ * descartan las filas de arriba más estrechas que `minW` px y la cima se cierra con un semicírculo del ancho del cuerpo.
+ * Si la masa ya llega al borde superior, no toca nada. Devuelve a y b nuevos.
+ */
+export function roundTop(a, b, W, H, minW = 0.03 * W) {
+  const n = a.length;
+  const dy = H / n;
+  const wpx = (k) => ((b[k] - a[k]) / 1000) * W;
+  let k0 = 0;
+  while (k0 < n && wpx(k0) < minW) k0++;
+  if (k0 === 0 || k0 >= n) return { a, b };
+  const A = a.slice();
+  const B = b.slice();
+  for (let k = 0; k < k0; k++) A[k] = B[k] = (a[k0] + b[k0]) / 2;
+  let body = 0;
+  for (let k = k0; k < Math.min(n, k0 + 8); k++) body = Math.max(body, wpx(k));
+  if (body > 0.3 * W) return { a: A, b: B }; // masa ancha (o el botón): su cima ya es una cúpula, solo sobraba la aguja
+  const R = Math.min(body / 2, 36);
+  for (let k = k0; k < n; k++) {
+    const d = (k + 0.5) * dy - k0 * dy;
+    if (d >= R) break;
+    const cap = ((body - 2 * R + 2 * R * Math.sqrt(Math.max(0, 1 - (1 - d / R) ** 2))) / W) * 1000; // esquinas de radio R
+    if (b[k] - a[k] > cap) { const m = (a[k] + b[k]) / 2; A[k] = m - cap / 2; B[k] = m + cap / 2; }
+  }
+  return { a: A, b: B };
+}
+
 /**
  * La silueta del botón (rectángulo redondeado, en px) en el mismo formato de filas que MASS: punto de partida de la masa,
  * para que el primer fotograma sea exactamente el botón. `rect`: { left, right, top, bottom }. Filas fuera del botón: ancho cero.
