@@ -110,11 +110,11 @@ test('dominadas (peso corporal): más repeticiones sin lastre cuentan como réco
 // ---------------------------------------------------------------------------
 // Siluetas animadas: datos trazados + interpolación y path
 // ---------------------------------------------------------------------------
-import { frameAt, rowsPath, colsPath, pillFrame, withPill, smooth, axisOf, tubePath, revealBand, roundTop } from '../../js/celebrate-logic.js';
-import { MASS, TOP, BOT, TOP_AXIS } from '../../js/celebrate-data.js';
+import { frameAt, rowsPath, pillFrame, withPill, smoothPath, roundTop } from '../../js/celebrate-logic.js';
+import { MASS } from '../../js/celebrate-data.js';
 
 test('datos de las siluetas: tiempos crecientes, mismas dimensiones y valores dentro de pantalla (con margen)', () => {
-  for (const [name, d, n] of [['MASS', MASS, 96], ['TOP', TOP, 72], ['BOT', BOT, 64]]) {
+  for (const [name, d, n] of [['MASS', MASS, 96]]) {
     assert.ok(d.t.length >= 10, name);
     for (let i = 1; i < d.t.length; i++) assert.ok(d.t[i] > d.t[i - 1], `${name}: tiempos crecientes`);
     assert.equal(d.a.length, d.t.length);
@@ -128,10 +128,9 @@ test('datos de las siluetas: tiempos crecientes, mismas dimensiones y valores de
       }
     }
   }
-  // La masa acaba cubriendo toda la pantalla; las cintas acaban quietas (dos últimos fotogramas casi iguales o ya estables)
+  // La masa acaba cubriendo toda la pantalla
   assert.ok(MASS.a.at(-1).every((v) => v <= 0) && MASS.b.at(-1).every((v) => v >= 1000), 'la masa llena la pantalla');
   assert.ok(MASS.t[0] > 0 && MASS.t.at(-1) < 800, 'cubre en menos de 0,8 s');
-  assert.ok(TOP.t[0] >= 900 && BOT.t[0] >= 1700 && BOT.t.at(-1) <= 2300, 'cintas entran en su momento');
 });
 
 test('frameAt: interpola entre fotogramas y se mantiene antes del primero y después del último', () => {
@@ -142,13 +141,11 @@ test('frameAt: interpola entre fotogramas y se mantiene antes del primero y desp
   assert.deepEqual(frameAt(d, 500).b, [900, 800]);
 });
 
-test('rowsPath / colsPath: polígono cerrado con 2 vértices por fila (más los bordes)', () => {
+test('rowsPath: polígono cerrado con 2 vértices por fila (más los bordes)', () => {
   const p = rowsPath([0, 0, 0], [1000, 1000, 1000], 100, 200, { edges: true });
   assert.match(p, /^M.*Z$/);
   assert.equal((p.match(/[ML]/g) || []).length, 2 * (3 + 2), 'filas + 2 de borde, por lado');
   assert.ok(p.startsWith('M0 0L'), 'prolongado hasta el borde superior');
-  const c = colsPath([500, 500], [1000, 1000], 100, 200);
-  assert.match(c, /^M25 100L75 100L75 200L25 200Z$/);
 });
 
 test('pillFrame: la silueta del botón en filas (esquinas redondeadas) y nada fuera de él', () => {
@@ -168,50 +165,30 @@ test('pillFrame: la silueta del botón en filas (esquinas redondeadas) y nada fu
   assert.equal(w.t.length, MASS.t.length + 1);
 });
 
-// Cintas: forma fija que solo se descubre con una cabeza redondeada (sin puntas ni saltos)
+// La curva verde: un solo path de Béziers cúbicas, sin esquinas
 const nums = (d) => (d.match(/-?\d+(\.\d+)?/g) || []).map(Number);
 
-test('smooth: conserva una recta y alisa un pico sin salirse del rango', () => {
-  assert.deepEqual(smooth([5, 5, 5, 5, 5]), [5, 5, 5, 5, 5]);
-  const s = smooth([0, 0, 100, 0, 0]);
-  assert.ok(s[2] < 100 && s[2] > 0 && s.every((v) => v >= 0 && v <= 100));
-});
-
-test('tubePath: crece con la longitud, termina en un semicírculo y con s ≥ longitud es la cinta entera', () => {
+test('smoothPath: un solo path de cúbicas con la tangente continua en cada unión (sin esquinas ni tramos rectos pegados)', () => {
   const W = 390, H = 844;
-  const ax = axisOf(TOP_AXIS.p.map(([x, y]) => [x * W, y * H]));
-  const L = ax.len.at(-1);
-  assert.ok(L > 600 && L < 1200, `longitud del eje (${L})`);
-  const hw = W * TOP_AXIS.r;
-  assert.equal(tubePath(ax, hw, 0), '');
-  let prev = 0;
-  for (const s of [0.1, 0.3, 0.6, 0.9, 1, 1.5]) {
-    const d = tubePath(ax, hw, s * L);
-    assert.match(d, /^M.*A[\d.]+ [\d.]+ 0 0 1 .*Z$/, 'cabeza con arco, polígono cerrado');
-    assert.ok(nums(d).every(Number.isFinite));
-    assert.ok(d.length >= prev, 'cada vez más larga');
-    prev = d.length;
+  const pts = [[0.97, -0.13], [0.93, 0.05], [0.66, 0.225], [0.25, 0.335], [-0.2, 0.43], [-0.42, 0.66], [-0.2, 0.9], [0.3, 0.96], [0.68, 0.925], [0.93, 0.835]].map(([x, y]) => [x * W, y * H]);
+  const d = smoothPath(pts);
+  assert.equal((d.match(/M/g) || []).length, 1, 'una sola trayectoria');
+  assert.equal((d.match(/C/g) || []).length, pts.length - 1, 'solo cúbicas: ni L ni A');
+  assert.ok(!/[LA]/.test(d));
+  const n = nums(d);
+  assert.ok(n.every(Number.isFinite));
+  // M x y, y por cada tramo c1 c2 p (6 números). En cada unión, el manejador de entrada y el de salida son colineales.
+  const seg = (k) => n.slice(2 + 6 * k, 8 + 6 * k);
+  assert.deepEqual([n[0], n[1]], [Math.round(pts[0][0] * 10) / 10, Math.round(pts[0][1] * 10) / 10], 'empieza en el primer punto');
+  for (let k = 0; k < pts.length - 2; k++) {
+    const [, , c2x, c2y, px, py] = seg(k);
+    const [c1x, c1y] = seg(k + 1);
+    const cross = (px - c2x) * (c1y - py) - (py - c2y) * (c1x - px);
+    const len = Math.hypot(px - c2x, py - c2y) * Math.hypot(c1x - px, c1y - py);
+    assert.ok(Math.abs(cross) / len < 0.01, `unión ${k + 1}: tangente continua`);
+    assert.ok((px - c2x) * (c1x - px) + (py - c2y) * (c1y - py) > 0, `unión ${k + 1}: sin cúspide (el sentido no se invierte)`);
   }
-  assert.equal(tubePath(ax, hw, L), tubePath(ax, hw, 5 * L), 'pasada la longitud es la forma completa');
-  // El radio del arco es el de la cinta (cabeza redondeada, no una punta)
-  assert.ok(tubePath(ax, hw, 0.5 * L).includes(`A${Math.round(hw)} ${Math.round(hw)} 0 0 1`));
-});
-
-test('revealBand: la cinta inferior avanza sin retroceder, con cabeza elíptica, y llena la pantalla al final', () => {
-  const W = 390, H = 844;
-  const a = smooth(BOT.a.at(-1));
-  const b = smooth(BOT.b.at(-1));
-  assert.equal(revealBand(a, b, W, H, 0), '');
-  assert.match(revealBand(a, b, W, H, 120), /^M.*A[\d.]+ [\d.]+ 0 0 1 .*Z$/);
-  let prev = -Infinity;
-  for (const xh of [20, 100, 200, 300, 390, W + H * 0.06]) {
-    const d = revealBand(a, b, W, H, xh);
-    assert.ok(nums(d).every(Number.isFinite), `xh=${xh}`);
-    const maxX = Math.max(...(d.match(/(?<=[ML])-?[\d.]+(?= )/g) || ['0']).map(Number));
-    assert.ok(maxX >= prev, 'el borde del trazo nunca retrocede');
-    prev = maxX;
-  }
-  assert.ok(prev >= W, 'a pantalla completa el trazo llega al borde derecho');
+  assert.equal(smoothPath([[0, 0], [100, 0]]), 'M0 0C16.7 0 83.3 0 100 0', 'con dos puntos, una recta');
 });
 
 test('roundTop: quita la aguja de la cima del dedo y la cierra redonda; no toca el botón ni la masa ancha', () => {

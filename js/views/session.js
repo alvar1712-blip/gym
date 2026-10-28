@@ -10,7 +10,7 @@ import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClon
 import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions, sessionPRs } from '../calc.js';
 import { mainRecord } from '../celebrate-logic.js';
 import { congratulate } from '../celebrate.js';
-import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl } from '../router.js';
+import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl, settled } from '../router.js';
 import { pickExercise } from '../pickers.js';
 import { exerciseHistory } from '../stats.js';
 import {
@@ -989,6 +989,7 @@ export function mountSession(root, params = {}) {
             onCovered: () => {
               if (origin) close();
               navigate(`#/session/${session.id}/summary`, { replace: true });
+              return settled(); // la salida de la felicitación espera a que el resumen esté montado
             },
           });
           await shown;

@@ -1,34 +1,39 @@
 // celebrate.js — animación de fin de sesión (css/celebrate.css; qué se dice y las funciones de forma: celebrate-logic.js;
 // las siluetas: celebrate-data.js).
-// Nace del botón que se acaba de pulsar («Terminar sesión», «Listo»): UNA sola masa del color del botón que parte de su
-// silueta exacta, sube por el lado derecho como un dedo redondeado, se curva hacia arriba-izquierda y barre hasta cubrir
-// la pantalla (≈0,55 s). Con la pantalla ya tapada se hace el trabajo de pasar al destino (onCovered) y el verde se funde
-// a negro. En el negro: un cúmulo de símbolos blancos que salen del centro y se dispersan, el mensaje con el emoji de la
-// actividad encima, y dos cintas que entran (arriba y abajo); los símbolos se desvanecen mientras entra la cinta. Se
-// mantiene (las cintas siguen asentándose, nunca queda quieta) y pasa al destino a los 3,2 s (sin segunda cortina). La masa se mueve por
-// fotogramas reales (celebrate-data.js; la cima del dedo se redondea) y las cintas son formas fijas que solo se descubren con una cabeza redondeada, todo con requestAnimationFrame durante ≈2,25 s; lo demás es CSS.
+// Una sola secuencia, en una sola dirección: idle → launching → celebration → exiting → completed (nunca retrocede ni se
+// solapan dos). Nace del botón que se acaba de pulsar («Terminar sesión», «Listo»): el botón responde al toque (≈0,12 s), de
+// su silueta exacta parte UNA masa del color del botón que sube por el lado derecho como un dedo redondeado y barre hasta
+// cubrir la pantalla (≈1 s). Con la pantalla tapada (onCovered, una sola vez) se pasa al destino y el verde se funde a
+// negro. En el negro: el emoji y el mensaje, y una única curva verde (un solo path de Béziers, se dibuja con
+// stroke-dashoffset) que lo rodea; ya compuesta, todo queda quieto ≈1 s. La salida (≈0,4 s) espera a que el destino esté
+// montado y es un fundido sobre él: nunca asoma otra pantalla. La masa se mueve por fotogramas reales (celebrate-data.js; la
+// cima del dedo se redondea) con requestAnimationFrame; lo demás es CSS.
 // Con movimiento reducido, solo un fundido. Nada de lo de debajo depende de ella: se guarda antes; si se omite (toque o
-// tecla) o falla, onCovered se ejecuta igualmente y la pantalla de debajo es la correcta.
+// tecla, ya cubierta la pantalla) o falla, onCovered se ejecuta igualmente y la pantalla de debajo es la correcta.
 import { h, icon } from './ui.js';
-import { pickMessage, frameAt, rowsPath, pillFrame, withPill, smooth, axisOf, tubePath, revealBand, roundTop } from './celebrate-logic.js';
-import { MASS, TOP_AXIS, BOT } from './celebrate-data.js';
+import { pickMessage, frameAt, rowsPath, pillFrame, withPill, smoothPath, roundTop } from './celebrate-logic.js';
+import { MASS } from './celebrate-data.js';
 import { ACTIVITY_EMOJI } from './seed.js';
 
-const COVER_MS = 580; // la masa ya cubre todo (≈0,55 s) y el negro está entrando (coincide con .cele-bg en celebrate.css)
-const MASS_GONE_MS = 700; // el negro ya es opaco: la masa se retira del árbol
-const SHAPES_END_MS = 2250; // fin del trazo de las cintas (después siguen asentándose con la deriva de css/celebrate.css)
-const TOP_T0 = 1000; // la cinta superior baja desde la esquina entre TOP_T0 y TOP_T0 + TOP_MS (frena al final)
-const TOP_MS = 720;
-const BOT_T0 = 1800; // la cinta inferior entra de izquierda a derecha entre BOT_T0 y SHAPES_END_MS
-const HOLD_MS = 3200; // desde el toque hasta pasar al destino (mensaje legible ≈2,6 s)
-const HOLD_RECORD_MS = 3800; // con récord se alarga 0,6 s
+// Tiempos en ms desde que se monta (css/celebrate.css los recibe como variables: --cover, --draw-at, --draw).
+const PRESS_MS = 120; // el botón «cede» antes de que nazca la masa
+const EXPAND_MS = 1000; // de la silueta del botón a la pantalla completa (los datos duran MASS_END_MS: se estiran)
+const MASS_END_MS = MASS.t.at(-1);
+const COVER_MS = PRESS_MS + EXPAND_MS + 40; // cubierta del todo: el negro entra (160 ms) y se pasa al destino
+const MASS_GONE_MS = COVER_MS + 200; // el negro ya es opaco: la masa se retira
+const DRAW_AT_MS = COVER_MS + 60; // empieza a dibujarse la curva
+const DRAW_MS = 750;
+const HOLD_MS = 950; // composición completa, quieta
+const HOLD_RECORD_MS = 1600; // con récord se alarga 0,6 s
 const HOLD_REDUCED_MS = 1200;
-const OUT_MS = 160; // paso directo al destino: un fundido corto, sin cortina
+const READY_MAX_MS = 1200; // lo máximo que la salida espera a que el destino esté montado
+const OUT_MS = 400; // fundido de salida (coincide con .cele-out en celebrate.css)
 const OUT_SKIP_MS = 160;
-// Las dos cintas son una forma fija que solo se va descubriendo con una cabeza redondeada (el trazado fotograma a fotograma
-// llevaba puntas, pliegues y un avance a saltos): la superior, un tubo sobre su eje; la inferior, su forma final por columnas.
-const BOT_A = smooth(BOT.a.at(-1));
-const BOT_B = smooth(BOT.b.at(-1));
+const PHASES = ['idle', 'launching', 'celebration', 'exiting', 'completed'];
+// La curva: puntos [x, y] como fracción del ancho y del alto. Entra por la esquina superior derecha, barre hasta salir por
+// la izquierda, da la vuelta fuera de pantalla y vuelve por abajo hasta terminar, con la punta redondeada, a la derecha.
+const RIBBON = [[0.97, -0.13], [0.93, 0.05], [0.66, 0.225], [0.25, 0.335], [-0.2, 0.43], [-0.42, 0.66], [-0.2, 0.9], [0.3, 0.96], [0.68, 0.925], [0.93, 0.835]];
+const RIBBON_W = 0.2; // grosor constante, fracción del ancho
 const reduced = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 // Pictogramas de trazo (24×24, como los de ui.js) para los símbolos que se dispersan. La fuerza y «otra» reutilizan los de
@@ -58,7 +63,7 @@ const AMBIENT = [
 ];
 const BURST_ORIGIN = [0.45, 0.47]; // el cúmulo del que salen
 
-let current = null; // { el, finish }
+let current = null; // { el, done: Promise } — solo hay una celebración a la vez
 
 /** Rectángulo de origen: el del botón (Element o DOMRect) si es válido y se ve; si no, un botón ficticio abajo. */
 function originRect(origin, W, H) {
@@ -70,13 +75,15 @@ function originRect(origin, W, H) {
 
 /**
  * Pantalla completa de felicitación. Devuelve una promesa que se resuelve cuando ya no está (al terminar o al omitirla
- * con un toque / Enter / Espacio / Escape). `kind`: strength|run|bike|swim|hike|other (elige el emoji y los símbolos).
- * `record`: texto de un récord en un ejercicio principal (opcional, secundario al mensaje). `origin`: el botón del que
- * nace (Element o DOMRect). `onCovered`: se llama UNA vez cuando la pantalla de debajo ya está tapada (o al omitir): ahí
- * se cierra la hoja y se navega al destino sin que se vea.
+ * con un toque / Enter / Espacio / Escape, una vez cubierta la pantalla: un segundo toque sobre «Terminar» no la omite).
+ * Si ya hay una en marcha no empieza otra: devuelve la misma promesa. `kind`: strength|run|bike|swim|hike|other (elige el
+ * emoji y los símbolos). `record`: texto de un récord en un ejercicio principal (opcional, secundario al mensaje). `origin`:
+ * el botón del que nace (Element o DOMRect). `onCovered`: se llama UNA vez cuando la pantalla de debajo ya está tapada: ahí
+ * se cierra la hoja y se navega al destino sin que se vea; si devuelve una promesa (p. ej. router.settled()), la salida
+ * espera a que se cumpla (como mucho READY_MAX_MS).
  */
 export function celebrate({ message, record = null, kind = 'strength', origin = null, onCovered = null }) {
-  current?.finish(true);
+  if (current) return current.done;
   const calm = reduced();
   const W = document.documentElement.clientWidth;
   const H = window.innerHeight;
@@ -88,21 +95,22 @@ export function celebrate({ message, record = null, kind = 'strength', origin = 
   const msg = h('div.cele-msg', message);
   const ts = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ts')) || 1;
   const symbols = AMBIENT.filter(([, y]) => !record || y < 0.5 || y > 0.66); // con récord, libre la franja de su línea
+  const holdAfterCover = DRAW_AT_MS - COVER_MS + DRAW_MS + (record ? HOLD_RECORD_MS : HOLD_MS);
   const el = h('div.cele', {
-    role: 'status', 'aria-label': `${message}${record ? ` ${record}` : ''}`,
-    // custom properties: solo valen como texto. --tail: la deriva de las cintas dura hasta después de la salida (nunca se queda quieta)
-    style: `--gc:${bg || 'var(--accent)'};--mk:${Math.round(Math.min(56, W * 0.115))}px;--tail:${(record ? HOLD_RECORD_MS : HOLD_MS) - 400}ms`,
+    role: 'status', 'aria-label': `${message}${record ? ` ${record}` : ''}`, 'data-phase': 'idle',
+    // custom properties: solo valen como texto
+    style: `--gc:${bg || 'var(--accent)'};--mk:${Math.round(Math.min(56, W * 0.115))}px;--px:${(r.left + r.right) / 2}px;--py:${(r.top + r.bottom) / 2}px;--press:${PRESS_MS}ms;--cover:${COVER_MS}ms;--draw-at:${DRAW_AT_MS}ms;--draw:${DRAW_MS}ms`,
   },
     svg('cele-mass', W, H, [shape('M0 0')]),
     h('div.cele-bg'),
-    bands(W, H),
+    ribbon(W, H),
     h('div.cele-amb', { 'aria-hidden': 'true' }, symbols.map(([x, y, s], i) => {
       const size = Math.round(W * s);
       const ox = (BURST_ORIGIN[0] - x) * 100;
       const oy = (BURST_ORIGIN[1] - y) * 100;
       return h('span', {
         style: `left:${x * 100}%;top:${y * 100}%;width:${size}px;height:${size}px;margin:${-size / 2}px 0 0 ${-size / 2}px;--ox:${ox}vw;--oy:${oy}vh;--r:${(i * 47) % 40 - 20}deg;`
-          + `--d:${430 + i * 5}ms;--o:${1050 + ((i * 7) % 16) * 25}ms;--dx:${((i * 13) % 17) - 8}px;--dy:${((i * 5) % 15) - 7}px`,
+          + `--d:${COVER_MS - 150 + i * 5}ms;--o:${COVER_MS + 250 + ((i * 7) % 16) * 25}ms;--dx:${((i * 13) % 17) - 8}px;--dy:${((i * 5) % 15) - 7}px`,
       }, h('i', i % 3 === 2 ? icon(i % 2 ? 'check' : 'flag', size) : glyph(kind, size)));
     })),
     h('div.cele-center',
@@ -110,40 +118,62 @@ export function celebrate({ message, record = null, kind = 'strength', origin = 
   document.body.appendChild(el);
   fit(msg, W, ts);
 
-  return new Promise((resolve) => {
-    let hold = null;
-    let done = false;
-    let covered = false;
-    const stopShapes = calm ? () => {} : drive(el, W, H, r, rad);
-    const cover = () => {
-      if (covered) return;
-      covered = true;
-      clearTimeout(coverT);
-      try { onCovered?.(); } catch (err) { console.error('[celebrar] onCovered', err); }
+  const done = new Promise((resolve) => {
+    let phase = 'idle';
+    let ready = Promise.resolve();
+    let leaving = false;
+    const timers = new Set();
+    const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); fn(); }, ms); timers.add(id); };
+    /** Solo hacia delante: devuelve false (y no hace nada) si ya se está en esa fase o en una posterior. */
+    const to = (next) => {
+      if (PHASES.indexOf(next) <= PHASES.indexOf(phase)) return false;
+      phase = next;
+      el.dataset.phase = next;
+      return true;
     };
-    const coverT = setTimeout(cover, calm ? 0 : COVER_MS);
-    const end = () => { stopShapes(); el.remove(); if (current?.el === el) current = null; resolve(); };
-    const finish = (skip = false) => {
-      if (done) return;
-      done = true;
-      clearTimeout(hold);
-      cover(); // si se omite antes de tiempo, el destino se monta igualmente
+    const stopMass = calm ? () => {} : drive(el, W, H, r, rad);
+    const end = () => {
+      if (!to('completed')) return;
+      timers.forEach(clearTimeout);
+      timers.clear();
+      stopMass();
       document.removeEventListener('keydown', onKey, true);
       el.removeEventListener('pointerdown', onTap);
-      el.classList.add(skip || calm ? 'cele-skip' : 'cele-out');
-      setTimeout(end, calm ? 120 : skip ? OUT_SKIP_MS : OUT_MS + 30);
+      el.remove();
+      current = null;
+      resolve();
     };
-    const onTap = () => finish(true);
+    const covered = () => {
+      if (!to('celebration')) return;
+      // Una sola vez: el trabajo de pasar al destino (cerrar la hoja y navegar) ocurre con la pantalla ya tapada.
+      ready = new Promise((ok) => ok(onCovered?.())).catch((err) => console.error('[celebrar] onCovered', err));
+      later(() => exit(false), holdAfterCover);
+      later(stopMass, MASS_GONE_MS - COVER_MS);
+    };
+    /** La salida espera a que el destino esté montado: el fundido siempre deja ver el resumen, nunca otra pantalla. */
+    const exit = (skip) => {
+      if (leaving || phase !== 'celebration') return;
+      leaving = true;
+      Promise.race([ready, new Promise((ok) => later(ok, READY_MAX_MS))]).then(() => {
+        if (!to('exiting')) return;
+        el.classList.add(skip || calm ? 'cele-skip' : 'cele-out');
+        later(end, calm ? 120 : skip ? OUT_SKIP_MS : OUT_MS + 30);
+      });
+    };
+    const onTap = () => exit(true);
     const onKey = (e) => {
       if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Escape') return;
       e.preventDefault();
-      finish(true);
+      exit(true);
     };
     el.addEventListener('pointerdown', onTap);
     document.addEventListener('keydown', onKey, true);
-    hold = setTimeout(() => finish(false), calm ? HOLD_REDUCED_MS : record ? HOLD_RECORD_MS : HOLD_MS);
-    current = { el, finish };
+    to('launching');
+    later(covered, calm ? 0 : COVER_MS);
   });
+  current = { el, done };
+  done.then(() => { if (current?.el === el) current = null; });
+  return done;
 }
 
 const MSG_KEY = 'entreno.lastCongrats';
@@ -180,59 +210,43 @@ function svg(cls, W, H, children) {
   return s;
 }
 
-/** Las dos cintas (arriba y abajo), con un degradado suave del verde de la app. Sus formas las mueve drive(). */
-function bands(W, H) {
+/** La curva verde: UN path (Béziers cúbicas), trazo de grosor constante con extremos y uniones redondos; css/celebrate.css la dibuja. */
+function ribbon(W, H) {
   const grad = svgEl('linearGradient', { id: 'cele-grad', gradientUnits: 'userSpaceOnUse', x1: W, y1: 0, x2: 0, y2: H * 0.5 });
   grad.appendChild(svgEl('stop', { offset: '0', style: 'stop-color:#8fd02f' }));
   grad.appendChild(svgEl('stop', { offset: '1', style: 'stop-color:var(--accent)' }));
   const defs = svgEl('defs');
   defs.appendChild(grad);
-  const top = shape('M0 0');
-  top.setAttribute('class', 'cele-top');
-  const bot = shape('M0 0');
-  bot.setAttribute('class', 'cele-bot');
-  return svg('cele-bands', W, H, [defs, top, bot]);
+  const path = svgEl('path', { d: smoothPath(RIBBON.map(([x, y]) => [x * W, y * H])), pathLength: '1', 'stroke-width': W * RIBBON_W });
+  path.setAttribute('class', 'cele-ribbon');
+  return svg('cele-bands', W, H, [defs, path]);
 }
 
 /**
- * Mueve las formas: la masa (del botón a pantalla completa, 0–0,6 s), la cinta superior (1,0–1,72 s, un tubo sobre su eje) y
- * la inferior (1,8–2,25 s, su forma final descubierta de izquierda a derecha), en cada fotograma de pantalla. Devuelve la
- * función que lo detiene.
+ * Mueve la masa (del botón a pantalla completa) en cada fotograma de pantalla: quieta mientras el botón cede (PRESS_MS) y
+ * después los fotogramas reales de MASS, estirados a EXPAND_MS. Devuelve la función que lo detiene (y retira la masa).
  */
 function drive(el, W, H, rect, rad) {
   const massData = withPill(MASS, pillFrame(rect, rad, W, H, MASS.a[0].length));
   const mass = el.querySelector('.cele-mass path');
-  const top = el.querySelector('.cele-top');
-  const bot = el.querySelector('.cele-bot');
-  const topAxis = axisOf(TOP_AXIS.p.map(([x, y]) => [x * W, y * H]));
   const p0 = frameAt(massData, 0);
   mass.setAttribute('d', rowsPath(p0.a, p0.b, W, H, { edges: true })); // ya en el primer fotograma: es el botón
   const t0 = performance.now();
   let raf = 0;
-  let massGone = false;
   const tick = (now) => {
-    const t = now - t0;
-    if (t <= MASS_GONE_MS) {
-      const f = frameAt(massData, t);
+    const t = (now - t0 - PRESS_MS) * (MASS_END_MS / EXPAND_MS);
+    if (t > 0) {
+      const f = frameAt(massData, Math.min(t, MASS_END_MS));
       const m = roundTop(f.a, f.b, W, H);
       mass.setAttribute('d', rowsPath(m.a, m.b, W, H, { edges: true }));
-    } else if (!massGone) {
-      massGone = true;
-      mass.parentNode.style.display = 'none';
     }
-    if (t >= TOP_T0 - 30) {
-      const u = Math.min(1, Math.max(0, (t - TOP_T0) / TOP_MS));
-      top.setAttribute('d', tubePath(topAxis, W * TOP_AXIS.r, (1 - (1 - u) ** 2) * topAxis.len.at(-1)));
-    }
-    if (t >= BOT_T0 - 30) {
-      const u = Math.min(1, Math.max(0, (t - BOT_T0) / (SHAPES_END_MS - BOT_T0)));
-      bot.setAttribute('d', revealBand(BOT_A, BOT_B, W, H, (1 - (1 - u) ** 2) * (W + H * 0.06)));
-    }
-    if (t < SHAPES_END_MS) raf = requestAnimationFrame(tick);
-    else bot.setAttribute('d', revealBand(BOT_A, BOT_B, W, H, W + H * 0.06)); // forma completa exacta
+    if (t < MASS_END_MS) raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
-  return () => cancelAnimationFrame(raf);
+  return () => {
+    cancelAnimationFrame(raf);
+    mass.parentNode.style.display = 'none';
+  };
 }
 
 /** El mensaje ocupa una sola línea, ≈70 % del ancho (la proporción de la referencia; más con texto grande), tope 56 px. */

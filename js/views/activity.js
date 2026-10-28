@@ -2,7 +2,7 @@
 // Obligatorios: tipo, fecha y duración. La actividad se crea en cuanto es válida y desde ahí
 // cada cambio se guarda al instante; antes se conserva un borrador en localStorage.
 import * as store from '../store.js';
-import { back, navigate, refresh, replaceUrl, screenToken, backFrom } from '../router.js';
+import { back, navigate, refresh, replaceUrl, screenToken, backFrom, settled } from '../router.js';
 import {
   h, icon, header, segmented, chips, rpePicker, durationInput, field, textInput, numInput,
   confirmDialog, undoToast, emptyState, toast, confirmRare, fitTitle,
@@ -634,7 +634,7 @@ function mountForm(root, ctx) {
     // Una actividad nueva e independiente (carrera, bici, natación, senderismo u otra) se felicita como una sesión
     // de fuerza; la enlazada a una sesión de fuerza se celebra al terminar esa sesión, y editar una antigua no.
     // Nace del botón «Listo»; cuando ya cubre la pantalla se vuelve atrás (onCovered), sin que se vea. No se espera.
-    if (createdHere && !form.parentId && !removed) congratulate(null, record.kind, { origin: doneBtn, onCovered: () => back(backFallback) });
+    if (createdHere && !form.parentId && !removed) congratulate(null, record.kind, { origin: doneBtn, onCovered: () => { back(backFallback); return settled(); } });
     else back(backFallback);
     const p = form.parentId ? store.get('sessions', form.parentId) : null;
     if (p && p.status === 'done' && p.durationMin != null && parentMinAtOpen != null && p.durationMin !== parentMinAtOpen) {

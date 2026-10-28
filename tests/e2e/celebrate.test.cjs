@@ -12,6 +12,8 @@ const { openApp, go, reload, idbAll, settle } = require('./helpers.cjs');
 const MESSAGES = ['¡Buen trabajo!', '¡Bien hecho!', '¡Gran esfuerzo!', '¡Así se hace!'];
 const summaryHash = (id) => `#/session/${id}/summary`;
 const atSummary = (page, id) => page.waitForFunction((h) => location.hash.split('?')[0] === h, summaryHash(id), { timeout: 8000 });
+// Omitir solo vale con la pantalla ya cubierta (fase «celebration»): un segundo toque sobre «Terminar» no la salta
+const covered = (page) => page.waitForFunction(() => document.querySelector('.cele')?.dataset.phase === 'celebration', null, { timeout: 4000 });
 
 /** Historial (sesión terminada hace meses) y una sesión de hoy en curso; cada ejercicio: [id, kg, reps] con la serie hecha. */
 async function seed(page, { hist, today }) {
@@ -97,6 +99,10 @@ test('omitir con un toque: sale enseguida y llega al resumen correcto', () => wi
   const id = await seed(page, { hist: [['press_banca', 80, 5]], today: [['press_banca', 90, 5]] });
   await pressFinish(await openFinish(page, id)).click();
   await page.locator('.cele').waitFor();
+  await page.locator('.cele').click({ position: { x: 20, y: 200 }, force: true }); // antes de cubrir: no hace nada
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.locator('.cele').getAttribute('data-phase'), 'launching', 'un toque durante el lanzamiento no la omite');
+  await covered(page);
   const t0 = Date.now();
   await page.locator('.cele').click({ position: { x: 20, y: 200 } });
   await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
@@ -110,6 +116,7 @@ test('omitir con el teclado (Escape): mismo resultado', () => withApp(async ({ p
   const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
   await pressFinish(await openFinish(page, id)).click();
   await page.locator('.cele').waitFor();
+  await covered(page);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
   await atSummary(page, id);
@@ -175,6 +182,7 @@ for (const kind of ['run', 'bike', 'swim', 'hike', 'other']) {
     await page.locator('.cele').waitFor();
     assert.ok(MESSAGES.includes(await page.locator('.cele-msg').innerText()));
     assert.strictEqual(await page.locator('.cele-pr').count(), 0, 'las actividades no destacan récords de ejercicio');
+    await covered(page);
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
     assert.ok(!(await page.evaluate(() => location.hash)).startsWith('#/activity'), 'ya no está en el formulario');
@@ -190,6 +198,7 @@ test('actividad: editar una antigua y pulsar «Listo» NO felicita', () => withA
   await settle(page);
   await page.locator('.act-done').click();
   await page.locator('.cele').waitFor();
+  await covered(page);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
   const run = (await idbAll(page, 'sessions')).find((s) => s.kind === 'run');
@@ -267,6 +276,7 @@ test('icono de la felicitación: el emoji de siempre de cada tipo de actividad (
     for (const kind of ['strength', 'run', 'bike', 'swim', 'hike', 'other', 'desconocido']) {
       const p = c.celebrate({ message: '¡Bien hecho!', kind });
       out[kind] = { mark: document.querySelector('.cele-mark').textContent, seed: ACTIVITY_EMOJI[kind] ?? null };
+      while (document.querySelector('.cele').dataset.phase !== 'celebration') await new Promise((r) => setTimeout(r, 50)); // omitir solo vale ya cubierta
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
       await p;
     }
@@ -299,44 +309,74 @@ test('composición: mensaje en una línea, icono según el deporte, el récord n
   assert.strictEqual(strength.d, '🏋️', 'fuerza: la pesa de siempre');
   assert.strictEqual(run.d, '🏃', 'una carrera usa el corredor, no la pesa');
   assert.strictEqual(withRecord.top, strength.top, 'el récord no desplaza al mensaje');
-  // Total ≈ 3,5 s hasta pasar al destino + 0,13 s de fundido (menos los 1,8 s ya transcurridos al medir)
+  // Total ≈ 3,3 s (1,16 s de lanzamiento + 0,8 de curva + 0,95 quieto + 0,4 de salida), menos los 1,8 s ya transcurridos al medir
   assert.ok(strength.ms > 1300 && strength.ms < 2600, `sin récord ${strength.ms} ms`);
   assert.ok(withRecord.ms > strength.ms + 300, `con récord dura algo más (${withRecord.ms} ms)`);
 }));
 
-test('coreografía: el negro cubre sin iris, la masa se retira y el final pasa directo al destino (sin segunda cortina) a los ≈3,6 s', () => withApp(async ({ page }) => {
+test('coreografía: una sola secuencia (lanzamiento → celebración → salida), sin pantallas intermedias, ≈1 s quieta y una sola navegación al resumen', () => withApp(async ({ page }) => {
   const id = await seed(page, { hist: [['press_banca', 80, 5]], today: [['press_banca', 80, 5]] });
   const fin = await openFinish(page, id);
-  const t0 = Date.now();
+  // Muestreo en cada fotograma desde antes de pulsar: fase, ruta, opacidad del negro, curva, posición del mensaje y toques
+  await page.evaluate(() => {
+    const out = (window.__seq = { rows: [], hashes: [], celes: 0 });
+    let t0 = null;
+    let lastHash = location.hash;
+    const tick = () => {
+      const c = document.querySelector('.cele');
+      if (c && t0 == null) t0 = performance.now();
+      if (location.hash !== lastHash) { lastHash = location.hash; out.hashes.push([t0 == null ? -1 : Math.round(performance.now() - t0), lastHash.split('?')[0].replace(/\/s_[^/]+/, '/:id')]); }
+      if (c) {
+        const m = c.querySelector('.cele-msg').getBoundingClientRect();
+        out.rows.push({
+          t: Math.round(performance.now() - t0), phase: c.dataset.phase, out: c.classList.contains('cele-out'),
+          bg: +getComputedStyle(c.querySelector('.cele-bg')).opacity,
+          dash: +getComputedStyle(c.querySelector('.cele-ribbon')).strokeDashoffset.replace('px', ''),
+          msg: `${Math.round(m.left)},${Math.round(m.top)}`, op: +getComputedStyle(c.querySelector('.cele-msg')).opacity,
+        });
+      }
+      out.celes = Math.max(out.celes, document.querySelectorAll('.cele').length);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   await pressFinish(fin).click();
   await page.locator('.cele').waitFor();
-  const tCele = Date.now(); // la celebración arranca al guardar (unos ms tras el toque)
-  assert.strictEqual(await page.locator('.cele-sweep, .cele-scene, .cele-grow, .cele-tendril, .cele-ribbon').count(), 0, 'sin la cortina, el iris ni las formas de versiones anteriores');
-  // A los ≈0,9 s el negro ya es opaco y la masa verde se ha retirado del árbol; la hoja y el destino no se ven
-  await page.waitForTimeout(Math.max(0, 900 - (Date.now() - tCele)));
-  const mid = await page.evaluate(() => ({
-    bg: getComputedStyle(document.querySelector('.cele-bg')).opacity,
-    mass: getComputedStyle(document.querySelector('.cele-mass')).display,
-    hash: location.hash,
-  }));
+  assert.strictEqual(await page.locator('.cele-sweep, .cele-scene, .cele-grow, .cele-tendril, .cele-ribbon:not(path)').count(), 0, 'sin la cortina, el iris ni las formas de versiones anteriores');
   // La celebración va en su propio grupo de transición de vista: el montaje del destino no pinta su cabecera, su barra
-  // inferior ni la imagen antigua por encima (se vería parte de Hoy durante el negro)
+  // inferior ni la imagen antigua por encima
   const vt = await page.evaluate(() => (CSS.supports('view-transition-name', 'x') ? getComputedStyle(document.querySelector('.cele')).viewTransitionName : 'cele'));
   assert.strictEqual(vt, 'cele');
-  assert.strictEqual(mid.bg, '1');
-  assert.strictEqual(mid.mass, 'none', 'la masa ya no está');
-  // La hoja se cierra (con su animación) cuando ya está cubierta, no antes: pasados 0,58 s\n  await page.waitForFunction(() => !document.querySelector('.ses-finish-sheet'), null, { timeout: 1500 });\n  assert.ok(Date.now() - tCele >= 500, 'la hoja se cierra bajo la cubierta, no antes');\n  assert.match(mid.hash, /\/summary/, 'el destino ya está montado');
-  // Final: se pasa al destino con un fundido corto, sin nada verde a pantalla completa
-  await page.waitForFunction(() => document.querySelector('.cele')?.classList.contains('cele-out'), null, { timeout: 6000 });
-  const tOut = Date.now() - tCele;
-  assert.ok(tOut > 2500 && tOut < 3700, `empieza a salir a los ${tOut} ms de arrancar (3,5 s menos lo ya transcurrido)`);
-  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('.cele-mass, .cele-sweep').length === 1 && getComputedStyle(document.querySelector('.cele-mass')).display === 'none'), true, 'al salir no vuelve a aparecer nada verde de pantalla completa');
-  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 2000 });
-  const total = Date.now() - t0;
-  assert.ok(total > 3300 && total < 4700, `total desde la pulsación: ${total} ms`);
+  await page.waitForFunction(() => !document.querySelector('.cele'), null, { timeout: 7000 });
+  await page.waitForTimeout(1500); // y no vuelve a aparecer
   await atSummary(page, id);
-}));
-test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): vuelve a la sesión, sin bienvenida y sin perder nada', () => withApp(async ({ page }) => {
+  const { rows, hashes, celes } = await page.evaluate(() => window.__seq);
+  assert.strictEqual(celes, 1, 'nunca dos celebraciones a la vez');
+  assert.strictEqual(await page.locator('.cele').count(), 0, 'no vuelve a aparecer');
+  // Fases: solo hacia delante, cada una una vez
+  const order = ['launching', 'celebration', 'exiting'];
+  const seen = rows.map((r) => r.phase).filter((p, k, a) => k === 0 || p !== a[k - 1]);
+  assert.deepStrictEqual(seen.filter((p) => p !== 'idle'), order, `fases ${seen}`);
+  // Una sola navegación, al resumen, con la pantalla ya cubierta (negro opaco o verde) y antes de la salida
+  assert.strictEqual(hashes.length, 1, `una sola navegación: ${JSON.stringify(hashes)}`);
+  assert.match(hashes[0][1], /\/summary$/);
+  const cover = rows.find((r) => r.phase === 'celebration').t;
+  const exit = rows.find((r) => r.phase === 'exiting').t;
+  assert.ok(hashes[0][0] >= cover - 30 && hashes[0][0] < exit - 500, `navega al cubrirse (${hashes[0][0]} ms; cubierta a los ${cover})`);
+  // Lanzamiento ≈1,1 s (no 0,6 s como antes); el negro es opaco antes de que se vea nada del mensaje
+  assert.ok(cover > 1000 && cover < 1400, `cubre a los ${cover} ms`);
+  assert.ok(rows.filter((r) => r.phase === 'launching').every((r) => r.bg === 0 && r.op === 0), 'durante el lanzamiento solo hay verde: ni negro ni mensaje');
+  // Quieta ≈1 s: curva completa, negro opaco y mensaje inmóvil y opaco desde que se compone hasta la salida
+  const still = rows.filter((r) => r.phase === 'celebration' && r.dash === 0 && r.op === 1);
+  assert.ok(still.length > 20, 'hay una composición completa');
+  assert.ok(exit - still[0].t > 850 && exit - still[0].t < 1300, `quieta ${exit - still[0].t} ms`);
+  assert.ok(still.every((r) => r.bg === 1 && r.msg === still[0].msg), 'negro opaco y mensaje sin moverse');
+  // Salida ≈0,4 s, a los ≈3 s
+  assert.ok(exit > 2700 && exit < 3500, `empieza a salir a los ${exit} ms`);
+  const end = rows.at(-1).t;
+  assert.ok(end - exit > 330 && end - exit < 700, `salida de ${end - exit} ms`);
+  assert.ok(rows.filter((r) => r.phase === 'exiting').every((r) => r.out), 'la salida es el fundido');
+}));test('bloquear y desbloquear con la sesión en curso (iOS recarga la página): vuelve a la sesión, sin bienvenida y sin perder nada', () => withApp(async ({ page }) => {
   const id = await seed(page, { hist: [], today: [['press_banca', 90, 5]] });
   await go(page, `#/session/${id}`);
   await page.waitForSelector('.ses-finish');
