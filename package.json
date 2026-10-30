@@ -2,7 +2,7 @@
   "name": "entreno",
   "version": "1.0.0",
   "private": true,
-  "description": "PWA de entrenamiento (fuerza + resistencia). Sin compilación: se sirve tal cual.",
+  "description": "PWA de entrenamiento (fuerza + resistencia). Sin compilaciÃ³n: se sirve tal cual.",
   "type": "module",
   "scripts": {
     "serve": "node tests/serve.mjs 8080",
@@ -11,6 +11,8 @@
     "check": "node scripts/check-assets.mjs && node scripts/run-unit.mjs",
     "stamp": "node scripts/stamp-sw.mjs",
     "e2e:webkit": "E2E_BROWSER=webkit NODE_PATH=$(npm root -g) node --test --test-concurrency=3 'tests/e2e/*.test.cjs'",
-    "perf": "NODE_PATH=$(npm root -g) node scripts/perf-startup.cjs"
+    "perf": "NODE_PATH=$(npm root -g) node scripts/perf-startup.cjs",
+    "lab": "node tests/lab/run.mjs",
+    "lab:test": "node --test tests/lab/lab.test.mjs"
   }
 }

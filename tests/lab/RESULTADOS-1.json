@@ -1,0 +1,4011 @@
+{
+ "summary": {
+  "generatedAt": "2026-10-30T10:21:53.631Z",
+  "seed": 1,
+  "profiles": 20,
+  "scenarios": 23,
+  "runs": 332,
+  "passed": 314,
+  "failed": 18,
+  "browser": {
+   "engine": "chromium 156.0.8078.4"
+  }
+ },
+ "findings": [
+  {
+   "id": "LAB-001",
+   "scenario": "N07",
+   "class": "D",
+   "severity": "media",
+   "category": "Fuerza / récords",
+   "title": "Un peso mal tecleado pero «posible» (p. ej. 17,5 → 175 kg) entra en Récords y queda como marca histórica",
+   "profiles": [
+    "p01-adolescente-baloncesto",
+    "p03-principiante-28",
+    "p06-irregular-55",
+    "p07-mayor-67-fuerza",
+    "p08-mayor-75-simple",
+    "p09-veterano-5-anios",
+    "p10-abandona-retoma",
+    "p11-cambia-rutinas",
+    "p12-datos-erroneos",
+    "p17-teclado-motriz",
+    "p18-baja-vision",
+    "p19-recuperacion-lesion",
+    "p20-viajero-zona-horaria"
+   ],
+   "steps": [
+    "Registrar series con pesos habituales (10–30 kg) en un ejercicio de aislamiento.",
+    "Guardar una serie con 175 kg (coma mal puesta). Está por debajo de los límites de js/sanity.js, que son amplios a propósito, así que no pregunta «¿Seguro?».",
+    "Abrir Progreso › Récords del ejercicio."
+   ],
+   "expected": "Un valor ≥4× la mediana personal del ejercicio se avisa al guardarlo o se señala en Récords, en vez de presentarse como mejor marca.",
+   "observed": [
+    "[p01-adolescente-baloncesto] Peso muerto rumano: récord de peso 150 kg (2026-01-13) frente a mediana 17.5 kg",
+    "[p01-adolescente-baloncesto] Sentadilla: récord de peso 250 kg (2026-03-17) frente a mediana 27.5 kg",
+    "[p03-principiante-28] Remo con pecho apoyado: récord de peso 200 kg (2026-09-21) frente a mediana 17.5 kg",
+    "[p06-irregular-55] Elevaciones laterales: récord de peso 175 kg (2026-02-05) frente a mediana 17.5 kg",
+    "[p06-irregular-55] Face pull: récord de peso 250 kg (2026-08-24) frente a mediana 27.5 kg",
+    "[p07-mayor-67-fuerza] Curl femoral: récord de peso 175 kg (2026-04-28) frente a mediana 15 kg",
+    "[p07-mayor-67-fuerza] Gemelos de pie: récord de peso 125 kg (2026-02-03) frente a mediana 12.5 kg"
+   ],
+   "evidence": "tests/lab/out/resultados.json (escenario N07)",
+   "confidence": "alta (el comportamiento se reproduce; que sea un defecto es decisión de producto)",
+   "files": [
+    "js/sanity.js (checkSet)",
+    "js/stats.js (strengthRecords)",
+    "js/session-view-card.js"
+   ],
+   "fix": "En checkSet, comparar con la mediana de las últimas series del mismo ejercicio/configuración (≥ 6 series previas) y preguntar «¿Seguro?» si supera 4×. Sin tocar el esquema. Alternativa: en Récords, marcar «marca única muy superior a tu historial» y permitir descartarla.",
+   "priority": "media"
+  },
+  {
+   "id": "LAB-002",
+   "scenario": "B05",
+   "class": "B",
+   "severity": "baja",
+   "category": "Almacenamiento",
+   "title": "Si el guardado falla (p. ej. almacenamiento lleno), el dato sigue visible en memoria aunque no esté en disco",
+   "profiles": [
+    "p01-adolescente-baloncesto",
+    "p09-veterano-5-anios"
+   ],
+   "steps": [
+    "Abrir la app con historial.",
+    "Hacer que IDBObjectStore.put lance QuotaExceededError.",
+    "store.save(\"bodyweight\", {id: hoy, kg: 71.3}).",
+    "Comprobar store.all(\"bodyweight\") frente a IndexedDB."
+   ],
+   "expected": "Tras el error, o bien se revierte la memoria, o la interfaz deja claro que ese dato NO está guardado hasta reintentar.",
+   "observed": [
+    "[p01-adolescente-baloncesto] el peso 71,3 kg figura en memoria (y por tanto en pantalla) pero NO está en disco: desaparecerá al recargar",
+    "[p09-veterano-5-anios] el peso 71,3 kg figura en memoria (y por tanto en pantalla) pero NO está en disco: desaparecerá al recargar"
+   ],
+   "evidence": "tests/lab/out/resultados.json (escenario B05)",
+   "confidence": "alta (reproducido con un fallo simulado de IndexedDB)",
+   "files": [
+    "js/store.js (save: maps[store].set antes de db.put; track → emit(\"error\"))",
+    "js/app.js (toast «No se pudo guardar… Vuelve a intentarlo»)"
+   ],
+   "fix": "La app SÍ avisa con un toast de 6 s. Mejora mínima: en save(), si db.put falla, restaurar el valor previo en el mapa (o marcarlo «sin guardar») para que al cerrar la app no se pierda un dato que parecía guardado. Riesgo real bajo: requiere cuota llena o fallo del disco; en iOS ocurre sobre todo con almacenamiento del sitio purgado.",
+   "priority": "baja"
+  },
+  {
+   "id": "LAB-003",
+   "scenario": "B09",
+   "class": "C",
+   "severity": "media",
+   "category": "UX y accesibilidad",
+   "title": "Controles táctiles por debajo de 44 px: tira de días de Hoy con texto grande y zonas del mapa muscular",
+   "profiles": [
+    "p01-adolescente-baloncesto",
+    "p08-mayor-75-simple",
+    "p18-baja-vision"
+   ],
+   "steps": [
+    "Abrir en una pantalla de 320–390 px (con texto ×1,5 la tira de días de Hoy llega a 37×91 px; el mapa muscular de Progreso mide 29–31 px de alto incluso a ×1).",
+    "Hoy: la tira de días; Progreso: mapa muscular y chips de deporte."
+   ],
+   "expected": "Objetivo táctil mínimo de 44×44 px (guía de Apple y WCAG 2.5.8 pide 24 px mínimo, 44 recomendado).",
+   "observed": [
+    "[p01-adolescente-baloncesto] #/progress: 11 controles < 44 px, p. ej. g«Hombro anterior: 1 s» 76×29; g«Hombro lateral: 0 se» 218×31; g«Hombro posterior: 0 » 76×29",
+    "[p08-mayor-75-simple] #/today: 7 controles < 44 px, p. ej. button«lunes, 26 de octubre» 37×91; button«martes, 27 de octubr» 37×91; button«miércoles, 28 de oct» 37×91",
+    "[p08-mayor-75-simple] #/progress: 12 controles < 44 px, p. ej. button«Bici» 36×44; g«Hombro anterior: 1 s» 76×29; g«Hombro lateral: 0 se» 218×31",
+    "[p18-baja-vision] #/today: 7 controles < 44 px, p. ej. button«lunes, 26 de octubre» 37×91; button«martes, 27 de octubr» 37×91; button«miércoles, 28 de oct» 37×91",
+    "[p18-baja-vision] #/progress: 12 controles < 44 px, p. ej. button«Bici» 36×44; g«Hombro anterior: 1 s» 76×29; g«Hombro lateral: 0 se» 218×31"
+   ],
+   "evidence": "tests/lab/out/resultados.json (escenario B09)",
+   "confidence": "media (medición real de cajas; el impacto en personas requiere validar con usuarios)",
+   "files": [
+    "css/app.css",
+    "css/bodymap.css",
+    "js/bodymap.js",
+    "js/views/today.js"
+   ],
+   "fix": "Subir min-height/min-width de los botones de la tira de días (37 px de ancho) y ampliar el área de toque de los grupos SVG del mapa con un rect transparente. Validar primero en el iPhone: las medidas son de Chromium emulado.",
+   "priority": "media"
+  }
+ ],
+ "staticFindings": [
+  {
+   "id": "LAB-005",
+   "class": "D",
+   "severity": "media",
+   "category": "UX y accesibilidad",
+   "confidence": "media (el tope está en el código; su efecto en personas con baja visión no se ha medido)",
+   "priority": "media",
+   "title": "El texto de la app sigue a Dynamic Type solo hasta ×1,5",
+   "steps": [
+    "Leer js/app.js, applyTextScale: Math.min(1.5, Math.max(1, px / 17)).",
+    "Con un tamaño de letra de accesibilidad de iOS superior a ≈ ×1,5 la app deja de crecer."
+   ],
+   "expected": "Una persona con baja visión (perfil p18) que usa tamaños de accesibilidad mayores esperaría que la app los respetase o que el límite fuese una decisión consciente y documentada.",
+   "observed": [
+    "Con ×1,5 en pantallas de 320–430 px el laboratorio no encuentra desbordamiento horizontal (B02 superado en Chromium y WebKit). Con ×2 forzado a 320 px, WebKit sí desborda (p. ej. botón «Ahora no» y «Ver todo» en Hoy, insignia de versión en Ajustes): es el motivo probable del tope."
+   ],
+   "evidence": "js/app.js:151-171; sondeo puntual en WebKit con texto ×2 a 320 px (no es un escenario permanente)",
+   "files": [
+    "js/app.js",
+    "css/app.css"
+   ],
+   "fix": "No cambiar sin probarlo en el iPhone: subir el tope exigiría rehacer filas y botones para que quepan. Decisión del propietario; si se mantiene, documentarlo en Ajustes › Ayuda."
+  },
+  {
+   "id": "LAB-E1",
+   "class": "E",
+   "severity": "media",
+   "category": "Limitación",
+   "confidence": "alta",
+   "priority": "—",
+   "title": "No se ha probado en un iPhone físico ni en Safari real",
+   "expected": "Verificación en dispositivo.",
+   "observed": [
+    "Todo el nivel 2 usa Chromium con emulación de iPhone 13 (viewport, táctil, user-agent). WebKit de Playwright se puede activar con LAB_BROWSER=webkit; tampoco es Safari de iOS (sin cuota de almacenamiento, purga de datos del sitio, hoja de compartir, teclado virtual, zonas seguras reales)."
+   ],
+   "evidence": "tests/lab/scenarios-browser.mjs",
+   "fix": "Probar en el iPhone lo que el informe marca como C o B."
+  },
+  {
+   "id": "LAB-E2",
+   "class": "E",
+   "severity": "baja",
+   "category": "Limitación",
+   "confidence": "alta",
+   "priority": "—",
+   "title": "El «texto grande» es el ajuste propio de la app, no Dynamic Type de iOS",
+   "expected": "Probar con el tamaño de letra del sistema.",
+   "observed": [
+    "El laboratorio escribe localStorage[\"entreno.textScale\"], el gancho que la app ofrece para forzar la escala (js/app.js:149). Dynamic Type y Zoom de pantalla de iOS no son emulables en Playwright."
+   ],
+   "evidence": "tests/lab/scenarios-browser.mjs",
+   "fix": "Revisión manual en el iPhone con tamaños de accesibilidad."
+  },
+  {
+   "id": "LAB-E3",
+   "class": "E",
+   "severity": "media",
+   "category": "Limitación",
+   "confidence": "alta",
+   "priority": "—",
+   "title": "Los usuarios sintéticos no son usuarios reales",
+   "expected": "Evidencia sobre personas.",
+   "observed": [
+    "Los perfiles fijan parámetros (frecuencia, regularidad, errores) elegidos por el laboratorio. Detectan fallos de datos y lógica, no si algo «resulta confuso». Las clases C son hipótesis hasta probar con personas; no se ha usado ninguna IA para opinar sobre la experiencia."
+   ],
+   "fix": "Cinco sesiones de observación con personas reales de los perfiles p07/p08/p12 antes de rediseñar nada."
+  },
+  {
+   "id": "LAB-E4",
+   "class": "E",
+   "severity": "media",
+   "category": "Limitación",
+   "confidence": "alta",
+   "priority": "—",
+   "title": "Cobertura parcial: los flujos de interfaz completos siguen en las E2E existentes",
+   "expected": "Recorridos de usuario completos por perfil.",
+   "observed": [
+    "El laboratorio crea/termina sesiones por la lógica de la app (session-logic) y valida persistencia y pantallas, pero no hace clic en cada paso de registro de series, calendario, objetivos ni importación por interfaz: eso lo cubren las E2E existentes (tests/e2e) y queda como pendiente en tests/lab/CATALOGO.md."
+   ],
+   "fix": "Ampliar el nivel 2 con recorridos con clics por perfil donde el catálogo lo marca pendiente."
+  }
+ ],
+ "results": [
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 41,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 62,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 29,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 44,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 35,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 536,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 70,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 85,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 30,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 15,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 234,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 29,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 21,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N01",
+   "area": "Almacenamiento",
+   "title": "La copia JSON del historial es válida, lleva sello y detecta una modificación",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 61,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 46,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 15,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 16,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 261,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 33,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 44,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 15,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 116,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 18,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N02",
+   "area": "Almacenamiento",
+   "title": "Ida y vuelta de la copia sin pérdida de registros",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 27,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 70,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 64,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 23,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 21,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 22,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 186,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 32,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 36,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 16,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 55,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 25,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 7,
+   "metrics": {}
+  },
+  {
+   "scenario": "N03",
+   "area": "Progreso",
+   "title": "Hoy, panel semanal, análisis e informe no fallan ni muestran NaN/undefined/Infinity con datos extremos",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 18,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 37,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 16,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 21,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 25,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 214,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 49,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 34,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 30,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 105,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 36,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N04",
+   "area": "Progreso",
+   "title": "El análisis no modifica sus entradas y es repetible",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 34,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 28,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 6,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 7,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 90,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 41,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 21,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 13,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 45,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N05",
+   "area": "Progreso",
+   "title": "Coherencia entre pantallas: «sin señales de descarga» no convive con «descarga»",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 29,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 44,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 6,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 1079,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 23,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 22,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 216,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 6,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N06",
+   "area": "Fuerza",
+   "title": "Un material/configuración nuevo no genera falsos récords",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 20,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": false,
+   "failures": [
+    "Peso muerto rumano: récord de peso 150 kg (2026-01-13) frente a mediana 17.5 kg",
+    "Sentadilla: récord de peso 250 kg (2026-03-17) frente a mediana 27.5 kg",
+    "Elevaciones laterales: récord de peso 125 kg (2026-03-30) frente a mediana 12.5 kg"
+   ],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 5,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": false,
+   "failures": [
+    "Remo con pecho apoyado: récord de peso 200 kg (2026-09-21) frente a mediana 17.5 kg"
+   ],
+   "ms": 0,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": false,
+   "failures": [
+    "Elevaciones laterales: récord de peso 175 kg (2026-02-05) frente a mediana 17.5 kg",
+    "Face pull: récord de peso 250 kg (2026-08-24) frente a mediana 27.5 kg",
+    "Jalón al pecho: récord de peso 575 kg (2026-07-16) frente a mediana 57.5 kg",
+    "Press inclinado en Smith: récord de peso 425 kg (2026-01-29) frente a mediana 42.5 kg",
+    "Curl femoral: récord de peso 400 kg (2026-04-28) frente a mediana 42.5 kg",
+    "Prensa: récord de peso 525 kg (2026-05-05) frente a mediana 57.5 kg",
+    "Sentadilla: récord de peso 350 kg (2026-09-22) frente a mediana 37.5 kg"
+   ],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": false,
+   "failures": [
+    "Curl femoral: récord de peso 175 kg (2026-04-28) frente a mediana 15 kg",
+    "Gemelos de pie: récord de peso 125 kg (2026-02-03) frente a mediana 12.5 kg",
+    "Tibialis raises: récord de peso 100 kg (2026-09-29) frente a mediana 10 kg"
+   ],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": false,
+   "failures": [
+    "Elevaciones laterales: récord de peso 100 kg (2026-07-20) frente a mediana 10 kg",
+    "Press banca: récord de peso 225 kg (2026-09-07) frente a mediana 22.5 kg",
+    "Remo con pecho apoyado: récord de peso 300 kg (2026-10-12) frente a mediana 30 kg",
+    "Peso muerto rumano: récord de peso 150 kg (2026-06-30) frente a mediana 15 kg",
+    "Sentadilla: récord de peso 225 kg (2026-05-19) frente a mediana 22.5 kg"
+   ],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": false,
+   "failures": [
+    "Curl femoral: récord de peso 650 kg (2024-04-02) frente a mediana 62.5 kg",
+    "Gemelos de pie: récord de peso 500 kg (2023-10-17) frente a mediana 47.5 kg",
+    "Prensa: récord de peso 1100 kg (2024-04-30) frente a mediana 90 kg",
+    "Sentadilla: récord de peso 550 kg (2025-09-09) frente a mediana 52.5 kg",
+    "Tibialis raises: récord de peso 500 kg (2022-06-28) frente a mediana 40 kg",
+    "Elevaciones laterales: récord de peso 250 kg (2024-01-29) frente a mediana 25 kg",
+    "Press banca: récord de peso 500 kg (2024-06-24) frente a mediana 50 kg",
+    "Press inclinado con mancuernas: récord de peso 825 kg (2025-04-14) frente a mediana 77.5 kg",
+    "Jalón al pecho: récord de peso 825 kg (2024-01-18) frente a mediana 82.5 kg",
+    "Remo unilateral con mancuerna: récord de peso 250 kg (2025-09-25) frente a mediana 22.5 kg",
+    "Peso muerto rumano: récord de peso 350 kg (2025-05-06) frente a mediana 37.5 kg",
+    "Prensa: récord de peso 825 kg (2023-12-12) frente a mediana 90 kg",
+    "Crunch en polea: récord de peso 225 kg (2022-01-31) frente a mediana 27.5 kg",
+    "Remo con pecho apoyado: récord de peso 700 kg (2023-10-02) frente a mediana 77.5 kg",
+    "Aperturas con mancuernas: récord de peso 400 kg (2022-12-15) frente a mediana 47.5 kg",
+    "Tríceps sobre la cabeza: récord de peso 525 kg (2021-11-11) frente a mediana 62.5 kg"
+   ],
+   "ms": 54,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": false,
+   "failures": [
+    "Crunch en polea: récord de peso 125 kg (2026-03-16) frente a mediana 12.5 kg",
+    "Elevaciones laterales: récord de peso 100 kg (2025-09-08) frente a mediana 12.5 kg",
+    "Face pull: récord de peso 200 kg (2026-08-20) frente a mediana 20 kg",
+    "Aperturas con mancuernas: récord de peso 175 kg (2025-08-07) frente a mediana 22.5 kg",
+    "Curl femoral: récord de peso 275 kg (2026-03-31) frente a mediana 32.5 kg",
+    "Sentadilla: récord de peso 225 kg (2025-06-24) frente a mediana 27.5 kg"
+   ],
+   "ms": 7,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": false,
+   "failures": [
+    "Elevaciones laterales: récord de peso 175 kg (2026-06-25) frente a mediana 17.5 kg",
+    "Aperturas con mancuernas: récord de peso 400 kg (2026-04-23) frente a mediana 35 kg",
+    "Press inclinado en Smith: récord de peso 425 kg (2026-03-12) frente a mediana 47.5 kg",
+    "Sentadilla hack: récord de peso 300 kg (2026-07-07) frente a mediana 30 kg"
+   ],
+   "ms": 18,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": false,
+   "failures": [
+    "Curl femoral: récord de peso 175 kg (2026-06-02) frente a mediana 17.5 kg",
+    "Peso muerto rumano: récord de peso 100 kg (2026-05-19) frente a mediana 10 kg",
+    "Prensa: récord de peso 225 kg (2026-07-21) frente a mediana 22.5 kg",
+    "Sentadilla: récord de peso 175 kg (2026-09-29) frente a mediana 15 kg",
+    "Tibialis raises: récord de peso 125 kg (2026-07-28) frente a mediana 10 kg",
+    "Aperturas con mancuernas: récord de peso 125 kg (2026-03-26) frente a mediana 12.5 kg",
+    "Curl supinador: récord de peso 175 kg (2026-07-30) frente a mediana 15 kg",
+    "Elevaciones laterales: récord de peso 75 kg (2026-04-20) frente a mediana 7.5 kg",
+    "Face pull: récord de peso 100 kg (2026-08-03) frente a mediana 10 kg",
+    "Jalón al pecho: récord de peso 250 kg (2026-09-10) frente a mediana 22.5 kg",
+    "Press inclinado en Smith: récord de peso 200 kg (2026-09-03) frente a mediana 17.5 kg",
+    "Remo unilateral con mancuerna: récord de peso 75 kg (2026-04-23) frente a mediana 7.5 kg",
+    "Crunch en polea: récord de peso 75 kg (2026-06-22) frente a mediana 7.5 kg",
+    "Press banca: récord de peso 150 kg (2026-05-25) frente a mediana 15 kg",
+    "Press inclinado con mancuernas: récord de peso 250 kg (2026-09-28) frente a mediana 22.5 kg",
+    "Remo con pecho apoyado: récord de peso 200 kg (2026-05-25) frente a mediana 20 kg"
+   ],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 16,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": false,
+   "failures": [
+    "Peso muerto rumano: récord de peso 150 kg (2026-09-01) frente a mediana 15 kg",
+    "Crunch en polea: récord de peso 100 kg (2026-05-04) frente a mediana 10 kg",
+    "Face pull: récord de peso 175 kg (2026-08-31) frente a mediana 15 kg",
+    "Press banca: récord de peso 200 kg (2026-06-01) frente a mediana 20 kg"
+   ],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": false,
+   "failures": [
+    "Crunch en polea: récord de peso 100 kg (2026-07-13) frente a mediana 10 kg",
+    "Face pull: récord de peso 175 kg (2026-06-01) frente a mediana 17.5 kg",
+    "Remo con pecho apoyado: récord de peso 300 kg (2026-06-29) frente a mediana 30 kg",
+    "Curl femoral: récord de peso 275 kg (2026-08-25) frente a mediana 27.5 kg"
+   ],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": false,
+   "failures": [
+    "Crunch en polea: récord de peso 175 kg (2026-09-07) frente a mediana 17.5 kg",
+    "Face pull: récord de peso 275 kg (2026-07-06) frente a mediana 27.5 kg"
+   ],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N07",
+   "area": "Fuerza",
+   "title": "Un dato absurdo (peso ×10, 100 reps) no se convierte en récord histórico",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": false,
+   "failures": [
+    "Elevaciones laterales: récord de peso 100 kg (2026-01-05) frente a mediana 10 kg",
+    "Jalón al pecho: récord de peso 400 kg (2026-10-01) frente a mediana 37.5 kg",
+    "Press inclinado en Smith: récord de peso 275 kg (2026-03-26) frente a mediana 27.5 kg",
+    "Remo unilateral con mancuerna: récord de peso 100 kg (2026-06-04) frente a mediana 10 kg",
+    "Gemelos de pie: récord de peso 200 kg (2026-01-27) frente a mediana 22.5 kg",
+    "Peso muerto rumano: récord de peso 150 kg (2026-05-05) frente a mediana 15 kg",
+    "Sentadilla: récord de peso 225 kg (2026-04-21) frente a mediana 22.5 kg",
+    "Crunch en polea: récord de peso 125 kg (2026-09-28) frente a mediana 10 kg",
+    "Press banca: récord de peso 250 kg (2026-09-14) frente a mediana 22.5 kg"
+   ],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 0,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 36,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 5,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 0,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N08",
+   "area": "Fuerza",
+   "title": "e1RM solo para 1–12 repeticiones y siempre finito",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 0,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 23,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 0,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 0,
+   "metrics": {}
+  },
+  {
+   "scenario": "N09",
+   "area": "Resistencia",
+   "title": "Un GPX de una actividad ya registrada se detecta como duplicado",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N10",
+   "area": "Resistencia",
+   "title": "Archivos corruptos o truncados no lanzan excepciones",
+   "level": "node",
+   "profile": null,
+   "ok": true,
+   "failures": [],
+   "ms": 15,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 15,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 21,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 1,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 6,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 6,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 100,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 5,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 2,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 36,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 5,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 3,
+   "metrics": {}
+  },
+  {
+   "scenario": "N11",
+   "area": "Almacenamiento",
+   "title": "Exportar CSV con historial completo no falla y no pierde filas",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 23,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 19,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 4,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 6,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 120,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 29,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 7,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 7,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 46,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {}
+  },
+  {
+   "scenario": "N12",
+   "area": "Progreso",
+   "title": "Menores no reciben kcal/déficit; mayores de 65 no pasan de 250 kcal",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 25,
+   "metrics": {}
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {
+    "analysisMs": 11
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 34,
+   "metrics": {
+    "analysisMs": 32
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 8,
+   "metrics": {
+    "analysisMs": 7
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 16,
+   "metrics": {
+    "analysisMs": 15
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 17,
+   "metrics": {
+    "analysisMs": 15
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 11,
+   "metrics": {
+    "analysisMs": 9
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 16,
+   "metrics": {
+    "analysisMs": 14
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {
+    "analysisMs": 9
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 126,
+   "metrics": {
+    "analysisMs": 115
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 22,
+   "metrics": {
+    "analysisMs": 20
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 26,
+   "metrics": {
+    "analysisMs": 24
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 23,
+   "metrics": {
+    "analysisMs": 12
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 12,
+   "metrics": {
+    "analysisMs": 10
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 10,
+   "metrics": {
+    "analysisMs": 9
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 50,
+   "metrics": {
+    "analysisMs": 44
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 14,
+   "metrics": {
+    "analysisMs": 13
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 9,
+   "metrics": {
+    "analysisMs": 9
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 7,
+   "metrics": {
+    "analysisMs": 6
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 15,
+   "metrics": {
+    "analysisMs": 14
+   }
+  },
+  {
+   "scenario": "N13",
+   "area": "Rendimiento",
+   "title": "Historial largo: análisis completo en menos de 4 s (en Node)",
+   "level": "node",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 25,
+   "metrics": {
+    "analysisMs": 24
+   }
+  },
+  {
+   "scenario": "N14",
+   "area": "Casos límite",
+   "title": "Fechas y zonas horarias: addDays/weekStart/dow/tsFromDate coherentes en 5 husos durante 2024–2027",
+   "level": "node",
+   "profile": null,
+   "ok": true,
+   "failures": [],
+   "ms": 395,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 734,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 365,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 92,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": true,
+   "failures": [],
+   "ms": 1035,
+   "metrics": {}
+  },
+  {
+   "scenario": "B05",
+   "area": "Casos límite",
+   "title": "Si IndexedDB falla al guardar, la app avisa y la memoria no muestra datos que no están en disco",
+   "level": "browser",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": false,
+   "failures": [
+    "el peso 71,3 kg figura en memoria (y por tanto en pantalla) pero NO está en disco: desaparecerá al recargar"
+   ],
+   "ms": 172,
+   "metrics": {}
+  },
+  {
+   "scenario": "B09",
+   "area": "UX y accesibilidad",
+   "title": "Controles táctiles de al menos 44×44 px en Hoy, Calendario y Progreso",
+   "level": "browser",
+   "profile": "p01-adolescente-baloncesto",
+   "ok": false,
+   "failures": [
+    "#/progress: 11 controles < 44 px, p. ej. g«Hombro anterior: 1 s» 76×29; g«Hombro lateral: 0 se» 218×31; g«Hombro posterior: 0 » 76×29"
+   ],
+   "ms": 267,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 1356,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 379,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 181,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p02-gym-carrera-22",
+   "ok": true,
+   "failures": [],
+   "ms": 2254,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 238,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 334,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 26,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p03-principiante-28",
+   "ok": true,
+   "failures": [],
+   "ms": 392,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 502,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 331,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 56,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p04-corredora-10k",
+   "ok": true,
+   "failures": [],
+   "ms": 687,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 709,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 341,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 82,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p05-ciclista-fit",
+   "ok": true,
+   "failures": [],
+   "ms": 1239,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 439,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 330,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 53,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p06-irregular-55",
+   "ok": true,
+   "failures": [],
+   "ms": 710,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 1002,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 384,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 119,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 1563,
+   "metrics": {}
+  },
+  {
+   "scenario": "B07",
+   "area": "UX y accesibilidad",
+   "title": "Con «reducir movimiento» no quedan animaciones en bucle en Hoy",
+   "level": "browser",
+   "profile": "p07-mayor-67-fuerza",
+   "ok": true,
+   "failures": [],
+   "ms": 966,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 693,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 387,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 83,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 1027,
+   "metrics": {}
+  },
+  {
+   "scenario": "B07",
+   "area": "UX y accesibilidad",
+   "title": "Con «reducir movimiento» no quedan animaciones en bucle en Hoy",
+   "level": "browser",
+   "profile": "p08-mayor-75-simple",
+   "ok": true,
+   "failures": [],
+   "ms": 958,
+   "metrics": {}
+  },
+  {
+   "scenario": "B09",
+   "area": "UX y accesibilidad",
+   "title": "Controles táctiles de al menos 44×44 px en Hoy, Calendario y Progreso",
+   "level": "browser",
+   "profile": "p08-mayor-75-simple",
+   "ok": false,
+   "failures": [
+    "#/today: 7 controles < 44 px, p. ej. button«lunes, 26 de octubre» 37×91; button«martes, 27 de octubr» 37×91; button«miércoles, 28 de oct» 37×91",
+    "#/progress: 12 controles < 44 px, p. ej. button«Bici» 36×44; g«Hombro anterior: 1 s» 76×29; g«Hombro lateral: 0 se» 218×31"
+   ],
+   "ms": 232,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 7399,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 398,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 906,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p09-veterano-5-anios",
+   "ok": true,
+   "failures": [],
+   "ms": 11748,
+   "metrics": {}
+  },
+  {
+   "scenario": "B05",
+   "area": "Casos límite",
+   "title": "Si IndexedDB falla al guardar, la app avisa y la memoria no muestra datos que no están en disco",
+   "level": "browser",
+   "profile": "p09-veterano-5-anios",
+   "ok": false,
+   "failures": [
+    "el peso 71,3 kg figura en memoria (y por tanto en pantalla) pero NO está en disco: desaparecerá al recargar"
+   ],
+   "ms": 181,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 1291,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 424,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 155,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p10-abandona-retoma",
+   "ok": true,
+   "failures": [],
+   "ms": 2010,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 1529,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 385,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 169,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p11-cambia-rutinas",
+   "ok": true,
+   "failures": [],
+   "ms": 2272,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 829,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 404,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 102,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p12-datos-erroneos",
+   "ok": true,
+   "failures": [],
+   "ms": 1206,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 568,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 384,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 69,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p13-nadadora",
+   "ok": true,
+   "failures": [],
+   "ms": 886,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 487,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 399,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 54,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p14-senderista",
+   "ok": true,
+   "failures": [],
+   "ms": 767,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 4015,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 347,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 403,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p15-hipertrofia-avanzado",
+   "ok": true,
+   "failures": [],
+   "ms": 5116,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 659,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 352,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 90,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p16-maraton-cambio-objetivo",
+   "ok": true,
+   "failures": [],
+   "ms": 1075,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 658,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 384,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 80,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 1042,
+   "metrics": {}
+  },
+  {
+   "scenario": "B06",
+   "area": "UX y accesibilidad",
+   "title": "Navegación con teclado: cada Tab lleva a un elemento visible con indicador de foco",
+   "level": "browser",
+   "profile": "p17-teclado-motriz",
+   "ok": true,
+   "failures": [],
+   "ms": 10394,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 555,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 390,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 57,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 875,
+   "metrics": {}
+  },
+  {
+   "scenario": "B07",
+   "area": "UX y accesibilidad",
+   "title": "Con «reducir movimiento» no quedan animaciones en bucle en Hoy",
+   "level": "browser",
+   "profile": "p18-baja-vision",
+   "ok": true,
+   "failures": [],
+   "ms": 936,
+   "metrics": {}
+  },
+  {
+   "scenario": "B09",
+   "area": "UX y accesibilidad",
+   "title": "Controles táctiles de al menos 44×44 px en Hoy, Calendario y Progreso",
+   "level": "browser",
+   "profile": "p18-baja-vision",
+   "ok": false,
+   "failures": [
+    "#/today: 7 controles < 44 px, p. ej. button«lunes, 26 de octubre» 37×91; button«martes, 27 de octubr» 37×91; button«miércoles, 28 de oct» 37×91",
+    "#/progress: 12 controles < 44 px, p. ej. button«Bici» 36×44; g«Hombro anterior: 1 s» 76×29; g«Hombro lateral: 0 se» 218×31"
+   ],
+   "ms": 233,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 482,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 385,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 52,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p19-recuperacion-lesion",
+   "ok": true,
+   "failures": [],
+   "ms": 688,
+   "metrics": {}
+  },
+  {
+   "scenario": "B01",
+   "area": "Almacenamiento",
+   "title": "El historial restaurado persiste en IndexedDB y sobrevive a una recarga",
+   "level": "browser",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 1406,
+   "metrics": {}
+  },
+  {
+   "scenario": "B02",
+   "area": "UX y accesibilidad",
+   "title": "Las 5 pestañas montan sin errores y sin scroll horizontal con el tamaño de pantalla y texto del perfil",
+   "level": "browser",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 408,
+   "metrics": {}
+  },
+  {
+   "scenario": "B03",
+   "area": "Almacenamiento",
+   "title": "Exportar → comprobar → restaurar conserva todo; una copia alterada se rechaza y queda punto de restauración",
+   "level": "browser",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 170,
+   "metrics": {}
+  },
+  {
+   "scenario": "B04",
+   "area": "Fuerza",
+   "title": "Sesión abierta: las series hechas y la sesión sobreviven a recargar; al terminar queda guardada y ya no hay sesión activa",
+   "level": "browser",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 2166,
+   "metrics": {}
+  },
+  {
+   "scenario": "B08",
+   "area": "Casos límite",
+   "title": "Zona horaria distinta (viaje): «hoy» es la fecha local y las fechas guardadas no se desplazan",
+   "level": "browser",
+   "profile": "p20-viajero-zona-horaria",
+   "ok": true,
+   "failures": [],
+   "ms": 551,
+   "metrics": {}
+  }
+ ]
+}
