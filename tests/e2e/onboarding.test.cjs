@@ -85,9 +85,9 @@ test('bienvenida completa: guarda el perfil al momento y crea la fase actual', a
     assert.strictEqual(ctx.length, 1);
     assert.deepStrictEqual([ctx[0].kind, ctx[0].type, ctx[0].start, ctx[0].end], ['phase', 'return', { date: '2026-10-01', precision: 'month' }, null]);
 
-    // Hoy: sin invitación (perfil completo), con la línea «Ahora» y, en modo mujer, la tarjeta del ciclo
+    // Hoy: sin invitación (perfil completo), sin línea de fase y, en modo mujer, la tarjeta del ciclo
     assert.strictEqual(await page.locator('.today-profile').count(), 0);
-    assert.match(await page.locator('.today-context').innerText(), /Vuelta tras vacaciones o parón · desde oct 2026/);
+    assert.strictEqual(await page.locator('.today-context').count(), 0);
     await page.waitForSelector('.cyc-today');
     assert.deepStrictEqual(app.errors, []);
   } finally {

@@ -110,12 +110,11 @@ test('Tu contexto: el ejemplo del usuario con fechas aproximadas, Hoy, editar y 
     assert.strictEqual(disk.find((e) => e.type === 'weight').kg, 72.7);
     assert.strictEqual(disk.find((e) => e.type === 'creatine_start').kg, undefined);
 
-    // Hoy: una sola línea «Ahora», que lleva a Tu contexto
+    // Hoy ya no muestra la fase vigente (se ve en Tu contexto)
     await go(page, '#/today');
-    await waitView(page, '.today-context');
-    assert.strictEqual(await page.locator('.today-context').count(), 1);
-    assert.match(await page.locator('.today-context').innerText(), /Ahora: Vuelta tras vacaciones o parón · desde sep 2026/);
-    await page.locator('.today-context').click();
+    await waitView(page, '.today-plan');
+    assert.strictEqual(await page.locator('.today-context').count(), 0);
+    await go(page, '#/context');
     await waitView(page, '.ctx-now');
     assert.strictEqual(await hashOf(page), '#/context');
 
@@ -203,11 +202,10 @@ test('fases simultáneas: «Ahora» las lista todas y Hoy las nombra en una sola
       await add({ kind: 'phase', type: 'deficit', start: { date: '2026-03-01', precision: 'month' }, end: { date: '2026-05-01', precision: 'month' } }, 'p_old', 4);
     });
     await go(page, '#/today');
-    await waitView(page, '.today-context');
-    assert.strictEqual(await page.locator('.today-context').count(), 1, 'una sola línea');
-    assert.match(await page.locator('.today-context').innerText(), /Ahora: Exámenes o época de estrés · Preparación 10K · Ganancia muscular/);
+    await waitView(page, '.today-plan');
+    assert.strictEqual(await page.locator('.today-context').count(), 0, 'Hoy no nombra las fases');
     assert.ok(await noHScroll(page));
-    await page.locator('.today-context').click();
+    await go(page, '#/context');
     await waitView(page, '.ctx-now');
     const now = await page.locator('.ctx-now .ctx-row').evaluateAll((els) => els.map((e) => e.dataset.id));
     assert.deepStrictEqual(now, ['p_exams', 'p_10k', 'p_gain'], 'las tres vigentes; la terminada, no');

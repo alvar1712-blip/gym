@@ -494,8 +494,8 @@ test('Hoy: con la sesión de hoy en curso el check-in se enlaza a ella; tras ter
     }, sid);
     await open(page, '#/today');
     assert.deepStrictEqual(await extraKinds(page), ['focus', 'goals']);
-    // Ya entrenado: no queda nada que empezar → «Lo importante esta semana» sube por encima de «Registrar»
-    assert.ok(await page.evaluate(() => document.querySelector('.today-extra').getBoundingClientRect().top < document.querySelector('.today-quick').getBoundingClientRect().top));
+    // Ya entrenado: «Lo importante esta semana» sigue después de «Registrar»
+    assert.ok(await page.evaluate(() => document.querySelector('.today-extra').getBoundingClientRect().top > document.querySelector('.today-quick').getBoundingClientRect().top));
     assert.deepStrictEqual(app.errors, []);
   } finally {
     await app.close();

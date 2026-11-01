@@ -20,7 +20,6 @@ import { ACTIVITY_LABEL } from '../seed.js';
 import { setProgress } from '../calc.js';
 import { proposedDuration, linkedActivities } from '../session-logic.js';
 import { getProfile, profileIncomplete, cycleEnabled, isNewProfile } from '../profile.js';
-import { currentLabel } from '../context-logic.js';
 import { nextRelevant, todayLine, raceTitle, raceShortLabel, targetText, pendingOutcome, outcomePrompt } from '../races-logic.js';
 
 /** Un evento a 14 días o menos pasa de línea a tarjeta, justo debajo de «Te toca hoy». */
@@ -44,8 +43,7 @@ export async function mountToday(root) {
 
   // Orden adaptativo (docs/PULIDO.md §8): lo que toca hacer ahora, arriba; lo demás, después.
   //  · Sesión abierta → «Continuar» manda (y «Te toca hoy» no la repite debajo).
-  //  · Antes de entrenar → «Te toca hoy» con «Empezar»; «Lo importante esta semana» y el check-in, al final.
-  //  · Hecho o descanso → no queda nada que empezar: «Lo importante esta semana» sube por encima de «Registrar».
+  //  · Siempre: «Te toca hoy» → «Registrar» → peso → «Esta semana» → check-in y «Lo importante esta semana» → objetivos.
   //  · Evento en las próximas 2 semanas → tarjeta justo debajo de «Te toca hoy»; más lejos, una línea.
   const active = store.activeSession();
   // Aviso de copia (ronda 10): no encima de una sesión en curso, ni si se pospuso con «Ahora no» (la pestaña Ajustes
@@ -63,12 +61,7 @@ export async function mountToday(root) {
   const cycleSlot = cycleEnabled(profile) ? h('div.today-cycle-slot') : null;
   if (cycleSlot) content.appendChild(cycleSlot);
   if (profileIncomplete(profile) && !profile.promptDismissed) content.appendChild(profilePrompt(isNewProfile(profile)));
-  // Ronda 6: una sola línea con la fase vigente de «Tu contexto» (nada si no hay ninguna).
-  const ctxNow = currentLabel(store.all('context'), today);
-  if (ctxNow) {
-    content.appendChild(h('button.cal-link-btn.today-context', { type: 'button', onClick: () => navigate('#/context') },
-      h('span.today-context-text', h('span.today-context-kicker', 'Ahora: '), ctxNow), icon('chevron-right', 18)));
-  }
+  // La fase vigente de «Tu contexto» ya no sale en Hoy (cambia despacio): se ve en Ajustes › Tu contexto.
   // Ronda 6 (fase E): como mucho una línea con el próximo evento deportivo relevante («🏁 10K · 73 días · objetivo <50:00»).
   if (race && !raceNear) content.appendChild(raceLine(race, today));
   // Ronda 8 (D): un evento A o B de la última semana sin resultado → una línea neutra «¿Cómo te fue en el 10K del domingo?»
@@ -79,20 +72,14 @@ export async function mountToday(root) {
   const extra = h('div.today-extra');
   // Ronda 10 (§8): los objetivos son de consulta, en su propio hueco y siempre al final (no suben con «Lo importante»).
   const goalsSlot = h('div.today-goals');
-  // Nada que empezar: hecho, saltado, descanso o la rutina de hoy ya terminada (aunque quede «parcial»)
-  const ownDone = st.plan.kind === 'template' && st.sessions.some((s) => s.kind === 'strength' && s.status === 'done' && s.templateId === st.plan.templateId);
-  // Sin semana planificada (ronda 8, B2) no es un descanso: «Empezar sesión libre» sigue mandando.
-  const restDay = st.plan.kind === 'rest' && !st.sessions.length && !unplanned(ctx, st);
-  const settled = !active && (st.status === 'done' || st.status === 'skipped' || ownDone || restDay);
-  if (settled) content.appendChild(extra);
   content.appendChild(h('h2.section-title', 'Registrar'));
   content.appendChild(quickGrid(today));
   content.appendChild(h('button.cal-link-btn.today-import', { type: 'button', onClick: () => navigate('#/import') },
     'Importar desde un archivo', icon('chevron-right', 18)));
   content.appendChild(bodyweightQuickEntry({}));
   content.appendChild(weekCard(today, ctx));
-  // Antes de entrenar, al final: no empuja «Te toca hoy» ni «Empezar».
-  if (!settled) content.appendChild(extra);
+  // Siempre tras «Registrar» y el peso, y antes de los objetivos: no empuja «Te toca hoy» ni «Empezar».
+  content.appendChild(extra);
   content.appendChild(goalsSlot);
 
   // Si la app se queda abierta y cambia el día, se vuelve a montar al volver.
@@ -442,7 +429,7 @@ function planCard(today, ctx, active, st = dayStatus(today, ctx)) {
     }
   } else {
     card.append(
-      h('p.text-2', 'Hoy toca descansar. Si entrenas, contará como entreno extra.'),
+      h('p.text-2', 'Si entrenas, contará como entreno extra.'),
       h('div.stack-sm.today-rest-actions',
         active ? busy() : h('button.btn.btn-secondary.btn-block', { type: 'button', onClick: () => pickAndStart({ date: today, title: '¿Qué vas a entrenar?' }) }, icon('dumbbell', 20), 'Entrenar igualmente'),
         h('button.btn.btn-secondary.btn-block', { type: 'button', onClick: () => activityMenu({ date: today }) }, icon('plus', 20), 'Registrar actividad')));

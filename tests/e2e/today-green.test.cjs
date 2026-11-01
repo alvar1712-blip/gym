@@ -61,7 +61,7 @@ async function run(browser) {
       await page.waitForSelector('.cyc-today-link'); // la tarjeta del ciclo se carga aparte
       const when = activeSession ? 'con sesión abierta' : 'antes de entrenar';
       // Están todos los enlaces y datos que antes iban en verde (si faltara alguno, la prueba no probaría nada)
-      for (const sel of ['.cyc-today-link', '.today-context', '.today-race', '.today-import', '.bwq-link', '.today-weekcard .cal-link-btn', '.focus-link', '.goal-sum-link', activeSession ? '.today-clock' : '.today-plan .cal-link-btn']) {
+      for (const sel of ['.cyc-today-link', '.today-race', '.today-import', '.bwq-link', '.today-weekcard .cal-link-btn', '.focus-link', '.goal-sum-link', activeSession ? '.today-clock' : '.today-plan .cal-link-btn']) {
         assert.ok(await page.locator(sel).first().isVisible(), `${when}: falta ${sel}`);
       }
       const { bad, primaries } = await page.evaluate(greenInventory, ALLOWED);

@@ -2,7 +2,7 @@
 //   · Antes de entrenar: «Te toca hoy» arriba; el check-in y «Lo importante esta semana», al final.
 //   · Sesión abierta que cuenta para hoy: «Sesión en curso» manda (con «En lugar de …» si no es lo planificado) y
 //     «Te toca hoy» no la repite.
-//   · Descanso: nada que empezar → el hueco de «Lo importante» sube por encima de «Registrar».
+//   · Descanso: igual que un día de entreno; «Lo importante» va tras «Registrar» y el peso. Sin línea de fase de contexto.
 //   · Evento a 14 días o menos: tarjeta bajo «Te toca hoy»; más lejos, una línea.
 // 390×844, Chromium y WebKit. Semana tipo por defecto: lunes Día 1 … miércoles Día 3 — Cardio, viernes descanso.
 // Ejecutar: NODE_PATH=$(npm root -g) node --test tests/e2e/today-order.test.cjs
@@ -28,8 +28,17 @@ async function weekday(browser) {
     await go(page, '#/today');
     await ready(page);
     assert.match(await page.locator('.today-plan .today-plan-name').innerText(), /Día 3/);
-    const order = [await top(page, '.today-plan'), await top(page, '.today-quick'), await top(page, '.today-weekcard'), await top(page, '.today-extra')];
+    const order = [await top(page, '.today-plan'), await top(page, '.today-quick'), await top(page, '.bwq'), await top(page, '.today-weekcard'), await top(page, '.today-extra')];
     assert.deepStrictEqual([...order].sort((a, b) => a - b), order, `antes de entrenar: ${order}`);
+    // Una fase de «Tu contexto» vigente ya no ocupa el inicio de Hoy
+    await page.evaluate(async () => {
+      await window.__app.store.save('context', { id: 'ctx1', kind: 'phase', type: 'gain', start: { date: '2026-09-01', precision: 'day' }, end: null, text: '', notes: '', goalIds: [], sports: [], createdAt: 1, updatedAt: 1 });
+    });
+    await go(page, '#/calendar');
+    await go(page, '#/today');
+    await ready(page);
+    assert.match(await page.evaluate(async () => (await import('./js/context-logic.js')).currentLabel(window.__app.store.all('context'), '2026-10-07') || ''), /Ganancia muscular/, 'la fase existe');
+    assert.strictEqual(await page.locator('.today-context').count(), 0, 'sin línea de fase en Hoy');
 
     // --- Evento lejano (40 días): una línea; a 5 días: tarjeta justo debajo de «Te toca hoy» ---
     await addRace(page, 'far', '2026-11-16');
@@ -78,8 +87,9 @@ async function restDay(browser) {
     await go(page, '#/today');
     await ready(page);
     assert.strictEqual(await page.locator('.today-plan').getAttribute('data-kind'), 'rest');
-    // Nada que empezar: el check-in (y, con datos, «Lo importante esta semana») antes de «Registrar»
-    assert.ok(await top(page, '.today-extra') < await top(page, '.today-quick'), 'el hueco sube en un día de descanso');
+    // También en descanso: el check-in y «Lo importante» van después de «Registrar» y del peso
+    assert.ok(await top(page, '.today-extra') > await top(page, '.bwq'), 'el hueco no sube en un día de descanso');
+    assert.ok(await top(page, '.today-extra') > await top(page, '.today-quick'));
     assert.strictEqual(await page.locator('.today-extra .today-checkin').count(), 1);
     assert.deepStrictEqual(app.errors, []);
   } finally {
@@ -104,8 +114,8 @@ async function settledGoals(browser) {
       await ready(page);
       assert.strictEqual(await page.locator('.goal-sum').count(), 1, `${label}: hay tarjeta de objetivos`);
       const y = { extra: await top(page, '.today-extra'), quick: await top(page, '.today-quick'), bwq: await top(page, '.bwq'), week: await top(page, '.today-weekcard'), goals: await top(page, '.goal-sum') };
-      assert.ok(y.extra < y.quick, `${label}: lo de hoy sigue por encima de «Registrar» (${JSON.stringify(y)})`);
-      assert.ok(y.goals > y.bwq && y.goals > y.week, `${label}: los objetivos, al final (${JSON.stringify(y)})`);
+      assert.ok(y.extra > y.quick && y.extra > y.bwq, `${label}: «Lo importante» tras «Registrar» y el peso (${JSON.stringify(y)})`);
+      assert.ok(y.goals > y.extra && y.goals > y.week, `${label}: los objetivos, al final (${JSON.stringify(y)})`);
     };
     await check('descanso');
     assert.strictEqual(await page.locator('.today-plan').getAttribute('data-kind'), 'rest');
@@ -137,7 +147,7 @@ async function settledGoals(browser) {
 }
 
 test('Hoy adaptativo: antes de entrenar, evento cercano y lejano, sesión abierta que sustituye a lo planificado', () => weekday('chromium'));
-test('Hoy adaptativo: en un día de descanso, «Lo importante» sube por encima de «Registrar»', () => restDay('chromium'));
+test('Hoy: en un día de descanso, «Lo importante» sigue después de «Registrar» y el peso', () => restDay('chromium'));
 test('WebKit: Hoy adaptativo (entre semana)', { skip: skipWebkit }, () => weekday('webkit'));
 test('WebKit: Hoy adaptativo (descanso)', { skip: skipWebkit }, () => restDay('webkit'));
 test('Hoy resuelto (descanso y hecho): los objetivos, al final; hecho sin repetir el nombre de la rutina', () => settledGoals('chromium'));
