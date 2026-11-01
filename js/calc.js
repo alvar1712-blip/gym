@@ -346,6 +346,24 @@ export function lastPerformance(sessions, exerciseId, { excludeSessionId = null,
   return best;
 }
 
+/**
+ * Pesos (kg > 0) de las últimas series de trabajo hechas de un ejercicio con esa configuración (setupKey), de las sesiones
+ * más recientes: lo que el usuario «suele usar» (sanity.checkTypo). Sin calentamientos ni pendientes. pura
+ */
+export function recentWorkWeights(sessions, exerciseId, setup = '', { limit = 12 } = {}) {
+  const want = setupKey(setup);
+  const out = [];
+  for (const s of [...sessions].sort((a, b) => (sessionOrderKey(a) < sessionOrderKey(b) ? 1 : -1))) {
+    if (s.kind !== 'strength') continue;
+    for (const se of s.exercises || []) {
+      if (se.exerciseId !== exerciseId || setupKey(se.setup) !== want) continue;
+      for (const x of se.sets || []) if (isWorkSet(x) && typeof x.weight === 'number' && x.weight > 0) out.push(x.weight);
+    }
+    if (out.length >= limit) break;
+  }
+  return out.slice(0, limit);
+}
+
 export function orderKeyOf(session) {
   return sessionOrderKey(session);
 }

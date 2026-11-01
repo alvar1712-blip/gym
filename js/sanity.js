@@ -88,6 +88,24 @@ export function checkSet(set, logType) {
   return res;
 }
 
+/**
+ * Posible error de tecleo (17,5 → 175): el peso supera `factor` veces la mediana de las últimas series de trabajo del mismo
+ * ejercicio y configuración (`history`, ≥ `minSets`). Solo pregunta (rare), nunca bloquea; solo peso en barra/máquina (el lastre
+ * puede ser 0 o negativo). `sameSession`: pesos ya hechos hoy; si alguno llega al umbral, el usuario ya lo confirmó. PURO.
+ * ponytail: umbral sin validar con historiales reales; una mediana de muy pocas series o un salto legítimo tras mucho tiempo sin
+ * entrenar pueden dar un aviso de más (se confirma con un toque) y un error de menos de 4× no se detecta.
+ */
+export const TYPO = { minSets: 6, factor: 4 };
+export function checkTypo(weight, history, { sameSession = [] } = {}) {
+  if (!isNum(weight) || weight <= 0 || !Array.isArray(history) || history.length < TYPO.minSets) return [];
+  const s = [...history].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  const median = s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  const limit = median * TYPO.factor;
+  if (!(weight > limit) || sameSession.some((w) => isNum(w) && w >= limit)) return [];
+  return [issue('weight', 'rare', `Has puesto ${n1(weight)} kg, bastante más de lo que sueles usar en este ejercicio (unos ${n1(median)} kg).`)];
+}
+
 /** Peso corporal (kg). */
 export function checkBodyweight(kg) {
   const level = classify(RULES.bodyweight, kg);

@@ -52,16 +52,85 @@ function emit(evt, detail) {
 function track(promise, ctx) {
   const p = promise.catch((err) => {
     console.error('[store] error al guardar', ctx, err);
+    unsaved.set(`${ctx.store}:${ctx.id}`, ctx); // memoria sin disco: se reintenta (retryUnsaved)
+    armRetry();
     emit('error', { error: err, ...ctx });
     throw err;
   });
+  if (unsaved.size && !retrying) p.then(() => armRetry(0), () => {}); // el disco responde: se aprovecha para lo pendiente
   inflight.add(p);
   p.finally(() => inflight.delete(p)).catch(() => {});
   return p;
 }
 
+// ---------- escrituras que fallaron (LAB-002) ----------
+// La memoria cambia antes que el disco: si db.js agota su reintento, el dato queda solo en memoria. Se anota la clave y se
+// vuelve a intentar con lo que haya en MEMORIA en ese momento (nunca con una copia vieja), mirando antes el disco: no pisa lo
+// más nuevo que haya escrito otra pestaña, no resucita lo borrado ni lo anterior a «sustituir todo». Memoria y disco solo
+// divergen mientras haya claves aquí; ninguna garantía si el dispositivo se cierra antes de que el disco responda.
+const unsaved = new Map(); // `${store}:${id}` → {store, id, op}
+const RETRY_MS = [3000, 15000, 60000]; // ponytail: cadencia fija y sin tope de intentos; con la cuota llena reintenta cada minuto hasta que se libere espacio
+let retryTimer = null;
+let retrying = null;
+let retryStep = 0;
+let hadFailure = false;
+
+/** Escrituras que siguen sin llegar a disco. */
+export function unsavedCount() {
+  return unsaved.size;
+}
+
+function armRetry(ms) {
+  if (retrying || (retryTimer && ms !== 0)) return;
+  clearTimeout(retryTimer);
+  const wait = ms ?? RETRY_MS[Math.min(retryStep++, RETRY_MS.length - 1)];
+  retryTimer = setTimeout(() => { retryTimer = null; retryUnsaved(); }, wait);
+}
+
+/** Reintenta las escrituras fallidas con el estado actual de la memoria. → cuántas siguen pendientes. */
+export function retryUnsaved() {
+  if (retrying) return retrying;
+  if (!unsaved.size) return Promise.resolve(0);
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  hadFailure = true;
+  retrying = (async () => {
+    const at = epoch;
+    for (const [key, entry] of [...unsaved]) {
+      const { store, id, op, was } = entry;
+      try {
+        const disk = await db.get(store, id);
+        if (epoch !== at) break; // se sustituyeron todos los datos mientras: lo pendiente ya no vale
+        if (unsaved.get(key) !== entry) continue; // reemplazada mientras se leía el disco (otra escritura fallida): la vigente se trata en la siguiente ronda
+        const cur = maps[store].get(id);
+        if (cur) {
+          // En disco ya está lo mismo, o algo escrito después (otra pestaña): no se toca
+          const same = disk && (JSON.stringify(disk) === JSON.stringify(cur) || (typeof disk.updatedAt === 'number' && disk.updatedAt > cur.updatedAt));
+          if (!same) await db.putCurrent(store, id, () => maps[store].get(id)); // la memoria de cada intento, no el objeto de ahora
+        } else if (op === 'del' && disk) {
+          // Solo borra si el disco sigue siendo lo que se quiso borrar; si otra pestaña lo editó, se conserva y se avisa
+          const { conflict } = await db.putCurrent(store, id, () => maps[store].get(id), was);
+          if (conflict && epoch === at && unsaved.get(key) === entry && !maps[store].get(id)) {
+            maps[store].set(id, conflict);
+            bump(store);
+            emit('change', { store, id, op: 'put', obj: conflict });
+            emit('conflict', { store, id });
+          }
+        }
+        if (unsaved.get(key) === entry) unsaved.delete(key); // si mientras tanto falló otra escritura de la misma clave (p. ej. un borrado), esa sigue pendiente
+      } catch { /* sigue pendiente */ }
+    }
+    retrying = null;
+    if (unsaved.size) armRetry();
+    else if (hadFailure && epoch === at) { hadFailure = false; retryStep = 0; emit('recovered', {}); }
+    return unsaved.size;
+  })();
+  return retrying;
+}
+
 // ---------- arranque ----------
 export async function init() {
+  unsaved.clear();
   const all = await Promise.all(STORES.map((s) => db.getAll(s)));
   STORES.forEach((s, i) => {
     maps[s].clear();
@@ -202,7 +271,7 @@ export function save(store, obj) {
   maps[store].set(obj.id, obj);
   bump(store);
   emit('change', { store, id: obj.id, op: 'put', obj });
-  return track(db.put(store, obj), { store, id: obj.id });
+  return track(db.put(store, obj), { store, id: obj.id, op: 'put' });
 }
 
 /**
@@ -219,7 +288,7 @@ export function saveSoon(store, obj, ms = 250) {
   if (prev) clearTimeout(prev.timer);
   const timer = setTimeout(() => {
     pendingTimers.delete(key);
-    track(db.put(store, obj), { store, id: obj.id }).catch(() => {});
+    track(db.put(store, obj), { store, id: obj.id, op: 'put' }).catch(() => {});
   }, ms);
   pendingTimers.set(key, { timer, obj, store });
   emit('change', { store, id: obj.id, op: 'put', obj, soon: true });
@@ -230,9 +299,10 @@ export async function flush() {
   for (const [key, p] of pendingTimers) {
     clearTimeout(p.timer);
     pendingTimers.delete(key);
-    track(db.put(p.store, p.obj), { store: p.store, id: p.obj.id }).catch(() => {});
+    track(db.put(p.store, p.obj), { store: p.store, id: p.obj.id, op: 'put' }).catch(() => {});
   }
   await Promise.allSettled([...inflight]);
+  await retryUnsaved();
 }
 
 /** Elimina y devuelve el objeto eliminado (para poder deshacer con restore()). */
@@ -244,7 +314,7 @@ export async function remove(store, id) {
   maps[store].delete(id);
   bump(store);
   emit('change', { store, id, op: 'delete', obj });
-  await track(db.del(store, id), { store, id });
+  await track(db.del(store, id), { store, id, op: 'del', was: obj }); // `was`: lo que se quiso borrar, para no borrar algo más nuevo al reintentar
   return obj;
 }
 
@@ -256,7 +326,7 @@ export function restore(store, obj) {
   maps[store].set(obj.id, obj);
   bump(store);
   emit('change', { store, id: obj.id, op: 'put', obj });
-  return track(db.put(store, obj), { store, id: obj.id });
+  return track(db.put(store, obj), { store, id: obj.id, op: 'put' });
 }
 
 export function saveSettings(patch = {}) {
@@ -513,6 +583,7 @@ async function writeOrUndo(write, undo) {
  */
 async function replaceEverything(data, reason, { reserved = null, undo = null } = {}) {
   await writeOrUndo(() => db.replaceAll(data, { reserved }), undo);
+  unsaved.clear(); // lo pendiente era del estado anterior
   STORES.forEach((s) => {
     maps[s].clear();
     for (const o of data[s]) maps[s].set(o.id, o);
@@ -590,6 +661,7 @@ export async function discardRestorePoint() {
 export async function wipeAll() {
   const undo = await guardRestorePoint('wipe');
   await writeOrUndo(() => db.replaceAll({}), undo);
+  unsaved.clear();
   STORES.forEach((s) => maps[s].clear());
   epoch++;
   await seedAll();

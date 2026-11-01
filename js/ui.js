@@ -260,7 +260,7 @@ function layoutCompact(bar) {
     // Un texto que se parte en líneas (texto grande: html.text-large; título largo) conserva su ancho: ensancharlo lo
     // dejaba en menos líneas, la cabecera cambiaba de alto al compactarse y, con el anclaje del scroll, la página
     // oscilaba sin fin entre compacta y grande (subtítulo de la bienvenida al 150 %).
-    if (cs.whiteSpace !== 'nowrap') return { el, b, s };
+    if (cs.whiteSpace !== 'nowrap') return { el, b, s, wrap: true };
     // Más pequeño cabe más texto: el ancho crece hasta el texto entero o hasta llenar el hueco.
     el.style.width = 'max-content';
     el.style.maxWidth = 'none';
@@ -273,12 +273,14 @@ function layoutCompact(bar) {
   const total = boxes.reduce((t, o) => t + o.b.h * o.s, 0);
   const midY = backBtn ? backBtn.offsetTop + backBtn.offsetHeight / 2 : (top + bottom) / 2;
   let y = midY - total / 2;
-  for (const { el, b, s } of boxes) {
+  for (const { el, b, s, wrap } of boxes) {
     const half = (b.w * s) / 2;
     const cx = left + half > right - half ? (left + right) / 2 : Math.min(Math.max(W / 2, left + half), right - half);
     const cy = y + (b.h * s) / 2;
     y += b.h * s;
-    el.style.setProperty('--tb-w', `${b.w}px`);
+    // Con texto partido no se fija el ancho: offsetWidth redondea (190 por 190,19) y la línea de más hacía crecer la cabecera.
+    if (wrap) el.style.removeProperty('--tb-w');
+    else el.style.setProperty('--tb-w', `${b.w}px`);
     el.style.setProperty('--tb-x', `${Math.round(cx - (b.x + b.w / 2))}px`);
     el.style.setProperty('--tb-y', `${Math.round(cy - (b.y + b.h / 2))}px`);
     el.style.setProperty('--tb-s', s.toFixed(3));

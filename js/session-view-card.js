@@ -532,7 +532,9 @@ function registerSet(ctx, se, set, ex, logType, { confirmed = false } = {}) {
     return;
   }
   // Imposible → no se guarda; muy raro (900 kg, 150 reps) → «¿Seguro?» (docs/PULIDO.md §14)
-  const { impossible, rare } = split(checkSet(set, logType));
+  const base = checkSet(set, logType);
+  // Un peso ya señalado como raro no se vuelve a señalar por «muy superior al habitual»
+  const { impossible, rare } = split(base.some((i) => i.field === 'weight') ? base : [...base, ...(ctx.typoFor?.(se, set, logType) || [])]);
   if (impossible.length) {
     toast(impossible[0].message, { kind: 'error' });
     focusField(impossible[0].field);

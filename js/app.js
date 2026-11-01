@@ -264,13 +264,16 @@ async function boot() {
   store.requestPersist();
 
   // Guardar todo lo pendiente al salir o pasar a segundo plano (iOS).
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') store.flush(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') store.flush(); else store.retryUnsaved(); });
+  window.addEventListener('online', () => { store.retryUnsaved(); });
   window.addEventListener('pagehide', () => { store.flush(); });
   window.addEventListener('beforeunload', () => { store.flush(); });
 
   store.on('error', ({ error }) => {
-    toast(`No se pudo guardar: ${error?.message || error}. Vuelve a intentarlo.`, { kind: 'error', duration: 6000 });
+    toast(`No se pudo guardar: ${error?.message || error}. Entreno lo reintentará solo; hasta entonces este dato solo está en la pantalla.`, { kind: 'error', duration: 6000 });
   });
+  store.on('conflict', () => toast('No se completó el borrado de un registro: se había modificado desde otra pestaña, así que se ha conservado.', { kind: 'error', duration: 6000 }));
+  store.on('recovered', () => toast('Ya está guardado todo lo pendiente.', { duration: 3500 }));
   store.on('change', (d) => { if (d.store === 'meta' || d.store === 'sessions' || d.store === 'bodyweight') updateBadges(); });
   // Tras sustituir o borrar todo, a Hoy con UN solo montaje: si la URL ya es #/today, navigate() la vuelve a montar
   // (refresh, arriba del todo); si no, la monta su hashchange. (Con navigate + refresh, Hoy se montaba dos veces:

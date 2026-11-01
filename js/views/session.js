@@ -7,7 +7,8 @@ import {
   rpePicker, field, textInput, numInput, emptyState, scrollPageTo, focusBar, chips,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
-import { orderKeyOf, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions, sessionPRs } from '../calc.js';
+import { checkTypo } from '../sanity.js';
+import { orderKeyOf, recentWorkWeights, bestsForExercise, addToBests, detectPRs, isWorkSet, makeBodyweightFn, setProgress, setupKey, setupOptions, sessionPRs } from '../calc.js';
 import { mainRecord } from '../celebrate-logic.js';
 import { congratulate } from '../celebrate.js';
 import { navigate, back, refresh, screenToken, backFrom, navigateFrom, replaceUrl, settled } from '../router.js';
@@ -104,6 +105,14 @@ export function mountSession(root, params = {}) {
       const key = `${se.id}|${se.exerciseId}`;
       if (!snap.last.has(key)) snap.last.set(key, lastFor(se, session, snap.sessions));
       return snap.last.get(key);
+    },
+    /** ¿Peso muy superior al habitual (LAB-001)? Solo pregunta. Mira las sesiones anteriores y lo ya hecho hoy con ese ejercicio y configuración. */
+    typoFor(se, set, logType) {
+      if (logType !== 'weight_reps' && logType !== 'unilateral') return [];
+      const sk = setupKey(se.setup);
+      const sameSession = session.exercises.filter((x) => x.exerciseId === se.exerciseId && setupKey(x.setup) === sk)
+        .flatMap((x) => x.sets.filter((y) => isWorkSet(y) && y !== set).map((y) => y.weight));
+      return checkTypo(set.weight, recentWorkWeights(snap.earlier, se.exerciseId, sk), { sameSession });
     },
     /** Historial de un ejercicio (stats.exerciseHistory; solo sesiones terminadas): el «Siguiente paso» mira su progreso reciente. */
     historyFor(eid, setup = '') {

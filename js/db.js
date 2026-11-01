@@ -60,7 +60,7 @@ async function withRetry(fn) {
   }
 }
 
-function runTx(db, storeNames, mode, body) {
+function runTx(db, storeNames, mode, body, early = true) {
   return new Promise((resolve, reject) => {
     let t;
     try {
@@ -82,7 +82,7 @@ function runTx(db, storeNames, mode, body) {
     }
     // Las escrituras piden ya la confirmación (sin esperar al auto-commit tras la respuesta de cada
     // petición): lo que se guarda al cerrar la app (pagehide) llega a disco aunque la página muera enseguida.
-    if (mode === 'readwrite' && typeof t.commit === 'function') {
+    if (early && mode === 'readwrite' && typeof t.commit === 'function') {
       try { t.commit(); } catch { /* ya terminada */ }
     }
   });
@@ -108,6 +108,32 @@ export function get(store, id) {
 
 export function put(store, value) {
   return withRetry((db) => runTx(db, [store], 'readwrite', (t) => { t.objectStore(store).put(value); }));
+}
+
+/**
+ * Deja en disco lo que `current()` devuelva EN CADA INTENTO (un registro, o undefined = borrarlo). withRetry repite el
+ * intento tras un aborto: con un valor fijo escribiría un estado ya viejo; así cada intento lee la memoria al crear la transacción.
+ * Y en esa misma transacción mira el disco: si otra pestaña escribió algo con un `updatedAt` mayor, no lo pisa.
+ * Borrado (`current()` undefined): solo borra si el disco es `was` (el registro que se quiso borrar) o algo con `updatedAt`
+ * estrictamente anterior (sin `was` no hay con qué comparar). Si hay otra cosa (otra pestaña editó, aunque sea en el mismo ms) la conserva y
+ * resuelve a `{ conflict: ese registro }`; si no, a `{}`.
+ */
+export function putCurrent(store, id, current, was) {
+  return withRetry((db) => runTx(db, [store], 'readwrite', (t) => {
+    const os = t.objectStore(store);
+    const out = {};
+    const rq = os.get(id);
+    rq.onsuccess = () => {
+      const v = current(); const d = rq.result;
+      if (v) {
+        if (!(d && typeof d.updatedAt === 'number' && d.updatedAt > v.updatedAt)) os.put(v);
+      } else if (d) {
+        const mine = was && (JSON.stringify(d) === JSON.stringify(was) || (typeof d.updatedAt === 'number' && d.updatedAt < was.updatedAt));
+        if (mine) os.delete(id); else out.conflict = d;
+      }
+    };
+    return out;
+  }, false)); // sin commit() anticipado: el put/delete se encola dentro de onsuccess
 }
 
 export function putMany(store, values) {
