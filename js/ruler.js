@@ -14,6 +14,7 @@ const MAJOR = 4; // marca larga cada 4 marcas (10 kg con paso 2,5); 5 para repet
 export function rulerValue(start, dx, { step = 1, tick = TICK_PX, min = 0, max = Infinity } = {}) {
   const base = start ?? (Number.isFinite(min) ? Math.max(min, 0) : 0);
   const k = Math.round(-dx / tick);
+  if (start == null && k === 0) return null; // un roce no convierte un campo vacío en un 0 guardado
   const v = Math.round((base + k * step) * 1e4) / 1e4;
   return Math.min(max, Math.max(min, v));
 }
@@ -47,7 +48,7 @@ export function mountRuler(el, { step, min = 0, max = Infinity, major = MAJOR, s
   let swallow = false; // el clic que sigue a un arrastre se descarta (se limpia en el siguiente toque)
   field.addEventListener('click', (ev) => { if (swallow) { swallow = false; ev.preventDefault(); ev.stopPropagation(); } }, true);
   field.addEventListener('pointerdown', (e) => {
-    if (e.button > 0) return;
+    if (e.button > 0 || drag) return; // un segundo dedo no pisa el arrastre en curso
     swallow = false;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, start: el.getValue(), moved: false, cur: el.getValue() };
     try { field.setPointerCapture(e.pointerId); } catch { /* sin captura: el movimiento fuera de la regla se pierde */ }

@@ -27,3 +27,9 @@ test('respeta los límites y parte de 0 si no hay valor', () => {
   assert.equal(rulerValue(null, -22, W), 5);
   assert.equal(rulerValue(8, -33, { step: 1, min: 0, max: 999 }), 11);
 });
+
+test('un roce sobre un campo vacío no lo convierte en 0', () => {
+  assert.equal(rulerValue(null, -4, W), null);
+  assert.equal(rulerValue(null, 4, W), null);
+  assert.equal(rulerValue(null, -11, W), 2.5);
+});
