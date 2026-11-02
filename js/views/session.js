@@ -166,8 +166,13 @@ export function mountSession(root, params = {}) {
     cardEl: (se) => cardEl(se),
     /** Tras registrar/añadir una serie: que el botón «Registrar» del editor quede a la vista. */
     revealEditor(se) {
-      const btn = cardEl(se)?.querySelector('.ses-editor .ses-register');
-      if (btn) ensureVisible(btn);
+      const ed = cardEl(se)?.querySelector('.ses-editor');
+      const btn = ed?.querySelector('.ses-register');
+      if (!btn) return;
+      ensureVisible(btn);
+      // El editor de la serie abierta es alto (regla de peso y de repeticiones): si cabe entero, que se vea entero
+      // (no con el peso bajo la cabecera); si no cabe, manda «Registrar».
+      if (ed.getBoundingClientRect().height <= visibleBottom() - (headerBottom() + 8)) ensureVisible(ed);
     },
     /**
      * Al terminar un ejercicio: a los 350 ms (se ve antes el ✓ en la tarjeta abierta), el cursor pasa al siguiente

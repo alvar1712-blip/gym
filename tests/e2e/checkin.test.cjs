@@ -81,10 +81,12 @@ async function countTaps(page) {
   return () => page.evaluate(() => { const n = window.__taps; window.__taps = 0; return n; });
 }
 
-/** «Registrar serie» de la primera tarjeta: a la vista, sin desplazar, y no tapado (pestañas, cabecera). */
+/** «Registrar serie» de la primera tarjeta, a la vista y no tapado (pestañas, cabecera). Fase 7: el editor (regla de peso y de
+ * repeticiones) es alto, así que antes se coloca la pantalla como lo haría el usuario al desplazar (centrado). */
 function registerVisible(page) {
   return page.evaluate(() => {
     const b = document.querySelector('.ses-card .ses-editor .ses-register');
+    b.scrollIntoView({ block: 'center' });
     const r = b.getBoundingClientRect();
     const hdr = document.querySelector('.topbar').getBoundingClientRect().bottom;
     const tab = document.getElementById('tabbar').getBoundingClientRect().top;
@@ -98,6 +100,8 @@ function registerVisible(page) {
  * si algo corta la tilde de «ENERGÍA» o la virgulilla de «SUEÑO» (o cualquier texto), las dos capturas difieren.
  */
 async function stripUnclipped(page, ci) {
+  await page.evaluate(() => window.scrollTo(0, 0)); // Fase 7: antes se centró «Registrar»; la franja está arriba
+  await page.waitForTimeout(150);
   const b = await ci.boundingBox();
   const clip = { x: Math.floor(b.x), y: Math.floor(b.y) - 4, width: Math.ceil(b.width), height: Math.ceil(b.height) + 8 };
   const asIs = await page.screenshot({ clip });

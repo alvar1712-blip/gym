@@ -1066,7 +1066,7 @@ export function closeStaleToasts() {
  * stepper({ value, step, min, max, decimals, inputmode, suffix, label, placeholder, showStep, onChange(v, {final}) })
  * Devuelve el elemento con .getValue(), .setValue(v) y .setAriaLabel(nombre).
  */
-export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', ruler = 0, onChange = () => {}, ariaLabel = '' } = {}) {
+export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', ruler = 0, rulerCompact = false, onChange = () => {}, ariaLabel = '' } = {}) {
   let cur = value;
   let paintRuler = null;
   const input = h('input.stepper-input', {
@@ -1137,7 +1137,7 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
       plusBtn));
   el.getValue = () => cur;
   // Regla táctil opcional (`ruler` = cada cuántas marcas, una larga): gesto rápido; el número y −/+ siguen siendo la vía exacta
-  if (ruler) paintRuler = mountRuler(el, { step, min, max, major: ruler, setValue: set, onCommit: (v) => onChange(v, { final: true }) });
+  if (ruler) paintRuler = mountRuler(el, { step, min, max, major: ruler, compact: rulerCompact, setValue: set, onCommit: (v) => onChange(v, { final: true }) });
   /** Cambia el nombre del campo (y de sus botones −/+), p. ej. Lastre ↔ Asistencia. */
   el.setAriaLabel = (name) => {
     input.setAttribute('aria-label', name);

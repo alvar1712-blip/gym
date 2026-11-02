@@ -1,7 +1,7 @@
 // session-view-card.js — tarjeta de un ejercicio de la sesión de fuerza y editor de series.
 // PROPIETARIO: módulo de sesión. La vista (views/session.js) crea el contexto `ctx` y monta las tarjetas.
 // Cada tarjeta se vuelve a pintar sola (ctx.rerenderCard) al confirmar/editar series: nunca toda la vista.
-import { h, icon, stepper, chips, segmented, toast, undoToast, confirmDialog, haptic } from './ui.js';
+import { h, icon, stepper, chips, segmented, toast, undoToast, confirmDialog, promptDialog, actionSheet, haptic } from './ui.js';
 import { fmtDate, fmtKm, fmtDuration, fmtPace, fmtSpeed, fmtNum, plural, uniq } from './util.js';
 import { pace, speed, pace100, sessionDurationMin } from './calc.js';
 import { ACTIVITY_EMOJI } from './seed.js';
@@ -10,7 +10,9 @@ import {
   LOAD_REP_TYPES, formatSet, targetText, prMessage, inheritWeight, validateSet, missingField,
   extraSet, warmupSet, switchExercise, suggestedWarmup, warmupSetsFromPlan, itemState, foldedSetCount,
 } from './session-logic.js';
-import { progressionHint } from './progression.js';
+import { progressionHint, todayPlan, incrementFor } from './progression.js';
+import { openPlates } from './plates-view.js';
+import { openHistory } from './session-history.js';
 import { checkSet, split } from './sanity.js';
 
 const TYPE_OPTS = [
@@ -65,6 +67,9 @@ export function renderCard(ctx, se) {
       : h('h3.ses-name', name),
     foldable ? null : doneMark,
     prog,
+    logType !== 'cardio' && ex && active
+      ? h('button.icon-btn.ses-hist-btn', { type: 'button', 'aria-label': `Historial de ${name}`, onClick: () => openHistory({ ex, logType, entries: ctx.historyFor?.(ex.id, se.setup ?? '') ?? [] }) }, icon('history', 22))
+      : null,
     h('button.icon-btn.ses-more', { type: 'button', 'aria-label': `Opciones de ${name}`, onClick: () => ctx.exerciseMenu(se) }, icon('more', 22))));
 
   // Alternativas: «⇄ Prensa · Hack»
@@ -133,6 +138,16 @@ export function renderCard(ctx, se) {
   const prs = ctx.prsFor(se.exerciseId, se.setup ?? '');
   const editId = currentEditId(ctx, se);
   const editSet = se.sets.find((s) => s.id === editId) || null;
+  // «Hoy»: propuesta concreta de la misma decisión que «Siguiente paso»; «Usar» la pasa a la serie abierta (nada se guarda solo)
+  const plan = hint && ex ? todayPlan({ exercise: ex, hint, target: se.target, settings: ctx.settings?.() }) : null;
+  if (plan) {
+    const usable = !!editSet && !editSet.done && editSet.type !== 'warmup'
+      && !(editSet.weight === plan.weight && editSet.reps === plan.reps);
+    card.appendChild(h('div.ses-today', { dataset: { kind: plan.kind } },
+      h('span.ses-today-label', 'Hoy'), h('span.ses-today-val.tnum', plan.text),
+      h('span.sr-only', plan.why),
+      usable ? h('button.btn.btn-ghost.btn-sm.ses-today-use', { type: 'button', 'aria-label': `Usar ${plan.text} en la serie abierta`, onClick: () => applyPlan(ctx, se, editSet, plan, logType) }, 'Usar') : null));
+  }
   // Mientras no hay ninguna serie de trabajo hecha, «+ Calent.» va en la cabecera del editor (a mano,
   // junto a «Serie 1»); después, abajo con «+ Serie».
   const warmInHead = !!editSet && !editSet.done && editSet.type !== 'warmup'
@@ -336,10 +351,13 @@ function currentEditId(ctx, se) {
 // ---------------------------------------------------------------------------
 // Filas compactas
 // ---------------------------------------------------------------------------
+// Serie recién registrada: su fila se enciende un instante al plegarse (css .ses-row-new; nada con «reducir movimiento»)
+let justDone = null;
+
 function renderRow(ctx, se, set, logType, num, prs) {
   const pending = !set.done;
   const rirPart = LOAD_REP_TYPES.includes(logType) && set.rir != null ? (set.rir === 'F' ? '@F' : `@${set.rir}`) : '';
-  return h(`button.ses-row${pending ? '.ses-row-pending' : ''}${set.type === 'warmup' ? '.ses-row-warm' : ''}`, {
+  return h(`button.ses-row${pending ? '.ses-row-pending' : ''}${set.type === 'warmup' ? '.ses-row-warm' : ''}${set.id === justDone ? '.ses-row-new' : ''}`, {
     type: 'button',
     dataset: { set: set.id, state: pending ? 'pending' : 'done' },
     // La etiqueta sustituye a todo el contenido: incluye tipo, récord y nota (lo que se ve en la fila).
@@ -365,6 +383,8 @@ function renderRow(ctx, se, set, logType, num, prs) {
 // ---------------------------------------------------------------------------
 // Editor grande
 // ---------------------------------------------------------------------------
+const TYPE_NAME = { warmup: 'Calentamiento', effective: 'Serie efectiva', failure: 'Al fallo', drop: 'Drop set' };
+
 function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {}) {
   const pending = !set.done;
 
@@ -378,16 +398,27 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
     if (pending && !('origWeight' in set)) set.origWeight = set.weight ?? null;
     set.weight = v;
   };
+  // Paso de la regla de peso: el incremento de la progresión del ejercicio (ajustes), con un máximo de 2,5 kg para que
+  // 22,5 o 102,5 sigan a un gesto; aislamiento 1 kg (poleas, mancuernas). El valor de una serie que no cae en la rejilla
+  // (41,25) se conserva hasta que se arrastra una marca entera.
+  const inc = ex ? incrementFor(ex, ctx.settings?.()?.increments) : null;
+  const wStep = Math.min(2.5, inc ? (inc.text === '1–2 kg' ? 1 : inc.kg) : 2.5);
   const fields = [];
   const field = (lbl, ctl, extra = null) => h('div.ses-field', h('span.ses-field-label', lbl), h('div.ses-field-ctl', ctl, extra));
+  // Con regla: etiqueta arriba (y su acción a la derecha), −/número/+ y la regla a todo el ancho
+  const rfield = (lbl, ctl, extra = null) => h('div.ses-field.ses-field-ruler', h('div.ses-field-head', typeof lbl === 'string' ? h('span.ses-field-label', lbl) : lbl, extra), ctl);
   const tag = (st, key) => { st.input.dataset.field = key; return st; };
   const weightStep = (lbl, opts = {}) => tag(stepper({
-    value: set.weight, step: 2.5, decimals: 2, inputmode: 'decimal', suffix: 'kg', showStep: true, min: 0, max: 999,
-    ruler: 4, ariaLabel: lbl, onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
+    value: set.weight, step: wStep, decimals: 2, inputmode: 'decimal', suffix: 'kg', showStep: true, min: 0, max: 999,
+    ruler: wStep >= 2.5 ? 4 : 5, ariaLabel: lbl, onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
   }), 'weight');
   const repsStep = (key, lbl) => tag(stepper({
-    value: set[key], step: 1, decimals: 0, inputmode: 'numeric', min: 0, max: 999, ruler: 5, ariaLabel: lbl, onChange: bind(key),
+    value: set[key], step: 1, decimals: 0, inputmode: 'numeric', min: 0, max: 999, ruler: 5, rulerCompact: true, ariaLabel: lbl, onChange: bind(key),
   }), key);
+  // «Discos»: la barra con los discos de un lado (solo ejercicios de barra; orientativo, no cambia la serie)
+  const platesBtn = (st) => (logType === 'weight_reps'
+    ? h('button.ses-plates', { type: 'button', 'aria-label': 'Ver los discos de la barra para este peso', onClick: () => openPlates(st.getValue()) }, icon('dumbbell', 18), 'Discos')
+    : null);
 
   switch (logType) {
     case 'bodyweight': {
@@ -395,7 +426,7 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
       // se elige con el segmentado y el campo es siempre positivo (se guarda weight < 0 = asistencia).
       let sign = set.weight < 0 ? -1 : 1;
       const lblEl = h('span.ses-field-label');
-      const paintLbl = () => { lblEl.textContent = sign < 0 ? 'Asist.' : 'Lastre'; };
+      const paintLbl = () => { lblEl.textContent = sign < 0 ? 'Asistencia' : 'Lastre'; };
       const st = weightStep('Lastre', {
         value: set.weight == null ? null : Math.abs(set.weight),
         min: 0, max: 300,
@@ -419,15 +450,17 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
       signSeg.classList.add('ses-sign');
       if (sign < 0) { st.setAriaLabel('Asistencia'); st.input.placeholder = 'kg'; }
       paintLbl();
-      fields.push(h('div.ses-field', lblEl, h('div.ses-field-ctl', st, signSeg)));
-      fields.push(field('Reps', repsStep('reps', 'Repeticiones')));
+      fields.push(rfield(lblEl, st), signSeg);
+      fields.push(rfield('Reps', repsStep('reps', 'Repeticiones')));
       break;
     }
-    case 'unilateral':
-      fields.push(field('Peso', weightStep('Peso')));
-      fields.push(field('Reps izq.', repsStep('reps', 'Repeticiones lado izquierdo')));
-      fields.push(field('Reps der.', repsStep('repsR', 'Repeticiones lado derecho')));
+    case 'unilateral': {
+      const st = weightStep('Peso');
+      fields.push(rfield('Peso', st, platesBtn(st)));
+      fields.push(rfield('Reps izquierda', repsStep('reps', 'Repeticiones lado izquierdo')));
+      fields.push(rfield('Reps derecha', repsStep('repsR', 'Repeticiones lado derecho')));
       break;
+    }
     case 'time':
       fields.push(field('Tiempo', tag(stepper({ value: set.timeSec, step: 5, decimals: 0, inputmode: 'numeric', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') }), 'timeSec')));
       fields.push(field('Lastre', weightStep('Lastre (opcional)', { size: 'md', placeholder: 'opcional', ruler: 0 })));
@@ -437,63 +470,54 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
       fields.push(field('Tiempo', tag(stepper({ value: set.timeSec, step: 0.1, decimals: 2, inputmode: 'decimal', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') }), 'timeSec')));
       break;
     case 'jumps':
-      fields.push(field('Reps', repsStep('reps', 'Repeticiones')));
+      fields.push(rfield('Reps', repsStep('reps', 'Repeticiones')));
       fields.push(field('Altura', stepper({ value: set.heightCm, step: 1, decimals: 1, inputmode: 'decimal', suffix: 'cm', min: 0, max: 200, size: 'md', placeholder: 'opcional', ariaLabel: 'Altura en cm (opcional)', onChange: bind('heightCm') })));
       break;
-    default:
-      fields.push(field('Peso', weightStep('Peso')));
-      fields.push(field('Reps', repsStep('reps', 'Repeticiones')));
+    default: {
+      const st = weightStep('Peso');
+      fields.push(rfield('Peso', st, platesBtn(st)));
+      fields.push(rfield('Reps', repsStep('reps', 'Repeticiones')));
+    }
   }
 
-  // RIR (solo tipos con carga y repeticiones)
-  // (no en calentamientos: no cuentan para nada y así «Registrar calentamiento» queda más a mano)
+  // RIR (solo tipos con carga y repeticiones), siempre a la vista. Sin calentamientos: no cuentan para nada.
+  // «Fallo» sigue siendo una opción del RIR (F); «Al fallo» como TIPO de serie vive en el menú de la serie.
   let rirChips = null;
   let rirBlock = null;
   if (LOAD_REP_TYPES.includes(logType)) {
     rirChips = chips({ ariaLabel: 'RIR, repeticiones en reserva', options: RIR_OPTS, value: set.rir ?? null, allowNone: true, className: 'ses-rir', onChange: (v) => { set.rir = v; changed(); } });
-    rirBlock = h('div.ses-sub', { hidden: set.type === 'warmup' }, h('span.ses-sub-label', 'RIR · repeticiones en reserva'), rirChips);
+    rirBlock = h('div.ses-sub.ses-rir-block', { hidden: set.type === 'warmup' }, h('span.ses-sub-label', 'RIR'), rirChips);
     fields.push(rirBlock);
   }
 
   const submit = h('button.btn.btn-primary.btn-lg.btn-block.ses-register', { type: 'button' });
-  const headNum = h('span.ses-editor-num');
-  const paintSubmit = () => {
-    headNum.textContent = num === 'C' ? 'Calentamiento' : `Serie ${num}`;
-    submit.replaceChildren(icon('check', 22), pending ? (set.type === 'warmup' ? 'Registrar calentamiento' : `Registrar serie\u00a0${num}`) : 'Listo'); // «serie 3» no se separa al partir la línea
+  const headNum = h('span.ses-editor-num', num === 'C' ? 'Calentamiento' : `Serie ${num}`);
+  submit.replaceChildren(icon('check', 22), pending ? (set.type === 'warmup' ? 'Registrar calentamiento' : `Registrar serie ${num}`) : 'Listo'); // «serie 3» no se separa al partir la línea
+
+  // Menú de la serie (lo poco frecuente): tipo, nota y quitar/borrar. Fuera de la superficie principal.
+  const applyType = (v) => {
+    if (v === set.type) return;
+    set.type = v;
+    if (v === 'failure') set.rir = 'F';
+    if (v === 'warmup') set.rir = null;
+    changed();
+    ctx.rerenderCard(se);
   };
-  paintSubmit();
-
-  const typeSeg = segmented({
-    options: TYPE_OPTS,
-    value: set.type,
-    ariaLabel: 'Tipo de serie',
-    onChange: (v) => {
-      set.type = v;
-      if (v === 'failure') { set.rir = 'F'; rirChips?.setValue('F'); }
-      if (v === 'warmup') { set.rir = null; rirChips?.setValue(null); }
-      num = v === 'warmup' ? 'C' : String(se.sets.filter((s) => s.type !== 'warmup').indexOf(set) + 1);
-      typeSeg.dataset.type = v;
-      if (rirBlock) rirBlock.hidden = v === 'warmup';
-      editorEl.classList.toggle('ses-editor-warm', v === 'warmup');
-      paintSubmit();
-      changed();
-    },
+  const editNote = async () => {
+    const v = await promptDialog({ title: 'Nota de la serie', label: 'Opcional', value: set.note || '', confirmText: 'Guardar nota' });
+    if (v == null) return;
+    set.note = v.trim();
+    changed();
+    ctx.rerenderCard(se);
+  };
+  const setMenu = () => actionSheet({
+    title: num === 'C' ? 'Calentamiento' : `Serie ${num}`,
+    actions: [
+      ...TYPE_OPTS.map((o) => ({ label: TYPE_NAME[o.value], hint: set.type === o.value ? 'Actual' : null, icon: set.type === o.value ? 'check' : null, onClick: () => applyType(o.value) })),
+      { label: set.note ? 'Editar nota' : 'Añadir nota', icon: 'note', onClick: editNote },
+      { label: pending ? 'Quitar serie' : 'Borrar serie', icon: 'trash', danger: true, onClick: () => deleteSet(ctx, se, set, pending ? 'Serie quitada' : 'Serie borrada') },
+    ],
   });
-  typeSeg.classList.add('ses-type');
-  typeSeg.dataset.type = set.type;
-
-  // Nota opcional de la serie
-  const noteInp = h('input.input.ses-note-input', { type: 'text', value: set.note || '', placeholder: 'Nota de la serie', maxlength: 200, 'aria-label': 'Nota de la serie', hidden: !set.note });
-  noteInp.addEventListener('input', () => { set.note = noteInp.value; changed(false); });
-  const noteBtn = h('button.btn.btn-ghost.btn-sm.ses-note-btn', {
-    type: 'button',
-    onClick: () => { noteInp.hidden = false; noteInp.focus(); noteBtn.hidden = true; },
-    hidden: !!set.note,
-  }, icon('note', 18), 'Nota');
-  const delBtn = h('button.btn.btn-danger-ghost.btn-sm.ses-del-set', {
-    type: 'button',
-    onClick: () => deleteSet(ctx, se, set, pending ? 'Serie quitada' : 'Serie borrada'),
-  }, icon('trash', 18), pending ? 'Quitar' : 'Borrar');
 
   submit.addEventListener('click', () => {
     // Un doble toque accidental no debe registrar también la serie siguiente.
@@ -502,20 +526,31 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
     else closeEditor(ctx, se);
   });
 
-  // «Registrar» justo debajo de los datos (a mano del pulgar); el tipo de serie y los enlaces, debajo.
-  const editorEl = h(`div.ses-editor${pending ? '' : '.ses-editor-edit'}${set.type === 'warmup' ? '.ses-editor-warm' : ''}`, { dataset: { set: set.id, state: pending ? 'editing' : 'editing-done' } },
+  // «Registrar» justo debajo de los datos (a mano del pulgar). La serie abierta manda: cabecera, datos, RIR y registrar.
+  return h(`div.ses-editor${pending ? '' : '.ses-editor-edit'}${set.type === 'warmup' ? '.ses-editor-warm' : ''}`, { dataset: { set: set.id, state: pending ? 'editing' : 'editing-done', type: set.type } },
     h('div.ses-editor-head',
       headNum,
       pending ? null : h('span.badge.badge-ok', 'Hecha · editando'),
+      TYPE_BADGE[set.type] && set.type !== 'warmup' ? h('span.badge.ses-editor-type', TYPE_BADGE[set.type]) : null,
+      h('span.grow'),
       warmInHead ? h('button.btn.btn-ghost.btn-sm.ses-add-warm', {
         type: 'button', 'aria-label': 'Añadir calentamiento antes de esta serie', onClick: () => addWarmup(ctx, se, logType),
-      }, icon('plus', 18), 'Calent.') : null),
+      }, icon('plus', 18), 'Calent.') : null,
+      h('button.icon-btn.ses-set-more', { type: 'button', 'aria-label': `Más opciones de la serie ${num}`, onClick: setMenu }, icon('more', 22))),
+    set.note ? h('button.ses-editor-note', { type: 'button', 'aria-label': `Nota: ${set.note}. Editar`, onClick: editNote }, h('span', { 'aria-hidden': 'true' }, '📝 '), set.note) : null,
     fields,
-    noteInp,
-    submit,
-    typeSeg,
-    h('div.ses-editor-links', noteBtn, h('span.grow'), delBtn));
-  return editorEl;
+    submit);
+}
+
+/** «Usar» la propuesta de hoy: peso y repeticiones de la serie abierta (se guarda como cualquier cambio manual). */
+function applyPlan(ctx, se, set, plan, logType) {
+  if (!('origWeight' in set)) set.origWeight = set.weight ?? null;
+  set.weight = plan.weight;
+  set.reps = plan.reps;
+  if (logType === 'unilateral') set.repsR = plan.reps;
+  ctx.touch(se);
+  ctx.save();
+  ctx.rerenderCard(se);
 }
 
 /** Confirma una serie pendiente (1 toque con los valores prellenados). */
@@ -561,10 +596,15 @@ function registerSet(ctx, se, set, ex, logType, { confirmed = false } = {}) {
   haptic(15);
   const prs = set.type !== 'warmup' ? ctx.prsFor(se.exerciseId, se.setup ?? '').get(set.id) : null;
   if (prs) toast(prMessage(prs, ex), { kind: 'pr', duration: 5000 });
+  justDone = set.id;
+  setTimeout(() => { if (justDone === set.id) justDone = null; }, 900);
   ctx.rerenderCard(se);
   // La fila hecha empuja el editor hacia abajo: que «Registrar» siga a la vista (no bajo las pestañas).
   if (!se.sets.some((s) => !s.done)) ctx.scrollToNext(se);
-  else ctx.revealEditor?.(se);
+  else {
+    reveal(ctx.cardEl?.(se)?.querySelector('.ses-editor')); // la serie siguiente se despliega (solo opacidad y 6 px)
+    ctx.revealEditor?.(se);
+  }
 }
 
 function closeEditor(ctx, se) {

@@ -37,6 +37,7 @@ const rulerOf = (page, key) => page.locator('.ses-editor .stepper', { has: page.
 /** Arrastre táctil: dx px horizontales (y dy verticales) con el dedo sobre el centro de `loc`. */
 async function swipe(app, loc, dx, dy = 0, { release = true } = {}) {
   const { page } = app;
+  await loc.scrollIntoViewIfNeeded();
   const b = await loc.boundingBox();
   const x = b.x + b.width / 2;
   const y = b.y + b.height / 2;
@@ -149,6 +150,7 @@ async function run(browser) {
     assert.deepStrictEqual([st[0].w, st[0].done], [45, true]);
     await page.waitForSelector('.ses-editor .ruler');
     await page.waitForFunction(() => /\S/.test(document.querySelector('.ses-editor [data-field="weight"]')?.value || ''));
+    await page.waitForTimeout(700); // la serie siguiente se despliega y la pantalla se acomoda
     const v0 = Number((await num(page, 'weight').inputValue()).replace(',', '.'));
     await swipe(app, fieldOf(page, "weight"), -22); // 2 marcas = +5 kg
     assert.strictEqual(Number((await num(page, 'weight').inputValue()).replace(',', '.')), v0 + 5, 'serie consecutiva: la regla responde');
@@ -169,10 +171,12 @@ async function runSmall(browser) {
       await page.evaluate((l) => { document.documentElement.classList.toggle('text-large', l); document.documentElement.style.setProperty('--ts', l ? '1.5' : '1'); }, large);
       await settle(page);
       const reg = page.locator('.ses-editor .ses-register');
-      await reg.scrollIntoViewIfNeeded();
+      await reg.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+      await page.waitForTimeout(150);
       const rb = await reg.boundingBox();
+      const bar = await page.evaluate(() => document.getElementById('tabbar').getBoundingClientRect().top);
       const rl = await rulerOf(page, 'weight').boundingBox();
-      assert.ok(rb.y >= 0 && rb.y + rb.height <= h, `${w}x${h}${large ? ' texto grande' : ''}: Registrar visible (${rb.y}+${rb.height})`);
+      assert.ok(rb.y >= 0 && rb.y + rb.height <= bar, `${w}x${h}${large ? ' texto grande' : ''}: Registrar visible (${rb.y}+${rb.height})`);
       assert.ok(rl.height >= 16 && rl.x >= 0 && rl.x + rl.width <= w, `${w}x${h}: regla dentro de la pantalla`);
       assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `${w}: sin scroll horizontal`);
       await shot(page, `${browser}-small-${w}x${h}${large ? '-large' : ''}`);

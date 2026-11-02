@@ -252,36 +252,95 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 .ses-editor .stepper-field:has(.stepper-suffix) .stepper-input { padding: 0 22px 0 2px; }
 .ses-hint { font-size: calc(13px * var(--ts)); color: var(--muted); padding-left: 2px; }
 
-/* Regla táctil (js/ruler.js): franja con cifras en las marcas largas y una aguja central, DENTRO del campo del número (que
-   crece lo justo: «Registrar» tiene que seguir por encima de la barra inferior en un iPhone SE). Marcas absolutas desde 0
-   (--x/--xm las desplazan). touch-action: pan-y deja el scroll vertical al navegador y nos da el horizontal; sin
-   transiciones (sigue al dedo). El <input> no recibe el toque (iOS se lo quedaba): el campo lo enfoca al tocar. */
+/* ---------- Fase 7: serie abierta protagonista, regla grande, menú de la serie ---------- */
+/* La serie abierta manda: más aire y una luz verde suave; las hechas, planas y bajas. */
+.ses-editor {
+  gap: 10px;
+  padding: 12px 12px 12px;
+  border-radius: 18px;
+  border-color: rgba(184, 243, 74, 0.55);
+  background: linear-gradient(180deg, rgba(184, 243, 74, 0.07), transparent 38%), var(--bg);
+  box-shadow: 0 0 0 1px rgba(184, 243, 74, 0.08), 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.ses-editor-edit { background: var(--bg); box-shadow: none; }
+.ses-editor-warm { background: linear-gradient(180deg, rgba(251, 191, 36, 0.07), transparent 38%), var(--bg); }
+.ses-row:not(.ses-row-pending):not(.ses-row-warm) { min-height: 44px; }
+.ses-editor-head .ses-set-more { margin: -8px -8px -8px 0; }
+.ses-editor-type { flex: none; }
+.ses-editor-note { appearance: none; background: none; border: 0; padding: 2px 2px 6px; margin: -6px 0 0; text-align: left; font: inherit; font-size: calc(14px * var(--ts)); color: var(--text-2); cursor: pointer; }
+
+/* Campo con regla: etiqueta (y «Discos») arriba; −, número grande, +; y la regla a todo el ancho */
+.ses-field-ruler { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.ses-field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
+.ses-field-ruler .ses-field-label { min-height: 0; }
+.ses-plates { appearance: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin: -8px -4px -8px auto; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--text-2); font: inherit; font-size: calc(14px * var(--ts)); font-weight: 650; cursor: pointer; }
+.ses-plates:active { background: var(--surface-3); }
+
+.ses-editor .stepper.has-ruler .stepper-btn { width: 52px; min-height: 48px; }
+.ses-editor .stepper.has-ruler .stepper-input { min-height: 48px; font-size: calc(40px * var(--ts)); font-weight: 800; letter-spacing: -0.01em; border-color: transparent; background: transparent; padding: 0 30px 0 4px; }
+.ses-editor .stepper.has-ruler .stepper-suffix { bottom: auto; top: 50%; transform: translateY(-30%); right: 4px; font-size: calc(14px * var(--ts)); font-weight: 700; }
+html.text-large .ses-editor .stepper.has-ruler .stepper-field:has(.stepper-suffix) .stepper-input { padding: 0 4px; }
+html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { position: static; transform: none; align-self: center; margin-left: 4px; }
+
+/* La regla: franja grande con marcas, cifras y aguja central (js/ruler.js). Marcas absolutas desde 0 (--x/--xm las
+   desplazan). touch-action: pan-y deja el scroll vertical al navegador y nos da el horizontal; sin transiciones (sigue
+   al dedo). El <input> no recibe el toque (iOS se lo quedaba): el campo lo enfoca al tocar. */
 .has-ruler .stepper-field, .ruler { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: ew-resize; }
 .has-ruler .stepper-input { pointer-events: none; }
-.ses-editor .stepper.has-ruler .stepper-btn { width: 48px; }
-.ses-editor .stepper.has-ruler .stepper-field { min-height: 68px; }
-.ses-editor .stepper.has-ruler-sm .stepper-field { min-height: 54px; }
-.ses-editor .stepper.has-ruler .stepper-field .stepper-input { min-height: 0; height: auto; padding: 0 22px 28px 2px; }
-.ses-editor .stepper.has-ruler.has-ruler-sm .stepper-field .stepper-input { padding: 0 2px 18px; }
-.ses-editor .stepper.has-ruler .stepper-suffix { bottom: 32px; }
-/* Texto grande: la unidad sube a la esquina para no pisar la cifra */
-html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { left: auto; right: 8px; bottom: auto; top: 6px; text-align: right; }
 .ruler {
-  position: absolute; left: 1px; right: 1px; bottom: 1px; height: 28px; overflow: hidden; border-radius: 0 0 11px 11px;
-  border-top: 1px solid var(--border-strong); background-color: var(--surface-2); overscroll-behavior-x: contain;
+  position: relative; height: 54px; overflow: hidden; border-radius: 14px;
+  border: 1px solid var(--border-strong); background-color: var(--surface-2); overscroll-behavior-x: contain;
   background-image:
     linear-gradient(90deg, var(--text) 0 2px, transparent 2px),
     linear-gradient(90deg, var(--muted) 0 1.5px, transparent 1.5px);
   background-position: calc(50% + var(--xm, 0px)) 100%, calc(50% + var(--x, 0px)) 100%;
-  background-size: var(--major) 14px, var(--tick) 7px;
+  background-size: var(--major) 28px, var(--tick) 15px;
   background-repeat: repeat-x;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
 }
-.ruler-sm { height: 18px; background-size: var(--major) 11px, var(--tick) 6px; }
-.ruler-sm .ruler-num { display: none; }
-.ruler-num { position: absolute; top: 1px; transform: translateX(-50%); font-size: calc(11px * var(--ts)); font-weight: 750; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--muted); pointer-events: none; }
-.ruler::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+.ruler-sm { height: 42px; background-size: var(--major) 22px, var(--tick) 11px; }
+.ruler-num { position: absolute; top: 5px; transform: translateX(-50%); font-size: calc(13px * var(--ts)); font-weight: 750; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text-2); pointer-events: none; }
+/* Aguja central fija: línea verde con remate redondo arriba */
+.ruler::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 10px rgba(184, 243, 74, 0.55); pointer-events: none; }
+.ruler::before { content: ''; position: absolute; left: 50%; top: -1px; width: 14px; height: 9px; margin-left: -7px; border-radius: 0 0 8px 8px; background: var(--accent); z-index: 1; pointer-events: none; }
+.ruler-sm .ruler-num { top: 3px; }
+
+/* RIR: etiqueta corta arriba y fichas siempre a la vista, a todo el ancho (≥ 44 px de toque cada una) */
+.ses-editor .ses-rir-block[hidden] { display: none; }
+
+/* Línea «Hoy»: propuesta de la misma decisión que «Siguiente paso» */
+.ses-today { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: calc(16px * var(--ts)); }
+.ses-today-label { font-size: var(--fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.ses-today-val { font-weight: 800; color: var(--text); }
+.ses-today-use { min-height: 36px; margin: -4px 0 -4px auto; color: var(--accent); }
+.ses-hist-btn { margin-right: -6px; }
+
+/* Serie recién registrada: la fila se enciende un instante (nada con «reducir movimiento») */
+@media (prefers-reduced-motion: no-preference) {
+  .ses-row-new { animation: ses-row-in 650ms ease-out; }
+}
+@keyframes ses-row-in { 0% { background: rgba(184, 243, 74, 0.28); transform: scale(1.015); } 100% { background: var(--surface-2); transform: none; } }
+
+/* Historial y discos (hojas) */
+.ses-hist-evo { display: flex; align-items: center; gap: 12px; padding: 4px 2px; }
+.ses-hist-evo-label { white-space: nowrap; font-size: var(--fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.ses-hist-evo-val { margin-left: auto; font-weight: 750; white-space: nowrap; }
+.ses-hist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ses-hist-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.ses-hist-date { font-size: var(--fs-sm); font-weight: 700; color: var(--muted); min-width: 64px; }
+.ses-hist-sets { font-weight: 750; font-size: calc(16px * var(--ts)); overflow-wrap: anywhere; }
+.ses-hist-setup { flex-basis: 100%; font-size: var(--fs-xs); color: var(--muted); }
+.pl-sheet { padding-bottom: 8px; }
+.pl-total { margin: 0; text-align: center; font-size: calc(34px * var(--ts)); font-weight: 800; }
+.pl-svg { width: 100%; height: auto; max-height: 150px; }
+.pl-bar { fill: var(--border-strong); }
+.pl-collar { fill: var(--muted); }
+.pl-disc { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
+.pl-25 { fill: #e5484d; } .pl-20 { fill: #3b82f6; } .pl-15 { fill: #f5c542; } .pl-10 { fill: #34c759; }
+.pl-5 { fill: #e8eaed; } .pl-2_5 { fill: #9aa3ad; } .pl-1_25 { fill: #6b7480; }
+.pl-line { margin: 0; text-align: center; font-size: calc(18px * var(--ts)); }
+.pl-warn { margin: 0; text-align: center; color: var(--warn); font-weight: 650; }
 
 .ses-sub { display: flex; flex-direction: column; gap: 5px; }
 .ses-sub-label { font-size: calc(12px * var(--ts)); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
@@ -296,22 +355,12 @@ html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { left: auto; rig
 html.text-large .ses-editor .ses-rir { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
 html.text-large .ses-editor .ses-rir .chip:first-child { grid-column: 1 / -1; }
 
-.ses-type .seg-btn { min-height: 44px; font-size: calc(15px * var(--ts)); padding: 0 2px; }
-/* Tipo elegido bien visible bajo la luz del gimnasio (decide si cuenta para volumen, series y récords). */
-.ses-type .seg-btn.active { background: var(--accent); color: var(--accent-ink); font-weight: 800; }
-.ses-type[data-type="warmup"] .seg-btn.active { background: var(--warn); color: #0b0d10; }
-.ses-type[data-type="failure"] .seg-btn.active,
-.ses-type[data-type="drop"] .seg-btn.active { background: var(--info); color: #0b0d10; }
-
 /* Lastre / asistencia (peso corporal): el signo se elige aquí, el campo es siempre positivo. */
 .ses-sign .seg-btn { min-height: 44px; font-size: calc(15px * var(--ts)); }
 .ses-sign .seg-btn.active { background: var(--info-soft); color: var(--info); font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--info); }
 
-.ses-note-input { min-height: 44px; }
 .ses-register { min-height: 56px; font-size: calc(19px * var(--ts)); border-radius: 14px; white-space: nowrap; }
 .ses-editor-warm .ses-register { font-size: calc(17px * var(--ts)); }
-.ses-editor-links { display: flex; align-items: center; gap: 8px; margin: -2px -2px 0; }
-.ses-editor-links .btn { min-height: 44px; border-color: transparent; }
 
 .ses-card-actions { gap: 8px; flex-wrap: wrap; }
 .ses-card-actions .btn { flex: 1; }
@@ -562,3 +611,10 @@ body[data-route="/session/:id"] .toast.show { transform: translateY(0); }
 .ses-setup .icon { flex: none; color: var(--muted); }
 .ses-setup-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ses-setup.is-pressed { background: var(--surface-3, var(--surface-2)); }
+
+/* Resumen final (Fase 7): cabecera de «completado», cuatro datos y reparto del volumen */
+.ses-sum-done { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-weight: 800; font-size: calc(15px * var(--ts)); color: var(--accent); }
+.ses-sum-done-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); }
+@media (prefers-reduced-motion: no-preference) { .ses-sum-done-mark { animation: ses-sum-pop 480ms cubic-bezier(0.32, 0.72, 0, 1); } }
+@keyframes ses-sum-pop { 0% { transform: scale(0.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.ses-sum-vol { display: flex; flex-direction: column; gap: 8px; }

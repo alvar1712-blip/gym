@@ -34,15 +34,16 @@ const fmt = (v) => String(Math.round(v * 100) / 100).replace('.', ',');
  *   setValue solo cambia lo que se ve (el stepper repinta la regla); onCommit se llama una vez al soltar.
  * @returns {(v:number|null)=>void} paint: coloca la regla en un valor (el stepper la llama en cada cambio)
  */
-export function mountRuler(el, { step, min = 0, max = Infinity, major = MAJOR, setValue, onCommit }) {
+export function mountRuler(el, { step, min = 0, max = Infinity, major = MAJOR, compact = false, setValue, onCommit }) {
   const strip = document.createElement('div');
-  strip.className = step === 1 ? 'ruler ruler-sm' : 'ruler'; // repeticiones (paso 1): franja baja, sin cifras
+  strip.className = compact ? 'ruler ruler-sm' : 'ruler'; // repeticiones: franja más baja
   strip.setAttribute('aria-hidden', 'true');
   strip.style.setProperty('--tick', `${TICK_PX}px`);
   strip.style.setProperty('--major', `${TICK_PX * major}px`);
   const nums = Array.from({ length: 2 * NUMS + 1 }, () => strip.appendChild(Object.assign(document.createElement('span'), { className: 'ruler-num' })));
-  const paint = (v) => {
-    const i = (v ?? 0) / step; // marcas desde el 0: las marcas son absolutas, la aguja marca el valor exacto
+  // i = posición en marcas desde el 0 (las marcas son absolutas, la aguja marca el valor). Con el dedo abajo, i lleva la
+  // fracción de marca recorrida de más: la regla sigue al dedo píxel a píxel y el valor salta de paso en paso.
+  const place = (i) => {
     strip.style.setProperty('--x', `${TICK_PX / 2 - i * TICK_PX}px`);
     strip.style.setProperty('--xm', `${(TICK_PX * major) / 2 - i * TICK_PX}px`);
     const m0 = Math.round(i / major);
@@ -55,11 +56,11 @@ export function mountRuler(el, { step, min = 0, max = Infinity, major = MAJOR, s
       n.textContent = fmt(val);
     });
   };
+  const paint = (v) => place((v ?? 0) / step);
   paint(el.getValue());
   const field = el.querySelector('.stepper-field');
   el.classList.add('has-ruler');
-  if (step === 1) el.classList.add('has-ruler-sm');
-  field.append(strip);
+  el.append(strip);
   const input = el.querySelector('input');
 
   let drag = null;
@@ -81,9 +82,12 @@ export function mountRuler(el, { step, min = 0, max = Infinity, major = MAJOR, s
     if (!drag.moved) { input.blur(); getSelection()?.removeAllRanges(); } // sin teclado ni selección que el navegador intente arrastrar
     drag.moved = true;
     const v = rulerValue(drag.start, dx, { step, min, max });
-    if (v === drag.cur) return;
-    drag.cur = v;
-    setValue(v); // solo pantalla: nada se guarda mientras se arrastra
+    if (v !== drag.cur) {
+      drag.cur = v;
+      setValue(v); // solo pantalla: nada se guarda mientras se arrastra
+    }
+    const k = -dx / TICK_PX;
+    if (v != null && v !== min && v !== max) place(v / step + (k - Math.round(k))); // la regla sigue al dedo; en el tope, quieta
   };
   const end = (commit) => (e) => {
     if (!drag || e.pointerId !== drag.id) return;
@@ -92,6 +96,7 @@ export function mountRuler(el, { step, min = 0, max = Infinity, major = MAJOR, s
     if (d.moved) swallow = true; // el arrastre no cuenta como toque: ni abre el teclado ni deja el número seleccionado
     if (commit && d.moved && d.cur !== d.start) onCommit(d.cur);
     else if (d.moved) setValue(d.start); // cancelado (el sistema se quedó el gesto): vuelve al valor de partida
+    if (d.moved) paint(el.getValue()); // la regla se asienta en la marca del valor
   };
   for (const t of [field, strip]) {
     t.addEventListener('dragstart', (ev) => ev.preventDefault());

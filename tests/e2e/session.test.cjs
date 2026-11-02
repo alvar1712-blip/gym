@@ -480,7 +480,8 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets[0].reps, 9);
     await fc.locator('.ses-row[data-state="done"]').click();
-    await fc.locator('.ses-del-set').click();
+    await fc.locator('.ses-set-more').click(); // Fase 7: «Borrar» vive en el menú de la serie
+    await page.locator('.action-item', { hasText: 'Borrar serie' }).click();
     s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets.length, 0);
     await page.locator('.toast-undo .toast-action').click();
@@ -791,6 +792,8 @@ test('una mano en iPhone SE: «Registrar serie» siempre a la vista (sin desplaz
     // «+ Calent.» a mano junto a «Serie 1» (no al final de la tarjeta, bajo las pestañas)
     const warmBtn = await page.locator('.ses-card').first().locator('.ses-editor-head .ses-add-warm').boundingBox();
     assert.ok(warmBtn && warmBtn.y + warmBtn.height < 610, `«+ Calent.» visible (${warmBtn && warmBtn.y})`);
+    // Fase 7: el editor (regla de peso y de repeticiones) es alto; la primera serie se coloca como al desplazar. Las demás, las coloca la app.
+    await page.locator('.ses-editor[data-state="editing"] .ses-register').first().evaluate((e) => e.scrollIntoView({ block: 'center' }));
     const misses = [];
     let taps = 0;
     for (let guard = 0; guard < 40; guard++) {

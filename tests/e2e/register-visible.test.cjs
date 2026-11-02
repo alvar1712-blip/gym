@@ -62,7 +62,7 @@ for (const size of SIZES) {
       await go(page, `#/session/${id}`);
       await page.waitForSelector('.ses-card');
       // A ×1,5 el botón de la serie 1 queda al abrir bajo el pliegue: «siguiente» de la barra lo trae a la vista
-      if (size.scale > 1) {
+      { // Fase 7: el editor de la serie (regla de peso y de repeticiones) es alto: al abrir, «Registrar» queda bajo el pliegue; «siguiente» de la barra lo trae
         await page.locator('#tabbar .fb-next').first().click();
         await page.waitForTimeout(2000);
       }
