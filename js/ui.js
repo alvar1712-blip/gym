@@ -490,6 +490,49 @@ export function scrollPageTo(top) {
 }
 
 /**
+ * Desplazamiento corto de la página, `d` px, con curva suave y UNA sola animación (por fotograma, con scrollTop: sin el
+ * scrollTo suave nativo, que a veces no arranca y obligaba a saltar). Con «Reducir movimiento», inmediato. Si el usuario
+ * toca, arrastra o pulsa una tecla, o llega otra orden de desplazamiento, se detiene: nunca pelea con su gesto.
+ * Devuelve los ms que durará (0 si es inmediato o no hay nada que mover).
+ */
+export function glidePageBy(d, ms = Math.min(420, 180 + Math.abs(d) * 0.3)) {
+  const el = document.scrollingElement || document.documentElement;
+  const max = Math.max(0, el.scrollHeight - window.innerHeight);
+  const from = el.scrollTop;
+  const target = Math.min(Math.max(0, Math.round(from + d)), max);
+  const gen = ++pageScrollGen;
+  if (target === from) return 0;
+  if (reducedMotion()) { el.scrollTop = target; return 0; }
+  const t0 = performance.now();
+  const tick = (now) => {
+    if (gen !== pageScrollGen || pageScrollInputAt > t0 + 50) return;
+    const p = Math.min(1, (now - t0) / ms);
+    el.scrollTop = from + (target - from) * (1 - (1 - p) ** 3);
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return ms;
+}
+
+/**
+ * Mantiene algo a la vista MIENTRAS el contenido cambia de altura (una fila que se despliega): cada fotograma, durante
+ * `ms`, llama a `step()`, que desplaza lo justo (instantáneo y a la par del cambio: no hay salto ni segunda animación).
+ * Con «Reducir movimiento» (o ms = 0) se coloca una sola vez. Se detiene ante un gesto del usuario o una orden nueva.
+ */
+export function followPage(step, ms = 260) {
+  const gen = ++pageScrollGen;
+  step();
+  if (reducedMotion() || ms <= 0) return;
+  const t0 = performance.now();
+  const tick = (now) => {
+    if (gen !== pageScrollGen || pageScrollInputAt > t0 + 50) return;
+    step();
+    if (now - t0 < ms) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/**
  * Último control pulsado: iOS no da el foco a un <button> al tocarlo, así que document.activeElement suele ser
  * <body>. Con esto la hoja sabe a qué botón devolver el foco al cerrarse (VoiceOver).
  */

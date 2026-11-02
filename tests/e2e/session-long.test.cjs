@@ -74,7 +74,9 @@ const cardOf = (page, seId) => page.locator(`[data-se="${seId}"]`);
 /** Registra la serie pendiente del editor de la tarjeta y adelanta el reloj más allá de la guarda (400 ms) y del salto (350 ms). */
 async function register(page, seId) {
   await cardOf(page, seId).locator('.ses-editor .ses-register').click();
+  await page.waitForTimeout(300); // tiempo real: la fila hecha termina de desplegarse (220 ms) antes de que el reloj falso dispare el salto
   await page.clock.fastForward(450);
+  await page.clock.runFor(900); // Fase 7: el desplazamiento y el plegado van por fotogramas (reloj falso): se dejan correr
 }
 
 /** ¿El «Registrar» de la tarjeta queda a la vista entre la cabecera y la barra, y se puede tocar? */

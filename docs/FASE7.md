@@ -48,3 +48,19 @@ En WebKit de este PC las hojas solo son clicables con el viewport emulado por de
 ## Pendiente / límites
 Safari físico sin verificar (arrastre, teclado numérico, gestos de borde). Sin tema claro. Incremento por material (mancuerna/máquina)
 no modelado: no hay campo de material en los ejercicios.
+
+## Pulido posterior (barra de discos y transición entre series)
+**Discos.** El dibujo anterior solo pintaba UN lado (collarín a 26 px, discos hacia la derecha) y la barra empezaba cortada en x=0: no era un
+recorte del contenedor ni un error de escalado, sino el diseño elegido. Ahora `plates-view.js` dibuja la barra completa (extremos,
+empuñadura, collarines) con los discos en espejo a ambos lados; `plates.js` aporta `plateRects` (grosor proporcional que se ajusta si hay
+muchos discos: 600 kg = 24 placas caben) y `groupPlates` («5 × 25 + 15»). Se muestra total, «por lado», barra y lo montado; la carga que no
+se puede montar exacta se sigue avisando. Los cálculos no cambian (salvo el redondeo por debajo ya corregido en la revisión).
+
+**Transición al registrar.** Causas medidas (rAF fotograma a fotograma): (1) al repintar la tarjeta el editor bajaba ~44 px de golpe y después
+`scrollPageTo` lo recolocaba; su guardia «si en 2 fotogramas no se ha movido, salta» hacía que a veces fuese suave y a veces un salto de 57 px;
+(2) competían `reveal` con −6 px, el destello con `scale` y dos `ensureVisible` seguidos; (3) en la última serie, sustituir la tarjeta mandaba la
+página arriba y luego se «deslizaba» hasta la siguiente. Ahora: la fila hecha se despliega de 0 a su alto (220 ms) y la página la acompaña
+fotograma a fotograma solo lo necesario (`followPage`, `ctx.followEditor`), `glidePageBy` es el único desplazamiento suave (una animación, se
+detiene ante cualquier gesto del usuario y es inmediato con «Reducir movimiento»), y en la última serie primero se desliza a la tarjeta
+siguiente y, cuando ha llegado, se pliega la terminada compensando el scroll (no se mueve nada de lo que se ve). `rerenderCard` conserva la
+posición de lectura. Pruebas: `tests/e2e/transition.test.cjs`.

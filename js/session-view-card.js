@@ -280,8 +280,8 @@ const reducedMotion = () => {
 export function reveal(panel) {
   if (!panel || reducedMotion() || typeof panel.animate !== 'function') return;
   panel.animate(
-    [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }],
-    { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' },
+    [{ opacity: 0.35 }, { opacity: 1 }],
+    { duration: 180, easing: 'ease-out' },
   );
 }
 
@@ -353,6 +353,19 @@ function currentEditId(ctx, se) {
 // ---------------------------------------------------------------------------
 // Serie recién registrada: su fila se enciende un instante al plegarse (css .ses-row-new; nada con «reducir movimiento»)
 let justDone = null;
+
+/**
+ * La fila recién hecha se despliega de 0 a su alto (220 ms) en el sitio donde estaba el editor: el contenido de debajo baja
+ * poco a poco y la página lo acompaña (ctx.followEditor), en vez de un salto seguido de un desplazamiento. Sin «reducir movimiento».
+ */
+function growRow(row) {
+  if (!row || reducedMotion() || typeof row.animate !== 'function') return;
+  const cs = getComputedStyle(row);
+  const to = { height: `${row.offsetHeight}px`, minHeight: cs.minHeight, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, borderTopWidth: cs.borderTopWidth, borderBottomWidth: cs.borderBottomWidth, marginTop: '0px', opacity: 1 };
+  const from = { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', marginTop: '-6px', opacity: 0 };
+  row.style.overflow = 'hidden';
+  row.animate([from, to], { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }).onfinish = () => { row.style.overflow = ''; };
+}
 
 function renderRow(ctx, se, set, logType, num, prs) {
   const pending = !set.done;
@@ -600,12 +613,10 @@ function registerSet(ctx, se, set, ex, logType, { confirmed = false } = {}) {
   justDone = set.id;
   setTimeout(() => { if (justDone === set.id) justDone = null; }, 900);
   ctx.rerenderCard(se);
+  growRow(ctx.cardEl?.(se)?.querySelector('.ses-row-new'));
   // La fila hecha empuja el editor hacia abajo: que «Registrar» siga a la vista (no bajo las pestañas).
   if (!se.sets.some((s) => !s.done)) ctx.scrollToNext(se);
-  else {
-    reveal(ctx.cardEl?.(se)?.querySelector('.ses-editor')); // la serie siguiente se despliega (solo opacidad y 6 px)
-    ctx.revealEditor?.(se);
-  }
+  else ctx.followEditor?.(se); // la fila hecha se despliega y la página acompaña lo justo (sin segundo movimiento)
 }
 
 function closeEditor(ctx, se) {

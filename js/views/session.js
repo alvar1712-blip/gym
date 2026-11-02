@@ -4,7 +4,7 @@
 import * as store from '../store.js';
 import {
   h, icon, header, sheet, confirmDialog, promptDialog, actionSheet, toast, undoToast,
-  rpePicker, field, textInput, numInput, emptyState, scrollPageTo, focusBar, chips,
+  rpePicker, field, textInput, numInput, emptyState, scrollPageTo, glidePageBy, followPage, focusBar, chips,
 } from '../ui.js';
 import { fmtDate, fmtDuration, fmtMinutes, hhmm, tsFromDate, isDateStr, deepClone, parseNum, plural, todayStr } from '../util.js';
 import { checkTypo } from '../sanity.js';
@@ -154,7 +154,11 @@ export function mountSession(root, params = {}) {
       const had = !!old && old.contains(document.activeElement);
       // Plegada (o dentro de un grupo plegado, sin tarjeta en la página): la lista entera, que recalcula el plegado
       if (old && old.dataset.folded !== '1') {
+        // Sustituir una tarjeta alta puede mandar la página arriba (Chromium): la posición de lectura se conserva
+        const root = document.scrollingElement || document.documentElement;
+        const y = root.scrollTop;
         old.replaceWith(renderCard(ctx, se));
+        if (root.scrollTop !== y) root.scrollTop = y;
         refreshGroupHead(se);
       } else renderList();
       updateFinishHint();
@@ -166,13 +170,15 @@ export function mountSession(root, params = {}) {
     cardEl: (se) => cardEl(se),
     /** Tras registrar/añadir una serie: que el botón «Registrar» del editor quede a la vista. */
     revealEditor(se) {
-      const ed = cardEl(se)?.querySelector('.ses-editor');
-      const btn = ed?.querySelector('.ses-register');
-      if (!btn) return;
-      ensureVisible(btn);
-      // El editor de la serie abierta es alto (regla de peso y de repeticiones): si cabe entero, que se vea entero
-      // (no con el peso bajo la cabecera); si no cabe, manda «Registrar».
-      if (ed.getBoundingClientRect().height <= visibleBottom() - (headerBottom() + 8)) ensureVisible(ed);
+      const d = editorShift(se);
+      if (d) glidePageBy(d);
+    },
+    /**
+     * Tras registrar: la fila hecha se despliega (css) y empuja el editor hacia abajo; esto desplaza la página, fotograma a
+     * fotograma y solo lo necesario, para que «Registrar» no se mueva de donde estaba ni quede bajo la barra.
+     */
+    followEditor(se) {
+      followPage(() => { const d = editorShift(se); if (d) (document.scrollingElement || document.documentElement).scrollTop += d; }, 260);
     },
     /**
      * Al terminar un ejercicio: a los 350 ms (se ve antes el ✓ en la tarjeta abierta), el cursor pasa al siguiente
@@ -197,8 +203,18 @@ export function mountSession(root, params = {}) {
         const moveFocus = !a || a === document.body || !a.isConnected || !!prev?.contains(a);
         session.cursor = t;
         ctx.saveSoon();
-        applyFolds();
-        revealCard(session.exercises[t], { focus: moveFocus });
+        // Primero un solo desplazamiento hasta la tarjeta siguiente; y, cuando ya ha llegado, la terminada se pliega: queda
+        // por encima de lo que se ve y la tarjeta de destino conserva su sitio (se compensa lo que encoge), sin saltos.
+        const next = session.exercises[t];
+        const ms = revealCard(next, { focus: moveFocus });
+        setTimeout(() => {
+          if (unmounted || session.status !== 'active') return;
+          const root = document.scrollingElement || document.documentElement;
+          const before = cardEl(next)?.getBoundingClientRect().top;
+          applyFolds();
+          const after = cardEl(next)?.getBoundingClientRect().top;
+          if (before != null && after != null) root.scrollTop += after - before;
+        }, ms + 60);
       }, 350);
     },
     /**
@@ -287,16 +303,21 @@ export function mountSession(root, params = {}) {
     }
     return bottom - 12;
   }
-  function ensureVisible(el) {
-    const r = el.getBoundingClientRect();
+  /**
+   * Cuánto hay que desplazar la página (px, + = hacia abajo) para ver el editor de la serie abierta: si cabe entero, lo
+   * justo para que se vea entero (ni el peso bajo la cabecera ni «Registrar» bajo la barra); si no cabe, manda «Registrar».
+   */
+  function editorShift(se) {
+    const ed = cardEl(se)?.querySelector('.ses-editor');
+    const btn = ed?.querySelector('.ses-register');
+    if (!btn) return 0;
     const limit = visibleBottom();
     const top = headerBottom() + 8;
-    let d = 0;
-    if (r.bottom > limit) d = Math.min(r.bottom - limit, r.top - top); // sin esconderlo bajo la cabecera
-    else if (r.top < top) d = r.top - top;
-    if (d) scrollPageTo(window.scrollY + d);
+    const r = ed.getBoundingClientRect();
+    const t = r.height <= limit - top ? r : btn.getBoundingClientRect();
+    if (t.bottom > limit) return Math.min(t.bottom - limit, t.top - top);
+    return t.top < top ? t.top - top : 0;
   }
-
   // --- cabecera con cronómetro ---
   function renderHeader() {
     const active = session.status === 'active';
@@ -410,15 +431,16 @@ export function mountSession(root, params = {}) {
    */
   function revealCard(se, { focus = false } = {}) {
     const el = se && cardEl(se);
-    if (!el) return;
+    if (!el) return 0;
     let top = el.getBoundingClientRect().top + window.scrollY - headerBottom() - 8;
     const btn = el.querySelector('.ses-editor .ses-register');
     if (btn) {
       const over = btn.getBoundingClientRect().bottom + window.scrollY - top - visibleBottom();
       if (over > 0) top += over;
     }
-    scrollPageTo(top);
+    const ms = glidePageBy(top - window.scrollY);
     if (focus) focusInCard(se);
+    return ms;
   }
   /** ¿Se ve la tarjeta del ejercicio (su «Registrar», o la cabecera si no tiene editor) entre la cabecera y la barra? */
   function cardOnScreen(se) {

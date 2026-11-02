@@ -320,7 +320,7 @@ html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { position: stati
 @media (prefers-reduced-motion: no-preference) {
   .ses-row-new { animation: ses-row-in 650ms ease-out; }
 }
-@keyframes ses-row-in { 0% { background: rgba(184, 243, 74, 0.28); transform: scale(1.015); } 100% { background: var(--surface-2); transform: none; } }
+@keyframes ses-row-in { 0% { background: rgba(184, 243, 74, 0.28); } 100% { background: var(--surface-2); } }
 
 /* Historial y discos (hojas) */
 .ses-hist-evo { display: flex; align-items: center; gap: 12px; padding: 4px 2px; }
@@ -333,13 +333,17 @@ html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { position: stati
 .ses-hist-setup { flex-basis: 100%; font-size: var(--fs-xs); color: var(--muted); }
 .pl-sheet { padding-bottom: 8px; }
 .pl-total { margin: 0; text-align: center; font-size: calc(34px * var(--ts)); font-weight: 800; }
-.pl-svg { width: 100%; height: auto; max-height: 150px; }
-.pl-bar { fill: var(--border-strong); }
-.pl-collar { fill: var(--muted); }
-.pl-disc { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
+.pl-svg { display: block; width: 100%; height: auto; }
+.pl-bar { fill: #8d96a1; }
+.pl-grip { fill: #b7bfc8; }
+.pl-collar { fill: #d6dce3; }
+.pl-disc { stroke: rgba(0, 0, 0, 0.4); stroke-width: 1; }
 .pl-25 { fill: #e5484d; } .pl-20 { fill: #3b82f6; } .pl-15 { fill: #f5c542; } .pl-10 { fill: #34c759; }
 .pl-5 { fill: #e8eaed; } .pl-2_5 { fill: #9aa3ad; } .pl-1_25 { fill: #6b7480; }
+.pl-txt { fill: #0b0d10; font: 800 10px var(--font, sans-serif); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.pl-barlabel { fill: var(--muted); font: 700 11px var(--font, sans-serif); text-anchor: middle; }
 .pl-line { margin: 0; text-align: center; font-size: calc(18px * var(--ts)); }
+.pl-sub { margin: -4px 0 0; text-align: center; color: var(--muted); font-size: calc(14px * var(--ts)); }
 .pl-warn { margin: 0; text-align: center; color: var(--warn); font-weight: 650; }
 
 .ses-sub { display: flex; flex-direction: column; gap: 5px; }
