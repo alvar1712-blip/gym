@@ -40,6 +40,7 @@ export function renderSummary(root, id) {
   const dur = sessionDurationMin(session);
   const load = sessionLoad(session);
   const vol = sessionVolume(session, exMap, bwFn);
+  const exDone = (session.exercises || []).filter((se) => exMap.get(se.exerciseId)?.logType !== 'cardio' && workSetCount(se) > 0).length;
   const work = sum(session.exercises || [], (se) => workSetCount(se));
   const prs = sessionPRs(session, all, exMap, bwFn);
   const muscles = Object.entries(sessionMuscleSets(session, exMap, settings)).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
@@ -55,10 +56,12 @@ export function renderSummary(root, id) {
   // esfuerzo, el volumen y la carga. Los récords van en su propia tarjeta, solo si los hay (ronda 8, A6).
   const meta = [
     session.rpe ? `Esfuerzo ${session.rpe}/10 · ${RPE_HINTS[session.rpe]}` : 'Esfuerzo sin indicar',
-    vol > 0 ? `Volumen ${fmtNum(vol, 0)} kg` : null,
     acts.length ? `Carga total ${fmtNum((load || 0) + actsLoad, 0)} (fuerza ${load != null ? fmtNum(load, 0) : '—'})` : load != null ? `Carga ${fmtNum(load, 0)}` : null,
   ].filter(Boolean);
   c.appendChild(h('div.card.card-accent.ses-sum-hero',
+    session.status === 'done'
+      ? h('div.ses-sum-done', h('span.ses-sum-done-mark', { 'aria-hidden': 'true' }, icon('check', 22)), h('span', 'Entrenamiento completado'))
+      : null,
     h('div.row-between',
       h('div.grow',
         h('h2', session.templateName || 'Sesión de fuerza'),
@@ -68,7 +71,9 @@ export function renderSummary(root, id) {
       acts.length
         ? kpi('Duración total', fmtMinutes((dur || 0) + actsMin), `fuerza ${dur != null ? fmtMinutes(dur) : '—'}`, '.ses-kpi-total')
         : kpi('Duración', dur != null ? fmtMinutes(dur) : '—'),
-      kpi('Series de trabajo', String(work))), // «de trabajo» = sin calentamientos (docs/PULIDO.md §9, términos)
+      kpi('Series de trabajo', String(work)), // «de trabajo» = sin calentamientos (docs/PULIDO.md §9, términos)
+      kpi('Ejercicios', String(exDone)),
+      vol > 0 ? kpi('Volumen', `${fmtNum(vol, 0)} kg`) : null),
     h('p.ses-sum-meta.tnum', meta.join(' · '))));
 
   // Récords (ronda 8, A6): sin récord no hay casilla «Récords 0»; con récord, tarjeta destacada justo debajo con
@@ -79,6 +84,21 @@ export function renderSummary(root, id) {
   const prev = session.status === 'done' ? previousEquivalent(session, all) : null;
   const cmp = prev ? compareSessions(session, prev, exMap, bwFn) : null;
   if (cmp) c.appendChild(compareCard(cmp, dur));
+
+  // Volumen por ejercicio: cómo se reparte el trabajo de la sesión (peso × repeticiones de las series de trabajo). Son kilos de
+  // ejercicios distintos: sirve para ver el reparto, no para comparar fuerza entre ejercicios ni como medida de calidad.
+  const volRows = (session.exercises || []).map((se) => ({ se, v: sessionVolume({ ...session, exercises: [se] }, exMap, bwFn) }))
+    .filter((r) => r.v > 0 && exMap.get(r.se.exerciseId)?.logType !== 'cardio').sort((a, b) => b.v - a.v);
+  if (volRows.length > 1) {
+    const maxV = volRows[0].v;
+    c.append(h('h2.section-title', 'Volumen por ejercicio'),
+      h('div.card.ses-sum-vol',
+        volRows.map(({ se, v }) => h('div.ses-bar-row',
+          h('span.ses-bar-label', exMap.get(se.exerciseId)?.name || se.exName),
+          h('span.ses-bar', h('span.ses-bar-fill', { style: { width: `${Math.max(4, Math.round((v / maxV) * 100))}%` } })),
+          h('span.ses-bar-val.tnum', `${fmtNum(v, 0)} kg`))),
+        h('p.field-hint', 'Peso × repeticiones de las series de trabajo. Muestra el reparto de la sesión, no la fuerza de cada ejercicio.')));
+  }
 
   // Series por músculo
   if (muscles.length) {
