@@ -71,7 +71,7 @@ async function flow(page) {
   await go(page, `#/session/${id}/summary`);
   await page.locator('.ses-sum-hero').waitFor();
   // Ronda 8 (A6): dos cifras (sin casilla «Récords»); los récords, en su tarjeta destacada
-  assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo']);
+  assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo', 'Ejercicios', 'Volumen']);
   // 82,5 × 6 en press banca (antes 80) y +10 × 7 en dominadas (antes × 6): 2 series récord, con cuáles y de qué tipo
   const prs = page.locator('.ses-sum-prs');
   assert.strictEqual(await prs.getAttribute('data-count'), '2');
@@ -82,7 +82,7 @@ async function flow(page) {
   // justo bajo la cabecera, antes de «Frente a la anterior»
   assert.ok(await page.evaluate(() => document.querySelector('.ses-sum-hero').nextElementSibling?.classList.contains('ses-sum-prs')));
   assert.strictEqual(clean(await page.locator('.ses-sum-kpis .kpi').nth(0).locator('.kpi-value').innerText()), '50 min');
-  assert.match(await page.locator('.ses-sum-meta').innerText(), /^Esfuerzo 8\/10 · .+ · Volumen [\d.]+ kg · Carga 400$/);
+  assert.match(await page.locator('.ses-sum-meta').innerText(), /^Esfuerzo 8\/10 · .+ · Carga 400$/); // Fase 7: el volumen pasó a la cuarta cifra de la cabecera
   const cmp = page.locator('.ses-sum-cmp');
   assert.strictEqual(await cmp.getAttribute('data-prev'), prevId);
   assert.match(await cmp.locator('.ses-cmp-sub').innerText(), /el 5 oct/);

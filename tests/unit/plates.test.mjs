@@ -26,3 +26,10 @@ test('otra barra y sin errores de coma flotante', () => {
   assert.equal(platesPerSide(NaN).reason, 'below-bar');
   assert.equal(platesPerSide(null).reason, 'below-bar');
 });
+
+test('nunca monta más de lo pedido (centésimas por debajo del reparto)', () => {
+  const r = platesPerSide(32.49);
+  assert.ok(r.loaded <= 32.49 + 1e-9, `cargado ${r.loaded}`);
+  assert.ok(r.missing >= 0);
+  assert.equal(r.reason, 'inexact');
+});

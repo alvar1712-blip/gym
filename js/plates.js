@@ -17,7 +17,7 @@ const c = (kg) => Math.round(kg * 100); // céntimos de kg: sin errores de coma 
 export function platesPerSide(total, { bar = 20, plates = DEFAULT_PLATES } = {}) {
   const out = { bar, total, perSide: [], loaded: bar, missing: 0, reason: null };
   if (!Number.isFinite(total) || total < bar) return { ...out, reason: 'below-bar' };
-  let rest = Math.floor(c((total - bar) / 2) + 1e-6);
+  let rest = Math.floor(c(total - bar) / 2); // por debajo del reparto: nunca se monta más de lo pedido
   for (const p of [...plates].sort((a, b) => b - a)) {
     while (rest >= c(p)) { out.perSide.push(p); rest -= c(p); }
   }

@@ -142,7 +142,7 @@ export function renderCard(ctx, se) {
   const plan = hint && ex ? todayPlan({ exercise: ex, hint, target: se.target, settings: ctx.settings?.() }) : null;
   if (plan) {
     const usable = !!editSet && !editSet.done && editSet.type !== 'warmup'
-      && !(editSet.weight === plan.weight && editSet.reps === plan.reps);
+      && !(editSet.weight === plan.weight && editSet.reps === plan.reps && (logType !== 'unilateral' || editSet.repsR === plan.reps));
     card.appendChild(h('div.ses-today', { dataset: { kind: plan.kind } },
       h('span.ses-today-label', 'Hoy'), h('span.ses-today-val.tnum', plan.text),
       h('span.sr-only', plan.why),
@@ -402,7 +402,8 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
   // 22,5 o 102,5 sigan a un gesto; aislamiento 1 kg (poleas, mancuernas). El valor de una serie que no cae en la rejilla
   // (41,25) se conserva hasta que se arrastra una marca entera.
   const inc = ex ? incrementFor(ex, ctx.settings?.()?.increments) : null;
-  const wStep = Math.min(2.5, inc ? (inc.text === '1–2 kg' ? 1 : inc.kg) : 2.5);
+  const incKg = inc ? (inc.text === '1–2 kg' ? 1 : inc.kg) : 2.5;
+  const wStep = Math.min(2.5, incKg > 0 ? incKg : 2.5); // un incremento de 0 (permitido en Ajustes) no puede dejar la regla sin paso
   const fields = [];
   const field = (lbl, ctl, extra = null) => h('div.ses-field', h('span.ses-field-label', lbl), h('div.ses-field-ctl', ctl, extra));
   // Con regla: etiqueta arriba (y su acción a la derecha), −/número/+ y la regla a todo el ancho

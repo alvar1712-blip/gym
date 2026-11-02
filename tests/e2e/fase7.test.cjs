@@ -108,10 +108,9 @@ async function run(browser) {
     // 8. Quitar una serie desde el menú, con deshacer
     await card.locator('.ses-set-more').click();
     await page.locator('.action-item', { hasText: 'Quitar serie' }).click();
-    s = await sess(page, id);
-    assert.strictEqual(s.exercises[0].sets.length, 2);
+    await page.waitForFunction((sid) => window.__app.store.get('sessions', sid).exercises[0].sets.length === 2, id);
     await page.locator('.toast-undo .toast-action').click();
-    assert.strictEqual((await sess(page, id)).exercises[0].sets.length, 3);
+    await page.waitForFunction((sid) => window.__app.store.get('sessions', sid).exercises[0].sets.length === 3, id);
 
     // 9. Paso de la regla: aislamiento 1 kg, compuestos 2,5 kg
     const iso = await page.evaluate(async () => {
@@ -139,20 +138,35 @@ async function runSummary(browser) {
   const { page } = app;
   try {
     const id = await newSession(page, { templateId: 'tpl_d1' });
-    await page.evaluate(async (sid) => {
+    // Solo ejercicios de peso y repeticiones: 60 kg × 6 en cada serie de trabajo → volumen conocido por ejercicio
+    const done = await page.evaluate(async (sid) => {
       const m = await import('./js/session-logic.js');
       const { store } = window.__app;
       const s = store.get('sessions', sid);
-      for (const se of s.exercises.slice(0, 3)) se.sets.forEach((x) => Object.assign(x, { weight: x.type === 'warmup' ? 20 : 60, reps: 6, rir: 2, done: true, doneAt: Date.now() }));
+      const out = [];
+      for (const se of s.exercises.filter((x) => store.exercise(x.exerciseId).logType === 'weight_reps').slice(0, 3)) {
+        se.sets.forEach((x) => Object.assign(x, { weight: x.type === 'warmup' ? 20 : 60, reps: 6, rir: 2, done: true, doneAt: Date.now() }));
+        out.push({ name: store.exercise(se.exerciseId).name, work: se.sets.filter((x) => x.type !== 'warmup').length });
+      }
       m.finishSession(s, { durationMin: 55, rpe: 7 });
       await store.save('sessions', s);
+      return out;
     }, id);
+    const kg = (n) => `${n >= 1000 ? `${Math.floor(n / 1000)}.${String(n % 1000).padStart(3, '0')}` : n} kg`; // 3240 → «3.240 kg»
+    const total = done.reduce((t, e) => t + e.work * 360, 0);
     await go(page, `#/session/${id}/summary`);
     await page.waitForSelector('.ses-sum-hero');
     assert.match(await page.locator('.ses-sum-done').innerText(), /Entrenamiento completado/);
     const labels = await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts();
     assert.deepStrictEqual(labels.map((l) => l.trim()), ['Duración', 'Series de trabajo', 'Ejercicios', 'Volumen']);
-    assert.ok((await page.locator('.ses-sum-vol .ses-bar-row').count()) >= 2, 'reparto del volumen por ejercicio');
+    const kpis = await page.locator('.ses-sum-kpis .kpi').allInnerTexts();
+    assert.ok(kpis[1].trim().endsWith(String(done.reduce((t, e) => t + e.work, 0))), `series de trabajo sin calentamientos: ${kpis[1]}`);
+    assert.ok(kpis[2].trim().endsWith(String(done.length)), `ejercicios: ${kpis[2]}`);
+    assert.ok(kpis[3].replace(/s+/g, ' ').includes(kg(total)), `volumen total ${kg(total)} en ${JSON.stringify(kpis)}`);
+    // Reparto: una fila por ejercicio con SU volumen (peso × repeticiones de las series de trabajo, sin calentamientos)
+    const rows = await page.locator('.ses-sum-vol .ses-bar-row').evaluateAll((els) => els.map((e) => [e.querySelector('.ses-bar-label').textContent, e.querySelector('.ses-bar-val').textContent.replace(/s+/g, ' ')]));
+    assert.strictEqual(rows.length, done.length);
+    for (const e of done) assert.ok(rows.some(([n, v]) => n === e.name && v === kg(e.work * 360)), `${e.name}: ${kg(e.work * 360)} en ${JSON.stringify(rows)}`);
     assert.match(await page.locator('.ses-sum-vol').innerText(), /no la fuerza de cada ejercicio/);
     assert.strictEqual(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'sin desplazamiento horizontal');
     assert.deepStrictEqual(app.errors, []);

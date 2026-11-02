@@ -244,7 +244,7 @@ test('registro de fuerza: prellenado, 1 toque, récord, calentamiento, recarga, 
     assert.strictEqual(await prCard.getAttribute('data-count'), '2');
     assert.strictEqual(await prCard.locator('.ses-sum-prs-title').innerText(), '2 récords en esta sesión');
     assert.ok(await page.evaluate(() => document.querySelector('.ses-sum-hero').nextElementSibling?.classList.contains('ses-sum-prs')));
-    assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo']);
+    assert.deepStrictEqual(await page.locator('.ses-sum-kpis .kpi-label').allInnerTexts(), ['Duración', 'Series de trabajo', 'Ejercicios', 'Volumen']);
     assert.match(sum, /Series por músculo/i);
     assert.match(sum, /Mejor serie por ejercicio/i);
     assert.match(sum, /Series de trabajo\n4\n/, 'series de trabajo sin calentamientos');
@@ -482,6 +482,7 @@ test('sesión pasada: sin cronómetro, duración a mano, edición, borrar serie 
     await fc.locator('.ses-row[data-state="done"]').click();
     await fc.locator('.ses-set-more').click(); // Fase 7: «Borrar» vive en el menú de la serie
     await page.locator('.action-item', { hasText: 'Borrar serie' }).click();
+    await page.waitForTimeout(200); // el menú ejecuta la acción tras cerrarse
     s = await getSession(page, id);
     assert.strictEqual(s.exercises[0].sets.length, 0);
     await page.locator('.toast-undo .toast-action').click();

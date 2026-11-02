@@ -397,11 +397,14 @@ export function todayPlan({ exercise, hint, target, settings = null }) {
   const side = lt === 'unilateral' ? '/lado' : '';
   if (hint.kind === 'up') {
     const inc = incrementFor(exercise, settings?.increments);
-    const nw = Math.round((w + (inc.text === '1–2 kg' ? 1 : inc.kg)) * 100) / 100;
+    const step = inc.text === '1–2 kg' ? 1 : inc.kg;
+    if (!(step > 0)) return null; // incremento 0 en Ajustes: no hay subida que proponer
+    const nw = Math.round((w + step) * 100) / 100;
     const reps = target?.repMin >= 1 ? target.repMin : pc.top;
     return { weight: nw, reps, kind: 'up', text: `${num(nw, 2)} kg × ${num(reps, 0)}${side}`, why: `Hiciste ${num(pc.top, 0)} reps en todas las series con RIR suficiente: sube el peso y vuelve a empezar el rango.` };
   }
-  const low = Math.min(...pc.checks.map((c) => c.reps ?? 0));
+  // Solo las series al peso de referencia (las descendentes con menos peso no cuentan para «una repetición más»)
+  const low = Math.min(...pc.checks.filter((c) => c.set.weight === w).map((c) => c.reps ?? 0));
   const reps = Math.min(pc.top, low + 1);
   return { weight: w, reps, kind: 'hold', text: `${num(w, 2)} kg × ${num(reps, 0)}${side}`, why: `Mismo peso: una repetición más que tu serie más corta de la última vez, hasta llegar a ${num(pc.top, 0)}.` };
 }

@@ -45,3 +45,15 @@ test('la propuesta coincide con «Siguiente paso»: si sube, el peso es el de la
   assert.match(hint.text, /102,5/);
   assert.equal(p.weight, 102.5);
 });
+
+test('una serie descendente con menos peso no rebaja las repeticiones del peso de referencia', () => {
+  const { hint, p } = plan([set(80, 8), set(80, 8), set(50, 6, 1, { type: 'drop' })]);
+  assert.equal(hint.kind, 'hold');
+  assert.equal(p.weight, 80);
+  assert.equal(p.reps, 8); // las de 80 kg están al tope; el drop a 50 kg no cuenta
+});
+
+test('incremento 0 en Ajustes: no propone subir', () => {
+  const hint = progressionHint({ exercise: ex, target, lastSets: [set(80, 8), set(80, 8), set(80, 8)], settings: { increments: { upperCompound: 0 } } });
+  assert.equal(todayPlan({ exercise: ex, hint, target, settings: { increments: { upperCompound: 0 } } }), null);
+});

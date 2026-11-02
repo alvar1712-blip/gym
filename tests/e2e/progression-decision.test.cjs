@@ -68,6 +68,7 @@ function layout(card) {
     // El texto (el botón de «revisar» tiene relleno para el objetivo táctil de 44 px, compensado con margen)
     const r = next.querySelector(':scope > span').getBoundingClientRect();
     const lh = parseFloat(getComputedStyle(next).lineHeight);
+    el.querySelector('.ses-register')?.scrollIntoView({ block: 'center' }); // Fase 7: el editor con reglas no cabe sin desplazar
     const b = el.querySelector('.ses-register')?.getBoundingClientRect();
     const tab = (document.getElementById('tabbar') || document.querySelector('.focus-bar'))?.getBoundingClientRect().top ?? innerHeight;
     return {

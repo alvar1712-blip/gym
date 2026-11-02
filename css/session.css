@@ -273,7 +273,7 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 .ses-field-ruler { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .ses-field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
 .ses-field-ruler .ses-field-label { min-height: 0; }
-.ses-plates { appearance: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin: -8px -4px -8px auto; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--text-2); font: inherit; font-size: calc(14px * var(--ts)); font-weight: 650; cursor: pointer; }
+.ses-plates { appearance: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -12px -4px -12px auto; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--text-2); font: inherit; font-size: calc(14px * var(--ts)); font-weight: 650; cursor: pointer; }
 .ses-plates:active { background: var(--surface-3); }
 
 .ses-editor .stepper.has-ruler .stepper-btn { width: 52px; min-height: 48px; }
@@ -313,7 +313,7 @@ html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { position: stati
 .ses-today { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: calc(16px * var(--ts)); }
 .ses-today-label { font-size: var(--fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
 .ses-today-val { font-weight: 800; color: var(--text); }
-.ses-today-use { min-height: 36px; margin: -4px 0 -4px auto; color: var(--accent); }
+.ses-today-use { min-height: 44px; margin: -8px 0 -8px auto; color: var(--accent); }
 .ses-hist-btn { margin-right: -6px; }
 
 /* Serie recién registrada: la fila se enciende un instante (nada con «reducir movimiento») */
