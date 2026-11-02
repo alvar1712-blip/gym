@@ -380,3 +380,28 @@ export function progressionHint({ exercise, target, lastSets, settings = null, h
   // En pantalla, la notación de las series («6/6/6 → +2,5 kg»); para VoiceOver, la frase entera
   return out('hold', `${tops}${rir} → ${what}`, `Siguiente paso: ${what} cuando completes ${tops}${rir}`, pc.hold);
 }
+
+/**
+ * Propuesta concreta para HOY (Fase 7), explicable y siempre derivada de la MISMA decisión que «Siguiente paso»
+ * (progressionHint): si toca subir → el peso del incremento y las repeticiones de la base del rango; si toca mantener
+ * hasta el tope → el mismo peso con una repetición más (doble progresión), sin pasar del tope. Estancamiento, datos
+ * ambiguos, peso corporal o sin rango → null (no se propone nada: solo se muestra el aviso). No modifica nada.
+ * @returns {null|{ weight: number, reps: number, kind: 'up'|'hold', text: string, why: string }}
+ */
+export function todayPlan({ exercise, hint, target, settings = null }) {
+  const lt = exercise?.logType;
+  if (!hint || (hint.kind !== 'up' && hint.kind !== 'hold') || (lt !== 'weight_reps' && lt !== 'unilateral')) return null;
+  const pc = hint.check;
+  if (!pc?.checks?.length || !(pc.top >= 1)) return null;
+  const w = pc.weight;
+  const side = lt === 'unilateral' ? '/lado' : '';
+  if (hint.kind === 'up') {
+    const inc = incrementFor(exercise, settings?.increments);
+    const nw = Math.round((w + (inc.text === '1–2 kg' ? 1 : inc.kg)) * 100) / 100;
+    const reps = target?.repMin >= 1 ? target.repMin : pc.top;
+    return { weight: nw, reps, kind: 'up', text: `${num(nw, 2)} kg × ${num(reps, 0)}${side}`, why: `Hiciste ${num(pc.top, 0)} reps en todas las series con RIR suficiente: sube el peso y vuelve a empezar el rango.` };
+  }
+  const low = Math.min(...pc.checks.map((c) => c.reps ?? 0));
+  const reps = Math.min(pc.top, low + 1);
+  return { weight: w, reps, kind: 'hold', text: `${num(w, 2)} kg × ${num(reps, 0)}${side}`, why: `Mismo peso: una repetición más que tu serie más corta de la última vez, hasta llegar a ${num(pc.top, 0)}.` };
+}
