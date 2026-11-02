@@ -252,6 +252,22 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 .ses-editor .stepper-field:has(.stepper-suffix) .stepper-input { padding: 0 22px 0 2px; }
 .ses-hint { font-size: calc(13px * var(--ts)); color: var(--muted); padding-left: 2px; }
 
+/* Regla táctil (js/ruler.js): marcas absolutas desde 0 (--x/--xm las desplazan), indicador fijo en el centro.
+   touch-action: pan-y deja el scroll vertical al navegador y nos da el horizontal; sin transiciones (sigue al dedo). */
+.ruler {
+  position: absolute; left: 6px; right: 6px; bottom: 3px; height: 14px; pointer-events: none;
+  touch-action: pan-y; overscroll-behavior-x: contain; user-select: none; -webkit-user-select: none;
+  background:
+    linear-gradient(90deg, var(--muted) 0 2px, transparent 2px) calc(50% + var(--xm, 0px)) 100% / var(--major) 78% repeat-x,
+    linear-gradient(90deg, var(--border-strong) 0 1.5px, transparent 1.5px) calc(50% + var(--x, 0px)) 100% / var(--tick) 42% repeat-x;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.stepper-field:has(.ruler) { touch-action: pan-y; cursor: ew-resize; }
+.ses-editor .stepper-field:has(.ruler) .stepper-input { padding-bottom: 8px; }
+.ses-editor .stepper-field:has(.ruler) .stepper-suffix { bottom: 17px; }
+.ruler::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); }
+
 .ses-sub { display: flex; flex-direction: column; gap: 5px; }
 .ses-sub-label { font-size: calc(12px * var(--ts)); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 /* RIR (Fallo, 0–5): se toca en cada serie (docs/PULIDO.md §30). `.ses-editor .ses-rir .chip` (0,3,0) gana a las

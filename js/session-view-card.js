@@ -383,10 +383,10 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
   const tag = (st, key) => { st.input.dataset.field = key; return st; };
   const weightStep = (lbl, opts = {}) => tag(stepper({
     value: set.weight, step: 2.5, decimals: 2, inputmode: 'decimal', suffix: 'kg', showStep: true, min: 0, max: 999,
-    ariaLabel: lbl, onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
+    ruler: 4, ariaLabel: lbl, onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
   }), 'weight');
   const repsStep = (key, lbl) => tag(stepper({
-    value: set[key], step: 1, decimals: 0, inputmode: 'numeric', min: 0, max: 999, ariaLabel: lbl, onChange: bind(key),
+    value: set[key], step: 1, decimals: 0, inputmode: 'numeric', min: 0, max: 999, ruler: 5, ariaLabel: lbl, onChange: bind(key),
   }), key);
 
   switch (logType) {
@@ -430,7 +430,7 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
       break;
     case 'time':
       fields.push(field('Tiempo', tag(stepper({ value: set.timeSec, step: 5, decimals: 0, inputmode: 'numeric', suffix: 's', min: 0, max: 36000, showStep: true, ariaLabel: 'Segundos', onChange: bind('timeSec') }), 'timeSec')));
-      fields.push(field('Lastre', weightStep('Lastre (opcional)', { size: 'md', placeholder: 'opcional' })));
+      fields.push(field('Lastre', weightStep('Lastre (opcional)', { size: 'md', placeholder: 'opcional', ruler: 0 })));
       break;
     case 'distance_time':
       fields.push(field('Metros', tag(stepper({ value: set.distanceM, step: 5, decimals: 1, inputmode: 'decimal', suffix: 'm', min: 0, max: 100000, showStep: true, ariaLabel: 'Metros', onChange: bind('distanceM') }), 'distanceM')));

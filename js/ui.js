@@ -1,6 +1,7 @@
 ﻿// ui.js — utilidades DOM y componentes comunes (tema oscuro, pensado para una mano).
 import { back as routerBack, navigate, routeEpoch, pushOverlay, onMount, refresh as routerRefresh } from './router.js';
 import { numToInput, parseNum, clamp, round } from './util.js';
+import { mountRuler } from './ruler.js';
 
 // ---------------------------------------------------------------------------
 // h(): creación de elementos.
@@ -1065,8 +1066,9 @@ export function closeStaleToasts() {
  * stepper({ value, step, min, max, decimals, inputmode, suffix, label, placeholder, showStep, onChange(v, {final}) })
  * Devuelve el elemento con .getValue(), .setValue(v) y .setAriaLabel(nombre).
  */
-export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', onChange = () => {}, ariaLabel = '' } = {}) {
+export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', ruler = 0, onChange = () => {}, ariaLabel = '' } = {}) {
   let cur = value;
+  let paintRuler = null;
   const input = h('input.stepper-input', {
     type: 'text', inputmode, enterkeyhint: 'done', autocomplete: 'off', placeholder,
     value: numToInput(value, decimals),
@@ -1111,6 +1113,7 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
   function set(v) {
     cur = v;
     input.value = numToInput(v, decimals);
+    paintRuler?.(v);
   }
   selectOnFocus(input);
   input.addEventListener('input', () => {
@@ -1133,6 +1136,8 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
       h('div.stepper-field', input, suffix ? h('span.stepper-suffix', suffix) : null),
       plusBtn));
   el.getValue = () => cur;
+  // Regla táctil opcional (`ruler` = cada cuántas marcas, una larga): gesto rápido; el número y −/+ siguen siendo la vía exacta
+  if (ruler) paintRuler = mountRuler(el, { step, min, max, major: ruler, setValue: set, onCommit: (v) => onChange(v, { final: true }) });
   /** Cambia el nombre del campo (y de sus botones −/+), p. ej. Lastre ↔ Asistencia. */
   el.setAriaLabel = (name) => {
     input.setAttribute('aria-label', name);
