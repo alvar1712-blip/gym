@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { platesPerSide } from '../../js/plates.js';
+import { platesPerSide, plateRects, groupPlates } from '../../js/plates.js';
 
 test('barra de 20 kg: cargas habituales, discos por lado', () => {
   assert.deepEqual(platesPerSide(60).perSide, [20]);
@@ -32,4 +32,20 @@ test('nunca monta más de lo pedido (centésimas por debajo del reparto)', () =>
   assert.ok(r.loaded <= 32.49 + 1e-9, `cargado ${r.loaded}`);
   assert.ok(r.missing >= 0);
   assert.equal(r.reason, 'inexact');
+});
+
+test('geometría: los discos caben siempre en el manguito, de mayor a menor, y se agrupan en el texto', () => {
+  const total = (rs, gap = 2) => rs.reduce((s, r) => s + r.w + gap, 0);
+  const few = plateRects([25, 5, 1.25]);
+  assert.deepEqual(few.map((r) => r.p), [25, 5, 1.25]);
+  assert.ok(few[0].k > few[1].k && few[1].k > few[2].k, 'el alto sigue al peso');
+  assert.equal(few[0].w, 22, 'pocos discos: grosor natural');
+  // 300 kg → por lado 140 kg = 5 × 25 + 15; 999 kg → muchísimos discos
+  for (const kg of [100, 300, 600, 999]) {
+    const rs = plateRects(platesPerSide(kg).perSide);
+    assert.ok(total(rs) <= 130 + 3 * rs.length, `${kg} kg cabe: ${total(rs)} px`);
+    assert.ok(rs.every((r) => r.w >= 3));
+  }
+  assert.equal(groupPlates([25, 25, 5, 1.25], (n) => String(n).replace('.', ',')), '2 × 25 + 5 + 1,25');
+  assert.equal(groupPlates([]), '');
 });
