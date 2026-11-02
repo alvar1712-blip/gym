@@ -9,7 +9,7 @@ const skipWebkit = engineAvailable('webkit') ? false : 'WebKit no instalado: eje
 const clean = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
 
 async function typeInto(page, locator, value) {
-  await locator.click();
+  await locator.click({ force: true }); // el toque lo recibe .stepper-field (regla), no el <input>
   await locator.fill(value);
   await locator.press('Tab');
 }

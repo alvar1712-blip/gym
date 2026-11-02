@@ -61,7 +61,7 @@ async function run(browser) {
     // 12,5 → escribir exacto y luego tocar sin arrastrar no cambia nada
     await field(page, 'weight').fill('41,25');
     await field(page, 'weight').blur();
-    await field(page, "weight").click();
+    await field(page, 'weight').click({ force: true }); // el toque lo recibe el campo, no el <input>
     assert.strictEqual(await field(page, 'weight').inputValue(), '41,25');
     // desde 41,25 una marca (2,5) suma exacto: 43,75
     await drag(page, rulerOf(page, 'weight'), -11);

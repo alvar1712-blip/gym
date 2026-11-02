@@ -212,7 +212,7 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 .ses-editor {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 12px 10px 8px;
   border-radius: 14px;
   border: 1px solid rgba(184, 243, 74, 0.45);
@@ -252,21 +252,36 @@ html.text-large .ses-card-folded .ses-fold-meta { flex-basis: 100%; }
 .ses-editor .stepper-field:has(.stepper-suffix) .stepper-input { padding: 0 22px 0 2px; }
 .ses-hint { font-size: calc(13px * var(--ts)); color: var(--muted); padding-left: 2px; }
 
-/* Regla táctil (js/ruler.js): marcas absolutas desde 0 (--x/--xm las desplazan), indicador fijo en el centro.
-   touch-action: pan-y deja el scroll vertical al navegador y nos da el horizontal; sin transiciones (sigue al dedo). */
+/* Regla táctil (js/ruler.js): franja con cifras en las marcas largas y una aguja central, DENTRO del campo del número (que
+   crece lo justo: «Registrar» tiene que seguir por encima de la barra inferior en un iPhone SE). Marcas absolutas desde 0
+   (--x/--xm las desplazan). touch-action: pan-y deja el scroll vertical al navegador y nos da el horizontal; sin
+   transiciones (sigue al dedo). El <input> no recibe el toque (iOS se lo quedaba): el campo lo enfoca al tocar. */
+.has-ruler .stepper-field, .ruler { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: ew-resize; }
+.has-ruler .stepper-input { pointer-events: none; }
+.ses-editor .stepper.has-ruler .stepper-btn { width: 48px; }
+.ses-editor .stepper.has-ruler .stepper-field { min-height: 68px; }
+.ses-editor .stepper.has-ruler-sm .stepper-field { min-height: 54px; }
+.ses-editor .stepper.has-ruler .stepper-field .stepper-input { min-height: 0; height: auto; padding: 0 22px 28px 2px; }
+.ses-editor .stepper.has-ruler.has-ruler-sm .stepper-field .stepper-input { padding: 0 2px 18px; }
+.ses-editor .stepper.has-ruler .stepper-suffix { bottom: 32px; }
+/* Texto grande: la unidad sube a la esquina para no pisar la cifra */
+html.text-large .ses-editor .stepper.has-ruler .stepper-suffix { left: auto; right: 8px; bottom: auto; top: 6px; text-align: right; }
 .ruler {
-  position: absolute; left: 6px; right: 6px; bottom: 3px; height: 14px; pointer-events: none;
-  touch-action: pan-y; overscroll-behavior-x: contain; user-select: none; -webkit-user-select: none;
-  background:
-    linear-gradient(90deg, var(--muted) 0 2px, transparent 2px) calc(50% + var(--xm, 0px)) 100% / var(--major) 78% repeat-x,
-    linear-gradient(90deg, var(--border-strong) 0 1.5px, transparent 1.5px) calc(50% + var(--x, 0px)) 100% / var(--tick) 42% repeat-x;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  position: absolute; left: 1px; right: 1px; bottom: 1px; height: 28px; overflow: hidden; border-radius: 0 0 11px 11px;
+  border-top: 1px solid var(--border-strong); background-color: var(--surface-2); overscroll-behavior-x: contain;
+  background-image:
+    linear-gradient(90deg, var(--text) 0 2px, transparent 2px),
+    linear-gradient(90deg, var(--muted) 0 1.5px, transparent 1.5px);
+  background-position: calc(50% + var(--xm, 0px)) 100%, calc(50% + var(--x, 0px)) 100%;
+  background-size: var(--major) 14px, var(--tick) 7px;
+  background-repeat: repeat-x;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
 }
-.stepper-field:has(.ruler) { touch-action: pan-y; cursor: ew-resize; }
-.ses-editor .stepper-field:has(.ruler) .stepper-input { padding-bottom: 8px; }
-.ses-editor .stepper-field:has(.ruler) .stepper-suffix { bottom: 17px; }
-.ruler::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); }
+.ruler-sm { height: 18px; background-size: var(--major) 11px, var(--tick) 6px; }
+.ruler-sm .ruler-num { display: none; }
+.ruler-num { position: absolute; top: 1px; transform: translateX(-50%); font-size: calc(11px * var(--ts)); font-weight: 750; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--muted); pointer-events: none; }
+.ruler::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); pointer-events: none; }
 
 .ses-sub { display: flex; flex-direction: column; gap: 5px; }
 .ses-sub-label { font-size: calc(12px * var(--ts)); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
