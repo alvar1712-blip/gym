@@ -19,3 +19,6 @@ Protege la rama de producción: GitHub → Settings → Branches → regla sobre
 
 ## Límites
 Repo público: minutos de Actions gratuitos. Cloudflare Pages Free: 500 builds/mes (aquí solo subimos archivos). Claude web y Codex Cloud comparten la cuota de tu suscripción.
+
+## Conectar GitHub (una vez)
+Mismo procedimiento que en ÁLVAR OS (app de GitHub de Claude y Codex con acceso solo a `gym`). Importante: **elige siempre la rama `cloud/preparacion-nube`** como base; la rama de producción aún no contiene `AGENTS.md`. No hay script de setup que añadir (sin dependencias). Prueba segura: «Añade una prueba unitaria para una función pura sin cobertura, ejecuta `npm run check` y abre una PR».
