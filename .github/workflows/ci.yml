@@ -1,9 +1,11 @@
 name: CI
 
+# Se ejecuta al subir cualquier rama (también las de sesiones en la nube) salvo producción.
 # Repositorio público: minutos de Actions gratuitos. Aun así, solo lo necesario.
 # Las pruebas E2E (Playwright) son manuales: lanzar desde Actions > CI > Run workflow.
 on:
-  pull_request:
+  push:
+    branches-ignore: ["claude/personal-training-mobile-app-e82j38"]
   workflow_dispatch:
     inputs:
       e2e:
