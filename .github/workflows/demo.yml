@@ -1,0 +1,46 @@
+name: Demo web (sin datos)
+
+# Sube la app de la rama a Cloudflare Pages con una URL por rama (origen distinto de producción, por lo que
+# su IndexedDB está vacío: nunca ve tus datos). NO toca GitHub Pages de producción.
+# Sin secretos configurados, no hace nada. Alta (una vez): docs/NUBE.md > "Activar la demo".
+on:
+  pull_request:
+    paths: ["js/**", "css/**", "index.html", "sw.js", "manifest.json", "icons/**", "splash/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Comprobar configuración
+        id: cfg
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Demo no configurada (faltan secretos de Cloudflare): se omite."
+          else
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cfg.outputs.ok
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - if: steps.cfg.outputs.ok
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - if: steps.cfg.outputs.ok
+        run: |
+          mkdir _site && cp -r index.html sw.js manifest.json css js icons splash _site/
+          npx --yes wrangler@4 pages project create entreno-demo --production-branch=demo-produccion || true
+          npx --yes wrangler@4 pages deploy _site --project-name=entreno-demo --branch="${{ github.head_ref || github.ref_name }}" | tee deploy.log
+          echo "### Demo" >> "$GITHUB_STEP_SUMMARY"
+          grep -Eo 'https://[^ ]+\.pages\.dev' deploy.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
