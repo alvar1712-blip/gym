@@ -418,13 +418,15 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
   const incKg = inc ? (inc.text === '1–2 kg' ? 1 : inc.kg) : 2.5;
   const wStep = Math.min(2.5, incKg > 0 ? incKg : 2.5); // un incremento de 0 (permitido en Ajustes) no puede dejar la regla sin paso
   const fields = [];
+  let editorEl = null; // el editor ya montado: «Intro» en el peso lleva a las repeticiones
   const field = (lbl, ctl, extra = null) => h('div.ses-field', h('span.ses-field-label', lbl), h('div.ses-field-ctl', ctl, extra));
   // Con regla: etiqueta arriba (y su acción a la derecha), −/número/+ y la regla a todo el ancho
   const rfield = (lbl, ctl, extra = null) => h('div.ses-field.ses-field-ruler', h('div.ses-field-head', typeof lbl === 'string' ? h('span.ses-field-label', lbl) : lbl, extra), ctl);
   const tag = (st, key) => { st.input.dataset.field = key; return st; };
   const weightStep = (lbl, opts = {}) => tag(stepper({
     value: set.weight, step: wStep, decimals: 2, inputmode: 'decimal', suffix: 'kg', showStep: true, min: 0, max: 999,
-    ruler: wStep >= 2.5 ? 4 : 5, ariaLabel: lbl, onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
+    ruler: wStep >= 2.5 ? 4 : 5, ariaLabel: lbl,
+    nextField: () => editorEl?.querySelector('[data-field="reps"]'), onChange: (v, o) => { setWeight(v); changed(isFinal(o)); }, ...opts,
   }), 'weight');
   const repsStep = (key, lbl) => tag(stepper({
     value: set[key], step: 1, decimals: 0, inputmode: 'numeric', min: 0, max: 999, ruler: 5, rulerCompact: true, ariaLabel: lbl, onChange: bind(key),
@@ -541,7 +543,7 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
   });
 
   // «Registrar» justo debajo de los datos (a mano del pulgar). La serie abierta manda: cabecera, datos, RIR y registrar.
-  return h(`div.ses-editor${pending ? '' : '.ses-editor-edit'}${set.type === 'warmup' ? '.ses-editor-warm' : ''}`, { dataset: { set: set.id, state: pending ? 'editing' : 'editing-done', type: set.type } },
+  return (editorEl = h(`div.ses-editor${pending ? '' : '.ses-editor-edit'}${set.type === 'warmup' ? '.ses-editor-warm' : ''}`, { dataset: { set: set.id, state: pending ? 'editing' : 'editing-done', type: set.type } },
     h('div.ses-editor-head',
       headNum,
       pending ? null : h('span.badge.badge-ok', 'Hecha · editando'),
@@ -553,7 +555,7 @@ function renderEditor(ctx, se, set, ex, logType, num, { warmInHead = false } = {
       h('button.icon-btn.ses-set-more', { type: 'button', 'aria-label': `Más opciones de la serie ${num}`, onClick: setMenu }, icon('more', 22))),
     set.note ? h('button.ses-editor-note', { type: 'button', 'aria-label': `Nota: ${set.note}. Editar`, onClick: editNote }, h('span', { 'aria-hidden': 'true' }, '📝 '), set.note) : null,
     fields,
-    submit);
+    submit));
 }
 
 /** «Usar» la propuesta de hoy: peso y repeticiones de la serie abierta (se guarda como cualquier cambio manual). */
