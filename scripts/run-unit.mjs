@@ -15,7 +15,8 @@ if (!files.length) {
 const r = spawnSync(process.execPath, ['--test', ...files], { encoding: 'utf8', maxBuffer: 1 << 28 });
 process.stdout.write(r.stdout);
 process.stderr.write(r.stderr);
-const ran = Number(/^ℹ tests (\d+)/m.exec(r.stdout)?.[1] ?? 0);
+// Node 24 imprime «ℹ tests N» (spec); Node 22 sin terminal, «# tests N» (TAP): ambos valen
+const ran = Number(/^(?:ℹ|#) tests (\d+)/m.exec(r.stdout)?.[1] ?? 0);
 if (!ran) {
   console.error('No se ha ejecutado ninguna prueba.');
   process.exit(1);

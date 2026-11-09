@@ -1109,11 +1109,11 @@ export function closeStaleToasts() {
  * stepper({ value, step, min, max, decimals, inputmode, suffix, label, placeholder, showStep, onChange(v, {final}) })
  * Devuelve el elemento con .getValue(), .setValue(v) y .setAriaLabel(nombre).
  */
-export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', ruler = 0, rulerCompact = false, onChange = () => {}, ariaLabel = '' } = {}) {
+export function stepper({ value = null, step = 1, min = -Infinity, max = Infinity, decimals = 2, inputmode = 'decimal', suffix = '', label = '', placeholder = '', showStep = false, size = 'lg', ruler = 0, rulerCompact = false, onChange = () => {}, ariaLabel = '', nextField = null } = {}) {
   let cur = value;
   let paintRuler = null;
   const input = h('input.stepper-input', {
-    type: 'text', inputmode, enterkeyhint: 'done', autocomplete: 'off', placeholder,
+    type: 'text', inputmode, enterkeyhint: nextField ? 'next' : 'done', autocomplete: 'off', placeholder,
     value: numToInput(value, decimals),
     'aria-label': ariaLabel || label || 'valor',
   });
@@ -1159,17 +1159,24 @@ export function stepper({ value = null, step = 1, min = -Infinity, max = Infinit
     paintRuler?.(v);
   }
   selectOnFocus(input);
+  // Lo guardado es siempre lo que el campo muestra: «8,5» repeticiones se ve y se guarda como 9; 82,555 kg como 82,56.
+  const fit = (v) => (v == null ? v : round(v, 10 ** -decimals));
   input.addEventListener('input', () => {
-    cur = parseNum(input.value);
+    cur = fit(parseNum(input.value));
     onChange(cur, { final: false });
   });
   input.addEventListener('change', () => {
-    let v = parseNum(input.value);
+    let v = fit(parseNum(input.value));
     if (v != null) v = clamp(v, min, max);
     set(v);
     onChange(cur, { final: true });
   });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+  // Intro: con campo siguiente (peso → repeticiones) el teclado no se cierra; sin él, termina la edición
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const nx = nextField?.();
+    if (nx) nx.focus(); else input.blur();
+  });
   const minusBtn = mkBtn(-1);
   const plusBtn = mkBtn(+1);
   const el = h(`div.stepper.stepper-${size}`,

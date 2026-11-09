@@ -171,3 +171,14 @@
   exigiría un contador en cada transacción de IndexedDB y tratarlo en copias e importación; se prefirió la corrección.
 - Ronda 6 · Fase H: en la batería de WebKit, 11 pruebas que necesitan CDP (solo Chromium) se omiten diciendo por qué;
   en Chromium se ejecutan todas.
+
+## Primer encargo en la nube · pulido de la sesión activa (`cloud/pulido-sesion-activa`)
+- [x] **Lo guardado es lo que se ve** (`stepper` en `js/ui.js`): teclear «8,5» repeticiones mostraba «9» pero guardaba y
+      registraba 8,5 (y «82,555» kg mostraba 82,56 y guardaba 82,555). Ahora el valor se ajusta a la precisión del campo
+      al teclear y al salir; 41,25 y 82,5 se conservan tal cual. Prueba: `tests/e2e/entry-precision.test.cjs`.
+- [x] **Teclado «Siguiente»**: en el editor de series, Intro en el peso pasa a las repeticiones sin cerrar el teclado
+      (`enterkeyhint="next"`); en las repeticiones (o sin campo siguiente) lo cierra como antes.
+- [x] **`npm run check` con Node 22**: sin terminal imprime TAP (`# tests N`) y el ejecutor daba «No se ha ejecutado
+      ninguna prueba» aunque pasaran las 861. `scripts/run-unit.mjs` acepta ambos formatos (CI usa Node 24).
+- Verificado sin cambios: ruedas/regla, transición entre series, discos, guardado al recargar sin salir del campo
+  (flush en `pagehide`), tamaños táctiles ≥ 44 px a 375, 390 y 430 px. Safari físico sigue sin verificar.
